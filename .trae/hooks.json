@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|RunCommand",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".trae/hooks/block-forbidden-commands.ps1",
+            "shell": "powershell"
+          }
+        ]
+      }
+    ]
+  }
+}
