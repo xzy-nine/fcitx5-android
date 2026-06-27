@@ -106,6 +106,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private val toolbarNumRowOnPassword by prefs.keyboard.toolbarNumRowOnPassword
     private val showVoiceInputButton by prefs.keyboard.showVoiceInputButton
     private val preferredVoiceInput by prefs.keyboard.preferredVoiceInput
+    private val splitKeyboardPref = prefs.keyboard.splitKeyboard
+    private val themePrefs = ThemeManager.prefs
+    private val keyboardPrefs = prefs.keyboard
 
     private var clipboardTimeoutJob: Job? = null
 
@@ -162,6 +165,20 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
             }
         }
 
+    @Keep
+    private val splitKeyboardListener =
+        ManagedPreference.OnChangeListener<Boolean> { _, enabled ->
+            updateSplitKeyboardButton(enabled)
+        }
+    private val splitThresholdListener =
+        ManagedPreference.OnChangeListener<Float> { _, _ ->
+            updateSplitKeyboardAvailability()
+        }
+
+    private var keyboardWidth = 0
+    private var keyboardHeight = 0
+    private var buttonsUiRef: org.fcitx.fcitx5.android.input.bar.ui.idle.ButtonsBarUi? = null
+
     private fun launchClipboardTimeoutJob() {
         clipboardTimeoutJob?.cancel()
         val timeout = clipboardItemTimeout.getValue() * 1000L
@@ -192,6 +209,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         }
         if (newState == idleUi.currentState) return
         idleUi.updateState(newState, fromUser)
+    }
+
+    private fun updateSplitKeyboardButton(enabled: Boolean) {
+        buttonsUiRef?.setSplitKeyboardEnabled(enabled)
     }
 
     private val hideKeyboardCallback = View.OnClickListener {
@@ -313,10 +334,14 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 clipboardButton.setOnClickListener {
                     windowManager.attachWindow(ClipboardWindow())
                 }
+                splitKeyboardButton.setOnClickListener {
+                    splitKeyboardPref.setValue(!splitKeyboardPref.getValue())
+                }
                 moreButton.setOnClickListener {
                     windowManager.attachWindow(StatusAreaWindow())
                 }
             }
+            buttonsUiRef = buttonsUi
             clipboardUi.suggestionView.apply {
                 setOnClickListener {
                     ClipboardManager.lastEntry?.let {
@@ -340,6 +365,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                     evalIdleUiState(fromUser = true)
                 }
             }
+            buttonsUi.setSplitKeyboardEnabled(splitKeyboardPref.getValue())
+            splitKeyboardPref.registerOnChangeListener(splitKeyboardListener)
+            keyboardPrefs.splitKeyboardThreshold.registerOnChangeListener(splitThresholdListener)
+            updateSplitKeyboardAvailability()
         }
     }
 
@@ -389,6 +418,23 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         }
         candidateUi.expandButton.setIcon(R.drawable.ic_baseline_expand_more_24)
         candidateUi.expandButton.contentDescription = context.getString(R.string.expand_candidates_list)
+    }
+
+    fun onKeyboardSizeChanged(width: Int, height: Int) {
+        keyboardWidth = width
+        keyboardHeight = height
+        updateSplitKeyboardAvailability()
+    }
+
+    private fun updateSplitKeyboardAvailability() {
+        val ui = buttonsUiRef ?: return
+        val threshold = keyboardPrefs.splitKeyboardThreshold.getValue()
+        val ratio = if (keyboardHeight > 0) keyboardWidth.toFloat() / keyboardHeight else 0f
+        val available = ratio > threshold && !isKeyboardLayoutNumber
+        ui.setSplitKeyboardVisible(available)
+        if (available) {
+            ui.setSplitKeyboardEnabled(splitKeyboardPref.getValue())
+        }
     }
 
     // set expand candidate button to close expand candidate
@@ -552,6 +598,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
 
     fun onKeyboardLayoutSwitched(isNumber: Boolean) {
         isKeyboardLayoutNumber = isNumber
+        updateSplitKeyboardAvailability()
         evalIdleUiState()
     }
 

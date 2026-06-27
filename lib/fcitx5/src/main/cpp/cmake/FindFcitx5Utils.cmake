@@ -11,6 +11,10 @@ if (NOT TARGET Fcitx5::Utils)
 endif()
 
 # fcitx5_translate_desktop_file needs ${GETTEXT_MSGFMT_EXECUTABLE}
+if(WIN32)
+    # MSYS2 ucrt64 is the preferred gettext location on Windows
+    set(CMAKE_PROGRAM_PATH ${CMAKE_PROGRAM_PATH} "C:/msys64/ucrt64/bin")
+endif()
 find_package(Gettext REQUIRED)
 
 # dependent projects usually use
