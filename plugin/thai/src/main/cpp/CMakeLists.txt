@@ -14,8 +14,9 @@ find_package(ECM MODULE)
 find_package(Fcitx5Core MODULE)
 find_package(Fcitx5Module MODULE)
 
-set(Iconv_LIBRARY "${PREBUILT_DIR}/libiconv/${ANDROID_ABI}/lib/libiconv.a")
-set(Iconv_INCLUDE_DIR "${PREBUILT_DIR}/libiconv/${ANDROID_ABI}/include")
+set(Iconv_LIBRARY "${PREBUILT_DIR}/libiconv/${ANDROID_ABI}/lib/libiconv.a" CACHE FILEPATH "Path to libiconv library")
+set(Iconv_INCLUDE_DIR "${PREBUILT_DIR}/libiconv/${ANDROID_ABI}/include" CACHE PATH "Path to libiconv headers")
+find_package(Iconv)
 
 add_library(Thai_static STATIC IMPORTED)
 set_target_properties(Thai_static PROPERTIES
@@ -24,4 +25,6 @@ set_target_properties(Thai_static PROPERTIES
         )
 
 set(THAI_TARGET Thai_static)
+cmake_policy(SET CMP0077 NEW)
+set(ENABLE_TEST OFF)
 add_subdirectory(fcitx5-libthai)
