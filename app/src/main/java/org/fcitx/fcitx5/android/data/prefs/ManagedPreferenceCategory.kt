@@ -6,12 +6,17 @@ package org.fcitx.fcitx5.android.data.prefs
 
 import android.content.SharedPreferences
 import androidx.annotation.StringRes
+import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceScreen
 
 abstract class ManagedPreferenceCategory(
     @StringRes val title: Int,
     protected val sharedPreferences: SharedPreferences
 ) : ManagedPreferenceProvider() {
+
+    class SubGroup(@StringRes val title: Int, val keys: List<String>)
+
+    var groups: List<SubGroup> = emptyList()
 
     protected fun switch(
         @StringRes
@@ -166,10 +171,28 @@ abstract class ManagedPreferenceCategory(
 
     override fun createUi(screen: PreferenceScreen) {
         val ctx = screen.context
-        managedPreferencesUi.forEach {
-            screen.addPreference(it.createUi(ctx).apply {
-                isEnabled = it.isEnabled()
-            })
+        if (groups.isEmpty()) {
+            managedPreferencesUi.forEach {
+                screen.addPreference(it.createUi(ctx).apply {
+                    isEnabled = it.isEnabled()
+                })
+            }
+        } else {
+            val uiMap = managedPreferencesUi.associateBy { it.key }
+            groups.forEachIndexed { index, group ->
+                val category = PreferenceCategory(ctx).apply {
+                    title = ctx.getString(group.title)
+                }
+                screen.addPreference(category)
+                group.keys.forEach { key ->
+                    val ui = uiMap[key]
+                    if (ui != null) {
+                        category.addPreference(ui.createUi(ctx).apply {
+                            isEnabled = ui.isEnabled()
+                        })
+                    }
+                }
+            }
         }
     }
 }

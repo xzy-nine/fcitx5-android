@@ -311,15 +311,74 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                 R.string.expanded_candidate_grid_span_count,
                 R.string.portrait,
                 "expanded_candidate_grid_span_count_portrait",
-                6,
+                 6,
                 R.string.landscape,
                 "expanded_candidate_grid_span_count_landscape",
-                8,
-                4,
-                12,
+                 8,
+                 4,
+                 12,
             )
             expandedCandidateGridSpanCount = primary
             expandedCandidateGridSpanCountLandscape = secondary
+        }
+
+        init {
+            groups = listOf(
+                SubGroup(R.string.group_key_feedback, listOf(
+                    hapticOnKeyPress.key,
+                    hapticOnKeyUp.key,
+                    hapticOnRepeat.key,
+                    buttonPressVibrationMilliseconds.key,
+                    buttonLongPressVibrationMilliseconds.key,
+                    buttonPressVibrationAmplitude.key,
+                    buttonLongPressVibrationAmplitude.key,
+                    soundOnKeyPress.key,
+                    soundOnKeyPressVolume.key,
+                )),
+                SubGroup(R.string.group_toolbar, listOf(
+                    expandToolbarByDefault.key,
+                    toolbarNumRowOnPassword.key,
+                    toolbarHeight.key,
+                    toolbarHeightLandscape.key,
+                    showLangSwitchKey.key,
+                    inlineSuggestions.key,
+                )),
+                SubGroup(R.string.group_keys_layout, listOf(
+                    focusChangeResetKeyboard.key,
+                    popupOnKeyPress.key,
+                    keepLettersUppercase.key,
+                    expandKeypressArea.key,
+                    langSwitchKeyBehavior.key,
+                    keyboardHeightPercent.key,
+                    keyboardHeightPercentLandscape.key,
+                    keyboardSidePadding.key,
+                    keyboardSidePaddingLandscape.key,
+                    keyboardBottomPadding.key,
+                    keyboardBottomPaddingLandscape.key,
+                )),
+                SubGroup(R.string.group_split_keyboard, listOf(
+                    splitKeyboard.key,
+                    splitKeyboardBlankRatio.key,
+                    splitKeyboardBlankRatioLandscape.key,
+                    splitKeyboardThreshold.key,
+                )),
+                SubGroup(R.string.group_key_gestures, listOf(
+                    swipeSymbolDirection.key,
+                    longPressDelay.key,
+                    spaceKeyLongPressBehavior.key,
+                    spaceSwipeMoveCursor.key,
+                )),
+                SubGroup(R.string.group_voice, listOf(
+                    showVoiceInputButton.key,
+                    preferredVoiceInput.key,
+                )),
+                SubGroup(R.string.group_candidate_style, listOf(
+                    horizontalCandidateStyle.key,
+                    expandedCandidateStyle.key,
+                    expandedCandidateGridSpanCount.key,
+                    expandedCandidateGridSpanCountLandscape.key,
+                )),
+            )
         }
 
     }

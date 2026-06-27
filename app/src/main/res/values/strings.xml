@@ -322,4 +322,11 @@
     <string name="key_border_stroke">Enable stroke for key border</string>
     <string name="preferred_voice_input">Preferred voice input</string>
     <string name="edit_text_playground">EditText Playground</string>
+    <string name="group_split_keyboard">Split Keyboard</string>
+    <string name="group_key_gestures">Key Gestures</string>
+    <string name="group_candidate_style">Candidate Style</string>
+    <string name="group_key_feedback">Key Feedback</string>
+    <string name="group_toolbar">Toolbar</string>
+    <string name="group_keys_layout">Keys &amp; Layout</string>
+    <string name="group_voice">Voice</string>
 </resources>
