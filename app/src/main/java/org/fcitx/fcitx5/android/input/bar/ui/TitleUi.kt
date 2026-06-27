@@ -10,6 +10,7 @@ import android.view.View
 import androidx.core.view.isVisible
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.theme.Theme
+import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
 import splitties.dimensions.dp
 import splitties.views.dsl.constraintlayout.after
 import splitties.views.dsl.constraintlayout.bottomOfParent
@@ -43,12 +44,12 @@ class TitleUi(override val ctx: Context, theme: Theme) : Ui {
     private var extension: View? = null
 
     override val root = constraintLayout {
-        add(backButton, lParams(dp(40), dp(40)) {
+        add(backButton, lParams(dp(KawaiiBarComponent.HEIGHT), dp(KawaiiBarComponent.HEIGHT)) {
             topOfParent()
             startOfParent()
             bottomOfParent()
         })
-        add(titleText, lParams(wrapContent, dp(40)) {
+        add(titleText, lParams(wrapContent, dp(KawaiiBarComponent.HEIGHT)) {
             topOfParent()
             after(backButton, dp(8))
             bottomOfParent()
@@ -73,7 +74,7 @@ class TitleUi(override val ctx: Context, theme: Theme) : Ui {
         titleText.isVisible = showTitle
         extension = view
         root.run {
-            add(view, lParams(matchConstraints, dp(40)) {
+            add(view, lParams(matchConstraints, dp(KawaiiBarComponent.HEIGHT)) {
                 centerVertically()
                 if (showTitle) {
                     endOfParent(dp(5))

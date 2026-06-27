@@ -131,6 +131,8 @@ class InputView(
 
     private val keyboardHeightPercent = keyboardPrefs.keyboardHeightPercent
     private val keyboardHeightPercentLandscape = keyboardPrefs.keyboardHeightPercentLandscape
+    private val toolbarHeight = keyboardPrefs.toolbarHeight
+    private val toolbarHeightLandscape = keyboardPrefs.toolbarHeightLandscape
     private val keyboardSidePadding = keyboardPrefs.keyboardSidePadding
     private val keyboardSidePaddingLandscape = keyboardPrefs.keyboardSidePaddingLandscape
     private val keyboardBottomPadding = keyboardPrefs.keyboardBottomPadding
@@ -139,6 +141,8 @@ class InputView(
     private val keyboardSizePrefs = listOf(
         keyboardHeightPercent,
         keyboardHeightPercentLandscape,
+        toolbarHeight,
+        toolbarHeightLandscape,
         keyboardSidePadding,
         keyboardSidePaddingLandscape,
         keyboardBottomPadding,
@@ -152,6 +156,15 @@ class InputView(
                 else -> keyboardHeightPercent
             }.getValue()
             return resources.displayMetrics.heightPixels * percent / 100
+        }
+
+    private val toolbarHeightPx: Int
+        get() {
+            val value = when (resources.configuration.orientation) {
+                Configuration.ORIENTATION_LANDSCAPE -> toolbarHeightLandscape
+                else -> toolbarHeight
+            }.getValue()
+            return dp(value)
         }
 
     private val keyboardSidePaddingPx: Int
@@ -258,6 +271,9 @@ class InputView(
     }
 
     private fun updateKeyboardSize() {
+        kawaiiBar.view.updateLayoutParams {
+            height = toolbarHeightPx
+        }
         windowManager.view.updateLayoutParams {
             height = keyboardHeightPx
         }

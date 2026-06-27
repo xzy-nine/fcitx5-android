@@ -232,6 +232,26 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             keyboardHeightPercentLandscape = secondary
         }
 
+        val toolbarHeight: ManagedPreference.PInt
+        val toolbarHeightLandscape: ManagedPreference.PInt
+
+        init {
+            val (primary, secondary) = twinInt(
+                R.string.toolbar_height,
+                R.string.portrait,
+                "toolbar_height",
+                40,
+                R.string.landscape,
+                "toolbar_height_landscape",
+                40,
+                20,
+                80,
+                "dp"
+            )
+            toolbarHeight = primary
+            toolbarHeightLandscape = secondary
+        }
+
         val keyboardSidePadding: ManagedPreference.PInt
         val keyboardSidePaddingLandscape: ManagedPreference.PInt
 

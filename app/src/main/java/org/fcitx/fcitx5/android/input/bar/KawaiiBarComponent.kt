@@ -4,6 +4,7 @@
  */
 package org.fcitx.fcitx5.android.input.bar
 
+import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.util.Size
@@ -593,7 +594,15 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     }
 
     companion object {
-        const val HEIGHT = 40
+        val HEIGHT: Int
+            get() {
+                val prefs = AppPrefs.getInstance().keyboard
+                val context = org.fcitx.fcitx5.android.utils.appContext
+                return when (context.resources.configuration.orientation) {
+                    Configuration.ORIENTATION_LANDSCAPE -> prefs.toolbarHeightLandscape.getValue()
+                    else -> prefs.toolbarHeight.getValue()
+                }
+            }
     }
 
     fun onKeyboardLayoutSwitched(isNumber: Boolean) {

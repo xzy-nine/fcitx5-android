@@ -8,6 +8,7 @@ import android.content.Context
 import android.view.View
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.theme.Theme
+import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
 import splitties.dimensions.dp
 import splitties.views.dsl.constraintlayout.before
 import splitties.views.dsl.constraintlayout.centerVertically
@@ -26,7 +27,7 @@ class CandidateUi(override val ctx: Context, theme: Theme, private val horizonta
     }
 
     override val root = ctx.constraintLayout {
-        add(expandButton, lParams(dp(40)) {
+        add(expandButton, lParams(dp(KawaiiBarComponent.HEIGHT)) {
             centerVertically()
             endOfParent()
         })

@@ -50,6 +50,8 @@ class KeyboardPreviewUi(override val ctx: Context, val theme: Theme) : Ui {
     private val keyboardPrefs = AppPrefs.getInstance().keyboard
     private val keyboardHeightPercent by keyboardPrefs.keyboardHeightPercent
     private val keyboardHeightPercentLandscape by keyboardPrefs.keyboardHeightPercentLandscape
+    private val toolbarHeight by keyboardPrefs.toolbarHeight
+    private val toolbarHeightLandscape by keyboardPrefs.toolbarHeightLandscape
     private val keyboardSidePadding by keyboardPrefs.keyboardSidePadding
     private val keyboardSidePaddingLandscape by keyboardPrefs.keyboardSidePaddingLandscape
     private val keyboardBottomPadding by keyboardPrefs.keyboardBottomPadding
@@ -92,7 +94,15 @@ class KeyboardPreviewUi(override val ctx: Context, val theme: Theme) : Ui {
         scaleType = ImageView.ScaleType.CENTER_CROP
     }
 
-    private val barHeight = ctx.dp(40)
+    private val barHeightPx: Int
+        get() {
+            val value = when (ctx.resources.configuration.orientation) {
+                Configuration.ORIENTATION_LANDSCAPE -> toolbarHeightLandscape
+                else -> toolbarHeight
+            }
+            return ctx.dp(value)
+        }
+
     private val fakeKawaiiBar = view(::View)
 
     private var keyboardWidth = -1
@@ -103,7 +113,7 @@ class KeyboardPreviewUi(override val ctx: Context, val theme: Theme) : Ui {
         add(bkg, lParams {
             centerInParent()
         })
-        add(fakeKawaiiBar, lParams(height = dp(40)) {
+        add(fakeKawaiiBar, lParams(height = barHeightPx) {
             centerHorizontally()
         })
     }
@@ -165,7 +175,7 @@ class KeyboardPreviewUi(override val ctx: Context, val theme: Theme) : Ui {
         }
         intrinsicWidth = keyboardWidth
         // KawaiiBar height + WindowManager view height
-        intrinsicHeight = barHeight + keyboardHeight
+        intrinsicHeight = barHeightPx + keyboardHeight
         // extra bottom padding
         intrinsicHeight += keyboardBottomPaddingPx
         // windowInsets navbar padding
