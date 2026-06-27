@@ -86,8 +86,9 @@ open class KeyDef(
             variant: Variant = Variant.Normal,
             border: Border = Border.Default,
             margin: Boolean = true,
-            viewId: Int = -1
-        ) : Text(displayText, textSize, textStyle, percentWidth, variant, border, margin, viewId)
+            viewId: Int = -1,
+            soundEffect: InputFeedbacks.SoundEffect = InputFeedbacks.SoundEffect.Standard
+        ) : Text(displayText, textSize, textStyle, percentWidth, variant, border, margin, viewId, soundEffect)
     }
 
     sealed class Behavior {

@@ -34,6 +34,7 @@ import org.fcitx.fcitx5.android.input.keyboard.KeyAction.SymAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.UnicodeAction
 import org.fcitx.fcitx5.android.input.picker.PickerWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
+import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import org.fcitx.fcitx5.android.utils.switchToNextIME
 import org.mechdancer.dependency.Dependent
 import org.mechdancer.dependency.UniqueComponent
@@ -180,6 +181,14 @@ class CommonKeyActionListener :
                             toggleIme()
                         }
                         SpaceLongPressBehavior.ShowPicker -> showInputMethodPicker()
+                        SpaceLongPressBehavior.VoiceInput -> {
+                            val preferredId = kbdPrefs.preferredVoiceInput.getValue()
+                            val voiceSubtype = InputMethodUtil.findVoiceSubtype(preferredId)
+                            if (voiceSubtype != null) {
+                                val (id, subtype) = voiceSubtype
+                                InputMethodUtil.switchInputMethod(service, id, subtype)
+                            }
+                        }
                     }
                 }
                 else -> {}

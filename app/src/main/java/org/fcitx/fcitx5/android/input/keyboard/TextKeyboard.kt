@@ -80,7 +80,7 @@ class TextKeyboard(
     val backspace: ImageKeyView get() = findViewById(R.id.button_backspace)
     val quickphrase: ImageKeyView get() = findViewById(R.id.button_quickphrase)
     val lang: ImageKeyView get() = findViewById(R.id.button_lang)
-    val space: TextKeyView get() = findViewById(R.id.button_space)
+    val space: ImageTextKeyView get() = findViewById(R.id.button_space)
     val `return`: ImageKeyView get() = findViewById(R.id.button_return)
 
     private val showLangSwitchKey = AppPrefs.getInstance().keyboard.showLangSwitchKey
@@ -92,9 +92,19 @@ class TextKeyboard(
 
     private val keepLettersUppercase by AppPrefs.getInstance().keyboard.keepLettersUppercase
 
+    private val spaceKeyLongPressBehavior = AppPrefs.getInstance().keyboard.spaceKeyLongPressBehavior
+
+    @Keep
+    private val spaceKeyLongPressBehaviorListener =
+        ManagedPreference.OnChangeListener<SpaceLongPressBehavior> { _, _ ->
+            updateSpaceVoiceIcon()
+        }
+
     init {
         updateLangSwitchKey(showLangSwitchKey.getValue())
         showLangSwitchKey.registerOnChangeListener(showLangSwitchKeyListener)
+        spaceKeyLongPressBehavior.registerOnChangeListener(spaceKeyLongPressBehaviorListener)
+        space.setIconVisible(spaceKeyLongPressBehavior.getValue() == SpaceLongPressBehavior.VoiceInput)
     }
 
     private val textKeys: List<TextKeyView>
@@ -173,6 +183,7 @@ class TextKeyboard(
         if (capsState != CapsState.None) {
             switchCapsState()
         }
+        updateSpaceVoiceIcon()
     }
 
     private fun transformPopupPreview(c: String): String {
@@ -234,11 +245,16 @@ class TextKeyboard(
         lang.visibility = if (visible) View.VISIBLE else View.GONE
     }
 
+    private fun updateSpaceVoiceIcon() {
+        space.setIconVisible(spaceKeyLongPressBehavior.getValue() == SpaceLongPressBehavior.VoiceInput)
+    }
+
     override fun onKeyboardLayoutRebuilt() {
         updateCapsButtonIcon()
         updateAlphabetKeys()
         updatePunctuationKeys()
         updateLangSwitchKey(showLangSwitchKey.getValue())
+        updateSpaceVoiceIcon()
     }
 
     private fun updateAlphabetKeys() {

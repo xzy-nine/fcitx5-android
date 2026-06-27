@@ -99,7 +99,7 @@ abstract class BaseKeyboard(
     private val bounds = Rect()
     private var keyRows: List<ConstraintLayout> = emptyList()
     private var lastInputMethod: InputMethodEntry? = null
-    private var lastSplitAllowed = true
+    private var lastSplitAllowed = false
     private var lastSplitRequested = false
     private var layoutCallbacksEnabled = false
     private var lastMeasuredWidth = 0
