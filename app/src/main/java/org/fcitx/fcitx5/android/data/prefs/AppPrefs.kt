@@ -463,6 +463,10 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         ) { clipboardListening.getValue() }
     }
 
+    inner class Broadcast : ManagedPreferenceCategory(R.string.broadcast_settings, sharedPreferences) {
+        val enabled = switch(R.string.broadcast_enable, "broadcast_enable", false)
+    }
+
     inner class Symbols : ManagedPreferenceCategory(R.string.emoji_and_symbols, sharedPreferences) {
         val hideUnsupportedEmojis = switch(
             R.string.hide_unsupported_emojis,
@@ -495,6 +499,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
     val keyboard = Keyboard().register()
     val candidates = Candidates().register()
     val clipboard = Clipboard().register()
+    val broadcast = Broadcast().register()
     val symbols = Symbols().register()
     val advanced = Advanced().register()
 

@@ -34,7 +34,12 @@
         android:name="${applicationId}.permission.PLUGIN"
         android:protectionLevel="signature" />
 
+    <permission
+        android:name="org.fcitx.fcitx5.android.permission.CLIPBOARD_BROADCAST"
+        android:protectionLevel="normal" />
+
     <uses-permission android:name="${applicationId}.permission.PLUGIN" />
+    <uses-permission android:name="org.fcitx.fcitx5.android.permission.CLIPBOARD_BROADCAST" />
 
     <application
         android:name=".FcitxApplication"
@@ -143,6 +148,15 @@
             tools:ignore="SystemPermissionTypo">
             <intent-filter>
                 <action android:name="${applicationId}.IPC" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".BroadcastPairingService"
+            android:exported="true"
+            android:permission="org.fcitx.fcitx5.android.permission.CLIPBOARD_BROADCAST">
+            <intent-filter>
+                <action android:name="org.fcitx.fcitx5.android.BROADCAST_PAIRING" />
             </intent-filter>
         </service>
 

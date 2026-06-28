@@ -23,6 +23,7 @@ import org.fcitx.fcitx5.android.core.reloadPinyinDict
 import org.fcitx.fcitx5.android.core.reloadQuickPhrase
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
+import org.fcitx.fcitx5.android.data.broadcast.BroadcastSecurityManager
 import org.fcitx.fcitx5.android.utils.Const
 import org.fcitx.fcitx5.android.utils.desc
 import org.fcitx.fcitx5.android.utils.descEquals
@@ -30,6 +31,10 @@ import timber.log.Timber
 import java.util.concurrent.CopyOnWriteArrayList
 
 class FcitxRemoteService : Service() {
+
+    companion object {
+        private const val TAG = "Fcitx5广播剪切板"
+    }
 
     private val clipboardTransformerLock = Mutex()
 
@@ -106,6 +111,36 @@ class FcitxRemoteService : Service() {
 
         override fun reloadQuickPhrase() {
             FcitxDaemon.getFirstConnectionOrNull()?.runIfReady { reloadQuickPhrase() }
+        }
+
+        override fun requestPairing(
+            pairingCode: String,
+            packageName: String,
+            appName: String
+        ): Boolean {
+            Timber.tag(TAG).d("收到配对请求: package=$packageName, appName=$appName")
+            if (pairingCode.isBlank() || packageName.isBlank()) {
+                Timber.tag(TAG).w("配对请求参数无效")
+                return false
+            }
+            return runBlocking {
+                BroadcastSecurityManager.verifyPairingCode(pairingCode, packageName, appName)
+            }
+        }
+
+        override fun revokePairing(packageName: String): Boolean {
+            Timber.tag(TAG).d("撤销配对: package=$packageName")
+            if (packageName.isBlank()) return false
+            return runBlocking {
+                BroadcastSecurityManager.revokePairing(packageName)
+            }
+        }
+
+        override fun isAppPaired(packageName: String): Boolean {
+            if (packageName.isBlank()) return false
+            return runBlocking {
+                BroadcastSecurityManager.isAppPaired(packageName)
+            }
         }
     }
 

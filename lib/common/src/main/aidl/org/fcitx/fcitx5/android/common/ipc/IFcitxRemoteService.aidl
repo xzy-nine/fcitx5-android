@@ -18,8 +18,15 @@ interface IFcitxRemoteService {
    /** Unregister a clipboard transformer to fcitx app */
    void unregisterClipboardEntryTransformer(IClipboardEntryTransformer transformer);
 
-   /** Reload fcitx pinyin dictionary */
-   void reloadPinyinDict();
-   /** Reload fcitx quick phrase */
-   void reloadQuickPhrase();
+    /** Reload fcitx pinyin dictionary */
+    void reloadPinyinDict();
+    /** Reload fcitx quick phrase */
+    void reloadQuickPhrase();
+
+    /** Request pairing with Fcitx5 clipboard broadcast using a pairing code */
+    boolean requestPairing(String pairingCode, String packageName, String appName);
+    /** Revoke pairing for an app */
+    boolean revokePairing(String packageName);
+    /** Check if an app is paired */
+    boolean isAppPaired(String packageName);
 }

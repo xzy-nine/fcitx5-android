@@ -329,4 +329,23 @@
     <string name="group_toolbar">工具栏</string>
     <string name="group_keys_layout">按键与布局</string>
     <string name="group_voice">语音</string>
+
+    <!-- Broadcast Security -->
+    <string name="broadcast_settings">剪切板广播</string>
+    <string name="broadcast_enable">启用剪贴板广播</string>
+    <string name="broadcast_enable_summary">向已配对的应用广播加密的剪贴板内容</string>
+    <string name="paired_apps">已配对的应用</string>
+    <string name="no_paired_apps">暂无已配对的应用</string>
+    <string name="pairing_code">配对码</string>
+    <string name="pairing_code_summary">点击复制，将此配对码分享给其他应用以完成配对</string>
+    <string name="pairing_code_copied">配对码已复制到剪贴板</string>
+    <string name="refresh_pairing_code">刷新配对码</string>
+    <string name="revoke_pairing">撤销配对</string>
+    <string name="revoke_pairing_confirm">确定撤销 %1$s 的配对？</string>
+    <string name="pairing_expired">配对码已过期，请刷新</string>
+    <string name="pairing_success">配对成功</string>
+    <string name="pairing_failed">配对失败：无效的配对码</string>
+    <string name="app_paired">%1$s 已完成配对</string>
+    <string name="app_revoked">%1$s 的配对已撤销</string>
+    <string name="broadcast_action">org.fcitx.fcitx5.android.action.CLIPBOARD_BROADCAST</string>
 </resources>

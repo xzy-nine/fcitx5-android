@@ -25,6 +25,7 @@ import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.utils.WeakHashSet
 import org.fcitx.fcitx5.android.utils.appContext
 import org.fcitx.fcitx5.android.utils.clipboardManager
+import org.fcitx.fcitx5.android.data.broadcast.BroadcastSecurityManager
 import timber.log.Timber
 
 object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
@@ -185,6 +186,9 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
                     }
                     updateLastEntry(insertedEntry)
                     updateItemCount()
+                    if (BroadcastSecurityManager.isEnabled()) {
+                        BroadcastSecurityManager.broadcastClipboardEntry(insertedEntry.text)
+                    }
                 } catch (exception: Exception) {
                     Timber.w("Failed to update clipboard database: $exception")
                     updateLastEntry(entry)

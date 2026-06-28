@@ -320,4 +320,23 @@
     <string name="emoji_skin_tone_type_6">🏿 深膚色 (Type-6)</string>
     <string name="hide_unsupported_emojis">隱藏不支援的表情</string>
     <string name="preferred_voice_input">首選語音輸入</string>
+
+    <!-- Broadcast Security -->
+    <string name="broadcast_settings">剪貼板廣播</string>
+    <string name="broadcast_enable">啟用剪貼簿廣播</string>
+    <string name="broadcast_enable_summary">向已配對的應用廣播加密的剪貼簿內容</string>
+    <string name="paired_apps">已配對的應用</string>
+    <string name="no_paired_apps">暫無已配對的應用</string>
+    <string name="pairing_code">配對碼</string>
+    <string name="pairing_code_summary">點擊複製，將此配對碼分享給其他應用以完成配對</string>
+    <string name="pairing_code_copied">配對碼已複製到剪貼簿</string>
+    <string name="refresh_pairing_code">重新整理配對碼</string>
+    <string name="revoke_pairing">撤銷配對</string>
+    <string name="revoke_pairing_confirm">確定撤銷 %1$s 的配對？</string>
+    <string name="pairing_expired">配對碼已過期，請重新整理</string>
+    <string name="pairing_success">配對成功</string>
+    <string name="pairing_failed">配對失敗：無效的配對碼</string>
+    <string name="app_paired">%1$s 已完成配對</string>
+    <string name="app_revoked">%1$s 的配對已撤銷</string>
+    <string name="broadcast_action">org.fcitx.fcitx5.android.action.CLIPBOARD_BROADCAST</string>
 </resources>
