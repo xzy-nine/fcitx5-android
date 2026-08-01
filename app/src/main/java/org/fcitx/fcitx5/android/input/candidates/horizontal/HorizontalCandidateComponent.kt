@@ -112,10 +112,8 @@ class HorizontalCandidateComponent :
     }
 
     private fun refreshExpanded() {
-        val offset = if (swipeEnabled)
-            firstVisiblePosition().coerceAtLeast(0)
-        else
-            view.childCount
+        val firstVisible = if (swipeEnabled) firstVisiblePosition().coerceAtLeast(0) else -1
+        val offset = if (swipeEnabled) firstVisible else view.childCount
         if (offset == lastExpandedOffset) return
         lastExpandedOffset = offset
         _expandedCandidateOffset.tryEmit(offset)
@@ -292,7 +290,10 @@ class HorizontalCandidateComponent :
         }
     }
 
-    private fun applyCandidates(data: FcitxEvent.CandidateListEvent.Data) {
+    private fun applyCandidates(
+        data: FcitxEvent.CandidateListEvent.Data,
+        prevData: FcitxEvent.CandidateListEvent.Data = FcitxEvent.CandidateListEvent.Data()
+    ) {
         val candidates = data.candidates
         val total = data.total
         val maxSpanCount = maxSpanCountPref.getValue()
@@ -300,7 +301,9 @@ class HorizontalCandidateComponent :
             // use a reasonable min width (1/maxSpanCount of the bar width) so that
             // candidates are neither too dense (natural width) nor stretched, and the
             // bar overflows for the given span count, aligning with the expanded grid
-            layoutMinWidth = view.width / maxSpanCount - dividerDrawable.intrinsicWidth
+            if (view.width > 0) {
+                layoutMinWidth = view.width / maxSpanCount - dividerDrawable.intrinsicWidth
+            }
             layoutFlexGrow = 0f
             secondLayoutPassNeeded = false
         } else {
@@ -329,7 +332,15 @@ class HorizontalCandidateComponent :
         noMoreData = false
         candidateGeneration++
         lastExpandedOffset = -1
-        layoutManager.scrollToPosition(0)
+        // in swipe mode, keep the scroll position when the list only got refreshed
+        // (the previous candidates are still a prefix of the new ones, e.g. after the
+        // engine re-sends the same list with an updated total), and reset it otherwise
+        val keepScroll = swipeEnabled &&
+            prevData.candidates.isNotEmpty() &&
+            candidates.take(prevData.candidates.size) == prevData.candidates
+        if (!keepScroll) {
+            layoutManager.scrollToPosition(0)
+        }
         // not sure why empty candidates won't trigger `FlexboxLayoutManager#onLayoutCompleted()`
         if (candidates.isEmpty()) {
             refreshExpanded()
@@ -343,8 +354,9 @@ class HorizontalCandidateComponent :
             // and cause an endless load-more loop in swipe mode
             return
         }
+        val prevData = lastCandidateData
         lastCandidateData = data
-        applyCandidates(data)
+        applyCandidates(data, prevData)
     }
 
     companion object {

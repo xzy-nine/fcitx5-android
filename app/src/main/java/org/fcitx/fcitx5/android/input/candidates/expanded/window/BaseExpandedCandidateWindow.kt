@@ -9,6 +9,7 @@ import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.RectShape
 import android.view.View
 import androidx.lifecycle.lifecycleScope
+import androidx.paging.LoadState
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.recyclerview.widget.RecyclerView
@@ -141,8 +142,7 @@ abstract class BaseExpandedCandidateWindow<T : BaseExpandedCandidateWindow<T>> :
             pagingSourceFactory = {
                 CandidatesPagingSource(
                     fcitx,
-                    total = horizontalCandidate.adapter.total,
-                    offset = adapter.offset
+                    total = horizontalCandidate.adapter.total
                 )
             }
         )
@@ -169,7 +169,15 @@ abstract class BaseExpandedCandidateWindow<T : BaseExpandedCandidateWindow<T>> :
                 } else {
                     candidateLayout.resetPosition()
                     adapter.refreshWithOffset(it)
+                    layoutManager.scrollToPosition(it)
                 }
+            }
+        }
+        // the data arrives asynchronously, so the scroll above may be a no-op
+        // while the list is still loading; scroll once the first page is presented
+        adapter.addLoadStateListener { state ->
+            if (state.refresh is LoadState.NotLoading && adapter.itemCount > 0) {
+                layoutManager.scrollToPosition(adapter.offset)
             }
         }
         candidatesSubmitJob = service.lifecycleScope.launch {

@@ -30,9 +30,13 @@ open class PagingCandidateViewAdapter(val theme: Theme) :
     var offset = 0
         private set
 
+    /**
+     * Records the scroll position of the horizontal candidate bar. The expanded list is
+     * always loaded in full (from candidate 0), and the window scrolls to [offset] to
+     * show the candidates the user was looking at.
+     */
     fun refreshWithOffset(offset: Int) {
         this.offset = offset
-        refresh()
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CandidateViewHolder {
@@ -41,6 +45,6 @@ open class PagingCandidateViewAdapter(val theme: Theme) :
 
     override fun onBindViewHolder(holder: CandidateViewHolder, position: Int) {
         val candidate = getItem(position) ?: CandidateWord.Empty
-        holder.update(position + offset, candidate)
+        holder.update(position, candidate)
     }
 }
