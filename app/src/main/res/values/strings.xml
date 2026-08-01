@@ -330,8 +330,6 @@
     <string name="group_toolbar">Toolbar</string>
     <string name="group_keys_layout">Keys &amp; Layout</string>
     <string name="group_voice">Voice</string>
-
-    <!-- Broadcast Security -->
     <string name="broadcast_settings">Clipboard Broadcast</string>
     <string name="broadcast_enable">Enable clipboard broadcast</string>
     <string name="broadcast_enable_summary">Broadcast encrypted clipboard content to paired apps</string>
@@ -351,4 +349,7 @@
     <string name="broadcast_action">org.fcitx.fcitx5.android.action.CLIPBOARD_BROADCAST</string>
     <string name="search">Search</string>
     <string name="search_settings">Search settings</string>
+    <string name="keyboard_height_percent_base">Keyboard height percent base</string>
+    <string name="display_metrics">Display metrics (Resources.getDisplayMetrics)</string>
+    <string name="real_size">Real size (Display.getRealSize)</string>
 </resources>
