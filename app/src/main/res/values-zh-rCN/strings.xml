@@ -348,4 +348,6 @@
     <string name="app_paired">%1$s 已完成配对</string>
     <string name="app_revoked">%1$s 的配对已撤销</string>
     <string name="broadcast_action">org.fcitx.fcitx5.android.action.CLIPBOARD_BROADCAST</string>
+    <string name="search">搜索</string>
+    <string name="search_settings">搜索设置</string>
 </resources>

@@ -21,6 +21,7 @@ import org.fcitx.fcitx5.android.core.RawConfig
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
 import org.fcitx.fcitx5.android.ui.common.PaddingPreferenceFragment
 import org.fcitx.fcitx5.android.ui.common.withLoadingDialog
+import org.fcitx.fcitx5.android.ui.main.MainActivity
 import org.fcitx.fcitx5.android.ui.main.MainViewModel
 import org.fcitx.fcitx5.android.utils.addPreference
 
@@ -115,5 +116,10 @@ abstract class FcitxPreferenceFragment : PaddingPreferenceFragment() {
     override fun onStart() {
         super.onStart()
         viewModel.setToolbarTitle(getPageTitle())
+        (activity as? MainActivity)?.getPendingHighlightKey()?.let { highlightKey ->
+            lifecycleScope.launch {
+                PreferenceHighlightHelper.highlightPreference(this@FcitxPreferenceFragment, highlightKey)
+            }
+        }
     }
 }

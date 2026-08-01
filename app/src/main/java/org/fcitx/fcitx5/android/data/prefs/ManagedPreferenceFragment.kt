@@ -12,6 +12,8 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceScreen
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.ui.common.PaddingPreferenceFragment
+import org.fcitx.fcitx5.android.ui.main.MainActivity
+import org.fcitx.fcitx5.android.ui.main.settings.PreferenceHighlightHelper
 
 abstract class ManagedPreferenceFragment(private val preferenceProvider: ManagedPreferenceProvider) :
     PaddingPreferenceFragment() {
@@ -41,6 +43,15 @@ abstract class ManagedPreferenceFragment(private val preferenceProvider: Managed
             AppPrefs.getInstance().syncToDeviceEncryptedStorage()
         }
         super.onStop()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        (activity as? MainActivity)?.getPendingHighlightKey()?.let { highlightKey ->
+            lifecycleScope.launch {
+                PreferenceHighlightHelper.highlightPreference(this@ManagedPreferenceFragment, highlightKey)
+            }
+        }
     }
 
     override fun onDestroy() {

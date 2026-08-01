@@ -10,6 +10,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Menu
 import android.view.ViewGroup
 import androidx.activity.enableEdgeToEdge
@@ -29,6 +31,8 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.databinding.ActivityMainBinding
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
+import org.fcitx.fcitx5.android.ui.main.settings.SettingsSearchManager
+import org.fcitx.fcitx5.android.ui.main.settings.SearchResult
 import org.fcitx.fcitx5.android.ui.setup.SetupActivity
 import org.fcitx.fcitx5.android.utils.Const
 import org.fcitx.fcitx5.android.utils.item
@@ -161,9 +165,44 @@ class MainActivity : AppCompatActivity() {
         }
         // all menus should be invisible and enabled on demand
         menu.forEach { it.isVisible = false }
+        // add search button after all items are set to invisible
+        menu.item(R.string.search, R.drawable.ic_baseline_search_24, iconTint, true) {
+            SettingsSearchManager.showSearchDialog(this@MainActivity)
+        }.apply {
+            isVisible = true
+        }
     }
 
     private var needNotifications by AppPrefs.getInstance().internal.needNotifications
+
+    private var pendingSearchResult: SearchResult? = null
+    private var pendingHighlightKey: String? = null
+
+    fun navigateToSetting(result: SearchResult) {
+        pendingSearchResult = result
+        val popped = navController.popBackStack(SettingsRoute.Index, false)
+        if (!popped) {
+            onIndexShown()
+        }
+    }
+
+    fun onIndexShown() {
+        val result = pendingSearchResult ?: return
+        pendingSearchResult = null
+
+        pendingHighlightKey = result.path.getOrNull(0)
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            pendingHighlightKey = result.highlightKey
+            navController.navigateWithAnim(result.route)
+        }, 500)
+    }
+
+    fun getPendingHighlightKey(): String? {
+        val key = pendingHighlightKey
+        pendingHighlightKey = null
+        return key
+    }
 
     private fun checkNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

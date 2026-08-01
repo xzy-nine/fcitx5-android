@@ -11,6 +11,7 @@ import androidx.fragment.app.activityViewModels
 import androidx.preference.PreferenceCategory
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.ui.common.PaddingPreferenceFragment
+import org.fcitx.fcitx5.android.ui.main.settings.PreferenceHighlightHelper
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.utils.addCategory
 import org.fcitx.fcitx5.android.utils.addPreference
@@ -23,6 +24,10 @@ class MainFragment : PaddingPreferenceFragment() {
     override fun onStart() {
         super.onStart()
         viewModel.enableAboutButton()
+        (activity as? MainActivity)?.onIndexShown()
+        (activity as? MainActivity)?.getPendingHighlightKey()?.let { highlightKey ->
+            PreferenceHighlightHelper.highlightPreference(this, highlightKey)
+        }
     }
 
     override fun onStop() {
