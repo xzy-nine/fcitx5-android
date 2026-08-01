@@ -303,6 +303,11 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             "horizontal_candidate_style",
             HorizontalCandidateMode.AutoFillWidth
         )
+        val horizontalCandidateSwipe = switch(
+            R.string.horizontal_candidate_swipe,
+            "horizontal_candidate_swipe",
+            false
+        )
         val expandedCandidateStyle = enumList(
             R.string.expanded_candidate_style,
             "expanded_candidate_style",
@@ -380,6 +385,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                 )),
                 SubGroup(R.string.group_candidate_style, listOf(
                     horizontalCandidateStyle.key,
+                    horizontalCandidateSwipe.key,
                     expandedCandidateStyle.key,
                     expandedCandidateGridSpanCount.key,
                     expandedCandidateGridSpanCountLandscape.key,

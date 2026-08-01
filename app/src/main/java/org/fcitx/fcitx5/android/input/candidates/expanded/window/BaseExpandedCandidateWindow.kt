@@ -162,7 +162,9 @@ abstract class BaseExpandedCandidateWindow<T : BaseExpandedCandidateWindow<T>> :
         updateTabs(fcitx.runImmediately { inputPanelCached.tabs })
         offsetJob = service.lifecycleScope.launch {
             horizontalCandidate.expandedCandidateOffset.collect {
-                if (it <= 0) {
+                // in swipe mode the offset may be 0 even when candidates exist,
+                // judge "no candidates" by the adapter's total instead
+                if (horizontalCandidate.adapter.total <= 0) {
                     windowManager.attachWindow(KeyboardWindow)
                 } else {
                     candidateLayout.resetPosition()

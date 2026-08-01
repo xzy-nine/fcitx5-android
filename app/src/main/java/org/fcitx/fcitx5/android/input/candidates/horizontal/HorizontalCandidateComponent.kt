@@ -8,6 +8,7 @@ package org.fcitx.fcitx5.android.input.candidates.horizontal
 import android.content.res.Configuration
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.RectShape
+import androidx.annotation.Keep
 import androidx.core.view.updateLayoutParams
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.flexbox.FlexboxLayoutManager
@@ -18,6 +19,7 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.FcitxEvent
 import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.BooleanKey.ExpandedCandidatesEmpty
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.TransitionEvent.ExpandedCandidatesUpdated
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
@@ -46,6 +48,8 @@ class HorizontalCandidateComponent :
     private val bar: KawaiiBarComponent by manager.must()
 
     private val fillStyle by AppPrefs.getInstance().keyboard.horizontalCandidateStyle
+    private val swipePref = AppPrefs.getInstance().keyboard.horizontalCandidateSwipe
+    private val swipeEnabled by swipePref
     private val maxSpanCountPref by lazy {
         AppPrefs.getInstance().keyboard.run {
             if (context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT)
@@ -76,12 +80,89 @@ class HorizontalCandidateComponent :
 
     val expandedCandidateOffset = _expandedCandidateOffset.asSharedFlow()
 
-    private fun refreshExpanded(childCount: Int) {
-        _expandedCandidateOffset.tryEmit(childCount)
+    private var lastExpandedOffset = -1
+    private var loadingMore = false
+    private var noMoreData = false
+    private var candidateGeneration = 0
+    private var lastCandidateData = FcitxEvent.CandidateListEvent.Data()
+
+    @Keep
+    private val swipeChangeListener = ManagedPreference.OnChangeListener<Boolean> { _, _ ->
+        view.post {
+            if (view.isLaidOut) {
+                lastExpandedOffset = -1
+                loadingMore = false
+                if (lastCandidateData.candidates.isNotEmpty()) {
+                    applyCandidates(lastCandidateData)
+                } else {
+                    view.requestLayout()
+                }
+            }
+        }
+    }
+
+    init {
+        swipePref.registerOnChangeListener(swipeChangeListener)
+    }
+
+    private val loadMoreBatch by lazy {
+        maxSpanCountPref.getValue().coerceAtLeast(LOAD_MORE_BATCH_MIN)
+    }
+
+    private fun refreshExpanded() {
+        val offset = if (swipeEnabled)
+            layoutManager.findFirstVisibleItemPosition().coerceAtLeast(0)
+        else
+            view.childCount
+        if (offset == lastExpandedOffset) return
+        lastExpandedOffset = offset
+        _expandedCandidateOffset.tryEmit(offset)
+        val done = if (swipeEnabled) adapter.total == adapter.itemCount
+        else adapter.total == view.childCount
         bar.expandButtonStateMachine.push(
             ExpandedCandidatesUpdated,
-            ExpandedCandidatesEmpty to (adapter.total == childCount)
+            ExpandedCandidatesEmpty to done
         )
+    }
+
+    private fun loadMoreIfNeeded() {
+        if (loadingMore || noMoreData) return
+        if (adapter.total >= 0 && adapter.itemCount >= adapter.total) return
+        val nearEnd = layoutManager.findLastVisibleItemPosition() >=
+            adapter.itemCount - LOAD_MORE_THRESHOLD
+        // keep loading until content overflows the viewport, so that the bar is scrollable
+        if (nearEnd || !(view.canScrollHorizontally(1) || view.canScrollHorizontally(-1))) {
+            loadMore()
+        }
+    }
+
+    private fun loadMore() {
+        if (loadingMore || noMoreData) return
+        if (adapter.total >= 0 && adapter.itemCount >= adapter.total) return
+        loadingMore = true
+        val generation = candidateGeneration
+        fcitx.launchOnReady {
+            val more = it.getCandidates(adapter.itemCount, loadMoreBatch)
+            // launchOnReady runs on fcitx's Default dispatcher, post UI updates to main thread
+            view.post {
+                if (generation == candidateGeneration) {
+                    if (more.isNotEmpty()) {
+                        adapter.appendCandidates(more)
+                    } else {
+                        noMoreData = true
+                    }
+                    loadingMore = false
+                }
+            }
+        }
+    }
+
+    private val scrollListener = object : RecyclerView.OnScrollListener() {
+        override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+            if (!swipeEnabled) return
+            refreshExpanded()
+            loadMoreIfNeeded()
+        }
     }
 
     val adapter: HorizontalCandidateViewAdapter by lazy {
@@ -112,11 +193,11 @@ class HorizontalCandidateComponent :
     val layoutManager: FlexboxLayoutManager by lazy {
         object : FlexboxLayoutManager(context) {
             override fun canScrollVertically() = false
-            override fun canScrollHorizontally() = false
+            override fun canScrollHorizontally() = swipeEnabled
             override fun onLayoutCompleted(state: RecyclerView.State) {
                 super.onLayoutCompleted(state)
                 val cnt = this.childCount
-                if (secondLayoutPassNeeded) {
+                if (!swipeEnabled && secondLayoutPassNeeded) {
                     if (cnt < adapter.candidates.size) {
                         // [^2] RecyclerView can't display all candidates
                         // update LayoutParams in onLayoutCompleted would trigger another
@@ -132,7 +213,10 @@ class HorizontalCandidateComponent :
                         secondLayoutPassNeeded = false
                     }
                 }
-                refreshExpanded(cnt)
+                refreshExpanded()
+                if (swipeEnabled) {
+                    loadMoreIfNeeded()
+                }
             }
             // no need to override `generate{,Default}LayoutParams`, because HorizontalCandidateViewAdapter
             // guarantees ViewHolder's layoutParams to be `FlexboxLayoutManager.LayoutParams`
@@ -152,7 +236,7 @@ class HorizontalCandidateComponent :
         object : RecyclerView(context) {
             override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
                 super.onSizeChanged(w, h, oldw, oldh)
-                if (fillStyle == AutoFillWidth) {
+                if (fillStyle == AutoFillWidth && !swipeEnabled) {
                     val maxSpanCount = maxSpanCountPref.getValue()
                     layoutMinWidth = w / maxSpanCount - dividerDrawable.intrinsicWidth
                 }
@@ -163,36 +247,58 @@ class HorizontalCandidateComponent :
             adapter = this@HorizontalCandidateComponent.adapter
             layoutManager = this@HorizontalCandidateComponent.layoutManager
             addItemDecoration(FlexboxVerticalDecoration(dividerDrawable))
+            addOnScrollListener(scrollListener)
+        }
+    }
+
+    private fun applyCandidates(data: FcitxEvent.CandidateListEvent.Data) {
+        val candidates = data.candidates
+        val total = data.total
+        val maxSpanCount = maxSpanCountPref.getValue()
+        if (swipeEnabled) {
+            layoutMinWidth = 0
+            layoutFlexGrow = 0f
+            secondLayoutPassNeeded = false
+        } else {
+            when (fillStyle) {
+                NeverFillWidth -> {
+                    layoutMinWidth = 0
+                    layoutFlexGrow = 0f
+                    secondLayoutPassNeeded = false
+                }
+                AutoFillWidth -> {
+                    layoutMinWidth = view.width / maxSpanCount - dividerDrawable.intrinsicWidth
+                    layoutFlexGrow = if (candidates.size < maxSpanCount) 0f else 1f
+                    // [^1] total candidates count < maxSpanCount
+                    secondLayoutPassNeeded = candidates.size < maxSpanCount
+                    secondLayoutPassDone = false
+                }
+                AlwaysFillWidth -> {
+                    layoutMinWidth = 0
+                    layoutFlexGrow = 1f
+                    secondLayoutPassNeeded = false
+                }
+            }
+        }
+        adapter.updateCandidates(candidates, total)
+        loadingMore = false
+        noMoreData = false
+        candidateGeneration++
+        lastExpandedOffset = -1
+        layoutManager.scrollToPosition(0)
+        // not sure why empty candidates won't trigger `FlexboxLayoutManager#onLayoutCompleted()`
+        if (candidates.isEmpty()) {
+            refreshExpanded()
         }
     }
 
     override fun onCandidateUpdate(data: FcitxEvent.CandidateListEvent.Data) {
-        val candidates = data.candidates
-        val total = data.total
-        val maxSpanCount = maxSpanCountPref.getValue()
-        when (fillStyle) {
-            NeverFillWidth -> {
-                layoutMinWidth = 0
-                layoutFlexGrow = 0f
-                secondLayoutPassNeeded = false
-            }
-            AutoFillWidth -> {
-                layoutMinWidth = view.width / maxSpanCount - dividerDrawable.intrinsicWidth
-                layoutFlexGrow = if (candidates.size < maxSpanCount) 0f else 1f
-                // [^1] total candidates count < maxSpanCount
-                secondLayoutPassNeeded = candidates.size < maxSpanCount
-                secondLayoutPassDone = false
-            }
-            AlwaysFillWidth -> {
-                layoutMinWidth = 0
-                layoutFlexGrow = 1f
-                secondLayoutPassNeeded = false
-            }
-        }
-        adapter.updateCandidates(candidates, total)
-        // not sure why empty candidates won't trigger `FlexboxLayoutManager#onLayoutCompleted()`
-        if (candidates.isEmpty()) {
-            refreshExpanded(0)
-        }
+        lastCandidateData = data
+        applyCandidates(data)
+    }
+
+    companion object {
+        private const val LOAD_MORE_BATCH_MIN = 16
+        private const val LOAD_MORE_THRESHOLD = 3
     }
 }
