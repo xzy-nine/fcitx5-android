@@ -10,6 +10,7 @@ import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.RectShape
 import androidx.annotation.Keep
 import androidx.core.view.updateLayoutParams
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.flexbox.FlexboxLayoutManager
 import kotlinx.coroutines.channels.BufferOverflow
@@ -92,6 +93,7 @@ class HorizontalCandidateComponent :
             if (view.isLaidOut) {
                 lastExpandedOffset = -1
                 loadingMore = false
+                view.layoutManager = createLayoutManager()
                 if (lastCandidateData.candidates.isNotEmpty()) {
                     applyCandidates(lastCandidateData)
                 } else {
@@ -111,7 +113,7 @@ class HorizontalCandidateComponent :
 
     private fun refreshExpanded() {
         val offset = if (swipeEnabled)
-            layoutManager.findFirstVisibleItemPosition().coerceAtLeast(0)
+            firstVisiblePosition().coerceAtLeast(0)
         else
             view.childCount
         if (offset == lastExpandedOffset) return
@@ -128,7 +130,7 @@ class HorizontalCandidateComponent :
     private fun loadMoreIfNeeded() {
         if (loadingMore || noMoreData) return
         if (adapter.total >= 0 && adapter.itemCount >= adapter.total) return
-        val nearEnd = layoutManager.findLastVisibleItemPosition() >=
+        val nearEnd = lastVisiblePosition() >=
             adapter.itemCount - LOAD_MORE_THRESHOLD
         // keep loading until content overflows the viewport, so that the bar is scrollable
         if (nearEnd || !(view.canScrollHorizontally(1) || view.canScrollHorizontally(-1))) {
@@ -169,9 +171,15 @@ class HorizontalCandidateComponent :
         object : HorizontalCandidateViewAdapter(theme) {
             override fun onBindViewHolder(holder: CandidateViewHolder, position: Int) {
                 super.onBindViewHolder(holder, position)
-                holder.itemView.updateLayoutParams<FlexboxLayoutManager.LayoutParams> {
-                    minWidth = layoutMinWidth
-                    flexGrow = layoutFlexGrow
+                if (swipeEnabled) {
+                    holder.itemView.updateLayoutParams<RecyclerView.LayoutParams> {
+                        width = layoutMinWidth
+                    }
+                } else {
+                    holder.itemView.updateLayoutParams<FlexboxLayoutManager.LayoutParams> {
+                        minWidth = layoutMinWidth
+                        flexGrow = layoutFlexGrow
+                    }
                 }
                 holder.itemView.setOnClickListener {
                     fcitx.launchOnReady { it.select(holder.idx) }
@@ -190,18 +198,54 @@ class HorizontalCandidateComponent :
         }
     }
 
-    val layoutManager: FlexboxLayoutManager by lazy {
-        object : FlexboxLayoutManager(context) {
+    private fun firstVisiblePosition(): Int {
+        val lm = view.layoutManager!!
+        return when (lm) {
+            is LinearLayoutManager -> lm.findFirstVisibleItemPosition()
+            is FlexboxLayoutManager -> lm.findFirstVisibleItemPosition()
+            else -> 0
+        }
+    }
+
+    private fun lastVisiblePosition(): Int {
+        val lm = view.layoutManager!!
+        return when (lm) {
+            is LinearLayoutManager -> lm.findLastVisibleItemPosition()
+            is FlexboxLayoutManager -> lm.findLastVisibleItemPosition()
+            else -> 0
+        }
+    }
+
+    val layoutManager: RecyclerView.LayoutManager
+        get() = checkNotNull(view.layoutManager)
+
+    private fun createLayoutManager(): RecyclerView.LayoutManager {
+        if (swipeEnabled) {
+            // LinearLayoutManager for reliable horizontal scrolling: FlexboxLayoutManager's
+            // sub-orientation scroll is broken when the RecyclerView is narrower than its
+            // parent view (it clamps the scroll with the parent's width instead of the
+            // content's), which makes the bar snap back instead of scrolling
+            return object : LinearLayoutManager(context, RecyclerView.HORIZONTAL, false) {
+                override fun canScrollVertically() = false
+                override fun canScrollHorizontally() = true
+                override fun onLayoutCompleted(state: RecyclerView.State) {
+                    super.onLayoutCompleted(state)
+                    refreshExpanded()
+                    loadMoreIfNeeded()
+                }
+            }
+        }
+        return object : FlexboxLayoutManager(context) {
             override fun canScrollVertically() = false
-            override fun canScrollHorizontally() = swipeEnabled
+            override fun canScrollHorizontally() = false
             override fun onLayoutCompleted(state: RecyclerView.State) {
                 super.onLayoutCompleted(state)
                 val cnt = this.childCount
-                if (!swipeEnabled && secondLayoutPassNeeded) {
+                if (secondLayoutPassNeeded) {
+                    // [^2] RecyclerView can't display all candidates
+                    // update LayoutParams in onLayoutCompleted would trigger another
+                    // onLayoutCompleted, skip the second one to avoid infinite loop
                     if (cnt < adapter.candidates.size) {
-                        // [^2] RecyclerView can't display all candidates
-                        // update LayoutParams in onLayoutCompleted would trigger another
-                        // onLayoutCompleted, skip the second one to avoid infinite loop
                         if (secondLayoutPassDone) return
                         secondLayoutPassDone = true
                         for (i in 0 until cnt) {
@@ -214,9 +258,6 @@ class HorizontalCandidateComponent :
                     }
                 }
                 refreshExpanded()
-                if (swipeEnabled) {
-                    loadMoreIfNeeded()
-                }
             }
             // no need to override `generate{,Default}LayoutParams`, because HorizontalCandidateViewAdapter
             // guarantees ViewHolder's layoutParams to be `FlexboxLayoutManager.LayoutParams`
@@ -236,7 +277,7 @@ class HorizontalCandidateComponent :
         object : RecyclerView(context) {
             override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
                 super.onSizeChanged(w, h, oldw, oldh)
-                if (fillStyle == AutoFillWidth && !swipeEnabled) {
+                if (swipeEnabled || fillStyle == AutoFillWidth) {
                     val maxSpanCount = maxSpanCountPref.getValue()
                     layoutMinWidth = w / maxSpanCount - dividerDrawable.intrinsicWidth
                 }
@@ -245,7 +286,7 @@ class HorizontalCandidateComponent :
             id = R.id.candidate_view
             itemAnimator = null
             adapter = this@HorizontalCandidateComponent.adapter
-            layoutManager = this@HorizontalCandidateComponent.layoutManager
+            layoutManager = createLayoutManager()
             addItemDecoration(FlexboxVerticalDecoration(dividerDrawable))
             addOnScrollListener(scrollListener)
         }
@@ -256,7 +297,10 @@ class HorizontalCandidateComponent :
         val total = data.total
         val maxSpanCount = maxSpanCountPref.getValue()
         if (swipeEnabled) {
-            layoutMinWidth = 0
+            // use a reasonable min width (1/maxSpanCount of the bar width) so that
+            // candidates are neither too dense (natural width) nor stretched, and the
+            // bar overflows for the given span count, aligning with the expanded grid
+            layoutMinWidth = view.width / maxSpanCount - dividerDrawable.intrinsicWidth
             layoutFlexGrow = 0f
             secondLayoutPassNeeded = false
         } else {
@@ -293,6 +337,12 @@ class HorizontalCandidateComponent :
     }
 
     override fun onCandidateUpdate(data: FcitxEvent.CandidateListEvent.Data) {
+        if (data == lastCandidateData) {
+            // ignore duplicate updates: getCandidates may trigger an engine UI refresh
+            // which re-sends the same list; applying it would reset the scroll position
+            // and cause an endless load-more loop in swipe mode
+            return
+        }
         lastCandidateData = data
         applyCandidates(data)
     }

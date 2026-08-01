@@ -8,8 +8,8 @@ import android.graphics.Canvas
 import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.view.View
+import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
-import com.google.android.flexbox.FlexboxLayoutManager
 import splitties.dimensions.dp
 
 class FlexboxVerticalDecoration(val drawable: Drawable) : RecyclerView.ItemDecoration() {
@@ -34,10 +34,9 @@ class FlexboxVerticalDecoration(val drawable: Drawable) : RecyclerView.ItemDecor
     }
 
     override fun onDraw(c: Canvas, parent: RecyclerView, state: RecyclerView.State) {
-        val layoutManager = parent.layoutManager as FlexboxLayoutManager
-        for (i in 0 until layoutManager.childCount) {
+        for (i in 0 until parent.childCount) {
             val view = parent.getChildAt(i)
-            val lp = view.layoutParams as FlexboxLayoutManager.LayoutParams
+            val lp = view.layoutParams as ViewGroup.MarginLayoutParams
             val left: Int
             val right: Int
             when (parent.layoutDirection) {
