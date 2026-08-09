@@ -177,7 +177,11 @@ abstract class BaseKeyboard(
                     else above(keyRows[index + 1])
                     startOfParent()
                     endOfParent()
-                    matchConstraintDefaultHeight = LayoutParams.MATCH_CONSTRAINT_SPREAD
+                    // Use percentage-based height so rows are divided evenly regardless of
+                    // layout timing. This guards against the last row collapsing to 0 height
+                    // if a rebuild ever happens during a layout pass.
+                    matchConstraintDefaultHeight = LayoutParams.MATCH_CONSTRAINT_PERCENT
+                    matchConstraintPercentHeight = 1f / keyRows.size
                 })
             } else {
                 add(row, lParams {
@@ -651,18 +655,28 @@ abstract class BaseKeyboard(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        if (w > 0 && h > 0) {
-            lastMeasuredWidth = w
-            lastMeasuredHeight = h
-        }
+        // Skip transient zero-size callbacks (e.g. h=0 during rotation/config change).
+        // Otherwise isSplitAllowed would flip lastSplitAllowed and trigger a spurious
+        // rebuildKeyboardRows (removeAllViews + rebuild), occasionally dropping the last row.
+        if (w <= 0 || h <= 0) return
+        lastMeasuredWidth = w
+        lastMeasuredHeight = h
         val allowed = isSplitAllowed(w, h)
         if (allowed != lastSplitAllowed) {
             lastSplitAllowed = allowed
-            rebuildKeyboardRows(splitKeyboard.getValue())
+            // Defer the rebuild to the next frame. Calling rebuildKeyboardRows
+            // (removeAllViews + add) synchronously inside onSizeChanged puts it in the
+            // middle of the layout pass, so the newly added last row is never measured
+            // in that pass and ends up with a height of 0 (the bottom row vanishes).
+            // Posting it runs after layout completes, where the rows are measured normally.
+            removeCallbacks(rebuildOnSizeChange)
+            post(rebuildOnSizeChange)
         }
         val (x, y) = intArrayOf(0, 0).also { getLocationInWindow(it) }
         bounds.set(x, y, x + width, y + height)
     }
+
+    private val rebuildOnSizeChange = Runnable { rebuildKeyboardRows(splitKeyboard.getValue()) }
 
     private fun findTargetChild(x: Float, y: Float): View? {
         val y0 = y.roundToInt()
