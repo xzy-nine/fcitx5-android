@@ -93,7 +93,7 @@ fun AddonListScreen(
 
     if (loading) {
         Box(
-            Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background),
+            Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface),
             contentAlignment = Alignment.Center,
         ) {
             CircularProgressIndicator()
@@ -115,7 +115,7 @@ fun AddonListScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(
                 contentPadding = PaddingValues(
@@ -158,6 +158,7 @@ fun AddonListScreen(
             }
         }
         SmallTopAppBar(
+            color = MiuixTheme.colorScheme.surfaceContainer,
             title = context.getString(R.string.addons),
             navigationIcon = {
                 IconButton(onClick = onBack) {

@@ -207,6 +207,7 @@ fun PinyinCustomPhraseScreen(onBack: () -> Unit) {
             Icon(MiuixIcons.Add, null)
         }
         SmallTopAppBar(
+            color = MiuixTheme.colorScheme.surfaceContainer,
             title = title,
             navigationIcon = {
                 IconButton(onClick = onBack) {

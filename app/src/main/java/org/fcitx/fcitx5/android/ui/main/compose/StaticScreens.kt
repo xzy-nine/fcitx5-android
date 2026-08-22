@@ -78,13 +78,14 @@ private fun PageScaffold(
     content: LazyListScope.() -> Unit,
 ) {
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         LazyColumn(
             contentPadding = PaddingValues(top = 64.dp + topInset),
             modifier = Modifier.fillMaxSize(),
             content = content,
         )
         SmallTopAppBar(
+            color = MiuixTheme.colorScheme.surfaceContainer,
             title = title,
             navigationIcon = {
                 IconButton(onClick = onBack) {

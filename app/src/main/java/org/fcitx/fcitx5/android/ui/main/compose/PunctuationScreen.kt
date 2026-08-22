@@ -105,7 +105,7 @@ fun PunctuationScreen(
 
     if (loading) {
         Box(
-            Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background),
+            Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface),
             contentAlignment = Alignment.Center,
         ) {
             CircularProgressIndicator()
@@ -113,7 +113,7 @@ fun PunctuationScreen(
         return
     }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(
                 contentPadding = PaddingValues(
@@ -168,6 +168,7 @@ fun PunctuationScreen(
             Icon(MiuixIcons.Add, null)
         }
         SmallTopAppBar(
+            color = MiuixTheme.colorScheme.surfaceContainer,
             title = title,
             navigationIcon = {
                 IconButton(onClick = onBack) {

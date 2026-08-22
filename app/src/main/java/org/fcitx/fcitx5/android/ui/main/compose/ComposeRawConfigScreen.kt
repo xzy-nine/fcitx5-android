@@ -85,7 +85,7 @@ fun RawConfigScreen(
     var cfgVersion by remember { mutableIntStateOf(0) }
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         LazyColumn(
             contentPadding = PaddingValues(top = 64.dp + topInset),
             modifier = Modifier.fillMaxSize(),
@@ -148,6 +148,7 @@ fun RawConfigScreen(
             }
         }
         SmallTopAppBar(
+            color = MiuixTheme.colorScheme.surfaceContainer,
             title = topLevel?.name ?: context.getString(R.string.global_options),
             navigationIcon = {
                 IconButton(onClick = onBack) {

@@ -54,9 +54,6 @@ sealed interface AppRoute : NavKey {
     ) : AppRoute
 
     @Serializable
-    data object SettingsSearch : AppRoute
-
-    @Serializable
     data object InputMethodList : AppRoute
 
     @Serializable

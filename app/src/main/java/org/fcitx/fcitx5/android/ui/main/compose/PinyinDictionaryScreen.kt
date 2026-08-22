@@ -164,6 +164,7 @@ fun PinyinDictionaryScreen(initialUri: String? = null, onBack: () -> Unit) {
             Icon(MiuixIcons.Add, null)
         }
         SmallTopAppBar(
+            color = MiuixTheme.colorScheme.surfaceContainer,
             title = context.getString(R.string.pinyin_dict),
             navigationIcon = {
                 IconButton(onClick = onBack) {

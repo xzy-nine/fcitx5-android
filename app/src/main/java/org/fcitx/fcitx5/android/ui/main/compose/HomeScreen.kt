@@ -66,7 +66,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val appName = context.getString(R.string.app_name)
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         LazyColumn(
             contentPadding = PaddingValues(top = 64.dp + topInset),
             modifier = Modifier.fillMaxSize(),
@@ -85,6 +85,7 @@ fun HomeScreen(
             }
         }
         SmallTopAppBar(
+            color = MiuixTheme.colorScheme.surfaceContainer,
             title = appName,
             actions = {
                 IconButton(onClick = onSearch) {

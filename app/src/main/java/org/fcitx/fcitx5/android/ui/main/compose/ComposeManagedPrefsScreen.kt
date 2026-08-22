@@ -98,7 +98,7 @@ fun ManagedPrefsScreen(
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val highlightColor = MiuixTheme.colorScheme.primary.copy(alpha = 0.15f)
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         LazyColumn(
             contentPadding = PaddingValues(
                 top = (if (showTopBar) 64.dp else 12.dp) + topInset
@@ -158,6 +158,7 @@ fun ManagedPrefsScreen(
         }
         if (showTopBar) {
             SmallTopAppBar(
+                color = MiuixTheme.colorScheme.surfaceContainer,
                 title = context.getString(category.title),
                 navigationIcon = {
                     IconButton(onClick = onBack) {

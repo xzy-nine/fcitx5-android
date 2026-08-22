@@ -89,7 +89,7 @@ fun TableInputMethodsScreen(onBack: () -> Unit) {
         }
     }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(
                 contentPadding = PaddingValues(
@@ -138,6 +138,7 @@ fun TableInputMethodsScreen(onBack: () -> Unit) {
             Icon(MiuixIcons.Add, null)
         }
         SmallTopAppBar(
+            color = MiuixTheme.colorScheme.surfaceContainer,
             title = context.getString(R.string.table_im),
             navigationIcon = {
                 IconButton(onClick = onBack) {

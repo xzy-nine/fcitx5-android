@@ -49,6 +49,7 @@ import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Promotions
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -98,7 +99,7 @@ fun BroadcastScreen(onBack: () -> Unit) {
         context.toast(R.string.pairing_code_copied)
     }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         LazyColumn(
             contentPadding = PaddingValues(
                 top = 64.dp + WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
@@ -124,6 +125,14 @@ fun BroadcastScreen(onBack: () -> Unit) {
                             title = context.getString(R.string.pairing_code),
                             summary = pairingCode,
                             onClick = { copyPairingCode() },
+                            startAction = {
+                                Icon(
+                                    MiuixIcons.Promotions,
+                                    null,
+                                    Modifier.size(22.dp),
+                                    tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                )
+                            },
                         )
                     }
                 }
@@ -165,6 +174,7 @@ fun BroadcastScreen(onBack: () -> Unit) {
             }
         }
         SmallTopAppBar(
+            color = MiuixTheme.colorScheme.surfaceContainer,
             title = context.getString(R.string.broadcast_settings),
             navigationIcon = {
                 IconButton(onClick = onBack) {

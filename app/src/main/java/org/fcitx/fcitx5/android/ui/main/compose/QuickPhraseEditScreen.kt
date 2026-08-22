@@ -83,7 +83,7 @@ fun QuickPhraseEditScreen(
 
     if (loading || quickPhrase == null) {
         Box(
-            Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background),
+            Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface),
             contentAlignment = Alignment.Center,
         ) {
             CircularProgressIndicator()
@@ -91,7 +91,7 @@ fun QuickPhraseEditScreen(
         return
     }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(
                 contentPadding = PaddingValues(
@@ -146,6 +146,7 @@ fun QuickPhraseEditScreen(
             Icon(MiuixIcons.Add, null)
         }
         SmallTopAppBar(
+            color = MiuixTheme.colorScheme.surfaceContainer,
             title = quickPhrase.name,
             navigationIcon = {
                 IconButton(onClick = onBack) {

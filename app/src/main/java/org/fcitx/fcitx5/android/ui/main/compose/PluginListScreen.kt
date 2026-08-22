@@ -108,7 +108,7 @@ fun PluginListScreen(onBack: () -> Unit) {
 
     if (loading || synced == null) {
         Box(
-            Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background),
+            Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface),
             contentAlignment = Alignment.Center,
         ) {
             CircularProgressIndicator()
@@ -161,7 +161,7 @@ fun PluginListScreen(onBack: () -> Unit) {
 
     val (loaded, failed) = curSynced
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(
                 contentPadding = PaddingValues(
@@ -257,6 +257,7 @@ fun PluginListScreen(onBack: () -> Unit) {
             }
         }
         SmallTopAppBar(
+            color = MiuixTheme.colorScheme.surfaceContainer,
             title = context.getString(R.string.plugins),
             navigationIcon = {
                 IconButton(onClick = onBack) {

@@ -106,7 +106,7 @@ fun QuickPhraseListScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(
                 contentPadding = PaddingValues(
@@ -145,6 +145,7 @@ fun QuickPhraseListScreen(
             Icon(MiuixIcons.Add, null)
         }
         SmallTopAppBar(
+            color = MiuixTheme.colorScheme.surfaceContainer,
             title = context.getString(R.string.quickphrase_editor),
             navigationIcon = {
                 IconButton(onClick = onBack) {

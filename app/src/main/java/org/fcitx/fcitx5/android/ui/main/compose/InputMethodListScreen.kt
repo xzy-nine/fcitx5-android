@@ -108,7 +108,7 @@ fun InputMethodListScreen(
 
     if (loading) {
         Box(
-            Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background),
+            Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface),
             contentAlignment = Alignment.Center,
         ) {
             CircularProgressIndicator()
@@ -131,7 +131,7 @@ fun InputMethodListScreen(
         push(enabled)
     }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(
                 contentPadding = PaddingValues(
@@ -236,6 +236,7 @@ fun InputMethodListScreen(
             }
         }
         SmallTopAppBar(
+            color = MiuixTheme.colorScheme.surfaceContainer,
             title = context.getString(R.string.input_methods),
             navigationIcon = {
                 IconButton(onClick = onBack) {

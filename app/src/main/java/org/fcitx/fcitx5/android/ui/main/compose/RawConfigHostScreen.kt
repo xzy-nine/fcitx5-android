@@ -80,12 +80,12 @@ fun RawConfigHostScreen(
             )
         }
         errorText != null -> {
-            Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
                 Text(text = errorText ?: "")
             }
         }
         else -> {
-            Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         }

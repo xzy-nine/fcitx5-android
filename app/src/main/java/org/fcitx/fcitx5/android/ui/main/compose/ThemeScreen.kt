@@ -21,9 +21,11 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -104,6 +106,10 @@ fun ThemeScreen(onBack: () -> Unit) {
         ThemeManager.OnThemeChangeListener { active ->
             themes = ThemeManager.getAllThemes()
             activeTheme = active
+            // keep local follow-system flag in sync with the pref (changed in the config tab
+            // or via the disable button) so the confirm dialog is not shown again on the
+            // same visit
+            followSystem = ThemeManager.prefs.followSystemDayNightTheme.getValue()
         }
     }
 
@@ -191,7 +197,7 @@ fun ThemeScreen(onBack: () -> Unit) {
         }
     }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxSize()) {
             // keyboard preview kept as a View (same styling as the legacy fragment)
             val preview = remember {
@@ -302,6 +308,7 @@ fun ThemeScreen(onBack: () -> Unit) {
         }
 
         SmallTopAppBar(
+            color = MiuixTheme.colorScheme.surfaceContainer,
             title = context.getString(R.string.theme),
             navigationIcon = {
                 IconButton(onClick = onBack) {
@@ -407,16 +414,23 @@ private fun ThemeDuplicateDialog(
             onDismiss()
         },
     ) {
-        Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+        // scrollable list of builtin themes
+        LazyColumn(
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .heightIn(max = 320.dp),
+        ) {
             ThemeManager.BuiltinThemes.forEach { builtin ->
-                TextButton(
-                    text = builtin.name,
-                    onClick = {
-                        show = false
-                        onPick(builtin)
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                )
+                item(key = builtin.name) {
+                    TextButton(
+                        text = builtin.name,
+                        onClick = {
+                            show = false
+                            onPick(builtin)
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    )
+                }
             }
         }
     }

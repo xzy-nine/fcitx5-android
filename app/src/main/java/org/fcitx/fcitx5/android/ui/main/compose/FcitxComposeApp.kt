@@ -102,19 +102,20 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 },
             ) {
                 entry<AppRoute.Index> {
+                    var showSearch by remember { mutableStateOf(false) }
                     HomeScreen(
                         onNavigate = ::navigateTo,
                         onOpenUrl = { url ->
                             activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                         },
-                        onSearch = { navigateTo(AppRoute.SettingsSearch) },
+                        onSearch = { showSearch = true },
                     )
-                }
-                entry<AppRoute.SettingsSearch> {
-                    SettingsSearchScreen(
-                        onNavigate = ::navigateTo,
-                        onBack = { backStack.removeLastOrNull() },
-                    )
+                    if (showSearch) {
+                        SettingsSearchDialog(
+                            onNavigate = ::navigateTo,
+                            onDismiss = { showSearch = false },
+                        )
+                    }
                 }
                 entry<AppRoute.About> {
                     AboutScreen(
