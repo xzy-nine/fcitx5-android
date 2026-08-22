@@ -7,7 +7,8 @@ import org.gradle.api.JavaVersion
 
 object Versions {
 
-    val java = JavaVersion.VERSION_11
+    // NOTE: miuix 0.9.4-rc01 ships JVM 21 bytecode, so project bytecode target must be >= 21
+    val java = JavaVersion.VERSION_21
     const val compileSdk = 36
     const val minSdk = 23
     const val targetSdk = 36
