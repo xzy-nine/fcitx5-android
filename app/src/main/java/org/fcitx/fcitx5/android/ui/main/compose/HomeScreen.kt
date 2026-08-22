@@ -47,7 +47,7 @@ import top.yukonga.miuix.kmp.preference.ArrowPreference
 private data class HomeDestination(
     @StringRes val title: Int,
     val icon: ImageVector,
-    val target: LegacyTarget,
+    val route: AppRoute,
 )
 
 @Composable
@@ -112,7 +112,7 @@ private fun HomeCard(
                 startAction = {
                     Icon(dest.icon, contentDescription = null, modifier = Modifier.size(24.dp))
                 },
-                onClick = { onNavigate(AppRoute.Legacy(dest.target)) },
+                onClick = { onNavigate(dest.route) },
             )
             if (index < items.lastIndex) {
                 HorizontalDivider()
@@ -122,17 +122,18 @@ private fun HomeCard(
 }
 
 private val homeFcitxItems = listOf(
-    HomeDestination(R.string.global_options, MiuixIcons.Tune, LegacyTarget.GlobalConfig),
-    HomeDestination(R.string.input_methods, MiuixIcons.Translate, LegacyTarget.InputMethodList),
-    HomeDestination(R.string.addons, MiuixIcons.Merge, LegacyTarget.AddonList),
+    HomeDestination(R.string.global_options, MiuixIcons.Tune, AppRoute.RawConfigHost(RawConfigHostType.GlobalConfig)),
+    HomeDestination(R.string.input_methods, MiuixIcons.Translate, AppRoute.Legacy(LegacyTarget.InputMethodList)),
+    HomeDestination(R.string.addons, MiuixIcons.Merge, AppRoute.Legacy(LegacyTarget.AddonList)),
 )
 
 private val homeAndroidItems = listOf(
-    HomeDestination(R.string.theme, MiuixIcons.Theme, LegacyTarget.Theme),
-    HomeDestination(R.string.virtual_keyboard, MiuixIcons.GridView, LegacyTarget.VirtualKeyboard),
-    HomeDestination(R.string.candidates_window, MiuixIcons.ListView, LegacyTarget.CandidatesWindow),
-    HomeDestination(R.string.clipboard, MiuixIcons.Copy, LegacyTarget.Clipboard),
-    HomeDestination(R.string.emoji_and_symbols, MiuixIcons.Messages, LegacyTarget.Symbol),
-    HomeDestination(R.string.plugins, MiuixIcons.Layers, LegacyTarget.Plugin),
-    HomeDestination(R.string.advanced, MiuixIcons.More, LegacyTarget.Advanced),
+    HomeDestination(R.string.theme, MiuixIcons.Theme, AppRoute.Legacy(LegacyTarget.Theme)),
+    HomeDestination(R.string.virtual_keyboard, MiuixIcons.GridView, AppRoute.Prefs(PrefCategory.Keyboard)),
+    HomeDestination(R.string.candidates_window, MiuixIcons.ListView, AppRoute.Prefs(PrefCategory.Candidates)),
+    HomeDestination(R.string.clipboard, MiuixIcons.Copy, AppRoute.Prefs(PrefCategory.Clipboard)),
+    HomeDestination(R.string.broadcast_settings, MiuixIcons.Messages, AppRoute.Prefs(PrefCategory.Broadcast)),
+    HomeDestination(R.string.emoji_and_symbols, MiuixIcons.Messages, AppRoute.Prefs(PrefCategory.Symbols)),
+    HomeDestination(R.string.plugins, MiuixIcons.Layers, AppRoute.Legacy(LegacyTarget.Plugin)),
+    HomeDestination(R.string.advanced, MiuixIcons.More, AppRoute.Prefs(PrefCategory.Advanced)),
 )

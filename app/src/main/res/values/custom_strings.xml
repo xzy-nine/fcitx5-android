@@ -43,4 +43,8 @@
     <string name="search">Search</string>
     <string name="search_settings">Search settings</string>
 
+    <!-- Custom: compose settings -->
+    <string name="failed_to_load_config">Failed to load config</string>
+    <string name="legacy_page_placeholder">This page is still rendered with the legacy UI</string>
+
 </resources>

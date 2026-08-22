@@ -30,6 +30,47 @@ sealed interface AppRoute : NavKey {
 
     @Serializable
     data class LegacyPinyinDict(val uri: String) : AppRoute
+
+    @Serializable
+    data class LegacyPunctuation(val title: String, val lang: String?) : AppRoute
+
+    @Serializable
+    data class Prefs(val category: PrefCategory) : AppRoute
+
+    @Serializable
+    data class RawConfigHost(
+        val kind: RawConfigHostType,
+        val name: String? = null,
+        val uniqueName: String? = null,
+    ) : AppRoute
+}
+
+@Serializable
+enum class RawConfigHostType {
+    GlobalConfig,
+    InputMethodConfig,
+    AddonConfig;
+}
+
+@Serializable
+enum class PrefCategory {
+    Advanced,
+    Keyboard,
+    Candidates,
+    Clipboard,
+    Broadcast,
+    Symbols;
+
+    fun provider() = org.fcitx.fcitx5.android.data.prefs.AppPrefs.getInstance().let {
+        when (this) {
+            Advanced -> it.advanced
+            Keyboard -> it.keyboard
+            Candidates -> it.candidates
+            Clipboard -> it.clipboard
+            Broadcast -> it.broadcast
+            Symbols -> it.symbols
+        }
+    }
 }
 
 @Serializable

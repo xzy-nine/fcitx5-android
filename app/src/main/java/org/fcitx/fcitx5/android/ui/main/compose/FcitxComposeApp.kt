@@ -106,6 +106,22 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 entry<AppRoute.LegacyPinyinDict> { route ->
                     LegacyScreen(SettingsRoute.PinyinDict(route.uri))
                 }
+                entry<AppRoute.Prefs> { route ->
+                    ManagedPrefsScreen(
+                        category = route.category.provider(),
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<AppRoute.RawConfigHost> { route ->
+                    RawConfigHostScreen(
+                        route = route,
+                        onNavigate = ::navigateTo,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<AppRoute.LegacyPunctuation> { route ->
+                    LegacyScreen(SettingsRoute.Punctuation(route.title, route.lang))
+                }
             }
         }
     }
