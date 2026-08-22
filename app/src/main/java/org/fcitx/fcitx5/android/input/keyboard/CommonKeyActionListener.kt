@@ -83,7 +83,7 @@ class CommonKeyActionListener :
     private fun showInputMethodPicker() {
         fcitx.launchOnReady {
             service.lifecycleScope.launch {
-                InputMethodPickerDialog.build(it, service, context)
+                service.showDialog(InputMethodPickerDialog.build(it, service, context))
             }
         }
     }
