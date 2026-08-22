@@ -23,6 +23,15 @@ sealed interface AppRoute : NavKey {
     data object Index : AppRoute
 
     @Serializable
+    data object About : AppRoute
+
+    @Serializable
+    data object Licenses : AppRoute
+
+    @Serializable
+    data object Developer : AppRoute
+
+    @Serializable
     data class Legacy(val target: LegacyTarget) : AppRoute
 
     @Serializable

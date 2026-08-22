@@ -97,6 +97,26 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         },
                     )
                 }
+                entry<AppRoute.About> {
+                    AboutScreen(
+                        onBack = { backStack.removeLastOrNull() },
+                        onNavigate = ::navigateTo,
+                        onOpenUrl = { url ->
+                            activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        },
+                    )
+                }
+                entry<AppRoute.Licenses> {
+                    LicensesScreen(
+                        onBack = { backStack.removeLastOrNull() },
+                        onOpenUrl = { url ->
+                            activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        },
+                    )
+                }
+                entry<AppRoute.Developer> {
+                    DeveloperScreen(onBack = { backStack.removeLastOrNull() })
+                }
                 entry<AppRoute.Legacy> { route ->
                     LegacyScreen(LegacyTargets.routeOf(route.target))
                 }
@@ -141,9 +161,9 @@ private fun appRouteOf(route: SettingsRoute): AppRoute = when (route) {
     SettingsRoute.Symbol -> AppRoute.Legacy(LegacyTarget.Symbol)
     SettingsRoute.Plugin -> AppRoute.Legacy(LegacyTarget.Plugin)
     SettingsRoute.Advanced -> AppRoute.Legacy(LegacyTarget.Advanced)
-    SettingsRoute.Developer -> AppRoute.Legacy(LegacyTarget.Developer)
-    SettingsRoute.License -> AppRoute.Legacy(LegacyTarget.License)
-    SettingsRoute.About -> AppRoute.Legacy(LegacyTarget.About)
+    SettingsRoute.Developer -> AppRoute.Developer
+    SettingsRoute.License -> AppRoute.Licenses
+    SettingsRoute.About -> AppRoute.About
     SettingsRoute.TableInputMethods -> AppRoute.Legacy(LegacyTarget.TableInputMethods)
     SettingsRoute.QuickPhraseList -> AppRoute.Legacy(LegacyTarget.QuickPhraseList)
     SettingsRoute.PinyinCustomPhrase -> AppRoute.Legacy(LegacyTarget.PinyinCustomPhrase)

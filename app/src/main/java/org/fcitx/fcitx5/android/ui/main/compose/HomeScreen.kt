@@ -8,11 +8,16 @@ package org.fcitx.fcitx5.android.ui.main.compose
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -24,7 +29,6 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -58,29 +62,10 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val appName = context.getString(R.string.app_name)
-    Scaffold(
-        topBar = {
-            SmallTopAppBar(
-                title = appName,
-                actions = {
-                    IconButton(onClick = onSearch) {
-                        Icon(MiuixIcons.Search, contentDescription = null, modifier = Modifier.size(24.dp))
-                    }
-                    IconButton(onClick = { onOpenUrl(Const.faqUrl) }) {
-                        Icon(MiuixIcons.Help, contentDescription = null, modifier = Modifier.size(24.dp))
-                    }
-                    IconButton(onClick = { onNavigate(AppRoute.Legacy(LegacyTarget.Developer)) }) {
-                        Icon(MiuixIcons.Info, contentDescription = null, modifier = Modifier.size(24.dp))
-                    }
-                    IconButton(onClick = { onNavigate(AppRoute.Legacy(LegacyTarget.About)) }) {
-                        Icon(MiuixIcons.MoreCircle, contentDescription = null, modifier = Modifier.size(24.dp))
-                    }
-                },
-            )
-        },
-    ) { paddingValues ->
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    Box(Modifier.fillMaxSize()) {
         LazyColumn(
-            contentPadding = PaddingValues(top = paddingValues.calculateTopPadding()),
+            contentPadding = PaddingValues(top = 64.dp + topInset),
             modifier = Modifier.fillMaxSize(),
         ) {
             item {
@@ -96,6 +81,24 @@ fun HomeScreen(
                 HomeCard(homeAndroidItems, onNavigate)
             }
         }
+        SmallTopAppBar(
+            title = appName,
+            actions = {
+                IconButton(onClick = onSearch) {
+                    Icon(MiuixIcons.Search, contentDescription = null, modifier = Modifier.size(24.dp))
+                }
+                IconButton(onClick = { onOpenUrl(Const.faqUrl) }) {
+                    Icon(MiuixIcons.Help, contentDescription = null, modifier = Modifier.size(24.dp))
+                }
+                IconButton(onClick = { onNavigate(AppRoute.Developer) }) {
+                    Icon(MiuixIcons.Info, contentDescription = null, modifier = Modifier.size(24.dp))
+                }
+                IconButton(onClick = { onNavigate(AppRoute.About) }) {
+                    Icon(MiuixIcons.MoreCircle, contentDescription = null, modifier = Modifier.size(24.dp))
+                }
+            },
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+        )
     }
 }
 

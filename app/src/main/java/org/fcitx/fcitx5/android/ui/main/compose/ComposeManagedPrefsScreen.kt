@@ -5,11 +5,16 @@
 
 package org.fcitx.fcitx5.android.ui.main.compose
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -18,6 +23,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -33,15 +39,14 @@ import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlaySpinnerPreference
 import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.preference.WindowSpinnerPreference
 
 /**
  * Compose renderer for a [ManagedPreferenceCategory]. Consumes the shared preference metadata
@@ -69,21 +74,11 @@ fun ManagedPrefsScreen(category: ManagedPreferenceCategory, onBack: () -> Unit) 
     val prefs = category.managedPreferences
     val uiList = category.managedPreferencesUi
     val uiMap = uiList.associateBy { it.key }
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
-    Scaffold(
-        topBar = {
-            SmallTopAppBar(
-                title = context.getString(category.title),
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(MiuixIcons.Back, contentDescription = null, modifier = Modifier.size(24.dp))
-                    }
-                },
-            )
-        },
-    ) { paddingValues ->
+    Box(Modifier.fillMaxSize()) {
         LazyColumn(
-            contentPadding = PaddingValues(top = paddingValues.calculateTopPadding()),
+            contentPadding = PaddingValues(top = 64.dp + topInset),
             modifier = Modifier.fillMaxSize(),
         ) {
             if (category.groups.isEmpty()) {
@@ -112,6 +107,15 @@ fun ManagedPrefsScreen(category: ManagedPreferenceCategory, onBack: () -> Unit) 
                 }
             }
         }
+        SmallTopAppBar(
+            title = context.getString(category.title),
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(MiuixIcons.Back, contentDescription = null, modifier = Modifier.size(24.dp))
+                }
+            },
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+        )
     }
 }
 
@@ -134,12 +138,13 @@ private fun ManagedPrefRow(ui: ManagedPreferenceUi<*>, prefs: Map<String, Manage
             val pref = prefs[ui.key] as? ManagedPreference.PStringLike<*> ?: return
             val currentValue = pref.getValue()
             val currentIndex = ui.entryValues.indexOf(currentValue).coerceAtLeast(0)
-            OverlaySpinnerPreference(
+            WindowSpinnerPreference(
                 items = ui.entryValues.mapIndexed { index, _ ->
                     DropdownItem(text = context.getString(ui.entryLabels[index]))
                 },
                 selectedIndex = currentIndex,
                 title = context.getString(ui.title),
+                dialogButtonString = context.getString(android.R.string.ok),
                 enabled = ui.isEnabled(),
                 onSelectedIndexChange = { index ->
                     @Suppress("UNCHECKED_CAST")
@@ -156,10 +161,11 @@ private fun ManagedPrefRow(ui: ManagedPreferenceUi<*>, prefs: Map<String, Manage
                 voiceInputMethods.map { it.first.loadLabel(context.packageManager).toString() }
             val values = listOf("") + voiceInputMethods.map { it.first.id }
             val currentIndex = values.indexOf(pref.getValue()).coerceAtLeast(0)
-            OverlaySpinnerPreference(
+            WindowSpinnerPreference(
                 items = labels.map { DropdownItem(text = it) },
                 selectedIndex = currentIndex,
                 title = context.getString(ui.title),
+                dialogButtonString = context.getString(android.R.string.ok),
                 enabled = ui.isEnabled(),
                 onSelectedIndexChange = { index -> pref.setValue(values[index]) },
             )

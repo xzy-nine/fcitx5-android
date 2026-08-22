@@ -8,18 +8,23 @@ package org.fcitx.fcitx5.android.ui.main.compose
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -37,29 +42,25 @@ import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigInt
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigKey
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigList
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigString
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlaySpinnerPreference
 import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.window.WindowDialog
+import top.yukonga.miuix.kmp.preference.WindowSpinnerPreference
 
 /**
  * Compose renderer for fcitx's dynamic RawConfig pages (replaces the View-based
- * PreferenceScreenFactory rendering). Supports Bool / Enum / Int / String / Key and nested
- * Custom descriptors; list-style descriptors (List / EnumList) are stubbed.
+ * PreferenceScreenFactory rendering). Supports Bool / Enum / EnumList / Int / String / List /
+ * Key and nested Custom descriptors.
  *
  * Values are read/written on the **parent** config node (unlike the old FcitxRawConfigStore whose
  * `cfg[key]` non-null assertion would crash for names missing on the top level); every write
@@ -78,21 +79,11 @@ fun RawConfigScreen(
     val topLevel = remember(desc) {
         ConfigDescriptor.parseTopLevel(desc).getOrElse { null }
     }
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
-    Scaffold(
-        topBar = {
-            SmallTopAppBar(
-                title = topLevel?.name ?: context.getString(R.string.global_options),
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(MiuixIcons.Back, contentDescription = null, modifier = Modifier.size(24.dp))
-                    }
-                },
-            )
-        },
-    ) { paddingValues ->
+    Box(Modifier.fillMaxSize()) {
         LazyColumn(
-            contentPadding = PaddingValues(top = paddingValues.calculateTopPadding()),
+            contentPadding = PaddingValues(top = 64.dp + topInset),
             modifier = Modifier.fillMaxSize(),
         ) {
             if (topLevel == null) {
@@ -142,6 +133,15 @@ fun RawConfigScreen(
                 }
             }
         }
+        SmallTopAppBar(
+            title = topLevel?.name ?: context.getString(R.string.global_options),
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(MiuixIcons.Back, contentDescription = null, modifier = Modifier.size(24.dp))
+                }
+            },
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+        )
     }
 }
 
@@ -190,10 +190,11 @@ private fun RawConfigRow(
         is ConfigEnum -> {
             val entries = descriptor.entriesI18n ?: descriptor.entries
             val index = descriptor.entries.indexOf(node.value).coerceAtLeast(0)
-            OverlaySpinnerPreference(
+            WindowSpinnerPreference(
                 items = entries.map { DropdownItem(text = it) },
                 selectedIndex = index,
                 title = title,
+                dialogButtonString = context.getString(android.R.string.ok),
                 summary = descriptor.tooltip,
                 onSelectedIndexChange = { i -> write(descriptor.entries[i]) },
             )
@@ -287,13 +288,72 @@ private fun RawConfigRow(
             }
         }
 
-        is ConfigEnumList, is ConfigList -> {
+        is ConfigEnumList -> {
+            var showDialog by remember { mutableStateOf(false) }
+            val current = node.subItems?.map { it.value }.orEmpty()
             ArrowPreference(
                 title = title,
-                summary = descriptor.tooltip ?: context.getString(R.string.unimplemented_type),
-                enabled = false,
-                onClick = null,
+                summary = current.joinToString(", ") {
+                    descriptor.entriesI18n?.getOrNull(descriptor.entries.indexOf(it)) ?: it
+                }.ifEmpty { context.getString(R.string.none) },
+                onClick = { showDialog = true },
+                holdDownState = showDialog,
             )
+            if (showDialog) {
+                RawConfigListEditDialog(
+                    title = title,
+                    initialEntries = current,
+                    mode = RawListEditMode.Choices(descriptor.entries, descriptor.entriesI18n),
+                    onConfirm = { values ->
+                        node.subItems = values.mapIndexed { i, v ->
+                            RawConfig(i.toString(), v)
+                        }.toTypedArray()
+                        onSave()
+                    },
+                    onDismiss = { showDialog = false },
+                )
+            }
+        }
+
+        is ConfigList -> {
+            val subtype = (descriptor.ty as? org.fcitx.fcitx5.android.utils.config.ConfigType.TyList)?.subtype
+            val editMode = when (subtype) {
+                org.fcitx.fcitx5.android.utils.config.ConfigType.TyBool -> RawListEditMode.Bool
+                org.fcitx.fcitx5.android.utils.config.ConfigType.TyInt -> RawListEditMode.Number
+                org.fcitx.fcitx5.android.utils.config.ConfigType.TyString -> RawListEditMode.FreeText
+                else -> null
+            }
+            if (editMode == null) {
+                ArrowPreference(
+                    title = title,
+                    summary = descriptor.tooltip ?: context.getString(R.string.unimplemented_type),
+                    enabled = false,
+                    onClick = null,
+                )
+                return
+            }
+            var showDialog by remember { mutableStateOf(false) }
+            val current = node.subItems?.map { it.value }.orEmpty()
+            ArrowPreference(
+                title = title,
+                summary = current.joinToString(", ").ifEmpty { context.getString(R.string.none) },
+                onClick = { showDialog = true },
+                holdDownState = showDialog,
+            )
+            if (showDialog) {
+                RawConfigListEditDialog(
+                    title = title,
+                    initialEntries = current,
+                    mode = editMode,
+                    onConfirm = { values ->
+                        node.subItems = values.mapIndexed { i, v ->
+                            RawConfig(i.toString(), v)
+                        }.toTypedArray()
+                        onSave()
+                    },
+                    onDismiss = { showDialog = false },
+                )
+            }
         }
 
         is ConfigExternal -> {
@@ -354,6 +414,16 @@ private fun RawConfigRow(
                         )
                     }
                 }
+                ConfigExternal.ETy.Chttrans -> ArrowPreference(
+                    title = title,
+                    summary = descriptor.tooltip,
+                    onClick = { onNavigate(AppRoute.RawConfigHost(RawConfigHostType.AddonConfig, "chttrans")) },
+                )
+                ConfigExternal.ETy.TableGlobal -> ArrowPreference(
+                    title = title,
+                    summary = descriptor.tooltip,
+                    onClick = { onNavigate(AppRoute.RawConfigHost(RawConfigHostType.AddonConfig, "table")) },
+                )
                 else -> ArrowPreference(
                     title = title,
                     summary = descriptor.tooltip ?: context.getString(R.string.unimplemented_type),
