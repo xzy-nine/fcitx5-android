@@ -7,6 +7,7 @@ package org.fcitx.fcitx5.android.ui.main.compose
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -64,6 +65,7 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.LocalDismissState
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 import top.yukonga.miuix.kmp.window.WindowListPopup
 
@@ -75,7 +77,7 @@ private fun PageScaffold(
     content: LazyListScope.() -> Unit,
 ) {
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
         LazyColumn(
             contentPadding = PaddingValues(top = 64.dp + topInset),
             modifier = Modifier.fillMaxSize(),

@@ -7,6 +7,7 @@ package org.fcitx.fcitx5.android.ui.main.compose
 
 import android.net.Uri
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -58,7 +59,18 @@ import kotlin.reflect.typeOf
 class LegacyAnchorFragment : Fragment() {
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
-    ): View = FrameLayout(requireContext())
+    ): View {
+        val v = FrameLayout(requireContext())
+        // anchor sits below the actual legacy content pages; keep it opaque so nothing shows
+        // through on the brief transition between anchor and the first destination.
+        val bg = TypedValue().also {
+            requireContext().theme.resolveAttribute(
+                android.R.attr.colorBackground, it, true
+            )
+        }
+        v.setBackgroundColor(bg.data)
+        return v
+    }
 }
 
 object LegacyGraph {

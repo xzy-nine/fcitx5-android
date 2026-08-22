@@ -5,6 +5,7 @@
 
 package org.fcitx.fcitx5.android.ui.main.compose
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -56,6 +57,9 @@ sealed interface RawListEditMode {
 
     /** Free-form strings. */
     data object FreeText : RawListEditMode
+
+    /** Key capture entries (edited through [KeyCaptureDialog]). */
+    data object Key : RawListEditMode
 }
 
 /**
@@ -75,13 +79,33 @@ fun RawConfigListEditDialog(
     var show by remember { mutableStateOf(true) }
     val entries = remember { mutableStateListOf<String>().apply { addAll(initialEntries) } }
     var showAddPopup by remember { mutableStateOf(false) }
+    var keyEditIndex by remember { mutableStateOf(-1) }
     val addState = rememberTextFieldState()
     val listState = rememberLazyListState()
 
     fun display(value: String): String = when (val m = mode) {
         is RawListEditMode.Choices ->
             m.entriesI18n?.getOrNull(m.entries.indexOf(value)) ?: value
+        RawListEditMode.Key ->
+            runCatching { org.fcitx.fcitx5.android.core.Key.parse(value).localizedString }
+                .getOrDefault(value)
         else -> value
+    }
+
+    if (keyEditIndex >= 0) {
+        KeyCaptureDialog(
+            title = title,
+            initialKey = entries.getOrNull(keyEditIndex),
+            onConfirm = { serialized ->
+                if (keyEditIndex < entries.size) {
+                    entries[keyEditIndex] = serialized
+                } else {
+                    entries.add(serialized)
+                }
+                keyEditIndex = -1
+            },
+            onDismiss = { keyEditIndex = -1 },
+        )
     }
 
     if (show) {
@@ -110,7 +134,12 @@ fun RawConfigListEditDialog(
                                 text = display(value),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .padding(vertical = 12.dp),
+                                    .padding(vertical = 12.dp)
+                                    .then(
+                                        if (mode == RawListEditMode.Key) {
+                                            Modifier.clickable { keyEditIndex = index }
+                                        } else Modifier
+                                    ),
                             )
                             IconButton(
                                 onClick = {
@@ -146,6 +175,14 @@ fun RawConfigListEditDialog(
                         TextButton(
                             text = context.getString(R.string.add),
                             onClick = { showAddPopup = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+
+                    RawListEditMode.Key -> {
+                        TextButton(
+                            text = context.getString(R.string.add),
+                            onClick = { keyEditIndex = entries.size },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }

@@ -34,10 +34,19 @@ class LegacyNavRuntime {
 
     private fun legacyStackSize(): Int = navController?.currentBackStack?.value?.size ?: 0
 
-    /** Pops the legacy stack if it still has entries above the anchor. True when it consumed. */
+    /**
+     * Coordinates one back press between the legacy fragment stack and the compose stack.
+     *
+     * The legacy graph's permanent root is the invisible anchor ([SettingsRoute.Index]). While
+     * more than one content page sits above it we keep drilling back through the legacy stack and
+     * report "consumed" (true). At the top content page (anchor + exactly one page) we report
+     * "not consumed" (false) so [top.yukonga.miuix.kmp.nav.core.NavDisplay]'s `onBack` pops the
+     * whole compose Legacy entry — a single back press therefore returns to the home screen
+     * instead of stranding the user on the blank anchor between two back presses.
+     */
     fun popLegacyBackStack(): Boolean {
         val controller = navController ?: return false
-        if (legacyStackSize() > 1) {
+        if (legacyStackSize() > 2) {
             controller.popBackStack()
             return true
         }

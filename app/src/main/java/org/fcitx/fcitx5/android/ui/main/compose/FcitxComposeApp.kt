@@ -22,7 +22,6 @@ import org.fcitx.fcitx5.android.ui.setup.SetupActivity
 import org.fcitx.fcitx5.android.utils.parcelable
 import org.fcitx.fcitx5.android.utils.startActivity
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
-import top.yukonga.miuix.kmp.nav.transition.NavTransitions
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -42,7 +41,20 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
 
         fun navigateTo(appRoute: AppRoute) {
             if (backStack.lastOrNull() == appRoute) return
-            backStack.removeAll { it !is AppRoute.Index }
+            // Entering a non-legacy destination while a stale legacy controller lingers (its
+            // onDispose detach is async) would let popLegacyBackStack consume a back press on
+            // the new page. Detach it synchronously so no ghost controller survives.
+            if (appRoute !is AppRoute.Legacy &&
+                appRoute !is AppRoute.LegacyInputMethodConfig &&
+                appRoute !is AppRoute.LegacyPinyinDict &&
+                appRoute !is AppRoute.LegacyPunctuation &&
+                runtime.navController != null
+            ) {
+                runtime.detach()
+            }
+            // single snapshot write; keep Index as the permanent root (same as WebDAVPass)
+            backStack.clear()
+            backStack.add(AppRoute.Index)
             backStack.add(appRoute)
         }
 
@@ -76,7 +88,6 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
             )
             NavDisplay(
                 backStack = backStack,
-                transition = NavTransitions.MiuixDefault,
                 onBack = {
                     when {
                         runtime.popLegacyBackStack() -> Unit

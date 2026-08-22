@@ -6,6 +6,7 @@
 package org.fcitx.fcitx5.android.ui.main.compose
 
 import androidx.annotation.StringRes
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -47,6 +48,7 @@ import top.yukonga.miuix.kmp.icon.extended.Theme
 import top.yukonga.miuix.kmp.icon.extended.Translate
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private data class HomeDestination(
     @StringRes val title: Int,
@@ -63,7 +65,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val appName = context.getString(R.string.app_name)
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
         LazyColumn(
             contentPadding = PaddingValues(top = 64.dp + topInset),
             modifier = Modifier.fillMaxSize(),

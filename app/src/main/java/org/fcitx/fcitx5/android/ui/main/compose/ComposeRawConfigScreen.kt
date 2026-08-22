@@ -6,6 +6,7 @@
 package org.fcitx.fcitx5.android.ui.main.compose
 
 import android.content.Context
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,7 +45,7 @@ import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigKey
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigList
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigString
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.DropdownItem
+import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -55,7 +57,7 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.preference.WindowSpinnerPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * Compose renderer for fcitx's dynamic RawConfig pages (replaces the View-based
@@ -79,9 +81,10 @@ fun RawConfigScreen(
     val topLevel = remember(desc) {
         ConfigDescriptor.parseTopLevel(desc).getOrElse { null }
     }
+    var cfgVersion by remember { mutableIntStateOf(0) }
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
         LazyColumn(
             contentPadding = PaddingValues(top = 64.dp + topInset),
             modifier = Modifier.fillMaxSize(),
@@ -107,6 +110,7 @@ fun RawConfigScreen(
                                             parent = customNode,
                                             onNavigate = onNavigate,
                                             onSave = onSave,
+                                            onMutated = { cfgVersion++ },
                                         )
                                         if (index < children.lastIndex) HorizontalDivider()
                                     }
@@ -125,6 +129,7 @@ fun RawConfigScreen(
                                         parent = cfg,
                                         onNavigate = onNavigate,
                                         onSave = onSave,
+                                        onMutated = { cfgVersion++ },
                                     )
                                 }
                             }
@@ -155,6 +160,7 @@ private fun RawConfigRow(
     parent: RawConfig?,
     onNavigate: (AppRoute) -> Unit,
     onSave: () -> Unit,
+    onMutated: () -> Unit,
 ) {
     val context = LocalContext.current
     val title = descriptor.description ?: descriptor.name
@@ -173,15 +179,18 @@ private fun RawConfigRow(
     fun write(value: String) {
         node.value = value
         onSave()
+        onMutated()
     }
 
     when (descriptor) {
         is ConfigBool -> {
+            var v by remember(node) { mutableStateOf(node.value == "True") }
             SwitchPreference(
                 title = title,
                 summary = descriptor.tooltip,
-                checked = node.value == "True",
+                checked = v,
                 onCheckedChange = { new ->
+                    v = new
                     write(if (new) "True" else "False")
                 },
             )
@@ -190,11 +199,10 @@ private fun RawConfigRow(
         is ConfigEnum -> {
             val entries = descriptor.entriesI18n ?: descriptor.entries
             val index = descriptor.entries.indexOf(node.value).coerceAtLeast(0)
-            WindowSpinnerPreference(
-                items = entries.map { DropdownItem(text = it) },
+            WindowDropdownPreference(
+                items = entries,
                 selectedIndex = index,
                 title = title,
-                dialogButtonString = context.getString(android.R.string.ok),
                 summary = descriptor.tooltip,
                 onSelectedIndexChange = { i -> write(descriptor.entries[i]) },
             )
@@ -203,42 +211,42 @@ private fun RawConfigRow(
         is ConfigInt -> {
             val min = descriptor.intMin
             val max = descriptor.intMax
+            var showDialog by remember { mutableStateOf(false) }
             var v by remember(node) { mutableStateOf(node.value.toIntOrNull() ?: 0) }
-            if (min != null && max != null && max - min <= 100) {
-                SliderPreference(
+            if (min != null && max != null && max > min) {
+                ExpandableNumberPreference(
                     title = title,
-                    value = v.toFloat(),
+                    value = v,
                     onValueChange = { newValue ->
-                        v = newValue.toInt()
-                        write(v.toString())
+                        v = newValue
+                        write(newValue.toString())
                     },
-                    valueText = v.toString(),
-                    valueRange = min.toFloat()..max.toFloat(),
-                    steps = (max - min - 1).coerceAtLeast(0),
+                    min = min,
+                    max = max,
+                    step = if (max - min > 1000) 10 else 1,
                 )
             } else {
-                var showDialog by remember { mutableStateOf(false) }
                 ArrowPreference(
                     title = title,
                     summary = v.toString(),
                     onClick = { showDialog = true },
                     holdDownState = showDialog,
                 )
-                if (showDialog) {
-                    EditValueDialog(
-                        title = title,
-                        initialText = v.toString(),
-                        onConfirm = { text ->
-                            val parsed = text.toIntOrNull() ?: return@EditValueDialog false
-                            if (min != null && parsed < min) return@EditValueDialog false
-                            if (max != null && parsed > max) return@EditValueDialog false
-                            v = parsed
-                            write(parsed.toString())
-                            true
-                        },
-                        onDismiss = { showDialog = false },
-                    )
-                }
+            }
+            if (showDialog) {
+                EditValueDialog(
+                    title = title,
+                    initialText = v.toString(),
+                    onConfirm = { text ->
+                        val parsed = text.toIntOrNull() ?: return@EditValueDialog false
+                        if (min != null && parsed < min) return@EditValueDialog false
+                        if (max != null && parsed > max) return@EditValueDialog false
+                        v = parsed
+                        write(parsed.toString())
+                        true
+                    },
+                    onDismiss = { showDialog = false },
+                )
             }
         }
 
@@ -268,20 +276,22 @@ private fun RawConfigRow(
         is ConfigKey -> {
             var showDialog by remember { mutableStateOf(false) }
             var v by remember(node) { mutableStateOf(node.value) }
+            val localized = runCatching {
+                org.fcitx.fcitx5.android.core.Key.parse(v).localizedString
+            }.getOrDefault(v)
             ArrowPreference(
                 title = title,
-                summary = v,
+                summary = localized.ifEmpty { context.getString(R.string.none) },
                 onClick = { showDialog = true },
                 holdDownState = showDialog,
             )
             if (showDialog) {
-                EditValueDialog(
+                KeyCaptureDialog(
                     title = title,
-                    initialText = v,
-                    onConfirm = { text ->
-                        v = text
-                        write(text)
-                        true
+                    initialKey = v,
+                    onConfirm = { serialized ->
+                        v = serialized
+                        write(serialized)
                     },
                     onDismiss = { showDialog = false },
                 )
@@ -321,6 +331,7 @@ private fun RawConfigRow(
                 org.fcitx.fcitx5.android.utils.config.ConfigType.TyBool -> RawListEditMode.Bool
                 org.fcitx.fcitx5.android.utils.config.ConfigType.TyInt -> RawListEditMode.Number
                 org.fcitx.fcitx5.android.utils.config.ConfigType.TyString -> RawListEditMode.FreeText
+                org.fcitx.fcitx5.android.utils.config.ConfigType.TyKey -> RawListEditMode.Key
                 else -> null
             }
             if (editMode == null) {

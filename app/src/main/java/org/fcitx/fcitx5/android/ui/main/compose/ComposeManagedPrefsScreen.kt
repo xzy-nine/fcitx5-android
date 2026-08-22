@@ -5,6 +5,7 @@
 
 package org.fcitx.fcitx5.android.ui.main.compose
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -35,7 +36,7 @@ import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceUi
 import org.fcitx.fcitx5.android.ui.main.settings.EditTextFloatUi
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.DropdownItem
+
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -46,7 +47,8 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.preference.WindowSpinnerPreference
+import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * Compose renderer for a [ManagedPreferenceCategory]. Consumes the shared preference metadata
@@ -76,7 +78,7 @@ fun ManagedPrefsScreen(category: ManagedPreferenceCategory, onBack: () -> Unit) 
     val uiMap = uiList.associateBy { it.key }
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
         LazyColumn(
             contentPadding = PaddingValues(top = 64.dp + topInset),
             modifier = Modifier.fillMaxSize(),
@@ -85,7 +87,7 @@ fun ManagedPrefsScreen(category: ManagedPreferenceCategory, onBack: () -> Unit) 
                 item {
                     Card(modifier = Modifier.padding(horizontal = 12.dp)) {
                         uiList.forEachIndexed { index, ui ->
-                            ManagedPrefRow(ui, prefs)
+                            ManagedPrefRow(ui, prefs, version, category::fireChange)
                             if (index < uiList.lastIndex) HorizontalDivider()
                         }
                     }
@@ -99,7 +101,7 @@ fun ManagedPrefsScreen(category: ManagedPreferenceCategory, onBack: () -> Unit) 
                         Card(modifier = Modifier.padding(horizontal = 12.dp)) {
                             val keys = group.keys.filter { uiMap.containsKey(it) }
                             keys.forEachIndexed { index, key ->
-                                ManagedPrefRow(uiMap.getValue(key), prefs)
+                                ManagedPrefRow(uiMap.getValue(key), prefs, version, category::fireChange)
                                 if (index < keys.lastIndex) HorizontalDivider()
                             }
                         }
@@ -120,16 +122,26 @@ fun ManagedPrefsScreen(category: ManagedPreferenceCategory, onBack: () -> Unit) 
 }
 
 @Composable
-private fun ManagedPrefRow(ui: ManagedPreferenceUi<*>, prefs: Map<String, ManagedPreference<*>>) {
+private fun ManagedPrefRow(
+    ui: ManagedPreferenceUi<*>,
+    prefs: Map<String, ManagedPreference<*>>,
+    version: Int,
+    fireChange: (String) -> Unit,
+) {
     val context = LocalContext.current
     when (ui) {
         is ManagedPreferenceUi.Switch -> {
             val pref = prefs[ui.key] as? ManagedPreference.PBool ?: return
+            var checked by remember(version) { mutableStateOf(pref.getValue()) }
             SwitchPreference(
                 title = context.getString(ui.title),
                 summary = ui.summary?.let { context.getString(it) },
-                checked = pref.getValue(),
-                onCheckedChange = { newValue -> pref.setValue(newValue) },
+                checked = checked,
+                onCheckedChange = { newValue ->
+                    checked = newValue
+                    pref.setValue(newValue)
+                    fireChange(ui.key)
+                },
                 enabled = ui.isEnabled(),
             )
         }
@@ -138,18 +150,18 @@ private fun ManagedPrefRow(ui: ManagedPreferenceUi<*>, prefs: Map<String, Manage
             val pref = prefs[ui.key] as? ManagedPreference.PStringLike<*> ?: return
             val currentValue = pref.getValue()
             val currentIndex = ui.entryValues.indexOf(currentValue).coerceAtLeast(0)
-            WindowSpinnerPreference(
+            WindowDropdownPreference(
                 items = ui.entryValues.mapIndexed { index, _ ->
-                    DropdownItem(text = context.getString(ui.entryLabels[index]))
+                    context.getString(ui.entryLabels[index])
                 },
                 selectedIndex = currentIndex,
                 title = context.getString(ui.title),
-                dialogButtonString = context.getString(android.R.string.ok),
                 enabled = ui.isEnabled(),
                 onSelectedIndexChange = { index ->
                     @Suppress("UNCHECKED_CAST")
                     (pref as ManagedPreference.PStringLike<Any>)
                         .setValue(ui.entryValues[index])
+                    fireChange(ui.key)
                 },
             )
         }
@@ -161,26 +173,45 @@ private fun ManagedPrefRow(ui: ManagedPreferenceUi<*>, prefs: Map<String, Manage
                 voiceInputMethods.map { it.first.loadLabel(context.packageManager).toString() }
             val values = listOf("") + voiceInputMethods.map { it.first.id }
             val currentIndex = values.indexOf(pref.getValue()).coerceAtLeast(0)
-            WindowSpinnerPreference(
-                items = labels.map { DropdownItem(text = it) },
+            WindowDropdownPreference(
+                items = labels,
                 selectedIndex = currentIndex,
                 title = context.getString(ui.title),
-                dialogButtonString = context.getString(android.R.string.ok),
                 enabled = ui.isEnabled(),
-                onSelectedIndexChange = { index -> pref.setValue(values[index]) },
+                onSelectedIndexChange = { index ->
+                    pref.setValue(values[index])
+                    fireChange(ui.key)
+                },
             )
         }
 
         is ManagedPreferenceUi.EditTextInt -> {
             val pref = prefs[ui.key] as? ManagedPreference.PInt ?: return
             var showDialog by remember { mutableStateOf(false) }
-            ArrowPreference(
-                title = context.getString(ui.title),
-                summary = "${pref.getValue()}${ui.unit}",
-                onClick = { showDialog = true },
-                holdDownState = showDialog,
-                enabled = ui.isEnabled(),
-            )
+            val hasRange = ui.min < ui.max && (ui.max - ui.min) <= 10000
+            if (hasRange) {
+                ExpandableNumberPreference(
+                    title = context.getString(ui.title),
+                    value = pref.getValue(),
+                    onValueChange = { newValue ->
+                        pref.setValue(newValue.coerceIn(ui.min, ui.max))
+                        fireChange(ui.key)
+                    },
+                    min = ui.min,
+                    max = ui.max,
+                    step = 1,
+                    suffix = ui.unit,
+                    enabled = ui.isEnabled(),
+                )
+            } else {
+                ArrowPreference(
+                    title = context.getString(ui.title),
+                    summary = "${pref.getValue()}${ui.unit}",
+                    onClick = { showDialog = true },
+                    holdDownState = showDialog,
+                    enabled = ui.isEnabled(),
+                )
+            }
             if (showDialog) {
                 EditValueDialog(
                     title = context.getString(ui.title),
@@ -189,6 +220,7 @@ private fun ManagedPrefRow(ui: ManagedPreferenceUi<*>, prefs: Map<String, Manage
                         val parsed = text.toIntOrNull() ?: return@EditValueDialog false
                         if (parsed !in ui.min..ui.max) return@EditValueDialog false
                         pref.setValue(parsed)
+                        fireChange(ui.key)
                         true
                     },
                     onDismiss = { showDialog = false },
@@ -198,18 +230,19 @@ private fun ManagedPrefRow(ui: ManagedPreferenceUi<*>, prefs: Map<String, Manage
 
         is ManagedPreferenceUi.SeekBarInt -> {
             val pref = prefs[ui.key] as? ManagedPreference.PInt ?: return
-            val range = ui.min.toFloat()..ui.max.toFloat()
-            val steps = ((ui.max.toLong() - ui.min) / ui.step - 1).coerceIn(0, 1000).toInt()
-            SliderPreference(
+            ExpandableNumberPreference(
                 title = context.getString(ui.title),
-                value = pref.getValue().toFloat(),
+                value = pref.getValue(),
                 onValueChange = { newValue ->
-                    val stepped = ui.min + ((newValue - ui.min) / ui.step).toLong() * ui.step
+                    val stepped =
+                        ui.min + ((newValue - ui.min) / ui.step).toLong() * ui.step
                     pref.setValue(stepped.coerceIn(ui.min.toLong(), ui.max.toLong()).toInt())
+                    fireChange(ui.key)
                 },
-                valueText = pref.getValue().toString() + ui.unit,
-                valueRange = range,
-                steps = steps,
+                min = ui.min,
+                max = ui.max,
+                step = ui.step,
+                suffix = ui.unit,
                 enabled = ui.isEnabled(),
             )
         }
@@ -217,39 +250,43 @@ private fun ManagedPrefRow(ui: ManagedPreferenceUi<*>, prefs: Map<String, Manage
         is ManagedPreferenceUi.TwinSeekBarInt -> {
             val primaryPref = prefs[ui.key] as? ManagedPreference.PInt ?: return
             val secondaryPref = prefs[ui.secondaryKey] as? ManagedPreference.PInt ?: return
-            val range = ui.min.toFloat()..ui.max.toFloat()
-            val steps = ((ui.max.toLong() - ui.min) / ui.step - 1).coerceIn(0, 1000).toInt()
-            ArrowPreference(
+            var expanded by remember { mutableStateOf(false) }
+            top.yukonga.miuix.kmp.basic.BasicComponent(
                 title = context.getString(ui.title),
+                summary = "${primaryPref.getValue()}${ui.unit} / ${secondaryPref.getValue()}${ui.unit}",
+                onClick = { expanded = !expanded },
+                holdDownState = expanded,
+                enabled = ui.isEnabled(),
                 bottomAction = {
-                    Column {
-                        SliderPreference(
-                            title = context.getString(ui.label),
-                            value = primaryPref.getValue().toFloat(),
-                            onValueChange = { newValue ->
-                                val stepped = ui.min + ((newValue - ui.min) / ui.step).toLong() * ui.step
-                                primaryPref.setValue(stepped.coerceIn(ui.min.toLong(), ui.max.toLong()).toInt())
-                            },
-                            valueText = primaryPref.getValue().toString() + ui.unit,
-                            valueRange = range,
-                            steps = steps,
-                            enabled = ui.isEnabled(),
-                        )
-                        SliderPreference(
-                            title = context.getString(ui.secondaryLabel),
-                            value = secondaryPref.getValue().toFloat(),
-                            onValueChange = { newValue ->
-                                val stepped = ui.min + ((newValue - ui.min) / ui.step).toLong() * ui.step
-                                secondaryPref.setValue(stepped.coerceIn(ui.min.toLong(), ui.max.toLong()).toInt())
-                            },
-                            valueText = secondaryPref.getValue().toString() + ui.unit,
-                            valueRange = range,
-                            steps = steps,
-                            enabled = ui.isEnabled(),
-                        )
+                    androidx.compose.animation.AnimatedVisibility(expanded && ui.isEnabled()) {
+                        Column {
+                            ExpandableNumberPreference(
+                                title = context.getString(ui.label),
+                                value = primaryPref.getValue(),
+                                onValueChange = { newValue ->
+                                    primaryPref.setValue(newValue)
+                                    fireChange(ui.key)
+                                },
+                                min = ui.min,
+                                max = ui.max,
+                                step = ui.step,
+                                suffix = ui.unit,
+                            )
+                            ExpandableNumberPreference(
+                                title = context.getString(ui.secondaryLabel),
+                                value = secondaryPref.getValue(),
+                                onValueChange = { newValue ->
+                                    secondaryPref.setValue(newValue)
+                                    fireChange(ui.secondaryKey)
+                                },
+                                min = ui.min,
+                                max = ui.max,
+                                step = ui.step,
+                                suffix = ui.unit,
+                            )
+                        }
                     }
                 },
-                enabled = ui.isEnabled(),
             )
         }
 
@@ -271,6 +308,7 @@ private fun ManagedPrefRow(ui: ManagedPreferenceUi<*>, prefs: Map<String, Manage
                         val parsed = text.toFloatOrNull() ?: return@EditValueDialog false
                         if (parsed < ui.min || parsed > ui.max) return@EditValueDialog false
                         pref.setValue(parsed)
+                        fireChange(ui.key)
                         true
                     },
                     onDismiss = { showDialog = false },

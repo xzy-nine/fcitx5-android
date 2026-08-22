@@ -11,6 +11,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.app.FragmentContainerView
@@ -18,6 +19,7 @@ import androidx.navigation.fragment.NavHostFragment
 import org.fcitx.fcitx5.android.ui.main.MainActivity
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.utils.navigateWithAnim
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * Hosts the legacy fragment navigation (upstream settings pages that have not been migrated yet)
@@ -28,7 +30,14 @@ import org.fcitx.fcitx5.android.utils.navigateWithAnim
 fun LegacyScreen(route: SettingsRoute) {
     val activity = LocalContext.current as MainActivity
     val runtime = LocalLegacyNavRuntime.current
-    val container = remember { FragmentContainerView(activity).apply { id = View.generateViewId() } }
+    // force alpha=1 so the legacy View pages never show through whatever sits below
+    val bgArgb = MiuixTheme.colorScheme.background.copy(alpha = 1f).toArgb()
+    val container = remember {
+        FragmentContainerView(activity).apply {
+            id = View.generateViewId()
+            setBackgroundColor(bgArgb)
+        }
+    }
     AndroidView(
         factory = { container },
         modifier = Modifier.fillMaxSize(),
@@ -46,6 +55,9 @@ fun LegacyScreen(route: SettingsRoute) {
         controller.navigateWithAnim(route)
         onDispose {
             runtime.detach()
+            // Remove synchronously so the legacy NavHostFragment is torn down in the same frame
+            // the compose Legacy entry is popped — an async commit() here would leave the
+            // fragment briefly resident and fight the compose pop animation (jank on return).
             fragmentManager.beginTransaction()
                 .remove(navHost)
                 .commitNow()
