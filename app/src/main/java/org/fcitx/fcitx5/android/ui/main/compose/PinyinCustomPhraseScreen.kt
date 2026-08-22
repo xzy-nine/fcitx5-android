@@ -59,7 +59,17 @@ import kotlin.math.absoluteValue
 import kotlin.math.min
 
 private const val CHINESE_ADDONS_DOMAIN = "fcitx5-chinese-addons"
+private const val KEY = "Key"
+private const val ORDER = "Order"
+private const val PHRASE = "Phrase"
 private const val MANAGE_CUSTOM_PHRASE = "Manage Custom Phrase"
+
+private data class TranslateAndLabels(
+    val title: String,
+    val key: String,
+    val order: String,
+    val phrase: String,
+)
 
 /**
  * Compose renderer for the pinyin custom phrase list (replaces the View-based
@@ -75,13 +85,25 @@ fun PinyinCustomPhraseScreen(onBack: () -> Unit) {
     var loading by remember { mutableStateOf(true) }
     var editTarget by remember { mutableStateOf<Pair<Int, PinyinCustomPhrase>?>(null) }
     var isNew by remember { mutableStateOf(false) }
-    var title by remember { mutableStateOf(context.getString(R.string.manage_custom_phrase)) }
+    // translated via fcitx, same as the legacy fragment (no hardcoded strings)
+    var title by remember { mutableStateOf("") }
+    var keyLabel by remember { mutableStateOf("") }
+    var orderLabel by remember { mutableStateOf("") }
+    var phraseLabel by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        // use the same translated title as the legacy fragment
-        title = fcitx.runOnReady {
-            translate(MANAGE_CUSTOM_PHRASE, CHINESE_ADDONS_DOMAIN)
+        val t = fcitx.runOnReady {
+            TranslateAndLabels(
+                translate(MANAGE_CUSTOM_PHRASE, CHINESE_ADDONS_DOMAIN),
+                translate(KEY, CHINESE_ADDONS_DOMAIN),
+                translate(ORDER, CHINESE_ADDONS_DOMAIN),
+                translate(PHRASE, CHINESE_ADDONS_DOMAIN),
+            )
         }
+        title = t.title
+        keyLabel = t.key
+        orderLabel = t.order
+        phraseLabel = t.phrase
     }
 
     LaunchedEffect(Unit) {
@@ -198,9 +220,9 @@ fun PinyinCustomPhraseScreen(onBack: () -> Unit) {
     editTarget?.let { (index, entry) ->
         SimpleThreeFieldDialog(
             title = title,
-            field1Label = context.getString(R.string.quickphrase_keyword),
-            field2Label = context.getString(R.string.order),
-            field3Label = context.getString(R.string.quickphrase_phrase),
+            field1Label = keyLabel,
+            field2Label = orderLabel,
+            field3Label = phraseLabel,
             value1 = entry.key,
             value2 = entry.order.absoluteValue.toString(),
             value3 = entry.value,

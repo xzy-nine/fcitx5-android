@@ -210,6 +210,9 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }
+                entry<AppRoute.Theme> {
+                    ThemeScreen(onBack = { backStack.removeLastOrNull() })
+                }
                 entry<AppRoute.Legacy> { route ->
                     LegacyScreen(LegacyTargets.routeOf(route.target))
                 }
@@ -251,7 +254,7 @@ fun appRouteOf(route: SettingsRoute): AppRoute = when (route) {
     SettingsRoute.InputMethodList -> AppRoute.InputMethodList
     is SettingsRoute.InputMethodConfig -> AppRoute.InputMethodConfig(route.name, route.uniqueName)
     SettingsRoute.AddonList -> AppRoute.AddonList
-    SettingsRoute.Theme -> AppRoute.Legacy(LegacyTarget.Theme)
+    SettingsRoute.Theme -> AppRoute.Theme
     SettingsRoute.VirtualKeyboard -> AppRoute.Prefs(PrefCategory.Keyboard)
     SettingsRoute.CandidatesWindow -> AppRoute.Prefs(PrefCategory.Candidates)
     SettingsRoute.Clipboard -> AppRoute.Prefs(PrefCategory.Clipboard)

@@ -139,7 +139,7 @@ private val homeFcitxItems = listOf(
 )
 
 private val homeAndroidItems = listOf(
-    HomeDestination(R.string.theme, MiuixIcons.Theme, AppRoute.Legacy(LegacyTarget.Theme)),
+    HomeDestination(R.string.theme, MiuixIcons.Theme, AppRoute.Theme),
     HomeDestination(R.string.virtual_keyboard, MiuixIcons.GridView, AppRoute.Prefs(PrefCategory.Keyboard)),
     HomeDestination(R.string.candidates_window, MiuixIcons.ListView, AppRoute.Prefs(PrefCategory.Candidates)),
     HomeDestination(R.string.clipboard, MiuixIcons.Copy, AppRoute.Prefs(PrefCategory.Clipboard)),

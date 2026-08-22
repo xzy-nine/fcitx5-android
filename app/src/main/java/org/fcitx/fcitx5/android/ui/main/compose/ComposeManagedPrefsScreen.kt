@@ -78,6 +78,7 @@ fun ManagedPrefsScreen(
     category: ManagedPreferenceCategory,
     onBack: () -> Unit,
     highlightKey: String? = null,
+    showTopBar: Boolean = true,
 ) {
     val context = LocalContext.current
     var version by remember { mutableIntStateOf(0) }
@@ -99,7 +100,9 @@ fun ManagedPrefsScreen(
 
     Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
         LazyColumn(
-            contentPadding = PaddingValues(top = 64.dp + topInset),
+            contentPadding = PaddingValues(
+                top = (if (showTopBar) 64.dp else 12.dp) + topInset
+            ),
             modifier = Modifier.fillMaxSize(),
         ) {
             if (category.groups.isEmpty()) {
@@ -153,15 +156,17 @@ fun ManagedPrefsScreen(
                 }
             }
         }
-        SmallTopAppBar(
-            title = context.getString(category.title),
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, contentDescription = null, modifier = Modifier.size(24.dp))
-                }
-            },
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-        )
+        if (showTopBar) {
+            SmallTopAppBar(
+                title = context.getString(category.title),
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(MiuixIcons.Back, contentDescription = null, modifier = Modifier.size(24.dp))
+                    }
+                },
+                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+            )
+        }
     }
 }
 

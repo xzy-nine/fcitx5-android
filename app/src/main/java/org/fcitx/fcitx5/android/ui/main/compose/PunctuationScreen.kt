@@ -71,10 +71,23 @@ fun PunctuationScreen(
     var loading by remember { mutableStateOf(true) }
     var editTarget by remember { mutableStateOf<Pair<Int, PunctuationMapEntry>?>(null) }
     var isNew by remember { mutableStateOf(false) }
+    // labels come from the fcitx config description (same as the legacy fragment, no hardcoding)
+    var keyLabel by remember { mutableStateOf("") }
+    var mappingLabel by remember { mutableStateOf("") }
+    var altMappingLabel by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         val raw = fcitx.runOnReady { getPunctuationConfig(effectiveLang) }
         entries = PunctuationManager.parseRawConfig(raw)
+        // parse the description of the map-entry options for the edit dialog field labels
+        raw["desc"][PunctuationManager.MAP_ENTRY_CONFIG].subItems?.forEach {
+            val desc = it["Description"].value
+            when (it.name) {
+                PunctuationManager.KEY -> keyLabel = desc
+                PunctuationManager.MAPPING -> mappingLabel = desc
+                PunctuationManager.ALT_MAPPING -> altMappingLabel = desc
+            }
+        }
         loading = false
     }
 
@@ -167,10 +180,10 @@ fun PunctuationScreen(
 
     editTarget?.let { (index, entry) ->
         SimpleThreeFieldDialog(
-            title = context.getString(R.string.quickphrase_editor),
-            field1Label = context.getString(R.string.quickphrase_keyword),
-            field2Label = context.getString(R.string.quickphrase_phrase),
-            field3Label = context.getString(R.string.quickphrase_phrase),
+            title = title,
+            field1Label = keyLabel,
+            field2Label = mappingLabel,
+            field3Label = altMappingLabel,
             value1 = entry.key,
             value2 = entry.mapping,
             value3 = entry.altMapping,
