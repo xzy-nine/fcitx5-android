@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="split_keyboard">分割キーボード</string>
+    <string name="split_keyboard_blank_ratio">分割キーボードの空白比率</string>
+    <string name="split_keyboard_threshold">分割キーボードのしきい値 (幅/高さ)</string>
+</resources>

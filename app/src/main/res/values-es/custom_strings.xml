@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="split_keyboard">Teclado dividido</string>
+    <string name="split_keyboard_blank_ratio">Proporción de espacio en blanco del teclado dividido</string>
+    <string name="split_keyboard_threshold">Umbral del teclado dividido (An/Al)</string>
+</resources>

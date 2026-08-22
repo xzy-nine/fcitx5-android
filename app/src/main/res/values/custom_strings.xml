@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Custom: toolbar height -->
+    <string name="toolbar_height">Toolbar height</string>
+
+    <!-- Custom: split keyboard -->
+    <string name="split_keyboard">Split keyboard</string>
+    <string name="split_keyboard_blank_ratio">Split keyboard blank ratio</string>
+    <string name="split_keyboard_threshold">Split keyboard threshold (W/H)</string>
+    <string name="space_behavior_voice_input">Switch to voice input</string>
+    <string name="group_split_keyboard">Split Keyboard</string>
+    <string name="group_key_gestures">Key Gestures</string>
+    <string name="group_candidate_style">Candidate Style</string>
+    <string name="group_key_feedback">Key Feedback</string>
+    <string name="group_toolbar">Toolbar</string>
+    <string name="group_keys_layout">Keys &amp; Layout</string>
+    <string name="group_voice">Voice</string>
+
+    <!-- Custom: candidate swipe -->
+    <string name="horizontal_candidate_swipe">Swipe candidates</string>
+
+    <!-- Custom: clipboard broadcast -->
+    <string name="broadcast_settings">Clipboard Broadcast</string>
+    <string name="broadcast_enable">Enable clipboard broadcast</string>
+    <string name="broadcast_enable_summary">Broadcast encrypted clipboard content to paired apps</string>
+    <string name="paired_apps">Paired Apps</string>
+    <string name="no_paired_apps">No paired apps</string>
+    <string name="pairing_code">Pairing Code</string>
+    <string name="pairing_code_summary">Tap to copy, share this code with other apps to pair</string>
+    <string name="pairing_code_copied">Pairing code copied to clipboard</string>
+    <string name="refresh_pairing_code">Refresh pairing code</string>
+    <string name="revoke_pairing">Revoke pairing</string>
+    <string name="revoke_pairing_confirm">Revoke pairing for %1$s?</string>
+    <string name="pairing_expired">Pairing code expired, please refresh</string>
+    <string name="pairing_success">Pairing successful</string>
+    <string name="pairing_failed">Pairing failed: invalid code</string>
+    <string name="app_paired">%1$s has been paired</string>
+    <string name="app_revoked">%1$s pairing revoked</string>
+    <string name="broadcast_action">org.fcitx.fcitx5.android.action.CLIPBOARD_BROADCAST</string>
+
+    <!-- Custom: settings search -->
+    <string name="search">Search</string>
+    <string name="search_settings">Search settings</string>
+
+</resources>

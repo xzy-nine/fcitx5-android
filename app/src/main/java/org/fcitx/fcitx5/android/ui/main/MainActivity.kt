@@ -9,21 +9,15 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.view.Menu
-import android.view.MenuInflater
-import android.view.MenuItem
 import android.view.ViewGroup
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.MenuProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
-import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.fragment.NavHostFragment
@@ -33,14 +27,12 @@ import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.databinding.ActivityMainBinding
 import org.fcitx.fcitx5.android.ui.main.settings.SearchResult
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
-import org.fcitx.fcitx5.android.ui.main.settings.SettingsSearchManager
+import org.fcitx.fcitx5.android.ui.main.settings.SettingsSearchNavigator
 import org.fcitx.fcitx5.android.ui.setup.SetupActivity
-import org.fcitx.fcitx5.android.utils.item
 import org.fcitx.fcitx5.android.utils.navigateWithAnim
 import org.fcitx.fcitx5.android.utils.parcelable
 import org.fcitx.fcitx5.android.utils.startActivity
 import splitties.dimensions.dp
-import splitties.resources.styledColor
 import splitties.views.topPadding
 
 class MainActivity : AppCompatActivity() {
@@ -49,8 +41,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var navController: NavController
 
-    private var pendingSearchResult: SearchResult? = null
-    private var pendingHighlightKey: String? = null
+    private lateinit var searchNavigator: SettingsSearchNavigator
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,6 +63,8 @@ class MainActivity : AppCompatActivity() {
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         navController = binding.navHostFragment.getFragment<NavHostFragment>().navController
         navController.graph = SettingsRoute.createGraph(navController)
+        searchNavigator = SettingsSearchNavigator(this)
+        searchNavigator.registerMenuProvider()
         viewModel.toolbarTitle.observe(this) {
             supportActionBar!!.title = it
         }
@@ -86,16 +79,6 @@ class MainActivity : AppCompatActivity() {
                 viewModel.enableToolbarShadow()
             }
         }
-        // search menu provider (always visible)
-        addMenuProvider(object : MenuProvider {
-            override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
-                val iconTint = styledColor(android.R.attr.colorControlNormal)
-                menu.item(R.string.search, R.drawable.ic_baseline_search_24, iconTint, true) {
-                    SettingsSearchManager.showSearchDialog(this@MainActivity)
-                }
-            }
-            override fun onMenuItemSelected(menuItem: MenuItem): Boolean = false
-        }, this, Lifecycle.State.STARTED)
         processIntent(intent)
         checkNotificationPermission()
     }
@@ -140,29 +123,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    fun navigateToSetting(result: SearchResult) {
-        pendingSearchResult = result
-        val popped = navController.popBackStack(SettingsRoute.Index, false)
-        if (!popped) {
-            onIndexShown()
-        }
-    }
+    fun navigateToSetting(result: SearchResult) =
+        searchNavigator.navigateToSetting(navController, result)
 
-    fun onIndexShown() {
-        val result = pendingSearchResult ?: return
-        pendingSearchResult = null
+    fun onIndexShown() = searchNavigator.onIndexShown(navController)
 
-        Handler(Looper.getMainLooper()).postDelayed({
-            pendingHighlightKey = result.highlightKey
-            navController.navigateWithAnim(result.route)
-        }, 500)
-    }
-
-    fun getPendingHighlightKey(): String? {
-        val key = pendingHighlightKey
-        pendingHighlightKey = null
-        return key
-    }
+    fun getPendingHighlightKey(): String? = searchNavigator.takePendingHighlightKey()
 
     private var needNotifications by AppPrefs.getInstance().internal.needNotifications
 

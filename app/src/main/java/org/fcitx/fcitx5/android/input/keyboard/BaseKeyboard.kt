@@ -131,28 +131,7 @@ abstract class BaseKeyboard(
         removeAllViews()
         val gapRatio = splitGapRatio()
         val rowGroupPercents = if (effectiveSplit) {
-            val ratio = (1f - gapRatio).coerceAtLeast(0f)
-            val nonSpacePercents = keyLayout.mapIndexed { _, row ->
-                if (rowContainsSpaceKey(row)) 0f
-                else {
-                    val keyCount = row.size
-                    if (keyCount <= 0) return@mapIndexed 0f
-                    val oddAdjust = if (keyCount % 2 == 0 || !isStandardWidthRow(row)) {
-                        1f
-                    } else {
-                        keyCount.toFloat() / (keyCount + 1f)
-                    }
-                    ratio * oddAdjust
-                }
-            }
-            nonSpacePercents.mapIndexed { index, percent ->
-                if (percent > 0f) percent
-                else {
-                    val prev = nonSpacePercents.getOrNull(index - 1) ?: 0f
-                    val next = nonSpacePercents.getOrNull(index + 1) ?: 0f
-                    maxOf(prev, next, ratio)
-                }
-            }
+            computeRowGroupPercents(keyLayout, gapRatio)
         } else {
             emptyList()
         }
@@ -200,10 +179,6 @@ abstract class BaseKeyboard(
         Timber.d("rebuildKeyboardRows split=%s rows=%d", effectiveSplit, keyRows.size)
     }
 
-    private fun rowContainsSpaceKey(row: List<KeyDef>): Boolean {
-        return row.any { it is SpaceKey || it is MiniSpaceKey }
-    }
-
     private fun splitGapRatio(): Float {
         val percent = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
             prefs.keyboard.splitKeyboardBlankRatioLandscape.getValue()
@@ -226,9 +201,9 @@ abstract class BaseKeyboard(
         gapRatio: Float,
         rowScale: Float
     ): ConstraintLayout {
-        val (leftRow, rightRow) = splitRow(row)
-        val leftRaw = rowPercent(leftRow)
-        val rightRaw = rowPercent(rightRow)
+        val (leftRow, rightRow) = splitRowAtMiddle(row)
+        val leftRaw = splitRowWidthPercent(leftRow)
+        val rightRaw = splitRowWidthPercent(rightRow)
         val totalRaw = (leftRaw + rightRaw).coerceAtLeast(1e-6f)
         val scale = (rowScale / totalRaw).coerceAtLeast(0f)
         val leftWidth = leftRaw * scale
@@ -297,8 +272,8 @@ abstract class BaseKeyboard(
         val leftRow = row.subList(0, spaceIndex)
         val spaceDef = row[spaceIndex]
         val rightRow = row.subList(spaceIndex + 1, row.size)
-        val leftRaw = rowPercent(leftRow)
-        val rightRaw = rowPercent(rightRow)
+        val leftRaw = splitRowWidthPercent(leftRow)
+        val rightRaw = splitRowWidthPercent(rightRow)
         val ratio = (1f - gapRatio).coerceAtLeast(0f)
         val leftWidth = (leftRaw * ratio).coerceAtLeast(0f)
         val rightWidth = (rightRaw * ratio).coerceAtLeast(0f)
@@ -351,37 +326,6 @@ abstract class BaseKeyboard(
                 matchConstraintDefaultWidth = LayoutParams.MATCH_CONSTRAINT_PERCENT
                 matchConstraintPercentWidth = 1f
             })
-        }
-    }
-
-    private fun rowPercent(row: List<KeyDef>): Float {
-        var total = 0f
-        row.forEach { def ->
-            if (def is SpaceKey || def is MiniSpaceKey) return@forEach
-            val width = def.appearance.percentWidth
-            if (width > 0f) {
-                total += width
-            }
-        }
-        return total
-    }
-
-    private fun isStandardWidthRow(row: List<KeyDef>): Boolean {
-        val standard = 0.1f
-        val eps = 1e-4f
-        return row.all { def ->
-            if (def is SpaceKey || def is MiniSpaceKey) true
-            else (def.appearance.percentWidth - standard).absoluteValue <= eps
-        }
-    }
-
-    private fun splitRow(row: List<KeyDef>): Pair<List<KeyDef>, List<KeyDef>> {
-        if (row.isEmpty()) return emptyList<KeyDef>() to emptyList()
-        val mid = row.size / 2
-        return if (row.size % 2 == 0) {
-            row.subList(0, mid) to row.subList(mid, row.size)
-        } else {
-            row.subList(0, mid + 1) to row.subList(mid, row.size)
         }
     }
 

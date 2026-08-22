@@ -447,23 +447,6 @@ class ImageTextKeyView(ctx: Context, theme: Theme, def: KeyDef.Appearance.ImageT
         }
     }
 
-    fun setIconVisible(visible: Boolean) {
-        if (visible) {
-            img.visibility = View.VISIBLE
-            mainText.updateLayoutParams<ConstraintLayout.LayoutParams> {
-                centerHorizontally()
-                bottomToBottom = parentId
-                bottomMargin = vMargin + if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) dp(2) else dp(4)
-                topToTop = unset
-            }
-        } else {
-            img.visibility = View.GONE
-            mainText.updateLayoutParams<ConstraintLayout.LayoutParams> {
-                centerInParent()
-            }
-        }
-    }
-
     override fun onConfigurationChanged(newConfig: Configuration) {
         updateMargins(newConfig.orientation)
     }

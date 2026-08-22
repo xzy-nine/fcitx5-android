@@ -9,8 +9,10 @@ import android.content.res.TypedArray
 import android.os.Build
 import android.text.InputType
 import android.text.method.DigitsKeyListener
+import androidx.annotation.StringRes
 import androidx.preference.EditTextPreference
 import java.util.Locale
+import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceUi
 
 class EditTextFloatPreference(context: Context) : EditTextPreference(context) {
 
@@ -78,5 +80,29 @@ class EditTextFloatPreference(context: Context) : EditTextPreference(context) {
         override fun provideSummary(preference: EditTextFloatPreference): CharSequence {
             return preference.run { "${textForValue()} $unit" }
         }
+    }
+}
+
+class EditTextFloatUi(
+    @StringRes
+    val title: Int,
+    key: String,
+    val defaultValue: Float,
+    val min: Float,
+    val max: Float,
+    val unit: String = "",
+    enableUiOn: (() -> Boolean)? = null
+) : ManagedPreferenceUi<EditTextPreference>(key, enableUiOn) {
+    override fun createUi(context: Context) = EditTextFloatPreference(context).apply {
+        key = this@EditTextFloatUi.key
+        isIconSpaceReserved = false
+        isSingleLineTitle = false
+        summaryProvider = EditTextFloatPreference.SimpleSummaryProvider
+        setDefaultValue(this@EditTextFloatUi.defaultValue)
+        setTitle(this@EditTextFloatUi.title)
+        setDialogTitle(this@EditTextFloatUi.title)
+        min = this@EditTextFloatUi.min
+        max = this@EditTextFloatUi.max
+        unit = this@EditTextFloatUi.unit
     }
 }

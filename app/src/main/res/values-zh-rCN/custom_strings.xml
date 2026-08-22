@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Custom: toolbar height -->
+    <string name="toolbar_height">工具栏高度</string>
+
+    <!-- Custom: split keyboard -->
+    <string name="split_keyboard">分离式键盘</string>
+    <string name="split_keyboard_blank_ratio">分离式键盘空白比例</string>
+    <string name="split_keyboard_threshold">分离式键盘阈值 (宽/高)</string>
+    <string name="space_behavior_voice_input">切换到语音输入</string>
+    <string name="group_split_keyboard">分离式键盘</string>
+    <string name="group_key_gestures">按键手势</string>
+    <string name="group_candidate_style">候选词样式</string>
+    <string name="group_key_feedback">按键反馈</string>
+    <string name="group_toolbar">工具栏</string>
+    <string name="group_keys_layout">按键与布局</string>
+    <string name="group_voice">语音</string>
+
+    <!-- Custom: candidate swipe -->
+    <string name="horizontal_candidate_swipe">滑动候选词</string>
+
+    <!-- Custom: clipboard broadcast -->
+    <string name="broadcast_settings">剪切板广播</string>
+    <string name="broadcast_enable">启用剪贴板广播</string>
+    <string name="broadcast_enable_summary">向已配对的应用广播加密的剪贴板内容</string>
+    <string name="paired_apps">已配对的应用</string>
+    <string name="no_paired_apps">暂无已配对的应用</string>
+    <string name="pairing_code">配对码</string>
+    <string name="pairing_code_summary">点击复制，将此配对码分享给其他应用以完成配对</string>
+    <string name="pairing_code_copied">配对码已复制到剪贴板</string>
+    <string name="refresh_pairing_code">刷新配对码</string>
+    <string name="revoke_pairing">撤销配对</string>
+    <string name="revoke_pairing_confirm">确定撤销 %1$s 的配对？</string>
+    <string name="pairing_expired">配对码已过期，请刷新</string>
+    <string name="pairing_success">配对成功</string>
+    <string name="pairing_failed">配对失败：无效的配对码</string>
+    <string name="app_paired">%1$s 已完成配对</string>
+    <string name="app_revoked">%1$s 的配对已撤销</string>
+    <string name="broadcast_action">org.fcitx.fcitx5.android.action.CLIPBOARD_BROADCAST</string>
+
+    <!-- Custom: settings search -->
+    <string name="search">搜索</string>
+    <string name="search_settings">搜索设置</string>
+
+</resources>

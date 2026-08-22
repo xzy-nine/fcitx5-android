@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="split_keyboard">Разделенная клавиатура</string>
+    <string name="split_keyboard_blank_ratio">Доля пустого пространства разделенной клавиатуры</string>
+    <string name="split_keyboard_threshold">Порог разделенной клавиатуры (Ш/В)</string>
+</resources>

@@ -8,6 +8,7 @@ import android.content.SharedPreferences
 import androidx.annotation.StringRes
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceScreen
+import org.fcitx.fcitx5.android.ui.main.settings.EditTextFloatUi
 
 abstract class ManagedPreferenceCategory(
     @StringRes val title: Int,
@@ -122,7 +123,7 @@ abstract class ManagedPreferenceCategory(
         enableUiOn: (() -> Boolean)? = null
     ): ManagedPreference.PFloat {
         val pref = ManagedPreference.PFloat(sharedPreferences, key, defaultValue)
-        val ui = ManagedPreferenceUi.EditTextFloat(
+        val ui = EditTextFloatUi(
             title, key, defaultValue, min, max, unit, enableUiOn
         )
         pref.register()
@@ -178,21 +179,7 @@ abstract class ManagedPreferenceCategory(
                 })
             }
         } else {
-            val uiMap = managedPreferencesUi.associateBy { it.key }
-            groups.forEachIndexed { index, group ->
-                val category = PreferenceCategory(ctx).apply {
-                    title = ctx.getString(group.title)
-                }
-                screen.addPreference(category)
-                group.keys.forEach { key ->
-                    val ui = uiMap[key]
-                    if (ui != null) {
-                        category.addPreference(ui.createUi(ctx).apply {
-                            isEnabled = ui.isEnabled()
-                        })
-                    }
-                }
-            }
+            renderGroupedPreferenceUi(screen, groups, managedPreferencesUi)
         }
     }
 }

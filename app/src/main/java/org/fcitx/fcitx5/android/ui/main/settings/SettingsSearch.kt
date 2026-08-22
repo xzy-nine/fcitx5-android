@@ -79,7 +79,7 @@ object SettingsSearchManager {
             is ManagedPreferenceUi.StringList<*> -> context.getString(ui.title)
             is ManagedPreferenceUi.VoiceInputList -> context.getString(ui.title)
             is ManagedPreferenceUi.EditTextInt -> context.getString(ui.title)
-            is ManagedPreferenceUi.EditTextFloat -> context.getString(ui.title)
+            is EditTextFloatUi -> context.getString(ui.title)
             is ManagedPreferenceUi.SeekBarInt -> context.getString(ui.title)
             is ManagedPreferenceUi.TwinSeekBarInt -> context.getString(ui.title)
             else -> ""

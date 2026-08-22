@@ -7,11 +7,9 @@ package org.fcitx.fcitx5.android.input
 
 import android.annotation.SuppressLint
 import android.content.res.Configuration
-import android.graphics.Outline
 import android.graphics.Point
 import android.os.Build
 import android.view.View
-import android.view.ViewOutlineProvider
 import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InlineSuggestionsResponse
@@ -277,34 +275,7 @@ class InputView(
         }
 
         // 为键盘区域添加顶部圆角裁剪效果
-        val keyboardCornerRadius = dp(16).toFloat()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            keyboardView.outlineProvider = object : ViewOutlineProvider() {
-                override fun getOutline(view: View, outline: Outline) {
-                    val path = android.graphics.Path().apply {
-                        val r = keyboardCornerRadius
-                        val w = view.width.toFloat()
-                        val h = view.height.toFloat()
-                        moveTo(0f, r)
-                        quadTo(0f, 0f, r, 0f)
-                        lineTo(w - r, 0f)
-                        quadTo(w, 0f, w, r)
-                        lineTo(w, h)
-                        lineTo(0f, h)
-                        close()
-                    }
-                    outline.setConvexPath(path)
-                }
-            }
-            keyboardView.clipToOutline = true
-        } else {
-            keyboardView.outlineProvider = object : ViewOutlineProvider() {
-                override fun getOutline(view: View, outline: Outline) {
-                    outline.setRoundRect(0, 0, view.width, view.height, keyboardCornerRadius)
-                }
-            }
-            keyboardView.clipToOutline = true
-        }
+        keyboardView.applyTopRoundedCornerClip(dp(16).toFloat())
 
         updateKeyboardSize()
 

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="split_keyboard">분할 키보드</string>
+    <string name="split_keyboard_blank_ratio">분할 키보드 공백 비율</string>
+    <string name="split_keyboard_threshold">분할 키보드 임계값 (너비/높이)</string>
+</resources>

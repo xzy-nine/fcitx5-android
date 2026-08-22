@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Custom: toolbar height -->
+    <string name="toolbar_height">工具行高度</string>
+
+    <!-- Custom: split keyboard -->
+    <string name="split_keyboard">分離式鍵盤</string>
+    <string name="split_keyboard_blank_ratio">分離式鍵盤空白比例</string>
+    <string name="split_keyboard_threshold">分離式鍵盤閾值 (寬/高)</string>
+    <string name="space_behavior_voice_input">切換到語音輸入</string>
+    <string name="group_split_keyboard">分離式鍵盤</string>
+    <string name="group_key_gestures">按鍵手勢</string>
+    <string name="group_candidate_style">候選詞樣式</string>
+    <string name="group_key_feedback">按鍵回饋</string>
+    <string name="group_toolbar">工具列</string>
+    <string name="group_keys_layout">按鍵與佈局</string>
+    <string name="group_voice">語音</string>
+
+    <!-- Custom: candidate swipe -->
+    <string name="horizontal_candidate_swipe">滑動候選詞</string>
+
+    <!-- Custom: clipboard broadcast -->
+    <string name="broadcast_settings">剪貼板廣播</string>
+    <string name="broadcast_enable">啟用剪貼簿廣播</string>
+    <string name="broadcast_enable_summary">向已配對的應用廣播加密的剪貼簿內容</string>
+    <string name="paired_apps">已配對的應用</string>
+    <string name="no_paired_apps">暫無已配對的應用</string>
+    <string name="pairing_code">配對碼</string>
+    <string name="pairing_code_summary">點擊複製，將此配對碼分享給其他應用以完成配對</string>
+    <string name="pairing_code_copied">配對碼已複製到剪貼簿</string>
+    <string name="refresh_pairing_code">重新整理配對碼</string>
+    <string name="revoke_pairing">撤銷配對</string>
+    <string name="revoke_pairing_confirm">確定撤銷 %1$s 的配對？</string>
+    <string name="pairing_expired">配對碼已過期，請重新整理</string>
+    <string name="pairing_success">配對成功</string>
+    <string name="pairing_failed">配對失敗：無效的配對碼</string>
+    <string name="app_paired">%1$s 已完成配對</string>
+    <string name="app_revoked">%1$s 的配對已撤銷</string>
+    <string name="broadcast_action">org.fcitx.fcitx5.android.action.CLIPBOARD_BROADCAST</string>
+
+    <!-- Custom: settings search -->
+    <string name="search">搜尋</string>
+    <string name="search_settings">搜尋設定</string>
+
+</resources>
