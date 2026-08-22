@@ -6,6 +6,7 @@ plugins {
     id("org.fcitx.fcitx5.android.fcitx-component")
     alias(libs.plugins.kotlin.parcelize)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
 
@@ -36,6 +37,7 @@ android {
     buildFeatures {
         viewBinding = true
         resValues = true
+        compose = true
     }
 
     buildTypes {
@@ -124,6 +126,13 @@ dependencies {
     implementation(libs.splitties.views.dsl.recyclerview)
     implementation(libs.splitties.views.recyclerview)
     implementation(libs.aboutlibraries.core)
+    implementation(libs.miuix.core.android)
+    implementation(libs.miuix.ui.android)
+    implementation(libs.miuix.preference.android)
+    implementation(libs.miuix.icons.android)
+    implementation(libs.miuix.nav.android)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.jetbrains.compose.foundation.android)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)
