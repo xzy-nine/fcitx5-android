@@ -6,6 +6,8 @@
 package org.fcitx.fcitx5.android.input
 
 import android.content.Context
+import android.os.Bundle
+import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -21,12 +23,24 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.input.dialog.InputMethodListAdapter
 import org.fcitx.fcitx5.android.input.dialog.SingleDividerDecoration
@@ -50,20 +64,54 @@ import top.yukonga.miuix.kmp.theme.ThemeController
 /**
  * Compose host mounted on top of the keyboard View hierarchy. Renders the Miuix-styled
  * menus / dialogs / snackbars requested through [KeyboardMiuixBridge].
+ *
+ * InputMethodService's input view tree does not propagate a SavedStateRegistryOwner, so a minimal
+ * owner chain is installed on this view before [ComposeView] attaches.
  */
-fun createKeyboardMiuixOverlayHost(context: Context): ComposeView =
-    ComposeView(context).apply {
+fun createKeyboardMiuixOverlayHost(context: Context): ComposeView {
+    val lifecycleOwner = object : LifecycleOwner {
+        private val registry = LifecycleRegistry(this)
+        override val lifecycle: Lifecycle get() = registry
+        fun resume() = registry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        fun pause() = registry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+    }
+    val savedStateOwner = object : LifecycleOwner by lifecycleOwner,
+        SavedStateRegistryOwner {
+        private val controller = SavedStateRegistryController.create(this)
+        override val savedStateRegistry: SavedStateRegistry get() = controller.savedStateRegistry
+        fun attach() = controller.performRestore(Bundle())
+    }
+    val viewModelStoreOwner = object : ViewModelStoreOwner {
+        override val viewModelStore = ViewModelStore()
+    }
+    return ComposeView(context).apply {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+        setViewTreeLifecycleOwner(lifecycleOwner)
+        setViewTreeSavedStateRegistryOwner(savedStateOwner)
+        setViewTreeViewModelStoreOwner(viewModelStoreOwner)
+        addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {
+                savedStateOwner.attach()
+                lifecycleOwner.resume()
+            }
+
+            override fun onViewDetachedFromWindow(v: View) {
+                lifecycleOwner.pause()
+            }
+        })
         setContent {
             KeyboardMiuixOverlay()
         }
     }
+}
 
 @Composable
 private fun KeyboardMiuixOverlay() {
     val themeController = remember { ThemeController(ColorSchemeMode.System) }
     MiuixTheme(controller = themeController) {
-        Scaffold {
+        // MUST stay transparent: this host fills the whole input view above the keyboard,
+        // a surface-colored Scaffold would hide the keyboard behind it.
+        Scaffold(containerColor = Color.Transparent) {
             KeyboardMiuixContent()
         }
     }
