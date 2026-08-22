@@ -3,7 +3,7 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.dialog
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.core.Key
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.Icon
@@ -43,6 +44,7 @@ import top.yukonga.miuix.kmp.icon.extended.ExpandMore
 import top.yukonga.miuix.kmp.theme.LocalDismissState
 import top.yukonga.miuix.kmp.window.WindowDialog
 import top.yukonga.miuix.kmp.window.WindowListPopup
+import androidx.compose.ui.res.stringResource
 
 /** Edit mode of [RawConfigListEditDialog], mirroring the old ListFragment behaviours. */
 sealed interface RawListEditMode {
@@ -83,11 +85,11 @@ fun RawConfigListEditDialog(
     val addState = rememberTextFieldState()
     val listState = rememberLazyListState()
 
-    fun display(value: String): String = when (val m = mode) {
+    fun display(value: String): String = when (mode) {
         is RawListEditMode.Choices ->
-            m.entriesI18n?.getOrNull(m.entries.indexOf(value)) ?: value
+            mode.entriesI18n?.getOrNull(mode.entries.indexOf(value)) ?: value
         RawListEditMode.Key ->
-            runCatching { org.fcitx.fcitx5.android.core.Key.parse(value).localizedString }
+            runCatching { Key.parse(value).localizedString }
                 .getOrDefault(value)
         else -> value
     }
@@ -173,7 +175,7 @@ fun RawConfigListEditDialog(
                 when (mode) {
                     is RawListEditMode.Choices, RawListEditMode.Bool -> {
                         TextButton(
-                            text = context.getString(R.string.add),
+                            text = stringResource(R.string.add),
                             onClick = { showAddPopup = true },
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -181,7 +183,7 @@ fun RawConfigListEditDialog(
 
                     RawListEditMode.Key -> {
                         TextButton(
-                            text = context.getString(R.string.add),
+                            text = stringResource(R.string.add),
                             onClick = { keyEditIndex = entries.size },
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -195,7 +197,7 @@ fun RawConfigListEditDialog(
                         ) {
                             TextField(
                                 state = addState,
-                                label = context.getString(R.string.add),
+                                label = stringResource(R.string.add),
                                 modifier = Modifier.weight(1f),
                             )
                             IconButton(
@@ -223,7 +225,7 @@ fun RawConfigListEditDialog(
                         .padding(top = 12.dp),
                 ) {
                     TextButton(
-                        text = context.getString(android.R.string.cancel),
+                        text = stringResource(android.R.string.cancel),
                         onClick = {
                             show = false
                             onDismiss()
@@ -231,7 +233,7 @@ fun RawConfigListEditDialog(
                         modifier = Modifier.weight(1f),
                     )
                     TextButton(
-                        text = context.getString(android.R.string.ok),
+                        text = stringResource(android.R.string.ok),
                         onClick = {
                             onConfirm(entries.toList())
                             show = false
@@ -246,8 +248,8 @@ fun RawConfigListEditDialog(
     }
 
     if (showAddPopup) {
-        val candidates = when (val m = mode) {
-            is RawListEditMode.Choices -> m.entries.filter { it !in entries }
+        val candidates = when (mode) {
+            is RawListEditMode.Choices -> mode.entries.filter { it !in entries }
             RawListEditMode.Bool -> listOf("True", "False").filter { it !in entries }
             else -> emptyList()
         }

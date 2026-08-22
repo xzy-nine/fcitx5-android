@@ -3,8 +3,9 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.dialog
 
+import android.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import org.fcitx.fcitx5.android.ui.main.settings.KeyPreferenceUi
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.window.WindowDialog
+import androidx.compose.ui.res.stringResource
 
 /**
  * Window dialog wrapping the legacy [KeyPreferenceUi] capture view (Compose hosts View).
@@ -38,7 +40,6 @@ fun KeyCaptureDialog(
     onDismiss: () -> Unit,
 ) {
     var show by remember { mutableStateOf(true) }
-    val context = LocalContext.current
     val keyUi = remember { mutableStateOf<KeyPreferenceUi?>(null) }
 
     if (show) {
@@ -70,7 +71,7 @@ fun KeyCaptureDialog(
                         .padding(top = 12.dp),
                 ) {
                     TextButton(
-                        text = context.getString(android.R.string.cancel),
+                        text = stringResource(R.string.cancel),
                         onClick = {
                             show = false
                             onDismiss()
@@ -78,7 +79,7 @@ fun KeyCaptureDialog(
                         modifier = Modifier.weight(1f),
                     )
                     TextButton(
-                        text = context.getString(android.R.string.ok),
+                        text = stringResource(R.string.ok),
                         onClick = {
                             keyUi.value?.lastKey?.let { key ->
                                 onConfirm(key.toString())

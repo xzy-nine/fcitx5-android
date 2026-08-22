@@ -3,7 +3,7 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.screens
 
 import android.os.Build
 import androidx.compose.foundation.background
@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -64,6 +65,7 @@ import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.ui.res.stringResource
 
 /**
  * Compose renderer for the input method list (replaces the View-based InputMethodListFragment).
@@ -78,7 +80,7 @@ fun InputMethodListScreen(
     val context = LocalContext.current
     val fcitx: FcitxConnection = remember { FcitxDaemon.connect("compose-imlist") }
     val scope = remember {
-        kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        CoroutineScope(SupervisorJob() + Dispatchers.Main)
     }
     var available by remember { mutableStateOf<List<InputMethodEntry>>(emptyList()) }
     var enabled by remember { mutableStateOf<List<InputMethodEntry>>(emptyList()) }
@@ -237,7 +239,7 @@ fun InputMethodListScreen(
         }
         SmallTopAppBar(
             color = MiuixTheme.colorScheme.surfaceContainer,
-            title = context.getString(R.string.input_methods),
+            title = stringResource(R.string.input_methods),
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(MiuixIcons.Back, null, Modifier.size(24.dp))

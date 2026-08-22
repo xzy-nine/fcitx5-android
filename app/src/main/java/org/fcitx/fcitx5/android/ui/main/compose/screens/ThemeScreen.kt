@@ -3,7 +3,7 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.screens
 
 import android.view.ViewOutlineProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -54,8 +54,10 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeFilesManager
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
+import org.fcitx.fcitx5.android.ui.main.compose.settings.ManagedPrefsScreen
 import org.fcitx.fcitx5.android.ui.main.settings.theme.CustomThemeActivity
 import org.fcitx.fcitx5.android.ui.main.settings.theme.KeyboardPreviewUi
+import org.fcitx.fcitx5.android.ui.main.settings.theme.NewThemeEntryUi
 import org.fcitx.fcitx5.android.ui.main.settings.theme.ThemeThumbnailUi
 import org.fcitx.fcitx5.android.utils.importErrorDialog
 import org.fcitx.fcitx5.android.utils.queryFileName
@@ -74,6 +76,7 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 import java.util.UUID
+import androidx.compose.ui.res.stringResource
 
 /**
  * Compose renderer for the theme page (replaces ThemeFragment + ThemeListFragment + ThemeSettingsFragment).
@@ -235,8 +238,8 @@ fun ThemeScreen(onBack: () -> Unit) {
             }
             TabRow(
                 tabs = listOf(
-                    context.getString(R.string.theme),
-                    context.getString(R.string.configure),
+                    stringResource(R.string.theme),
+                    stringResource(R.string.configure),
                 ),
                 selectedTabIndex = selectedTab,
                 onTabSelected = { scope.launch { pagerState.animateScrollToPage(it) } },
@@ -315,7 +318,7 @@ fun ThemeScreen(onBack: () -> Unit) {
 
         SmallTopAppBar(
             color = MiuixTheme.colorScheme.surfaceContainer,
-            title = context.getString(R.string.theme),
+            title = stringResource(R.string.theme),
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
@@ -357,7 +360,7 @@ fun ThemeScreen(onBack: () -> Unit) {
 
     pendingSelect?.let { theme ->
         FollowSystemThemeConfirmDialog(
-            message = context.getString(R.string.theme_message_follow_system_day_night_mode_enabled),
+            message = stringResource(R.string.theme_message_follow_system_day_night_mode_enabled),
             onDisable = {
                 ThemeManager.prefs.followSystemDayNightTheme.setValue(false)
                 scope.launch { ThemeManager.setNormalModeTheme(theme) }
@@ -378,13 +381,13 @@ private fun ThemeNewDialog(
     val context = LocalContext.current
     var show by remember { mutableStateOf(true) }
     val options = listOf(
-        context.getString(R.string.choose_image) to onChooseImage,
-        context.getString(R.string.import_from_file) to onImport,
-        context.getString(R.string.duplicate_builtin_theme) to onDuplicate,
+        stringResource(R.string.choose_image) to onChooseImage,
+        stringResource(R.string.import_from_file) to onImport,
+        stringResource(R.string.duplicate_builtin_theme) to onDuplicate,
     )
     WindowDialog(
         show = show,
-        title = context.getString(R.string.new_theme),
+        title = stringResource(R.string.new_theme),
         onDismissRequest = {
             show = false
             onDismiss()
@@ -414,7 +417,7 @@ private fun ThemeDuplicateDialog(
     var show by remember { mutableStateOf(true) }
     WindowDialog(
         show = show,
-        title = context.getString(R.string.duplicate_builtin_theme),
+        title = stringResource(R.string.duplicate_builtin_theme),
         onDismissRequest = {
             show = false
             onDismiss()
@@ -452,7 +455,7 @@ private fun FollowSystemThemeConfirmDialog(
     var show by remember { mutableStateOf(true) }
     WindowDialog(
         show = show,
-        title = context.getString(R.string.configure),
+        title = stringResource(R.string.configure),
         summary = message,
         onDismissRequest = {
             show = false
@@ -464,7 +467,7 @@ private fun FollowSystemThemeConfirmDialog(
             modifier = Modifier.fillMaxWidth(),
         ) {
             TextButton(
-                text = context.getString(android.R.string.ok),
+                text = stringResource(android.R.string.ok),
                 onClick = {
                     show = false
                     onDismiss()
@@ -472,7 +475,7 @@ private fun FollowSystemThemeConfirmDialog(
                 modifier = Modifier.weight(1f),
             )
             TextButton(
-                text = context.getString(R.string.disable_it),
+                text = stringResource(R.string.disable_it),
                 onClick = {
                     show = false
                     onDisable()
@@ -489,7 +492,7 @@ private fun NewThemeEntryView(onClick: () -> Unit) {
     val context = LocalContext.current
     AndroidView(
         factory = { ctx ->
-            org.fcitx.fcitx5.android.ui.main.settings.theme.NewThemeEntryUi(ctx).root.apply {
+            NewThemeEntryUi(ctx).root.apply {
                 setOnClickListener { onClick() }
             }
         },

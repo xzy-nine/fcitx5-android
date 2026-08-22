@@ -3,7 +3,7 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.screens
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
@@ -24,8 +24,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.ui.main.compose.AppRoute
+import org.fcitx.fcitx5.android.ui.main.compose.PrefCategory
+import org.fcitx.fcitx5.android.ui.main.compose.RawConfigHostType
 import org.fcitx.fcitx5.android.utils.Const
-import org.fcitx.fcitx5.android.utils.startActivity
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -50,6 +52,7 @@ import top.yukonga.miuix.kmp.icon.extended.Translate
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.ui.res.stringResource
 
 private data class HomeDestination(
     @StringRes val title: Int,
@@ -64,7 +67,7 @@ fun HomeScreen(
     onSearch: () -> Unit,
 ) {
     val context = LocalContext.current
-    val appName = context.getString(R.string.app_name)
+    val appName = stringResource(R.string.app_name)
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         LazyColumn(
@@ -120,7 +123,7 @@ private fun HomeCard(
     ) {
         items.forEachIndexed { index, dest ->
             ArrowPreference(
-                title = context.getString(dest.title),
+                title = stringResource(dest.title),
                 startAction = {
                     Icon(dest.icon, contentDescription = null, modifier = Modifier.size(24.dp))
                 },
@@ -134,7 +137,8 @@ private fun HomeCard(
 }
 
 private val homeFcitxItems = listOf(
-    HomeDestination(R.string.global_options, MiuixIcons.Tune, AppRoute.RawConfigHost(RawConfigHostType.GlobalConfig)),
+    HomeDestination(R.string.global_options, MiuixIcons.Tune, AppRoute.RawConfigHost(
+        RawConfigHostType.GlobalConfig)),
     HomeDestination(R.string.input_methods, MiuixIcons.Translate, AppRoute.InputMethodList),
     HomeDestination(R.string.addons, MiuixIcons.Merge, AppRoute.AddonList),
 )

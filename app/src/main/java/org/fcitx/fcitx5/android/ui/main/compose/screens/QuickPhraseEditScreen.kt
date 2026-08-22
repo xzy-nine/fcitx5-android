@@ -3,7 +3,7 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -20,24 +20,23 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
-import org.fcitx.fcitx5.android.core.getPunctuationConfig
-import org.fcitx.fcitx5.android.data.punctuation.PunctuationManager
-import org.fcitx.fcitx5.android.data.punctuation.PunctuationMapEntry
-import org.fcitx.fcitx5.android.daemon.FcitxConnection
-import org.fcitx.fcitx5.android.daemon.FcitxDaemon
+import org.fcitx.fcitx5.android.data.quickphrase.QuickPhrase
+import org.fcitx.fcitx5.android.data.quickphrase.QuickPhraseData
+import org.fcitx.fcitx5.android.data.quickphrase.QuickPhraseEntry
+import org.fcitx.fcitx5.android.data.quickphrase.QuickPhraseManager
+import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleTwoFieldDialog
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
@@ -52,58 +51,39 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.ui.res.stringResource
 
 /**
- * Compose renderer for the punctuation map editor (replaces the View-based
- * PunctuationEditorFragment). Entries are key->mapping(+altMapping) triples saved to fcitx.
+ * Compose renderer for editing one quick phrase's keyword->phrase entries
+ * (replaces the View-based QuickPhraseEditFragment).
  */
 @Composable
-fun PunctuationScreen(
-    title: String,
-    lang: String?,
+fun QuickPhraseEditScreen(
+    fileName: String,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val fcitx: FcitxConnection = remember { FcitxDaemon.connect("compose-punctuation") }
-    val effectiveLang = lang ?: "zh_CN"
-    var entries by remember { mutableStateOf<List<PunctuationMapEntry>>(emptyList()) }
+    val quickPhrase: QuickPhrase? = remember(fileName) {
+        QuickPhraseManager.listQuickPhrase().firstOrNull { it.file.name == fileName }
+    }
+    var entries by remember { mutableStateOf<List<QuickPhraseEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
-    var editTarget by remember { mutableStateOf<Pair<Int, PunctuationMapEntry>?>(null) }
+    var editTarget by remember { mutableStateOf<Pair<Int, QuickPhraseEntry>?>(null) }
     var isNew by remember { mutableStateOf(false) }
-    // labels come from the fcitx config description (same as the legacy fragment, no hardcoding)
-    var keyLabel by remember { mutableStateOf("") }
-    var mappingLabel by remember { mutableStateOf("") }
-    var altMappingLabel by remember { mutableStateOf("") }
 
-    LaunchedEffect(Unit) {
-        val raw = fcitx.runOnReady { getPunctuationConfig(effectiveLang) }
-        entries = PunctuationManager.parseRawConfig(raw)
-        // parse the description of the map-entry options for the edit dialog field labels
-        raw["desc"][PunctuationManager.MAP_ENTRY_CONFIG].subItems?.forEach {
-            val desc = it["Description"].value
-            when (it.name) {
-                PunctuationManager.KEY -> keyLabel = desc
-                PunctuationManager.MAPPING -> mappingLabel = desc
-                PunctuationManager.ALT_MAPPING -> altMappingLabel = desc
-            }
+    LaunchedEffect(quickPhrase) {
+        val data = quickPhrase?.let { withContext(Dispatchers.IO) { it.loadData() } }
+        if (data != null) {
+            entries = data.toList()
         }
         loading = false
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            FcitxDaemon.disconnect("compose-punctuation")
-        }
-    }
-
     fun save() {
-        scope.launch {
-            fcitx.runOnReady { PunctuationManager.save(this, effectiveLang, entries) }
-        }
+        quickPhrase?.saveData(QuickPhraseData(entries))
     }
 
-    if (loading) {
+    if (loading || quickPhrase == null) {
         Box(
             Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface),
             contentAlignment = Alignment.Center,
@@ -122,7 +102,7 @@ fun PunctuationScreen(
                 ),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                itemsIndexed(entries) { index, entry ->
+                itemsIndexed(entries, key = { index, _ -> "$index-${entries[index].keyword}" }) { index, entry ->
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
                         colors = CardDefaults.defaultColors(
@@ -134,7 +114,7 @@ fun PunctuationScreen(
                             modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
                         ) {
                             Text(
-                                text = "${entry.key}\u2003→\u2003${entry.mapping} ${entry.altMapping}",
+                                text = "${entry.keyword} → ${entry.phrase.replace("\n", "\\n")}",
                                 modifier = Modifier.weight(1f).padding(vertical = 14.dp),
                             )
                             IconButton(
@@ -160,7 +140,7 @@ fun PunctuationScreen(
         }
         FloatingActionButton(
             onClick = {
-                editTarget = -1 to PunctuationMapEntry("", "", "")
+                editTarget = -1 to QuickPhraseEntry("", "")
                 isNew = true
             },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
@@ -169,7 +149,7 @@ fun PunctuationScreen(
         }
         SmallTopAppBar(
             color = MiuixTheme.colorScheme.surfaceContainer,
-            title = title,
+            title = quickPhrase.name,
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
@@ -180,21 +160,17 @@ fun PunctuationScreen(
     }
 
     editTarget?.let { (index, entry) ->
-        SimpleThreeFieldDialog(
-            title = title,
-            field1Label = keyLabel,
-            field2Label = mappingLabel,
-            field3Label = altMappingLabel,
-            value1 = entry.key,
-            value2 = entry.mapping,
-            value3 = entry.altMapping,
-            onConfirm = { key, mapping, alt ->
+        SimpleTwoFieldDialog(
+            title = stringResource(R.string.quickphrase_editor),
+            field1Label = stringResource(R.string.quickphrase_keyword),
+            field2Label = stringResource(R.string.quickphrase_phrase),
+            value1 = entry.keyword,
+            value2 = entry.phrase,
+            onConfirm = { k, p ->
                 if (isNew) {
-                    entries = entries + PunctuationMapEntry(key, mapping, alt)
+                    entries = entries + QuickPhraseEntry(k, p)
                 } else {
-                    entries = entries.toMutableList().apply {
-                        set(index, PunctuationMapEntry(key, mapping, alt))
-                    }
+                    entries = entries.toMutableList().apply { set(index, QuickPhraseEntry(k, p)) }
                 }
                 save()
                 editTarget = null

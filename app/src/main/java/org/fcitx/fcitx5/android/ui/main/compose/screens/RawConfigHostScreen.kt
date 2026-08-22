@@ -3,7 +3,7 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -16,22 +16,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.FcitxAPI
 import org.fcitx.fcitx5.android.core.RawConfig
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
+import org.fcitx.fcitx5.android.ui.main.compose.AppRoute
+import org.fcitx.fcitx5.android.ui.main.compose.RawConfigHostType
+import org.fcitx.fcitx5.android.ui.main.compose.settings.RawConfigScreen
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.window.WindowDialog
 
 /**
  * Host for fcitx backend config pages. Loads the RawConfig from the fcitx daemon (same API
  * calls as the legacy [org.fcitx.fcitx5.android.ui.main.settings.FcitxPreferenceFragment]
- * subclasses), renders it with [RawConfigScreen] and pushes changes back with saveConfig.
+ * subclasses), renders it with [org.fcitx.fcitx5.android.ui.main.compose.settings.RawConfigScreen] and pushes changes back with saveConfig.
  */
 @Composable
 fun RawConfigHostScreen(
@@ -44,7 +47,7 @@ fun RawConfigHostScreen(
 
     val connectionName = "compose-rawconfig-${route.kind.name}-${route.uniqueName ?: ""}"
     val fcitx: FcitxConnection = remember { FcitxDaemon.connect(connectionName) }
-    val scope = remember { kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main) }
+    val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
 
     DisposableEffect(fcitx, connectionName) {
         scope.launch {

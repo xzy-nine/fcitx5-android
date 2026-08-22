@@ -3,8 +3,9 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.dialog
 
+import android.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,6 +24,7 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.window.WindowDialog
+import androidx.compose.ui.res.stringResource
 
 /** OK/Cancel dialog with two text fields, in miuix style (used by the quick phrase editor). */
 @Composable
@@ -66,7 +68,7 @@ fun SimpleTwoFieldDialog(
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         ) {
             TextButton(
-                text = context.getString(android.R.string.cancel),
+                text = stringResource(R.string.cancel),
                 onClick = {
                     show = false
                     onDismiss()
@@ -74,7 +76,7 @@ fun SimpleTwoFieldDialog(
                 modifier = Modifier.weight(1f),
             )
             TextButton(
-                text = context.getString(android.R.string.ok),
+                text = stringResource(R.string.ok),
                 onClick = {
                     show = false
                     onConfirm(text1.text, text2.text)
@@ -137,7 +139,7 @@ fun SimpleThreeFieldDialog(
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         ) {
             TextButton(
-                text = context.getString(android.R.string.cancel),
+                text = stringResource(R.string.cancel),
                 onClick = {
                     show = false
                     onDismiss()
@@ -145,7 +147,7 @@ fun SimpleThreeFieldDialog(
                 modifier = Modifier.weight(1f),
             )
             TextButton(
-                text = context.getString(android.R.string.ok),
+                text = stringResource(R.string.ok),
                 onClick = {
                     show = false
                     onConfirm(text1.text, text2.text, text3.text)
@@ -194,7 +196,7 @@ fun SimpleTextFieldDialog(
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         ) {
             TextButton(
-                text = context.getString(android.R.string.cancel),
+                text = stringResource(R.string.cancel),
                 onClick = {
                     show = false
                     onDismiss()
@@ -202,7 +204,7 @@ fun SimpleTextFieldDialog(
                 modifier = Modifier.weight(1f),
             )
             TextButton(
-                text = context.getString(android.R.string.ok),
+                text = stringResource(R.string.ok),
                 onClick = {
                     show = false
                     onConfirm()

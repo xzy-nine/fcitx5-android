@@ -3,7 +3,7 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.legacy
 
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.navigation.NavController
@@ -13,7 +13,7 @@ import androidx.navigation.NavController
  * fragment navigation.
  *
  * The compose back stack and the legacy back stack are synchronized as follows:
- *  - entering an [AppRoute.Legacy] attaches a fresh NavHostFragment whose graph starts at an
+ *  - entering an [org.fcitx.fcitx5.android.ui.main.compose.AppRoute.Legacy] attaches a fresh NavHostFragment whose graph starts at an
  *    invisible anchor; the requested destination is pushed on top of it.
  *  - system back, handled by FcitxComposeApp's NavDisplay `onBack`, first asks the legacy stack
  *    to pop: if it still has entries above the anchor, the legacy stack pops a single entry;

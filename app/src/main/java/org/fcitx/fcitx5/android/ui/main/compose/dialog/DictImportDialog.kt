@@ -3,57 +3,46 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.dialog
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.window.WindowDialog
+import org.fcitx.fcitx5.android.R
+import androidx.compose.ui.res.stringResource
 
-/** Minimal OK/Cancel confirmation dialog in miiux style. */
+/**
+ * Miuix-styled confirmation dialog for importing a pinyin dictionary from an external file
+ * (replaces the legacy [androidx.appcompat.app.AlertDialog] with the same wording).
+ */
 @Composable
-fun SimpleConfirmDialog(
-    title: String,
-    message: String? = null,
-    onConfirm: () -> Unit,
+internal fun DictImportDialog(
+    uri: String?,
+    onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var show by remember { mutableStateOf(true) }
-    val context = LocalContext.current
     WindowDialog(
-        show = show,
-        title = title,
-        summary = message,
-        onDismissRequest = {
-            show = false
-            onDismiss()
-        },
+        show = uri != null,
+        title = stringResource(R.string.pinyin_dict),
+        summary = stringResource(R.string.whether_import_dict),
+        onDismissRequest = onDismiss,
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             TextButton(
-                text = context.getString(android.R.string.cancel),
-                onClick = {
-                    show = false
-                    onDismiss()
-                },
+                text = stringResource(android.R.string.cancel),
+                onClick = onDismiss,
                 modifier = Modifier.weight(1f),
             )
             TextButton(
-                text = context.getString(android.R.string.ok),
-                onClick = {
-                    show = false
-                    onConfirm()
-                },
+                text = stringResource(android.R.string.ok),
+                onClick = { uri?.let(onConfirm) },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.textButtonColorsPrimary(),
             )

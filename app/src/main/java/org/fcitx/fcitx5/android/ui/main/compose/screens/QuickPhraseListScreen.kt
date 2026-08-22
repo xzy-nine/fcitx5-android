@@ -3,7 +3,7 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -38,6 +38,7 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.quickphrase.CustomQuickPhrase
 import org.fcitx.fcitx5.android.data.quickphrase.QuickPhrase
 import org.fcitx.fcitx5.android.data.quickphrase.QuickPhraseManager
+import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleTextFieldDialog
 import org.fcitx.fcitx5.android.utils.importErrorDialog
 import org.fcitx.fcitx5.android.utils.queryFileName
 import top.yukonga.miuix.kmp.basic.Card
@@ -54,6 +55,7 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.ui.res.stringResource
 
 /**
  * Compose renderer for the quick phrase list (replaces the View-based QuickPhraseListFragment).
@@ -146,7 +148,7 @@ fun QuickPhraseListScreen(
         }
         SmallTopAppBar(
             color = MiuixTheme.colorScheme.surfaceContainer,
-            title = context.getString(R.string.quickphrase_editor),
+            title = stringResource(R.string.quickphrase_editor),
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
@@ -158,8 +160,8 @@ fun QuickPhraseListScreen(
 
     if (showCreateDialog) {
         SimpleTextFieldDialog(
-            title = context.getString(R.string.create_new),
-            hint = context.getString(R.string.name),
+            title = stringResource(R.string.create_new),
+            hint = stringResource(R.string.name),
             value = createName,
             onValueChange = { createName = it },
             onConfirm = {

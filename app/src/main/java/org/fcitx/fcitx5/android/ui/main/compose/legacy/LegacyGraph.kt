@@ -3,8 +3,9 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.legacy
 
+import android.R
 import android.net.Uri
 import android.os.Bundle
 import android.util.TypedValue
@@ -19,8 +20,6 @@ import androidx.navigation.createGraph
 import androidx.navigation.fragment.fragment
 import androidx.savedstate.SavedState
 import kotlinx.serialization.json.Json
-import org.fcitx.fcitx5.android.core.RawConfig
-import org.fcitx.fcitx5.android.data.quickphrase.QuickPhrase
 import org.fcitx.fcitx5.android.ui.main.AboutFragment
 import org.fcitx.fcitx5.android.ui.main.DeveloperFragment
 import org.fcitx.fcitx5.android.ui.main.LicensesFragment
@@ -54,7 +53,7 @@ import kotlin.reflect.typeOf
  * The upstream [SettingsRoute.createGraph] uses MainFragment as its start destination, which would
  * duplicate the compose home screen when the compose back stack enters a legacy screen. This graph
  * mirrors the upstream graph except for the start destination (an invisible anchor) and the label
- * maps (titles are owned by the compose [AppRoute.Legacy] screens).
+ * maps (titles are owned by the compose [org.fcitx.fcitx5.android.ui.main.compose.AppRoute.Legacy] screens).
  */
 class LegacyAnchorFragment : Fragment() {
     override fun onCreateView(
@@ -65,7 +64,7 @@ class LegacyAnchorFragment : Fragment() {
         // through on the brief transition between anchor and the first destination.
         val bg = TypedValue().also {
             requireContext().theme.resolveAttribute(
-                android.R.attr.colorBackground, it, true
+                R.attr.colorBackground, it, true
             )
         }
         v.setBackgroundColor(bg.data)

@@ -3,15 +3,12 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.settings
 
-import android.content.Context
+import android.util.Log
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,7 +29,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import arrow.core.getOrElse
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.core.Key
 import org.fcitx.fcitx5.android.core.RawConfig
+import org.fcitx.fcitx5.android.ui.main.compose.AppRoute
+import org.fcitx.fcitx5.android.ui.main.compose.dialog.EditValueDialog
+import org.fcitx.fcitx5.android.ui.main.compose.dialog.KeyCaptureDialog
+import org.fcitx.fcitx5.android.ui.main.compose.RawConfigHostType
+import org.fcitx.fcitx5.android.ui.main.compose.dialog.RawConfigListEditDialog
+import org.fcitx.fcitx5.android.ui.main.compose.dialog.RawListEditMode
+import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleConfirmDialog
 import org.fcitx.fcitx5.android.utils.buildDocumentsProviderIntent
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigBool
@@ -44,6 +49,7 @@ import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigInt
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigKey
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigList
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigString
+import org.fcitx.fcitx5.android.utils.config.ConfigType
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
@@ -56,9 +62,9 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.ui.res.stringResource
 
 /**
  * Compose renderer for fcitx's dynamic RawConfig pages (replaces the View-based
@@ -93,7 +99,7 @@ fun RawConfigScreen(
             if (topLevel == null) {
                 item {
                     Box(Modifier.padding(16.dp)) {
-                        Text(text = context.getString(R.string.failed_to_load_config))
+                        Text(text = stringResource(R.string.failed_to_load_config))
                     }
                 }
             } else {
@@ -149,7 +155,7 @@ fun RawConfigScreen(
         }
         SmallTopAppBar(
             color = MiuixTheme.colorScheme.surfaceContainer,
-            title = topLevel?.name ?: context.getString(R.string.global_options),
+            title = topLevel?.name ?: stringResource(R.string.global_options),
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(MiuixIcons.Back, contentDescription = null, modifier = Modifier.size(24.dp))
@@ -179,7 +185,7 @@ private fun RawConfigRow(
     if (node == null) {
         ArrowPreference(
             title = title,
-            summary = descriptor.tooltip ?: context.getString(R.string.unimplemented_type),
+            summary = descriptor.tooltip ?: stringResource(R.string.unimplemented_type),
             enabled = false,
             onClick = null,
         )
@@ -287,11 +293,11 @@ private fun RawConfigRow(
             var showDialog by remember { mutableStateOf(false) }
             var v by remember(node) { mutableStateOf(node.value) }
             val localized = runCatching {
-                org.fcitx.fcitx5.android.core.Key.parse(v).localizedString
+                Key.parse(v).localizedString
             }.getOrDefault(v)
             ArrowPreference(
                 title = title,
-                summary = localized.ifEmpty { context.getString(R.string.none) },
+                summary = localized.ifEmpty { stringResource(R.string.none) },
                 onClick = { showDialog = true },
                 holdDownState = showDialog,
             )
@@ -315,7 +321,7 @@ private fun RawConfigRow(
                 title = title,
                 summary = current.joinToString(", ") {
                     descriptor.entriesI18n?.getOrNull(descriptor.entries.indexOf(it)) ?: it
-                }.ifEmpty { context.getString(R.string.none) },
+                }.ifEmpty { stringResource(R.string.none) },
                 onClick = { showDialog = true },
                 holdDownState = showDialog,
             )
@@ -336,18 +342,18 @@ private fun RawConfigRow(
         }
 
         is ConfigList -> {
-            val subtype = (descriptor.ty as? org.fcitx.fcitx5.android.utils.config.ConfigType.TyList)?.subtype
+            val subtype = (descriptor.ty as? ConfigType.TyList)?.subtype
             val editMode = when (subtype) {
-                org.fcitx.fcitx5.android.utils.config.ConfigType.TyBool -> RawListEditMode.Bool
-                org.fcitx.fcitx5.android.utils.config.ConfigType.TyInt -> RawListEditMode.Number
-                org.fcitx.fcitx5.android.utils.config.ConfigType.TyString -> RawListEditMode.FreeText
-                org.fcitx.fcitx5.android.utils.config.ConfigType.TyKey -> RawListEditMode.Key
+                ConfigType.TyBool -> RawListEditMode.Bool
+                ConfigType.TyInt -> RawListEditMode.Number
+                ConfigType.TyString -> RawListEditMode.FreeText
+                ConfigType.TyKey -> RawListEditMode.Key
                 else -> null
             }
             if (editMode == null) {
                 ArrowPreference(
                     title = title,
-                    summary = descriptor.tooltip ?: context.getString(R.string.unimplemented_type),
+                    summary = descriptor.tooltip ?: stringResource(R.string.unimplemented_type),
                     enabled = false,
                     onClick = null,
                 )
@@ -357,7 +363,7 @@ private fun RawConfigRow(
             val current = node.subItems?.map { it.value }.orEmpty()
             ArrowPreference(
                 title = title,
-                summary = current.joinToString(", ").ifEmpty { context.getString(R.string.none) },
+                summary = current.joinToString(", ").ifEmpty { stringResource(R.string.none) },
                 onClick = { showDialog = true },
                 holdDownState = showDialog,
             )
@@ -422,13 +428,13 @@ private fun RawConfigRow(
                     if (showDialog) {
                         SimpleConfirmDialog(
                             title = title,
-                            message = context.getString(R.string.open_rime_user_data_dir),
+                            message = stringResource(R.string.open_rime_user_data_dir),
                             onConfirm = {
                                 showDialog = false
                                 try {
                                     context.startActivity(buildDocumentsProviderIntent())
                                 } catch (e: Exception) {
-                                    android.util.Log.w("RawConfigScreen", "open rime dir failed", e)
+                                    Log.w("RawConfigScreen", "open rime dir failed", e)
                                 }
                             },
                             onDismiss = { showDialog = false },
@@ -447,7 +453,7 @@ private fun RawConfigRow(
                 )
                 else -> ArrowPreference(
                     title = title,
-                    summary = descriptor.tooltip ?: context.getString(R.string.unimplemented_type),
+                    summary = descriptor.tooltip ?: stringResource(R.string.unimplemented_type),
                     enabled = false,
                     onClick = null,
                 )

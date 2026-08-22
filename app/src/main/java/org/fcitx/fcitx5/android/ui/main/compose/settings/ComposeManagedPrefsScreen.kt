@@ -3,9 +3,10 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.settings
 
 import android.content.Context
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,8 +36,10 @@ import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceCategory
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceUi
+import org.fcitx.fcitx5.android.ui.main.compose.dialog.EditValueDialog
 import org.fcitx.fcitx5.android.ui.main.settings.EditTextFloatUi
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
+import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 
@@ -48,10 +51,10 @@ import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.ui.res.stringResource
 
 /**
  * Compose renderer for a [ManagedPreferenceCategory]. Consumes the shared preference metadata
@@ -115,7 +118,7 @@ fun ManagedPrefsScreen(
                     ) {
                         uiList.forEachIndexed { index, ui ->
                             val isHighlight = uiTitleString(context, ui) == highlightKey
-                            androidx.compose.foundation.layout.Box(
+                            Box(
                                 Modifier.background(
                                     if (isHighlight) highlightColor else Color.Transparent
                                 ),
@@ -129,7 +132,7 @@ fun ManagedPrefsScreen(
             } else {
                 category.groups.forEach { group ->
                     item {
-                        SmallTitle(text = context.getString(group.title))
+                        SmallTitle(text = stringResource(group.title))
                     }
                     item {
                         Card(
@@ -141,7 +144,7 @@ fun ManagedPrefsScreen(
                             val keys = group.keys.filter { uiMap.containsKey(it) }
                             keys.forEachIndexed { index, key ->
                                 val ui = uiMap.getValue(key)
-                                androidx.compose.foundation.layout.Box(
+                                Box(
                                     Modifier.background(
                                         if (uiTitleString(context, ui) == highlightKey) highlightColor
                                         else Color.Transparent
@@ -159,7 +162,7 @@ fun ManagedPrefsScreen(
         if (showTopBar) {
             SmallTopAppBar(
                 color = MiuixTheme.colorScheme.surfaceContainer,
-                title = context.getString(category.title),
+                title = stringResource(category.title),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(MiuixIcons.Back, contentDescription = null, modifier = Modifier.size(24.dp))
@@ -184,8 +187,8 @@ private fun ManagedPrefRow(
             val pref = prefs[ui.key] as? ManagedPreference.PBool ?: return
             var checked by remember(version) { mutableStateOf(pref.getValue()) }
             SwitchPreference(
-                title = context.getString(ui.title),
-                summary = ui.summary?.let { context.getString(it) },
+                title = stringResource(ui.title),
+                summary = ui.summary?.let { stringResource(it) },
                 checked = checked,
                 onCheckedChange = { newValue ->
                     checked = newValue
@@ -202,10 +205,10 @@ private fun ManagedPrefRow(
             val currentIndex = ui.entryValues.indexOf(currentValue).coerceAtLeast(0)
             WindowDropdownPreference(
                 items = ui.entryValues.mapIndexed { index, _ ->
-                    context.getString(ui.entryLabels[index])
+                    stringResource(ui.entryLabels[index])
                 },
                 selectedIndex = currentIndex,
-                title = context.getString(ui.title),
+                title = stringResource(ui.title),
                 enabled = ui.isEnabled(),
                 onSelectedIndexChange = { index ->
                     @Suppress("UNCHECKED_CAST")
@@ -219,14 +222,14 @@ private fun ManagedPrefRow(
         is ManagedPreferenceUi.VoiceInputList -> {
             val pref = prefs[ui.key] as? ManagedPreference.PString ?: return
             val voiceInputMethods = InputMethodUtil.listVoiceInputMethods()
-            val labels = listOf(context.getString(R.string.system_default)) +
+            val labels = listOf(stringResource(R.string.system_default)) +
                 voiceInputMethods.map { it.first.loadLabel(context.packageManager).toString() }
             val values = listOf("") + voiceInputMethods.map { it.first.id }
             val currentIndex = values.indexOf(pref.getValue()).coerceAtLeast(0)
             WindowDropdownPreference(
                 items = labels,
                 selectedIndex = currentIndex,
-                title = context.getString(ui.title),
+                title = stringResource(ui.title),
                 enabled = ui.isEnabled(),
                 onSelectedIndexChange = { index ->
                     pref.setValue(values[index])
@@ -241,7 +244,7 @@ private fun ManagedPrefRow(
             val hasRange = ui.min < ui.max && (ui.max - ui.min) <= 10000
             if (hasRange) {
                 ExpandableNumberPreference(
-                    title = context.getString(ui.title),
+                    title = stringResource(ui.title),
                     value = pref.getValue(),
                     onValueChange = { newValue ->
                         pref.setValue(newValue.coerceIn(ui.min, ui.max))
@@ -255,7 +258,7 @@ private fun ManagedPrefRow(
                 )
             } else {
                 ArrowPreference(
-                    title = context.getString(ui.title),
+                    title = stringResource(ui.title),
                     summary = "${pref.getValue()}${ui.unit}",
                     onClick = { showDialog = true },
                     holdDownState = showDialog,
@@ -264,7 +267,7 @@ private fun ManagedPrefRow(
             }
             if (showDialog) {
                 EditValueDialog(
-                    title = context.getString(ui.title),
+                    title = stringResource(ui.title),
                     initialText = pref.getValue().toString(),
                     onConfirm = { text ->
                         val parsed = text.toIntOrNull() ?: return@EditValueDialog false
@@ -281,7 +284,7 @@ private fun ManagedPrefRow(
         is ManagedPreferenceUi.SeekBarInt -> {
             val pref = prefs[ui.key] as? ManagedPreference.PInt ?: return
             ExpandableNumberPreference(
-                title = context.getString(ui.title),
+                title = stringResource(ui.title),
                 value = pref.getValue(),
                 onValueChange = { newValue ->
                     val stepped =
@@ -301,17 +304,17 @@ private fun ManagedPrefRow(
             val primaryPref = prefs[ui.key] as? ManagedPreference.PInt ?: return
             val secondaryPref = prefs[ui.secondaryKey] as? ManagedPreference.PInt ?: return
             var expanded by remember { mutableStateOf(false) }
-            top.yukonga.miuix.kmp.basic.BasicComponent(
-                title = context.getString(ui.title),
+            BasicComponent(
+                title = stringResource(ui.title),
                 summary = "${primaryPref.getValue()}${ui.unit} / ${secondaryPref.getValue()}${ui.unit}",
                 onClick = { expanded = !expanded },
                 holdDownState = expanded,
                 enabled = ui.isEnabled(),
                 bottomAction = {
-                    androidx.compose.animation.AnimatedVisibility(expanded && ui.isEnabled()) {
+                    AnimatedVisibility(expanded && ui.isEnabled()) {
                         Column {
                             ExpandableNumberPreference(
-                                title = context.getString(ui.label),
+                                title = stringResource(ui.label),
                                 value = primaryPref.getValue(),
                                 onValueChange = { newValue ->
                                     primaryPref.setValue(newValue)
@@ -323,7 +326,7 @@ private fun ManagedPrefRow(
                                 suffix = ui.unit,
                             )
                             ExpandableNumberPreference(
-                                title = context.getString(ui.secondaryLabel),
+                                title = stringResource(ui.secondaryLabel),
                                 value = secondaryPref.getValue(),
                                 onValueChange = { newValue ->
                                     secondaryPref.setValue(newValue)
@@ -344,7 +347,7 @@ private fun ManagedPrefRow(
             val pref = prefs[ui.key] as? ManagedPreference.PFloat ?: return
             var showDialog by remember { mutableStateOf(false) }
             ArrowPreference(
-                title = context.getString(ui.title),
+                title = stringResource(ui.title),
                 summary = pref.getValue().toString() + ui.unit,
                 onClick = { showDialog = true },
                 holdDownState = showDialog,
@@ -352,7 +355,7 @@ private fun ManagedPrefRow(
             )
             if (showDialog) {
                 EditValueDialog(
-                    title = context.getString(ui.title),
+                    title = stringResource(ui.title),
                     initialText = pref.getValue().toString(),
                     onConfirm = { text ->
                         val parsed = text.toFloatOrNull() ?: return@EditValueDialog false

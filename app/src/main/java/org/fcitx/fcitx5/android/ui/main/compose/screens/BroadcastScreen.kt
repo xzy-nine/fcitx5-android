@@ -3,14 +3,13 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.screens
 
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -39,6 +38,7 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.broadcast.BroadcastSecurityManager
 import org.fcitx.fcitx5.android.data.broadcast.db.PairedAppEntity
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleConfirmDialog
 import org.fcitx.fcitx5.android.utils.toast
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -53,6 +53,7 @@ import top.yukonga.miuix.kmp.icon.extended.Promotions
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.ui.res.stringResource
 
 /**
  * Compose renderer for the clipboard broadcast / pairing settings (replaces the View-based
@@ -115,14 +116,14 @@ fun BroadcastScreen(onBack: () -> Unit) {
                     ),
                 ) {
                     SwitchPreference(
-                        title = context.getString(R.string.broadcast_enable),
-                        summary = context.getString(R.string.broadcast_enable_summary),
+                        title = stringResource(R.string.broadcast_enable),
+                        summary = stringResource(R.string.broadcast_enable_summary),
                         checked = enabled,
                         onCheckedChange = { setEnabled(it) },
                     )
                     if (enabled) {
                         ArrowPreference(
-                            title = context.getString(R.string.pairing_code),
+                            title = stringResource(R.string.pairing_code),
                             summary = pairingCode,
                             onClick = { copyPairingCode() },
                             startAction = {
@@ -139,7 +140,7 @@ fun BroadcastScreen(onBack: () -> Unit) {
             }
             if (enabled) {
                 item {
-                    SmallTitle(text = context.getString(R.string.paired_apps))
+                    SmallTitle(text = stringResource(R.string.paired_apps))
                 }
             }
             if (enabled && pairedApps.isEmpty()) {
@@ -151,7 +152,7 @@ fun BroadcastScreen(onBack: () -> Unit) {
                         ),
                     ) {
                         Text(
-                            text = context.getString(R.string.no_paired_apps),
+                            text = stringResource(R.string.no_paired_apps),
                             modifier = Modifier.padding(16.dp),
                         )
                     }
@@ -175,7 +176,7 @@ fun BroadcastScreen(onBack: () -> Unit) {
         }
         SmallTopAppBar(
             color = MiuixTheme.colorScheme.surfaceContainer,
-            title = context.getString(R.string.broadcast_settings),
+            title = stringResource(R.string.broadcast_settings),
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
@@ -187,8 +188,8 @@ fun BroadcastScreen(onBack: () -> Unit) {
 
     revokeTarget?.let { app ->
         SimpleConfirmDialog(
-            title = context.getString(R.string.revoke_pairing),
-            message = context.getString(R.string.revoke_pairing_confirm, app.packageName),
+            title = stringResource(R.string.revoke_pairing),
+            message = stringResource(R.string.revoke_pairing_confirm, app.packageName),
             onConfirm = {
                 scope.launch {
                     withContext(Dispatchers.IO) {

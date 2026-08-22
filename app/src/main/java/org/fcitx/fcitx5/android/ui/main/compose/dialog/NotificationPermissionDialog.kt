@@ -3,7 +3,7 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.dialog
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -28,6 +28,7 @@ import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.window.WindowDialog
+import androidx.compose.ui.res.stringResource
 
 /** Miuix-styled replacement for the legacy notification permission flow. */
 @Composable
@@ -57,13 +58,13 @@ fun NotificationPermissionFlow() {
 
     WindowDialog(
         show = showDialog,
-        title = context.getString(R.string.notification_permission_title),
-        summary = context.getString(R.string.notification_permission_message),
+        title = stringResource(R.string.notification_permission_title),
+        summary = stringResource(R.string.notification_permission_message),
         onDismissRequest = { showDialog = false },
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             TextButton(
-                text = context.getString(R.string.i_do_not_need_it),
+                text = stringResource(R.string.i_do_not_need_it),
                 onClick = {
                     needNotifications = false
                     showDialog = false
@@ -71,7 +72,7 @@ fun NotificationPermissionFlow() {
                 modifier = Modifier.weight(1f),
             )
             TextButton(
-                text = context.getString(R.string.grant_permission),
+                text = stringResource(R.string.grant_permission),
                 onClick = {
                     showDialog = false
                     launcher.launch(Manifest.permission.POST_NOTIFICATIONS)

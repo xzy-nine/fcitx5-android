@@ -3,61 +3,47 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.dialog
 
+import android.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.window.WindowDialog
+import androidx.compose.ui.res.stringResource
 
-/**
- * Simple text-input dialog used by [ManagedPrefsScreen] for edit-text style preferences
- * (replaces the legacy EditTextIntPreference / EditTextFloatPreference dialog flow).
- * [onConfirm] returns false when the input is invalid (dialog stays open).
- */
+/** Minimal OK/Cancel confirmation dialog in miiux style. */
 @Composable
-fun EditValueDialog(
+fun SimpleConfirmDialog(
     title: String,
-    initialText: String,
-    onConfirm: (String) -> Boolean,
+    message: String? = null,
+    onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var show by remember { mutableStateOf(true) }
     val context = LocalContext.current
-    val state = rememberTextFieldState(initialText)
-    val currentConfirm by rememberUpdatedState(onConfirm)
     WindowDialog(
         show = show,
         title = title,
+        summary = message,
         onDismissRequest = {
             show = false
             onDismiss()
         },
     ) {
-        TextField(
-            state = state,
-            label = title,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp),
-        )
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             TextButton(
-                text = context.getString(android.R.string.cancel),
+                text = stringResource(R.string.cancel),
                 onClick = {
                     show = false
                     onDismiss()
@@ -65,12 +51,10 @@ fun EditValueDialog(
                 modifier = Modifier.weight(1f),
             )
             TextButton(
-                text = context.getString(android.R.string.ok),
+                text = stringResource(R.string.ok),
                 onClick = {
-                    if (currentConfirm(state.text.toString())) {
-                        show = false
-                        onDismiss()
-                    }
+                    show = false
+                    onConfirm()
                 },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.textButtonColorsPrimary(),

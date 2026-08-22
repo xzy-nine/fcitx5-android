@@ -3,8 +3,9 @@
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
 
-package org.fcitx.fcitx5.android.ui.main.compose
+package org.fcitx.fcitx5.android.ui.main.compose.screens
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -20,8 +21,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,52 +38,57 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
-import org.fcitx.fcitx5.android.data.table.TableBasedInputMethod
-import org.fcitx.fcitx5.android.data.table.TableManager
+import org.fcitx.fcitx5.android.core.reloadPinyinDict
+import org.fcitx.fcitx5.android.data.pinyin.PinyinDictManager
+import org.fcitx.fcitx5.android.data.pinyin.dict.LibIMEDictionary
+import org.fcitx.fcitx5.android.data.pinyin.dict.PinyinDictionary
+import org.fcitx.fcitx5.android.daemon.FcitxConnection
+import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.utils.importErrorDialog
-import org.fcitx.fcitx5.android.utils.queryFileName
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Delete
-import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.ui.res.stringResource
 
 /**
- * Compose renderer for the table input method list (replaces the View-based
- * TableInputMethodFragment). Supports zip import, replace-dict via the row's settings button and
- * removal; every mutation restarts fcitx afterwards.
+ * Compose renderer for the pinyin dictionary list (replaces the View-based
+ * PinyinDictionaryFragment). Dictionaries toggle individually and user dictionaries can be removed;
+ * changes are reloaded into fcitx.
  */
 @Composable
-fun TableInputMethodsScreen(onBack: () -> Unit) {
+fun PinyinDictionaryScreen(initialUri: String? = null, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var entries by remember { mutableStateOf(TableManager.inputMethods()) }
+    val fcitx: FcitxConnection = remember { FcitxDaemon.connect("compose-pinyin-dict") }
+    var entries by remember { mutableStateOf<List<PinyinDictionary>>(emptyList()) }
 
     fun reload() {
-        entries = TableManager.inputMethods()
+        entries = PinyinDictManager.listDictionaries()
+        fcitx.runIfReady { reloadPinyinDict() }
     }
 
-    val zipLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    DisposableEffect(Unit) {
+        entries = PinyinDictManager.listDictionaries()
+        onDispose { FcitxDaemon.disconnect("compose-pinyin-dict") }
+    }
+
+    fun importUri(uri: Uri) {
         scope.launch {
-            val fileName = context.contentResolver.queryFileName(uri) ?: return@launch
-            if (!fileName.endsWith(".zip")) {
-                context.importErrorDialog(R.string.exception_table_im_filename, fileName)
-                return@launch
-            }
             try {
-                val imported = withContext(Dispatchers.IO) {
-                    TableManager.importFromZip(context.contentResolver.openInputStream(uri)!!).getOrThrow()
+                withContext(Dispatchers.IO) {
+                    PinyinDictManager.importFromInputStream(
+                        context.contentResolver.openInputStream(uri)!!, "dict"
+                    ).getOrThrow()
                 }
                 reload()
             } catch (e: Exception) {
@@ -89,7 +97,20 @@ fun TableInputMethodsScreen(onBack: () -> Unit) {
         }
     }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) importUri(uri)
+    }
+
+    LaunchedEffect(initialUri) {
+        if (!initialUri.isNullOrEmpty()) {
+            val uri = Uri.parse(initialUri)
+            importUri(uri)
+        }
+    }
+
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(
                 contentPadding = PaddingValues(
@@ -98,7 +119,7 @@ fun TableInputMethodsScreen(onBack: () -> Unit) {
                 ),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                itemsIndexed(entries, key = { _, e -> e.file.absolutePath }) { index, entry ->
+                items(entries, key = { it.file.absolutePath }) { entry ->
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
                         colors = CardDefaults.defaultColors(
@@ -113,18 +134,25 @@ fun TableInputMethodsScreen(onBack: () -> Unit) {
                                 text = entry.name,
                                 modifier = Modifier.weight(1f).padding(vertical = 14.dp),
                             )
-                            IconButton(
-                                onClick = { /* replace-dict flow kept minimal */ },
-                            ) {
-                                Icon(MiuixIcons.Tune, null, Modifier.size(20.dp))
-                            }
-                            IconButton(
-                                onClick = {
-                                    entry.delete()
-                                    reload()
+                            val enabled = (entry as? LibIMEDictionary)?.isEnabled ?: true
+                            Switch(
+                                checked = enabled,
+                                onCheckedChange = { checked ->
+                                    (entry as? LibIMEDictionary)?.let {
+                                        if (checked) it.enable() else it.disable()
+                                        reload()
+                                    }
                                 },
-                            ) {
-                                Icon(MiuixIcons.Delete, null, Modifier.size(20.dp))
+                            )
+                            if (entry is LibIMEDictionary) {
+                                IconButton(
+                                    onClick = {
+                                        entry.file.delete()
+                                        reload()
+                                    },
+                                ) {
+                                    Icon(MiuixIcons.Delete, null, Modifier.size(20.dp))
+                                }
                             }
                         }
                     }
@@ -132,14 +160,14 @@ fun TableInputMethodsScreen(onBack: () -> Unit) {
             }
         }
         FloatingActionButton(
-            onClick = { zipLauncher.launch("application/zip") },
+            onClick = { importLauncher.launch("*/*") },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         ) {
             Icon(MiuixIcons.Add, null)
         }
         SmallTopAppBar(
             color = MiuixTheme.colorScheme.surfaceContainer,
-            title = context.getString(R.string.table_im),
+            title = stringResource(R.string.pinyin_dict),
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
