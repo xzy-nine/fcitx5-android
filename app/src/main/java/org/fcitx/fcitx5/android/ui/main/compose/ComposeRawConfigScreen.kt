@@ -5,6 +5,7 @@
 
 package org.fcitx.fcitx5.android.ui.main.compose
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -25,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import arrow.core.getOrElse
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.RawConfig
-import org.fcitx.fcitx5.android.ui.main.settings.FcitxRawConfigStore
 import org.fcitx.fcitx5.android.utils.buildDocumentsProviderIntent
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigBool
@@ -59,9 +59,11 @@ import top.yukonga.miuix.kmp.window.WindowDialog
 /**
  * Compose renderer for fcitx's dynamic RawConfig pages (replaces the View-based
  * PreferenceScreenFactory rendering). Supports Bool / Enum / Int / String / Key and nested
- * Custom descriptors; list-style descriptors (List / EnumList) are stubbed until their
- * special-purpose screens are migrated. Every write is followed by [onSave].
- * [raw] is the full fcitx config object whose "cfg" and "desc" children are used.
+ * Custom descriptors; list-style descriptors (List / EnumList) are stubbed.
+ *
+ * Values are read/written on the **parent** config node (unlike the old FcitxRawConfigStore whose
+ * `cfg[key]` non-null assertion would crash for names missing on the top level); every write
+ * is followed by [onSave].
  */
 @Composable
 fun RawConfigScreen(
@@ -73,7 +75,6 @@ fun RawConfigScreen(
     val context = LocalContext.current
     val cfg = raw["cfg"]
     val desc = raw["desc"]
-    val store = remember { FcitxRawConfigStore(cfg) }
     val topLevel = remember(desc) {
         ConfigDescriptor.parseTopLevel(desc).getOrElse { null }
     }
@@ -108,11 +109,11 @@ fun RawConfigScreen(
                             item {
                                 Card(modifier = Modifier.padding(horizontal = 12.dp)) {
                                     val children = descriptor.customTypeDef?.values.orEmpty()
+                                    val customNode = cfg.findByName(descriptor.name)
                                     children.forEachIndexed { index, child ->
                                         RawConfigRow(
                                             descriptor = child,
-                                            cfg = cfg.findByName(child.name),
-                                            store = store,
+                                            parent = customNode,
                                             onNavigate = onNavigate,
                                             onSave = onSave,
                                         )
@@ -130,8 +131,7 @@ fun RawConfigScreen(
                                 ) {
                                     RawConfigRow(
                                         descriptor = descriptor,
-                                        cfg = cfg.findByName(descriptor.name),
-                                        store = store,
+                                        parent = cfg,
                                         onNavigate = onNavigate,
                                         onSave = onSave,
                                     )
@@ -145,59 +145,71 @@ fun RawConfigScreen(
     }
 }
 
+
+/** Node lookup inherited from the old FcitxRawConfigStore without the non-null assertion. */
+private fun RawConfig?.node(name: String): RawConfig? = this?.findByName(name)
+
 @Composable
 private fun RawConfigRow(
     descriptor: ConfigDescriptor<*, *>,
-    cfg: RawConfig?,
-    store: FcitxRawConfigStore,
+    parent: RawConfig?,
     onNavigate: (AppRoute) -> Unit,
     onSave: () -> Unit,
 ) {
     val context = LocalContext.current
     val title = descriptor.description ?: descriptor.name
+    val node = parent.node(descriptor.name)
+
+    if (node == null) {
+        ArrowPreference(
+            title = title,
+            summary = descriptor.tooltip ?: context.getString(R.string.unimplemented_type),
+            enabled = false,
+            onClick = null,
+        )
+        return
+    }
+
+    fun write(value: String) {
+        node.value = value
+        onSave()
+    }
 
     when (descriptor) {
         is ConfigBool -> {
-            val current = store.getBoolean(descriptor.name, descriptor.defaultValue ?: false)
             SwitchPreference(
                 title = title,
                 summary = descriptor.tooltip,
-                checked = current,
-                onCheckedChange = { newValue ->
-                    store.putBoolean(descriptor.name, newValue)
-                    onSave()
+                checked = node.value == "True",
+                onCheckedChange = { new ->
+                    write(if (new) "True" else "False")
                 },
             )
         }
 
         is ConfigEnum -> {
             val entries = descriptor.entriesI18n ?: descriptor.entries
-            val current = store.getString(descriptor.name, descriptor.defaultValue)
-            val index = descriptor.entries.indexOf(current).coerceAtLeast(0)
+            val index = descriptor.entries.indexOf(node.value).coerceAtLeast(0)
             OverlaySpinnerPreference(
                 items = entries.map { DropdownItem(text = it) },
                 selectedIndex = index,
                 title = title,
                 summary = descriptor.tooltip,
-                onSelectedIndexChange = { i ->
-                    store.putString(descriptor.name, descriptor.entries[i])
-                    onSave()
-                },
+                onSelectedIndexChange = { i -> write(descriptor.entries[i]) },
             )
         }
 
         is ConfigInt -> {
             val min = descriptor.intMin
             val max = descriptor.intMax
-            var v by remember { mutableStateOf(store.getInt(descriptor.name, descriptor.defaultValue ?: 0)) }
+            var v by remember(node) { mutableStateOf(node.value.toIntOrNull() ?: 0) }
             if (min != null && max != null && max - min <= 100) {
                 SliderPreference(
                     title = title,
                     value = v.toFloat(),
                     onValueChange = { newValue ->
                         v = newValue.toInt()
-                        store.putInt(descriptor.name, v)
-                        onSave()
+                        write(v.toString())
                     },
                     valueText = v.toString(),
                     valueRange = min.toFloat()..max.toFloat(),
@@ -220,8 +232,7 @@ private fun RawConfigRow(
                             if (min != null && parsed < min) return@EditValueDialog false
                             if (max != null && parsed > max) return@EditValueDialog false
                             v = parsed
-                            store.putInt(descriptor.name, parsed)
-                            onSave()
+                            write(parsed.toString())
                             true
                         },
                         onDismiss = { showDialog = false },
@@ -232,9 +243,7 @@ private fun RawConfigRow(
 
         is ConfigString -> {
             var showDialog by remember { mutableStateOf(false) }
-            var v by remember {
-                mutableStateOf(store.getString(descriptor.name, descriptor.defaultValue).orEmpty())
-            }
+            var v by remember(node) { mutableStateOf(node.value) }
             ArrowPreference(
                 title = title,
                 summary = v,
@@ -247,8 +256,7 @@ private fun RawConfigRow(
                     initialText = v,
                     onConfirm = { text ->
                         v = text
-                        store.putString(descriptor.name, text)
-                        onSave()
+                        write(text)
                         true
                     },
                     onDismiss = { showDialog = false },
@@ -258,9 +266,7 @@ private fun RawConfigRow(
 
         is ConfigKey -> {
             var showDialog by remember { mutableStateOf(false) }
-            var v by remember {
-                mutableStateOf(store.getString(descriptor.name, descriptor.defaultValue).orEmpty())
-            }
+            var v by remember(node) { mutableStateOf(node.value) }
             ArrowPreference(
                 title = title,
                 summary = v,
@@ -273,8 +279,7 @@ private fun RawConfigRow(
                     initialText = v,
                     onConfirm = { text ->
                         v = text
-                        store.putString(descriptor.name, text)
-                        onSave()
+                        write(text)
                         true
                     },
                     onDismiss = { showDialog = false },
@@ -283,8 +288,6 @@ private fun RawConfigRow(
         }
 
         is ConfigEnumList, is ConfigList -> {
-            // list-style descriptors need their dedicated screens (entry list / key list editor);
-            // the value editor is not migrated into compose yet.
             ArrowPreference(
                 title = title,
                 summary = descriptor.tooltip ?: context.getString(R.string.unimplemented_type),
