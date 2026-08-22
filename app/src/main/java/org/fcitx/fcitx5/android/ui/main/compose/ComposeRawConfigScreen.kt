@@ -45,6 +45,7 @@ import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigKey
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigList
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigString
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
@@ -101,7 +102,12 @@ fun RawConfigScreen(
                         is ConfigCustom -> {
                             item { SmallTitle(text = descriptor.description ?: descriptor.name) }
                             item {
-                                Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                                Card(
+                                    modifier = Modifier.padding(horizontal = 12.dp),
+                                    colors = CardDefaults.defaultColors(
+                                        color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                                    ),
+                                ) {
                                     val children = descriptor.customTypeDef?.values.orEmpty()
                                     val customNode = cfg.findByName(descriptor.name)
                                     children.forEachIndexed { index, child ->
@@ -122,7 +128,10 @@ fun RawConfigScreen(
                                 Card(
                                     modifier = Modifier.padding(
                                         horizontal = 12.dp, vertical = 4.dp
-                                    )
+                                    ),
+                                    colors = CardDefaults.defaultColors(
+                                        color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                                    ),
                                 ) {
                                     RawConfigRow(
                                         descriptor = descriptor,

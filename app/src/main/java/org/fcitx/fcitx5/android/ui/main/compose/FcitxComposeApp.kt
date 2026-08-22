@@ -41,6 +41,12 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
 
         fun navigateTo(appRoute: AppRoute) {
             if (backStack.lastOrNull() == appRoute) return
+            // Navigating to the home index always collapses the stack back to the root.
+            if (appRoute is AppRoute.Index) {
+                backStack.clear()
+                backStack.add(AppRoute.Index)
+                return
+            }
             // Entering a non-legacy destination while a stale legacy controller lingers (its
             // onDispose detach is async) would let popLegacyBackStack consume a back press on
             // the new page. Detach it synchronously so no ghost controller survives.
@@ -52,9 +58,8 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
             ) {
                 runtime.detach()
             }
-            // single snapshot write; keep Index as the permanent root (same as WebDAVPass)
-            backStack.clear()
-            backStack.add(AppRoute.Index)
+            // Push on top of the current stack so deeper levels (e.g. IM list -> IM config)
+            // keep a proper back chain instead of collapsing to the home screen.
             backStack.add(appRoute)
         }
 
@@ -128,6 +133,44 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 entry<AppRoute.Developer> {
                     DeveloperScreen(onBack = { backStack.removeLastOrNull() })
                 }
+                entry<AppRoute.InputMethodList> {
+                    InputMethodListScreen(
+                        onOpenConfig = { name, uniqueName ->
+                            navigateTo(AppRoute.InputMethodConfig(name, uniqueName))
+                        },
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<AppRoute.InputMethodConfig> { route ->
+                    RawConfigHostScreen(
+                        route = AppRoute.RawConfigHost(
+                            kind = RawConfigHostType.InputMethodConfig,
+                            name = route.name,
+                            uniqueName = route.uniqueName,
+                        ),
+                        onNavigate = ::navigateTo,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<AppRoute.AddonList> {
+                    AddonListScreen(
+                        onOpenConfig = { name, uniqueName ->
+                            navigateTo(AppRoute.AddonConfig(name, uniqueName))
+                        },
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<AppRoute.AddonConfig> { route ->
+                    RawConfigHostScreen(
+                        route = AppRoute.RawConfigHost(
+                            kind = RawConfigHostType.AddonConfig,
+                            name = route.name,
+                            uniqueName = route.uniqueName,
+                        ),
+                        onNavigate = ::navigateTo,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
                 entry<AppRoute.Legacy> { route ->
                     LegacyScreen(LegacyTargets.routeOf(route.target))
                 }
@@ -161,9 +204,9 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
 private fun appRouteOf(route: SettingsRoute): AppRoute = when (route) {
     SettingsRoute.Index -> AppRoute.Legacy(LegacyTarget.Index)
     SettingsRoute.GlobalConfig -> AppRoute.Legacy(LegacyTarget.GlobalConfig)
-    SettingsRoute.InputMethodList -> AppRoute.Legacy(LegacyTarget.InputMethodList)
-    is SettingsRoute.InputMethodConfig -> AppRoute.LegacyInputMethodConfig(route.name, route.uniqueName)
-    SettingsRoute.AddonList -> AppRoute.Legacy(LegacyTarget.AddonList)
+    SettingsRoute.InputMethodList -> AppRoute.InputMethodList
+    is SettingsRoute.InputMethodConfig -> AppRoute.InputMethodConfig(route.name, route.uniqueName)
+    SettingsRoute.AddonList -> AppRoute.AddonList
     SettingsRoute.Theme -> AppRoute.Legacy(LegacyTarget.Theme)
     SettingsRoute.VirtualKeyboard -> AppRoute.Legacy(LegacyTarget.VirtualKeyboard)
     SettingsRoute.CandidatesWindow -> AppRoute.Legacy(LegacyTarget.CandidatesWindow)
@@ -181,7 +224,7 @@ private fun appRouteOf(route: SettingsRoute): AppRoute = when (route) {
     // parameterized legacy routes that are not reachable through a fixed entry:
     // they are only produced by intent extras, so map to a fresh legacy entry hardcoding the
     // resolver-side handling on next intent-driven visit.
-    is SettingsRoute.AddonConfig -> AppRoute.Legacy(LegacyTarget.Index)
+    is SettingsRoute.AddonConfig -> AppRoute.AddonConfig(route.name, route.uniqueName)
     is SettingsRoute.ListConfig -> AppRoute.Legacy(LegacyTarget.Index)
     is SettingsRoute.PinyinDict -> AppRoute.LegacyPinyinDict(route.uri.orEmpty())
     is SettingsRoute.Punctuation -> AppRoute.Legacy(LegacyTarget.Index)

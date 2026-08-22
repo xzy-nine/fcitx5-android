@@ -52,6 +52,42 @@ sealed interface AppRoute : NavKey {
         val name: String? = null,
         val uniqueName: String? = null,
     ) : AppRoute
+
+    @Serializable
+    data object InputMethodList : AppRoute
+
+    @Serializable
+    data class InputMethodConfig(val name: String, val uniqueName: String) : AppRoute
+
+    @Serializable
+    data object AddonList : AppRoute
+
+    @Serializable
+    data class AddonConfig(val name: String, val uniqueName: String) : AppRoute
+
+    @Serializable
+    data object PluginList : AppRoute
+
+    @Serializable
+    data object QuickPhraseList : AppRoute
+
+    @Serializable
+    data class QuickPhraseEdit(val fileName: String) : AppRoute
+
+    @Serializable
+    data object TableInputMethods : AppRoute
+
+    @Serializable
+    data object PinyinCustomPhrase : AppRoute
+
+    @Serializable
+    data class PinyinDictionary(val uri: String? = null) : AppRoute
+
+    @Serializable
+    data class Punctuation(val title: String, val lang: String?) : AppRoute
+
+    @Serializable
+    data object Theme : AppRoute
 }
 
 @Serializable

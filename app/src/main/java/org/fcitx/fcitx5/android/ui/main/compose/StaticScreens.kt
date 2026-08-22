@@ -52,6 +52,7 @@ import org.fcitx.fcitx5.android.utils.startActivity
 import org.fcitx.fcitx5.android.utils.toast
 import timber.log.Timber
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -104,7 +105,12 @@ fun AboutScreen(
     val context = LocalContext.current
     PageScaffold(title = context.getString(R.string.about), onBack = onBack) {
         item {
-            Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+            Card(
+                modifier = Modifier.padding(horizontal = 12.dp),
+                colors = CardDefaults.defaultColors(
+                    color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                ),
+            ) {
                 ArrowPreference(
                     title = context.getString(R.string.privacy_policy),
                     onClick = { onOpenUrl(Const.privacyPolicyUrl) },
@@ -130,7 +136,12 @@ fun AboutScreen(
             SmallTitle(text = context.getString(R.string.version))
         }
         item {
-            Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+            Card(
+                modifier = Modifier.padding(horizontal = 12.dp),
+                colors = CardDefaults.defaultColors(
+                    color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                ),
+            ) {
                 BasicComponent(
                     title = context.getString(R.string.current_version),
                     summary = Const.versionName,
@@ -205,14 +216,24 @@ fun LicensesScreen(
         val items = libs.orEmpty()
         if (libs == null) {
             item {
-                Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                Card(
+                modifier = Modifier.padding(horizontal = 12.dp),
+                colors = CardDefaults.defaultColors(
+                    color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                ),
+            ) {
                     BasicComponent(title = "…")
                 }
             }
         }
         items(items.size, key = { items[it].uniqueId }) { index ->
             val lib = items[index]
-            Card(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+            Card(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                colors = CardDefaults.defaultColors(
+                    color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                ),
+            ) {
                 ArrowPreference(
                     title = "${lib.uniqueId}:${lib.artifactVersion}",
                     summary = lib.licenses.joinToString { l -> licenseLabel(l) },
@@ -313,7 +334,12 @@ fun DeveloperScreen(onBack: () -> Unit) {
 
     PageScaffold(title = context.getString(R.string.developer), onBack = onBack) {
         item {
-            Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+            Card(
+                modifier = Modifier.padding(horizontal = 12.dp),
+                colors = CardDefaults.defaultColors(
+                    color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                ),
+            ) {
                 ArrowPreference(
                     title = context.getString(R.string.real_time_logs),
                     onClick = { context.startActivity<LogActivity>() },
@@ -341,7 +367,12 @@ fun DeveloperScreen(onBack: () -> Unit) {
             }
         }
         item {
-            Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+            Card(
+                modifier = Modifier.padding(horizontal = 12.dp),
+                colors = CardDefaults.defaultColors(
+                    color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                ),
+            ) {
                 ArrowPreference(
                     title = context.getString(R.string.restart_fcitx_instance),
                     onClick = { restartConfirm = true },

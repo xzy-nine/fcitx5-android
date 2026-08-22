@@ -36,6 +36,7 @@ import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceUi
 import org.fcitx.fcitx5.android.ui.main.settings.EditTextFloatUi
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
 
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
@@ -85,7 +86,12 @@ fun ManagedPrefsScreen(category: ManagedPreferenceCategory, onBack: () -> Unit) 
         ) {
             if (category.groups.isEmpty()) {
                 item {
-                    Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                    Card(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        colors = CardDefaults.defaultColors(
+                            color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                        ),
+                    ) {
                         uiList.forEachIndexed { index, ui ->
                             ManagedPrefRow(ui, prefs, version, category::fireChange)
                             if (index < uiList.lastIndex) HorizontalDivider()
@@ -98,7 +104,12 @@ fun ManagedPrefsScreen(category: ManagedPreferenceCategory, onBack: () -> Unit) 
                         SmallTitle(text = context.getString(group.title))
                     }
                     item {
-                        Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                        Card(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        colors = CardDefaults.defaultColors(
+                            color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                        ),
+                    ) {
                             val keys = group.keys.filter { uiMap.containsKey(it) }
                             keys.forEachIndexed { index, key ->
                                 ManagedPrefRow(uiMap.getValue(key), prefs, version, category::fireChange)

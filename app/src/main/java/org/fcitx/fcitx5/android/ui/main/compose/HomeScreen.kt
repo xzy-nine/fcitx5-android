@@ -27,6 +27,7 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.utils.Const
 import org.fcitx.fcitx5.android.utils.startActivity
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -110,7 +111,12 @@ private fun HomeCard(
     onNavigate: (AppRoute) -> Unit,
 ) {
     val context = LocalContext.current
-    Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+    Card(
+        modifier = Modifier.padding(horizontal = 12.dp),
+        colors = CardDefaults.defaultColors(
+            color = MiuixTheme.colorScheme.surfaceContainerHighest,
+        ),
+    ) {
         items.forEachIndexed { index, dest ->
             ArrowPreference(
                 title = context.getString(dest.title),
@@ -128,8 +134,8 @@ private fun HomeCard(
 
 private val homeFcitxItems = listOf(
     HomeDestination(R.string.global_options, MiuixIcons.Tune, AppRoute.RawConfigHost(RawConfigHostType.GlobalConfig)),
-    HomeDestination(R.string.input_methods, MiuixIcons.Translate, AppRoute.Legacy(LegacyTarget.InputMethodList)),
-    HomeDestination(R.string.addons, MiuixIcons.Merge, AppRoute.Legacy(LegacyTarget.AddonList)),
+    HomeDestination(R.string.input_methods, MiuixIcons.Translate, AppRoute.InputMethodList),
+    HomeDestination(R.string.addons, MiuixIcons.Merge, AppRoute.AddonList),
 )
 
 private val homeAndroidItems = listOf(
