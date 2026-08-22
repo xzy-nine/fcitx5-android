@@ -12,6 +12,7 @@ import org.fcitx.fcitx5.android.daemon.FcitxConnection
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.ui.main.MainActivity
 import org.fcitx.fcitx5.android.ui.main.settings.SearchResult
+import org.fcitx.fcitx5.android.ui.setup.SetupActivity
 
 /**
  * Activity-scoped runtime wired into the compose shell. Kept out of [MainActivity] itself so the
@@ -58,5 +59,16 @@ class ComposeMainShell(private val activity: MainActivity) {
 
     fun onStop() {
         fcitx.runIfReady { save() }
+    }
+
+    /**
+     * Re-check the onboarding on every return to the foreground. Enabling/selecting the IME is a
+     * core, non-skippable step, so whenever it's missing (including after the system resets the
+     * IME on a build update) the guide is re-shown.
+     */
+    fun onResume() {
+        if (SetupActivity.shouldShowUp()) {
+            activity.startActivity(Intent(activity, SetupActivity::class.java))
+        }
     }
 }

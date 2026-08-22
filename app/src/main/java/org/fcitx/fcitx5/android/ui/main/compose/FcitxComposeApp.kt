@@ -39,7 +39,6 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.TableInputMethodsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.ThemeScreen
 import org.fcitx.fcitx5.android.ui.main.compose.settings.ManagedPrefsScreen
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
-import org.fcitx.fcitx5.android.ui.setup.SetupActivity
 import org.fcitx.fcitx5.android.utils.parcelable
 import org.fcitx.fcitx5.android.utils.startActivity
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
@@ -87,9 +86,9 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
         LaunchedEffect(Unit) {
             shell.intents.collect { intent ->
                 when (intent.action) {
-                    Intent.ACTION_MAIN -> {
-                        if (SetupActivity.shouldShowUp()) activity.startActivity<SetupActivity>()
-                    }
+                    // onboarding is triggered from ComposeMainShell.onResume instead of here,
+                    // so a fresh cold start and returning to the foreground both re-check it
+                    Intent.ACTION_MAIN -> Unit
                     Intent.ACTION_VIEW -> {
                         importDictUri = intent.data?.toString()
                     }

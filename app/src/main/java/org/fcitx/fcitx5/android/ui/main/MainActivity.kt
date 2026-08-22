@@ -43,6 +43,11 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
     }
 
+    override fun onResume() {
+        super.onResume()
+        shell.onResume()
+    }
+
     override fun onDestroy() {
         shell.onDestroy()
         super.onDestroy()
