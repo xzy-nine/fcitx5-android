@@ -42,6 +42,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -84,6 +85,7 @@ fun ThemeScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var previewHeightPx by remember { mutableIntStateOf(0) }
     var selectedTab by remember { mutableIntStateOf(0) }
     val pagerState = rememberPagerState { 2 }
@@ -199,8 +201,11 @@ fun ThemeScreen(onBack: () -> Unit) {
 
     Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxSize()) {
-            // keyboard preview kept as a View (same styling as the legacy fragment)
-            val preview = remember {
+            // keyboard preview kept as a View. Rebuild on orientation change so the measured
+            // height follows the active keyboard-height percent, and use the full measured size
+            // (no extra 0.5 scaling, which shrank the preview to ~20% of the screen height).
+            val orientation = LocalConfiguration.current.orientation
+            val preview = remember(orientation) {
                 KeyboardPreviewUi(context, activeTheme).also { ui ->
                     ui.onSizeMeasured = { _, h -> previewHeightPx = h }
                 }
@@ -208,8 +213,11 @@ fun ThemeScreen(onBack: () -> Unit) {
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp)
-                    .height(with(density) { (previewHeightPx * 0.5f).toDp() })
+                    // leave room for the floating top app bar so the preview isn't clipped at the top
+                    .padding(top = topInset + 56.dp)
+                    // keep the preview full-width so the keyboard's own side padding isn't
+                    // clipped on the right by a horizontal inset
+                    .height(with(density) { previewHeightPx.toDp() })
                     .clip(RoundedCornerShape(12.dp))
                     .background(MiuixTheme.colorScheme.surfaceContainerHighest),
                 contentAlignment = Alignment.TopCenter,
@@ -217,8 +225,6 @@ fun ThemeScreen(onBack: () -> Unit) {
                 AndroidView(
                     factory = {
                         preview.root.apply {
-                            scaleX = 0.5f
-                            scaleY = 0.5f
                             outlineProvider = ViewOutlineProvider.BOUNDS
                             elevation = with(density) { 4.dp.toPx() }
                         }
