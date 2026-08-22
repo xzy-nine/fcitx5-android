@@ -119,17 +119,21 @@ fun BroadcastScreen(onBack: () -> Unit) {
                         checked = enabled,
                         onCheckedChange = { setEnabled(it) },
                     )
-                    ArrowPreference(
-                        title = context.getString(R.string.pairing_code),
-                        summary = pairingCode,
-                        onClick = { copyPairingCode() },
-                    )
+                    if (enabled) {
+                        ArrowPreference(
+                            title = context.getString(R.string.pairing_code),
+                            summary = pairingCode,
+                            onClick = { copyPairingCode() },
+                        )
+                    }
                 }
             }
-            item {
-                SmallTitle(text = context.getString(R.string.paired_apps))
+            if (enabled) {
+                item {
+                    SmallTitle(text = context.getString(R.string.paired_apps))
+                }
             }
-            if (pairedApps.isEmpty()) {
+            if (enabled && pairedApps.isEmpty()) {
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -143,7 +147,7 @@ fun BroadcastScreen(onBack: () -> Unit) {
                         )
                     }
                 }
-            } else {
+            } else if (enabled) {
                 items(pairedApps, key = { it.packageName }) { app ->
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
