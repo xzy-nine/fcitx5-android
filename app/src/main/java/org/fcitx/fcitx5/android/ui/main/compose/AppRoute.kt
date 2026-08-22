@@ -44,7 +44,7 @@ sealed interface AppRoute : NavKey {
     data class LegacyPunctuation(val title: String, val lang: String?) : AppRoute
 
     @Serializable
-    data class Prefs(val category: PrefCategory) : AppRoute
+    data class Prefs(val category: PrefCategory, val highlightKey: String? = null) : AppRoute
 
     @Serializable
     data class RawConfigHost(
@@ -52,6 +52,9 @@ sealed interface AppRoute : NavKey {
         val name: String? = null,
         val uniqueName: String? = null,
     ) : AppRoute
+
+    @Serializable
+    data object SettingsSearch : AppRoute
 
     @Serializable
     data object InputMethodList : AppRoute

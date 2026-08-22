@@ -5,6 +5,7 @@
 
 package org.fcitx.fcitx5.android.ui.main.compose
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import org.fcitx.fcitx5.android.R
@@ -60,8 +62,23 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * provider's [ManagedPreferenceProvider.OnChangeListener], restoring the old
  * ["fireChange" flow][ManagedPreferenceProvider.fireChange].
  */
+private fun uiTitleString(context: Context, ui: ManagedPreferenceUi<*>): String = when (ui) {
+    is ManagedPreferenceUi.Switch -> context.getString(ui.title)
+    is ManagedPreferenceUi.StringList<*> -> context.getString(ui.title)
+    is ManagedPreferenceUi.VoiceInputList -> context.getString(ui.title)
+    is ManagedPreferenceUi.EditTextInt -> context.getString(ui.title)
+    is EditTextFloatUi -> context.getString(ui.title)
+    is ManagedPreferenceUi.SeekBarInt -> context.getString(ui.title)
+    is ManagedPreferenceUi.TwinSeekBarInt -> context.getString(ui.title)
+    else -> ""
+}
+
 @Composable
-fun ManagedPrefsScreen(category: ManagedPreferenceCategory, onBack: () -> Unit) {
+fun ManagedPrefsScreen(
+    category: ManagedPreferenceCategory,
+    onBack: () -> Unit,
+    highlightKey: String? = null,
+) {
     val context = LocalContext.current
     var version by remember { mutableIntStateOf(0) }
     DisposableEffect(category) {
@@ -78,6 +95,7 @@ fun ManagedPrefsScreen(category: ManagedPreferenceCategory, onBack: () -> Unit) 
     val uiList = category.managedPreferencesUi
     val uiMap = uiList.associateBy { it.key }
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val highlightColor = MiuixTheme.colorScheme.primary.copy(alpha = 0.15f)
 
     Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
         LazyColumn(
@@ -93,7 +111,14 @@ fun ManagedPrefsScreen(category: ManagedPreferenceCategory, onBack: () -> Unit) 
                         ),
                     ) {
                         uiList.forEachIndexed { index, ui ->
-                            ManagedPrefRow(ui, prefs, version, category::fireChange)
+                            val isHighlight = uiTitleString(context, ui) == highlightKey
+                            androidx.compose.foundation.layout.Box(
+                                Modifier.background(
+                                    if (isHighlight) highlightColor else Color.Transparent
+                                ),
+                            ) {
+                                ManagedPrefRow(ui, prefs, version, category::fireChange)
+                            }
                             if (index < uiList.lastIndex) HorizontalDivider()
                         }
                     }
@@ -112,7 +137,15 @@ fun ManagedPrefsScreen(category: ManagedPreferenceCategory, onBack: () -> Unit) 
                     ) {
                             val keys = group.keys.filter { uiMap.containsKey(it) }
                             keys.forEachIndexed { index, key ->
-                                ManagedPrefRow(uiMap.getValue(key), prefs, version, category::fireChange)
+                                val ui = uiMap.getValue(key)
+                                androidx.compose.foundation.layout.Box(
+                                    Modifier.background(
+                                        if (uiTitleString(context, ui) == highlightKey) highlightColor
+                                        else Color.Transparent
+                                    ),
+                                ) {
+                                    ManagedPrefRow(ui, prefs, version, category::fireChange)
+                                }
                                 if (index < keys.lastIndex) HorizontalDivider()
                             }
                         }

@@ -107,10 +107,13 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         onOpenUrl = { url ->
                             activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                         },
-                        onSearch = {
-                            org.fcitx.fcitx5.android.ui.main.settings.SettingsSearchManager
-                                .showSearchDialog(activity)
-                        },
+                        onSearch = { navigateTo(AppRoute.SettingsSearch) },
+                    )
+                }
+                entry<AppRoute.SettingsSearch> {
+                    SettingsSearchScreen(
+                        onNavigate = ::navigateTo,
+                        onBack = { backStack.removeLastOrNull() },
                     )
                 }
                 entry<AppRoute.About> {
@@ -171,6 +174,42 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }
+                entry<AppRoute.PluginList> {
+                    PluginListScreen(onBack = { backStack.removeLastOrNull() })
+                }
+                entry<AppRoute.QuickPhraseList> {
+                    QuickPhraseListScreen(
+                        onEdit = { fileName ->
+                            navigateTo(AppRoute.QuickPhraseEdit(fileName))
+                        },
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<AppRoute.QuickPhraseEdit> { route ->
+                    QuickPhraseEditScreen(
+                        fileName = route.fileName,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<AppRoute.TableInputMethods> {
+                    TableInputMethodsScreen(onBack = { backStack.removeLastOrNull() })
+                }
+                entry<AppRoute.PinyinCustomPhrase> {
+                    PinyinCustomPhraseScreen(onBack = { backStack.removeLastOrNull() })
+                }
+                entry<AppRoute.PinyinDictionary> { route ->
+                    PinyinDictionaryScreen(
+                        initialUri = route.uri,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<AppRoute.Punctuation> { route ->
+                    PunctuationScreen(
+                        title = route.title,
+                        lang = route.lang,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
                 entry<AppRoute.Legacy> { route ->
                     LegacyScreen(LegacyTargets.routeOf(route.target))
                 }
@@ -181,10 +220,15 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                     LegacyScreen(SettingsRoute.PinyinDict(route.uri))
                 }
                 entry<AppRoute.Prefs> { route ->
-                    ManagedPrefsScreen(
-                        category = route.category.provider(),
-                        onBack = { backStack.removeLastOrNull() },
-                    )
+                    if (route.category == PrefCategory.Broadcast) {
+                        BroadcastScreen(onBack = { backStack.removeLastOrNull() })
+                    } else {
+                        ManagedPrefsScreen(
+                            category = route.category.provider(),
+                            onBack = { backStack.removeLastOrNull() },
+                            highlightKey = route.highlightKey,
+                        )
+                    }
                 }
                 entry<AppRoute.RawConfigHost> { route ->
                     RawConfigHostScreen(
@@ -201,32 +245,32 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
     }
 }
 
-private fun appRouteOf(route: SettingsRoute): AppRoute = when (route) {
+fun appRouteOf(route: SettingsRoute): AppRoute = when (route) {
     SettingsRoute.Index -> AppRoute.Legacy(LegacyTarget.Index)
-    SettingsRoute.GlobalConfig -> AppRoute.Legacy(LegacyTarget.GlobalConfig)
+    SettingsRoute.GlobalConfig -> AppRoute.RawConfigHost(RawConfigHostType.GlobalConfig)
     SettingsRoute.InputMethodList -> AppRoute.InputMethodList
     is SettingsRoute.InputMethodConfig -> AppRoute.InputMethodConfig(route.name, route.uniqueName)
     SettingsRoute.AddonList -> AppRoute.AddonList
     SettingsRoute.Theme -> AppRoute.Legacy(LegacyTarget.Theme)
-    SettingsRoute.VirtualKeyboard -> AppRoute.Legacy(LegacyTarget.VirtualKeyboard)
-    SettingsRoute.CandidatesWindow -> AppRoute.Legacy(LegacyTarget.CandidatesWindow)
-    SettingsRoute.Clipboard -> AppRoute.Legacy(LegacyTarget.Clipboard)
-    SettingsRoute.Broadcast -> AppRoute.Legacy(LegacyTarget.Broadcast)
-    SettingsRoute.Symbol -> AppRoute.Legacy(LegacyTarget.Symbol)
-    SettingsRoute.Plugin -> AppRoute.Legacy(LegacyTarget.Plugin)
-    SettingsRoute.Advanced -> AppRoute.Legacy(LegacyTarget.Advanced)
+    SettingsRoute.VirtualKeyboard -> AppRoute.Prefs(PrefCategory.Keyboard)
+    SettingsRoute.CandidatesWindow -> AppRoute.Prefs(PrefCategory.Candidates)
+    SettingsRoute.Clipboard -> AppRoute.Prefs(PrefCategory.Clipboard)
+    SettingsRoute.Broadcast -> AppRoute.Prefs(PrefCategory.Broadcast)
+    SettingsRoute.Symbol -> AppRoute.Prefs(PrefCategory.Symbols)
+    SettingsRoute.Plugin -> AppRoute.PluginList
+    SettingsRoute.Advanced -> AppRoute.Prefs(PrefCategory.Advanced)
     SettingsRoute.Developer -> AppRoute.Developer
     SettingsRoute.License -> AppRoute.Licenses
     SettingsRoute.About -> AppRoute.About
-    SettingsRoute.TableInputMethods -> AppRoute.Legacy(LegacyTarget.TableInputMethods)
-    SettingsRoute.QuickPhraseList -> AppRoute.Legacy(LegacyTarget.QuickPhraseList)
-    SettingsRoute.PinyinCustomPhrase -> AppRoute.Legacy(LegacyTarget.PinyinCustomPhrase)
+    SettingsRoute.TableInputMethods -> AppRoute.TableInputMethods
+    SettingsRoute.QuickPhraseList -> AppRoute.QuickPhraseList
+    SettingsRoute.PinyinCustomPhrase -> AppRoute.PinyinCustomPhrase
     // parameterized legacy routes that are not reachable through a fixed entry:
     // they are only produced by intent extras, so map to a fresh legacy entry hardcoding the
     // resolver-side handling on next intent-driven visit.
     is SettingsRoute.AddonConfig -> AppRoute.AddonConfig(route.name, route.uniqueName)
     is SettingsRoute.ListConfig -> AppRoute.Legacy(LegacyTarget.Index)
-    is SettingsRoute.PinyinDict -> AppRoute.LegacyPinyinDict(route.uri.orEmpty())
-    is SettingsRoute.Punctuation -> AppRoute.Legacy(LegacyTarget.Index)
-    is SettingsRoute.QuickPhraseEdit -> AppRoute.Legacy(LegacyTarget.Index)
+    is SettingsRoute.PinyinDict -> AppRoute.PinyinDictionary(route.uri)
+    is SettingsRoute.Punctuation -> AppRoute.Punctuation(route.title, route.lang)
+    is SettingsRoute.QuickPhraseEdit -> AppRoute.QuickPhraseEdit(route.param.quickPhrase.file.name)
 }

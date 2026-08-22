@@ -1,0 +1,191 @@
+/*
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
+ */
+
+package org.fcitx.fcitx5.android.ui.main.compose
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.data.broadcast.BroadcastSecurityManager
+import org.fcitx.fcitx5.android.data.broadcast.db.PairedAppEntity
+import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.utils.toast
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+/**
+ * Compose renderer for the clipboard broadcast / pairing settings (replaces the View-based
+ * BroadcastSettingsFragment). Custom custom-branch UI that generic ManagedPrefsScreen lacks.
+ */
+@Composable
+fun BroadcastScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val prefs = AppPrefs.getInstance().broadcast
+    var enabled by remember { mutableStateOf(prefs.enabled.getValue()) }
+    var pairingCode by remember {
+        mutableStateOf(
+            BroadcastSecurityManager.getPairingCode()
+                ?: BroadcastSecurityManager.generatePairingCode()
+        )
+    }
+    var pairedApps by remember { mutableStateOf<List<PairedAppEntity>>(emptyList()) }
+    var revokeTarget by remember { mutableStateOf<PairedAppEntity?>(null) }
+
+    fun reloadApps() {
+        scope.launch {
+            pairedApps = withContext(Dispatchers.IO) {
+                BroadcastSecurityManager.getAllPairedApps()
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) { reloadApps() }
+
+    fun setEnabled(value: Boolean) {
+        enabled = value
+        prefs.enabled.setValue(value)
+        if (value) BroadcastSecurityManager.startListening()
+        else BroadcastSecurityManager.stopListening()
+    }
+
+    fun copyPairingCode() {
+        val code = BroadcastSecurityManager.getPairingCode()
+            ?: BroadcastSecurityManager.generatePairingCode()
+        pairingCode = code
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("pairing_code", code))
+        context.toast(R.string.pairing_code_copied)
+    }
+
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
+        LazyColumn(
+            contentPadding = PaddingValues(
+                top = 64.dp + WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
+                bottom = 24.dp,
+            ),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                    colors = CardDefaults.defaultColors(
+                        color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                    ),
+                ) {
+                    SwitchPreference(
+                        title = context.getString(R.string.broadcast_enable),
+                        summary = context.getString(R.string.broadcast_enable_summary),
+                        checked = enabled,
+                        onCheckedChange = { setEnabled(it) },
+                    )
+                    ArrowPreference(
+                        title = context.getString(R.string.pairing_code),
+                        summary = pairingCode,
+                        onClick = { copyPairingCode() },
+                    )
+                }
+            }
+            item {
+                SmallTitle(text = context.getString(R.string.paired_apps))
+            }
+            if (pairedApps.isEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        colors = CardDefaults.defaultColors(
+                            color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                        ),
+                    ) {
+                        Text(
+                            text = context.getString(R.string.no_paired_apps),
+                            modifier = Modifier.padding(16.dp),
+                        )
+                    }
+                }
+            } else {
+                items(pairedApps, key = { it.packageName }) { app ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                        colors = CardDefaults.defaultColors(
+                            color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                        ),
+                    ) {
+                        ArrowPreference(
+                            title = app.appName.ifEmpty { app.packageName },
+                            summary = app.packageName,
+                            onClick = { revokeTarget = app },
+                        )
+                    }
+                }
+            }
+        }
+        SmallTopAppBar(
+            title = context.getString(R.string.broadcast_settings),
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
+                }
+            },
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+        )
+    }
+
+    revokeTarget?.let { app ->
+        SimpleConfirmDialog(
+            title = context.getString(R.string.revoke_pairing),
+            message = context.getString(R.string.revoke_pairing_confirm, app.packageName),
+            onConfirm = {
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        BroadcastSecurityManager.revokePairing(app.packageName)
+                    }
+                    context.toast(context.getString(R.string.app_revoked, app.packageName))
+                    revokeTarget = null
+                    reloadApps()
+                }
+            },
+            onDismiss = { revokeTarget = null },
+        )
+    }
+}

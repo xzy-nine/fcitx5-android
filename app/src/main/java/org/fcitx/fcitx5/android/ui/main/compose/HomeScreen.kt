@@ -145,6 +145,6 @@ private val homeAndroidItems = listOf(
     HomeDestination(R.string.clipboard, MiuixIcons.Copy, AppRoute.Prefs(PrefCategory.Clipboard)),
     HomeDestination(R.string.broadcast_settings, MiuixIcons.Messages, AppRoute.Prefs(PrefCategory.Broadcast)),
     HomeDestination(R.string.emoji_and_symbols, MiuixIcons.Messages, AppRoute.Prefs(PrefCategory.Symbols)),
-    HomeDestination(R.string.plugins, MiuixIcons.Layers, AppRoute.Legacy(LegacyTarget.Plugin)),
+    HomeDestination(R.string.plugins, MiuixIcons.Layers, AppRoute.PluginList),
     HomeDestination(R.string.advanced, MiuixIcons.More, AppRoute.Prefs(PrefCategory.Advanced)),
 )

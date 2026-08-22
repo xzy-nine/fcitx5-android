@@ -43,4 +43,8 @@
     <string name="search">搜索</string>
     <string name="search_settings">搜索设置</string>
 
+    <!-- Custom: pinyin custom phrase -->
+    <string name="manage_custom_phrase">管理自定义短语</string>
+    <string name="order">顺序</string>
+
 </resources>

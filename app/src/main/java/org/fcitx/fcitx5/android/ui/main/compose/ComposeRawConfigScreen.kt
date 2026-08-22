@@ -398,17 +398,17 @@ private fun RawConfigRow(
                 ConfigExternal.ETy.QuickPhrase -> ArrowPreference(
                     title = title,
                     summary = descriptor.tooltip,
-                    onClick = { onNavigate(AppRoute.Legacy(LegacyTarget.QuickPhraseList)) },
+                    onClick = { onNavigate(AppRoute.QuickPhraseList) },
                 )
                 ConfigExternal.ETy.AndroidTable -> ArrowPreference(
                     title = title,
                     summary = descriptor.tooltip,
-                    onClick = { onNavigate(AppRoute.Legacy(LegacyTarget.TableInputMethods)) },
+                    onClick = { onNavigate(AppRoute.TableInputMethods) },
                 )
                 ConfigExternal.ETy.PinyinCustomPhrase -> ArrowPreference(
                     title = title,
                     summary = descriptor.tooltip,
-                    onClick = { onNavigate(AppRoute.Legacy(LegacyTarget.PinyinCustomPhrase)) },
+                    onClick = { onNavigate(AppRoute.PinyinCustomPhrase) },
                 )
                 ConfigExternal.ETy.RimeUserDataDir -> {
                     var showDialog by remember { mutableStateOf(false) }

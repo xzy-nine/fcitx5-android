@@ -17,6 +17,10 @@
     <string name="group_keys_layout">Keys &amp; Layout</string>
     <string name="group_voice">Voice</string>
 
+    <!-- Custom: pinyin custom phrase -->
+    <string name="manage_custom_phrase">Manage Custom Phrase</string>
+    <string name="order">Order</string>
+
     <!-- Custom: candidate swipe -->
     <string name="horizontal_candidate_swipe">Swipe candidates</string>
 
