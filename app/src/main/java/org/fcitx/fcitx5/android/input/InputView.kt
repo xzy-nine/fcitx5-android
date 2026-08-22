@@ -291,6 +291,11 @@ class InputView(
             centerVertically()
             centerHorizontally()
         })
+        // compose overlay host for Miuix-styled menus / dialogs / snackbars inside the keyboard
+        add(createKeyboardMiuixOverlayHost(context), lParams(matchParent, matchParent) {
+            centerVertically()
+            centerHorizontally()
+        })
 
         keyboardPrefs.registerOnChangeListener(onKeyboardSizeChangeListener)
         advancedPrefs.registerOnChangeListener(onKeyboardSizeChangeListener)

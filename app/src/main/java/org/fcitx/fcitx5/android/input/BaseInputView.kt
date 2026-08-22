@@ -7,11 +7,7 @@ package org.fcitx.fcitx5.android.input
 
 import android.view.View
 import android.view.WindowInsets
-import android.widget.PopupMenu
 import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.core.text.bold
-import androidx.core.text.buildSpannedString
-import androidx.core.text.color
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
@@ -24,9 +20,7 @@ import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.data.theme.ThemePrefs
-import org.fcitx.fcitx5.android.utils.item
 import org.fcitx.fcitx5.android.utils.navbarFrameHeight
-import splitties.resources.styledColor
 import splitties.views.dsl.core.withTheme
 import kotlin.math.max
 
@@ -71,9 +65,9 @@ abstract class BaseInputView(
         fcitx.runIfReady { triggerCandidateAction(idx, actionIdx) }
     }
 
-    private var candidateActionMenu: PopupMenu? = null
-
     val themedContext = context.withTheme(R.style.Theme_InputViewTheme)
+
+    private var candidateActionMenu: androidx.appcompat.widget.PopupMenu? = null
 
     fun showCandidateActionMenu(idx: Int, text: String, view: View) {
         candidateActionMenu?.dismiss()
@@ -82,26 +76,16 @@ abstract class BaseInputView(
             val actions = fcitx.runOnReady { getCandidateActions(idx) }
             if (actions.isEmpty()) return@launch
             InputFeedbacks.hapticFeedback(view, longPress = true)
-            candidateActionMenu = PopupMenu(themedContext, view).apply {
-                menu.add(buildSpannedString {
-                    bold {
-                        color(context.styledColor(android.R.attr.colorAccent)) {
-                            append(text)
+            KeyboardMiuixBridge.showMenu(
+                KeyboardMiuixBridge.MenuSpec(
+                    actions = listOf(KeyboardMiuixBridge.MenuAction(text, bold = true, enabled = false)) +
+                        actions.map { action ->
+                            KeyboardMiuixBridge.MenuAction(action.text) {
+                                triggerCandidateAction(idx, action.id)
+                            }
                         }
-                    }
-                }).apply {
-                    isEnabled = false
-                }
-                actions.forEach { action ->
-                    menu.item(action.text) {
-                        triggerCandidateAction(idx, action.id)
-                    }
-                }
-                setOnDismissListener {
-                    candidateActionMenu = null
-                }
-                show()
-            }
+                )
+            )
         }
     }
 

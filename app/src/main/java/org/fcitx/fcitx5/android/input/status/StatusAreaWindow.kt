@@ -6,10 +6,7 @@ package org.fcitx.fcitx5.android.input.status
 
 import android.os.Build
 import android.view.View
-import android.widget.PopupMenu
 import android.widget.Toast
-import androidx.core.text.buildSpannedString
-import androidx.core.text.color
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
@@ -20,6 +17,7 @@ import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.FcitxInputMethodService
+import org.fcitx.fcitx5.android.input.KeyboardMiuixBridge
 import org.fcitx.fcitx5.android.input.bar.ui.ToolButton
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.dependency.fcitx
@@ -33,8 +31,6 @@ import org.fcitx.fcitx5.android.input.status.StatusAreaEntry.Android.Type.ThemeL
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.AppUtil
-import org.fcitx.fcitx5.android.utils.DeviceUtil
-import org.fcitx.fcitx5.android.utils.alpha
 import org.mechdancer.dependency.manager.must
 import splitties.dimensions.dp
 import splitties.resources.styledColor
@@ -86,8 +82,6 @@ class StatusAreaWindow : InputWindow.ExtendedInputWindow<StatusAreaWindow>(),
         }
     }
 
-    var popupMenu: PopupMenu? = null
-
     private val adapter: StatusAreaAdapter by lazy {
         object : StatusAreaAdapter() {
             override fun onItemClick(view: View, entry: StatusAreaEntry) {
@@ -98,42 +92,19 @@ class StatusAreaWindow : InputWindow.ExtendedInputWindow<StatusAreaWindow>(),
                             activateAction(entry.action)
                             return
                         }
-                        val popup = PopupMenu(context, view)
-                        val menu = popup.menu
-                        val hasDivider =
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && !DeviceUtil.isHMOS && !DeviceUtil.isHonorMagicOS) {
-                                menu.setGroupDividerEnabled(true)
-                                true
-                            } else {
-                                false
-                            }
-                        var groupId = 0 // Menu.NONE; ungrouped
-                        actions.forEach {
-                            if (it.isSeparator) {
-                                if (hasDivider) {
-                                    groupId++
-                                } else {
-                                    val dividerString = buildSpannedString {
-                                        color(context.styledColor(android.R.attr.colorForeground).alpha(0.4f)) {
-                                            append("──────────")
-                                        }
-                                    }
-                                    menu.add(groupId, 0, 0, dividerString).apply {
-                                        isEnabled = false
-                                    }
+                        KeyboardMiuixBridge.dismissMenu()
+                        KeyboardMiuixBridge.showMenu(
+                            KeyboardMiuixBridge.MenuSpec(
+                                actions = actions.map {
+                                    KeyboardMiuixBridge.MenuAction(
+                                        text = it.shortText,
+                                        separator = it.isSeparator,
+                                        enabled = !it.isSeparator,
+                                        onClick = { activateAction(it) },
+                                    )
                                 }
-                            } else {
-                                menu.add(groupId, 0, 0, it.shortText).apply {
-                                    setOnMenuItemClickListener { _ ->
-                                        activateAction(it)
-                                        true
-                                    }
-                                }
-                            }
-                        }
-                        popupMenu?.dismiss()
-                        popupMenu = popup
-                        popup.show()
+                            )
+                        )
                     }
                     is StatusAreaEntry.Android -> when (entry.type) {
                         InputMethod -> fcitx.runImmediately { inputMethodEntryCached }.let {
@@ -216,7 +187,6 @@ class StatusAreaWindow : InputWindow.ExtendedInputWindow<StatusAreaWindow>(),
     }
 
     override fun onDetached() {
-        popupMenu?.dismiss()
-        popupMenu = null
+        KeyboardMiuixBridge.dismissMenu()
     }
 }
