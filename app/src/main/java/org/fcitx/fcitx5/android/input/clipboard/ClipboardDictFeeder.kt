@@ -145,10 +145,12 @@ object ClipboardDictFeeder {
 
     private fun readWords(file: File, words: MutableSet<String>) {
         if (!file.exists()) return
-        file.bufferedReader(Charsets.UTF_8).forEachLine { line ->
-            if (words.size >= MAX_WORDS) return
-            val word = line.substringBefore(' ').substringBefore('\t').trim()
-            if (isValidWord(word)) words.add(word)
+        file.bufferedReader(Charsets.UTF_8).useLines { lines ->
+            for (line in lines) {
+                if (words.size >= MAX_WORDS) break
+                val word = line.substringBefore(' ').substringBefore('\t').trim()
+                if (isValidWord(word)) words.add(word)
+            }
         }
     }
 

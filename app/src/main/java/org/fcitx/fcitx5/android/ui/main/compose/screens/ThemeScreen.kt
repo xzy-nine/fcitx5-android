@@ -495,7 +495,8 @@ private fun FollowSystemThemeConfirmDialog(
 
 @Composable
 private fun NewThemeEntryView(onClick: () -> Unit) {
-    val ui = remember { NewThemeEntryUi(androidx.compose.ui.platform.LocalContext.current) }
+    val context = LocalContext.current
+    val ui = remember { NewThemeEntryUi(context) }
     AndroidView(
         factory = { ui.root },
         update = { root -> root.setOnClickListener { onClick() } },

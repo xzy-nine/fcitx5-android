@@ -92,7 +92,7 @@ fun QuickPhraseEditScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            currentSaveJob?.let { runCatching { it.cancel(); it.join() } }
+            currentSaveJob?.cancel()
             scope.cancel()
         }
     }
