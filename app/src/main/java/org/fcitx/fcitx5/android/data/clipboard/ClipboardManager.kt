@@ -171,7 +171,7 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
         launch {
             mutex.withLock {
                 val entry = ClipboardEntry.fromClipData(clip, transformer) ?: return@withLock
-                if (entry.text.isBlank()) return@withLock
+                if (entry.text.isBlank() || entry.sensitive) return@withLock
                 try {
                     clbDao.find(entry.text, entry.sensitive)?.let {
                         updateLastEntry(it.copy(timestamp = entry.timestamp))

@@ -60,11 +60,12 @@ class ClipboardEditWindow(
     // 原始文本与分词结果
     private var entryText: String = ""
     private var originalText: String = ""
-    private lateinit var segments: List<String>
+    private var segments: List<String> = emptyList()
     private val segmentWords: List<String>
         get() = if (segments.isEmpty()) listOf("") else segments
     private val chipViews = mutableListOf<TextView>()
     private val selectedSet = HashSet<Int>()
+    private var dataReady = false
 
     // 触摸/拖选状态（移植自原 Activity：长按震动 + 撤回到按下前选区）
     private val handler = Handler(Looper.getMainLooper())
@@ -105,6 +106,8 @@ class ClipboardEditWindow(
                 renderChips()
                 refreshVisible()
                 updatePreview()
+                dataReady = true
+                updateActionButtonsState()
             }
         }
     }
@@ -113,6 +116,7 @@ class ClipboardEditWindow(
         handler.removeCallbacksAndMessages(null)
         chipViews.clear()
         selectedSet.clear()
+        dataReady = false
     }
 
     private fun setupUi() {
@@ -138,16 +142,25 @@ class ClipboardEditWindow(
             toggleTextMode()
         }
         binding.clipboardEditCopy.setOnClickListener {
-            copyOnly()
+            if (dataReady) copyOnly()
         }
         binding.clipboardEditCancel.setOnClickListener {
             exitToPrevWindow()
         }
         binding.clipboardEditOk.setOnClickListener {
-            commitToInput()
+            if (dataReady) commitToInput()
         }
         binding.clipboardEditInsertSpace.isChecked =
             AppPrefs.getInstance().clipboard.clipboardEditInsertSpace.getValue()
+        binding.clipboardEditInsertSpace.setOnCheckedChangeListener { _, checked ->
+            AppPrefs.getInstance().clipboard.clipboardEditInsertSpace.setValue(checked)
+        }
+        updateActionButtonsState()
+    }
+
+    private fun updateActionButtonsState() {
+        binding.clipboardEditCopy.isEnabled = dataReady
+        binding.clipboardEditOk.isEnabled = dataReady
     }
 
     private fun initData() {
@@ -346,13 +359,15 @@ class ClipboardEditWindow(
             binding.clipboardEditPreview.visibility = View.GONE
             binding.clipboardEditSelectAll.visibility = View.GONE
             binding.clipboardEditInvert.visibility = View.GONE
-            binding.clipboardEditTextMode.setText(R.string.clipboard_edit_text_mode)
+            // in text mode the button offers switching over to the segment mode
+            binding.clipboardEditTextMode.setText(R.string.clipboard_edit_segment_mode)
         } else {
             binding.clipboardEditText.visibility = View.GONE
             binding.clipboardEditSegmentContainer.visibility = View.VISIBLE
             binding.clipboardEditPreview.visibility = View.VISIBLE
             binding.clipboardEditSelectAll.visibility = View.VISIBLE
             binding.clipboardEditInvert.visibility = View.VISIBLE
+            // in segment mode the button offers switching back to the text editor
             binding.clipboardEditTextMode.setText(R.string.clipboard_edit_text_mode)
         }
     }

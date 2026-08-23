@@ -30,10 +30,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.reloadPinyinCustomPhrase
 import org.fcitx.fcitx5.android.data.pinyin.CustomPhraseManager
 import org.fcitx.fcitx5.android.data.pinyin.customphrase.PinyinCustomPhrase
@@ -182,7 +184,7 @@ fun PinyinCustomPhraseScreen(onBack: () -> Unit) {
                                     isNew = false
                                 },
                             ) {
-                                Icon(MiuixIcons.Tune, null, Modifier.size(20.dp))
+                                Icon(MiuixIcons.Tune, stringResource(R.string.edit), Modifier.size(20.dp))
                             }
                             IconButton(
                                 onClick = {
@@ -190,7 +192,7 @@ fun PinyinCustomPhraseScreen(onBack: () -> Unit) {
                                     save()
                                 },
                             ) {
-                                Icon(MiuixIcons.Delete, null, Modifier.size(20.dp))
+                                Icon(MiuixIcons.Delete, stringResource(R.string.delete), Modifier.size(20.dp))
                             }
                         }
                     }
@@ -204,14 +206,14 @@ fun PinyinCustomPhraseScreen(onBack: () -> Unit) {
             },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         ) {
-            Icon(MiuixIcons.Add, null)
+            Icon(MiuixIcons.Add, stringResource(R.string.add))
         }
         SmallTopAppBar(
             color = MiuixTheme.colorScheme.surfaceContainer,
             title = title,
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
+                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
                 }
             },
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
@@ -228,11 +230,14 @@ fun PinyinCustomPhraseScreen(onBack: () -> Unit) {
             value2 = entry.order.absoluteValue.toString(),
             value3 = entry.value,
             onConfirm = { key, order, phrase ->
+                val parsed = order.toIntOrNull()?.takeIf { it > 0 } ?: 1
                 if (isNew) {
-                    entries = entries + PinyinCustomPhrase(key, order.toIntOrNull() ?: 1, phrase)
+                    entries = entries + PinyinCustomPhrase(key, parsed, phrase)
                 } else {
+                    // keep the disabled state: a negative order marks the phrase as disabled
+                    val signed = if (entry.enabled) parsed else -parsed
                     entries = entries.toMutableList().apply {
-                        set(index, PinyinCustomPhrase(key, order.toIntOrNull() ?: 1, phrase))
+                        set(index, PinyinCustomPhrase(key, signed, phrase))
                     }
                 }
                 save()

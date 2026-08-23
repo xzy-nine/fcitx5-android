@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.core.FcitxAPI
 import org.fcitx.fcitx5.android.core.RawConfig
@@ -61,10 +62,13 @@ fun RawConfigHostScreen(
         onDispose {
             // flush last state before leaving
             raw?.let { r ->
-                scope.launch {
+                val saveJob = scope.launch {
                     fcitx.runIfReady { saveConfig(this, route, r["cfg"]) }
                 }
+                runCatching { saveJob.cancel(); saveJob.join() }
             }
+            FcitxDaemon.disconnect(connectionName)
+            scope.cancel()
         }
     }
 

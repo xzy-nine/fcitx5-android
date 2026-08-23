@@ -80,6 +80,7 @@ fun SimpleTwoFieldDialog(
                 onClick = {
                     show = false
                     onConfirm(text1.text, text2.text)
+                    onDismiss()
                 },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.textButtonColorsPrimary(),
@@ -151,6 +152,7 @@ fun SimpleThreeFieldDialog(
                 onClick = {
                     show = false
                     onConfirm(text1.text, text2.text, text3.text)
+                    onDismiss()
                 },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.textButtonColorsPrimary(),
@@ -208,6 +210,7 @@ fun SimpleTextFieldDialog(
                 onClick = {
                     show = false
                     onConfirm()
+                    onDismiss()
                 },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.textButtonColorsPrimary(),

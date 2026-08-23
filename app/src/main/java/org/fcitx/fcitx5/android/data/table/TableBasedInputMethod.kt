@@ -45,10 +45,18 @@ class TableBasedInputMethod(val file: File) {
         Ini.writeIniToFile(ini, file)
     }
 
-    fun delete() {
-        table?.file?.delete()
-        table = null
-        file.delete()
+    fun delete(): Result<Unit> {
+        return runCatching {
+            table?.file?.let { tableFile ->
+                if (!tableFile.delete() && tableFile.exists()) {
+                    throw Exception("Failed to delete table file: ${tableFile.name}")
+                }
+            }
+            table = null
+            if (!file.delete() && file.exists()) {
+                throw Exception("Failed to delete config file: ${file.name}")
+            }
+        }
     }
 
     companion object {

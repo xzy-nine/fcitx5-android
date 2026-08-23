@@ -71,14 +71,15 @@
             android:text="@string/clipboard_edit_insert_space" />
     </LinearLayout>
 
-    <!-- 操作按钮：固定在底部，抬高以避开系统导航小白条 -->
-    <LinearLayout
+    <!-- 操作按钮：固定在底部，抬高以避开系统导航小白条；窄屏时自动换行 -->
+    <com.google.android.flexbox.FlexboxLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
-        android:orientation="horizontal"
         android:paddingTop="4dp"
-        android:paddingBottom="18dp">
+        android:paddingBottom="18dp"
+        app:alignItems="center"
+        app:flexWrap="wrap">
 
         <Button
             android:id="@+id/clipboard_edit_select_all"
@@ -107,7 +108,7 @@
         <View
             android:layout_width="0dp"
             android:layout_height="0dp"
-            android:layout_weight="1" />
+            app:layout_flexGrow="1" />
 
         <Button
             android:id="@+id/clipboard_edit_copy"
@@ -132,5 +133,5 @@
             android:layout_marginStart="4dp"
             android:layout_marginEnd="8dp"
             android:text="@android:string/ok" />
-    </LinearLayout>
+    </com.google.android.flexbox.FlexboxLayout>
 </LinearLayout>

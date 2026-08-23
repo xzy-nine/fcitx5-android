@@ -6,8 +6,10 @@
 package org.fcitx.fcitx5.android.ui.main.compose.screens
 
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.PersistableBundle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -65,12 +67,7 @@ fun BroadcastScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val prefs = AppPrefs.getInstance().broadcast
     var enabled by remember { mutableStateOf(prefs.enabled.getValue()) }
-    var pairingCode by remember {
-        mutableStateOf(
-            BroadcastSecurityManager.getPairingCode()
-                ?: BroadcastSecurityManager.generatePairingCode()
-        )
-    }
+    var pairingCode by remember { mutableStateOf("") }
     var pairedApps by remember { mutableStateOf<List<PairedAppEntity>>(emptyList()) }
     var revokeTarget by remember { mutableStateOf<PairedAppEntity?>(null) }
 
@@ -84,6 +81,15 @@ fun BroadcastScreen(onBack: () -> Unit) {
 
     LaunchedEffect(Unit) { reloadApps() }
 
+    LaunchedEffect(enabled) {
+        if (enabled) {
+            pairingCode = withContext(Dispatchers.IO) {
+                BroadcastSecurityManager.getPairingCode()
+                    ?: BroadcastSecurityManager.generatePairingCode()
+            }
+        }
+    }
+
     fun setEnabled(value: Boolean) {
         enabled = value
         prefs.enabled.setValue(value)
@@ -92,11 +98,17 @@ fun BroadcastScreen(onBack: () -> Unit) {
     }
 
     fun copyPairingCode() {
-        val code = BroadcastSecurityManager.getPairingCode()
-            ?: BroadcastSecurityManager.generatePairingCode()
+        val code = pairingCode.ifBlank {
+            BroadcastSecurityManager.getPairingCode()
+                ?: BroadcastSecurityManager.generatePairingCode()
+        }
         pairingCode = code
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("pairing_code", code))
+        val clip = ClipData.newPlainText("pairing_code", code)
+        clip.description.extras = PersistableBundle().apply {
+            putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+        }
+        clipboard.setPrimaryClip(clip)
         context.toast(R.string.pairing_code_copied)
     }
 
@@ -179,7 +191,7 @@ fun BroadcastScreen(onBack: () -> Unit) {
             title = stringResource(R.string.broadcast_settings),
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
+                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
                 }
             },
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),

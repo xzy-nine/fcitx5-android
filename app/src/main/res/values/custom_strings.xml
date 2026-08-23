@@ -45,8 +45,21 @@
     <string name="search_no_results">No results for “%1$s”</string>
     <string name="search_hint">Search settings by name or description</string>
     <string name="clipboard_edit_insert_space">Insert space between segments</string>
+    <!-- Custom: clipboard editor -->
+    <string name="clipboard_edit_select_all">Select all</string>
+    <string name="clipboard_edit_invert">Invert</string>
+    <string name="clipboard_edit_text_mode">Text edit</string>
+    <string name="clipboard_edit_segment_mode">Segment mode</string>
+    <string name="clipboard_edit_no_segment">No words to segment</string>
+    <!-- Custom: table input methods -->
+    <string name="table_im_delete_confirm">Delete input method "%1$s"?</string>
+    <string name="quickphrase_delete_confirm">Delete phrase "%1$s"?</string>
+    <string name="pinyin_dict_delete_confirm">Delete dictionary "%1$s"?</string>
     <!-- Custom: compose settings -->
     <string name="failed_to_load_config">Failed to load config</string>
     <string name="legacy_page_placeholder">This page is still rendered with the legacy UI</string>
+    <!-- Custom: accessibility labels -->
+    <string name="back">Back</string>
+    <string name="help">Help</string>
 
 </resources>

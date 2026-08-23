@@ -16,11 +16,13 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -65,6 +67,7 @@ import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.window.WindowDialog
 import androidx.compose.ui.res.stringResource
 
 /**
@@ -85,6 +88,7 @@ fun InputMethodListScreen(
     var available by remember { mutableStateOf<List<InputMethodEntry>>(emptyList()) }
     var enabled by remember { mutableStateOf<List<InputMethodEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var showAddPicker by remember { mutableStateOf(false) }
 
     fun push(enabledList: List<InputMethodEntry>) {
         fcitx.runIfReady {
@@ -204,7 +208,7 @@ fun InputMethodListScreen(
                                 )
                                 if (entry.isConfigurable) {
                                     IconButton(onClick = { onOpenConfig(entry.name, entry.uniqueName) }) {
-                                        Icon(MiuixIcons.Tune, null, Modifier.size(20.dp))
+                                        Icon(MiuixIcons.Tune, stringResource(R.string.edit), Modifier.size(20.dp))
                                     }
                                 }
                                 IconButton(
@@ -213,8 +217,9 @@ fun InputMethodListScreen(
                                         finishDrag()
                                     },
                                 ) {
-                                    Icon(MiuixIcons.Delete, null, Modifier.size(20.dp))
+                                    Icon(MiuixIcons.Delete, stringResource(R.string.delete), Modifier.size(20.dp))
                                 }
+                                // drag handle: non-interactive decoration, excluded from a11y tree
                                 Icon(MiuixIcons.More, null, Modifier.size(20.dp))
                             }
                         }
@@ -225,16 +230,40 @@ fun InputMethodListScreen(
         val candidates = available.filter { a -> enabled.none { it.uniqueName == a.uniqueName } }
         if (candidates.isNotEmpty()) {
             FloatingActionButton(
-                onClick = {
-                    val pick = candidates.first()
-                    enabled = enabled + pick
-                    finishDrag()
-                },
+                onClick = { showAddPicker = true },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(16.dp),
             ) {
-                Icon(MiuixIcons.Add, null)
+                Icon(MiuixIcons.Add, stringResource(R.string.add))
+            }
+        }
+        if (showAddPicker) {
+            WindowDialog(
+                show = showAddPicker,
+                title = stringResource(R.string.add),
+                onDismissRequest = { showAddPicker = false },
+            ) {
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    items(candidates, key = { it.uniqueName }) { candidate ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                            colors = CardDefaults.defaultColors(
+                                color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                            ),
+                            onClick = {
+                                enabled = enabled + candidate
+                                showAddPicker = false
+                                finishDrag()
+                            },
+                        ) {
+                            Text(
+                                text = candidate.displayName,
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            )
+                        }
+                    }
+                }
             }
         }
         SmallTopAppBar(
@@ -242,7 +271,7 @@ fun InputMethodListScreen(
             title = stringResource(R.string.input_methods),
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
+                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
                 }
             },
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
