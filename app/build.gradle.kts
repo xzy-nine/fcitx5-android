@@ -133,6 +133,7 @@ dependencies {
     implementation(libs.miuix.nav.android)
     implementation(libs.androidx.activity.compose)
     implementation(libs.jetbrains.compose.foundation.android)
+    implementation(libs.jieba.analysis)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)

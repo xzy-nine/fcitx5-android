@@ -154,6 +154,10 @@
     <string name="choose_input_method">Choose input method</string>
     <string name="edit_clipboard">Edit clipboard</string>
     <string name="clipboard_edit_text_hint">Clipboard content</string>
+    <string name="clipboard_edit_select_all">Select all</string>
+    <string name="clipboard_edit_invert">Invert</string>
+    <string name="clipboard_edit_text_mode">Text edit</string>
+    <string name="clipboard_edit_no_segment">No words to segment</string>
     <string name="config_addon_not_loaded">No configuration options available, maybe this addon is disabled when fcitx starts?</string>
     <string name="portrait">Portrait</string>
     <string name="landscape">Landscape</string>

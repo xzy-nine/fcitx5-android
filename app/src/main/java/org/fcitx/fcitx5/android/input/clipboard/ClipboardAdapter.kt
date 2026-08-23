@@ -90,43 +90,53 @@ abstract class ClipboardAdapter(
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val entry = getItem(position) ?: return
-        with(holder.entryUi) {
-            setEntry(excerptText(entry.text, entry.sensitive && maskSensitive), entry.pinned)
-            root.setOnClickListener {
-                onPaste(entry)
+        // 整个 bind 过程兜底：任何异常都降级为纯文本，保证列表始终可渲染
+        val display = excerptText(entry.text, entry.sensitive && maskSensitive)
+        val chips = if (entry.sensitive && maskSensitive) {
+            emptyList()
+        } else {
+            runCatching { ClipboardTextAnalyzer.analyze(entry.text) }
+                .getOrDefault(emptyList())
+        }
+        runCatching {
+            with(holder.entryUi) {
+                setEntry(display, entry.pinned, chips) { snippet ->
+                    onPasteText(snippet)
+                }
+                root.setOnClickListener {
+                    onPaste(entry)
+                }
+                root.setOnLongClickListener {
+                    val popup = PopupMenu(ctx, root)
+                    val menu = popup.menu
+                    val iconTint = ctx.styledColor(android.R.attr.colorControlNormal)
+                    if (entry.pinned) {
+                        menu.item(R.string.unpin, R.drawable.ic_outline_push_pin_24, iconTint) {
+                            onUnpin(entry.id)
+                        }
+                    } else {
+                        menu.item(R.string.pin, R.drawable.ic_baseline_push_pin_24, iconTint) {
+                            onPin(entry.id)
+                        }
+                    }
+                    menu.item(R.string.edit, R.drawable.ic_baseline_edit_24, iconTint) {
+                        onEdit(entry.id)
+                    }
+                    menu.item(R.string.share, R.drawable.ic_baseline_share_24, iconTint) {
+                        onShare(entry)
+                    }
+                    menu.item(R.string.delete, R.drawable.ic_baseline_delete_24, iconTint) {
+                        onDelete(entry.id)
+                    }
+                    popup.show()
+                    true
+                }
             }
-            root.setOnLongClickListener {
-                val popup = PopupMenu(ctx, root)
-                val menu = popup.menu
-                val iconTint = ctx.styledColor(android.R.attr.colorControlNormal)
-                if (entry.pinned) {
-                    menu.item(R.string.unpin, R.drawable.ic_outline_push_pin_24, iconTint) {
-                        onUnpin(entry.id)
-                    }
-                } else {
-                    menu.item(R.string.pin, R.drawable.ic_baseline_push_pin_24, iconTint) {
-                        onPin(entry.id)
-                    }
-                }
-                menu.item(R.string.edit, R.drawable.ic_baseline_edit_24, iconTint) {
-                    onEdit(entry.id)
-                }
-                menu.item(R.string.share, R.drawable.ic_baseline_share_24, iconTint) {
-                    onShare(entry)
-                }
-                menu.item(R.string.delete, R.drawable.ic_baseline_delete_24, iconTint) {
-                    onDelete(entry.id)
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !DeviceUtil.isSamsungOneUI && !DeviceUtil.isFlyme) {
-                    popup.setForceShowIcon(true)
-                }
-                popup.setOnDismissListener {
-                    if (it === popupMenu) popupMenu = null
-                }
-                popupMenu?.dismiss()
-                popupMenu = popup
-                popup.show()
-                true
+        }.onFailure { e ->
+            // 极端情况下连纯文本都失败，至少把文本塞进去，避免整页空白
+            runCatching {
+                holder.entryUi.textView.text = display
+                holder.entryUi.root.setOnClickListener { onPaste(entry) }
             }
         }
     }
@@ -139,6 +149,11 @@ abstract class ClipboardAdapter(
     }
 
     abstract fun onPaste(entry: ClipboardEntry)
+
+    /**
+     * 点击条目中提取出的实体气泡（验证码/号码/姓名等）时回调，参数为气泡对应的文本片段。
+     */
+    abstract fun onPasteText(text: String)
 
     abstract fun onPin(id: Int)
 

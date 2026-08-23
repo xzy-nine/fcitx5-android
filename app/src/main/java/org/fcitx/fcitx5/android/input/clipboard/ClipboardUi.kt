@@ -30,7 +30,10 @@ import timber.log.Timber
 class ClipboardUi(override val ctx: Context, private val theme: Theme) : Ui {
 
     val recyclerView = recyclerView {
-        addItemDecoration(SpacesItemDecoration(dp(4)))
+        // 左右留白让圆角卡片清晰可见；clipToPadding=false 使留白处也能滚动
+        setPadding(dp(8), 0, dp(8), 0)
+        clipToPadding = false
+        addItemDecoration(SpacesItemDecoration(dp(8)))
     }
 
     val enableUi = ClipboardInstructionUi.Enable(ctx, theme)

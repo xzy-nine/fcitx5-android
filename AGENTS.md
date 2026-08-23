@@ -52,3 +52,4 @@
 - **Compose 栈与 legacy 双栈**：进入 Legacy 页时 `LegacyScreen` attach 全新 NavHostFragment(start=空 anchor `LegacyAnchorFragment`),返回由 `LegacyNavRuntime.popLegacyBackStack()` 协调;`SettingsRoute.kt` 上游文件保持零改动。
 - `.trae/hooks.json` 是本地 Trae IDE 的命令拦截钩子配置，与项目无关，勿删勿改。
 - 上游 README 描述的是官方功能集；custom 分支额外能力以上方特性表为准。
+- 新增的页面除了IME外其他的均应该使用compose界面而不是view
