@@ -135,13 +135,13 @@ class ClipboardEditWindow(
             toggleTextMode()
         }
         binding.clipboardEditCopy.setOnClickListener {
-            finishEditing(true)
+            copyOnly()
         }
         binding.clipboardEditCancel.setOnClickListener {
             windowManager.attachWindow(KeyboardWindow)
         }
         binding.clipboardEditOk.setOnClickListener {
-            finishEditing(false)
+            commitToInput()
         }
     }
 
@@ -365,15 +365,22 @@ class ClipboardEditWindow(
         }
     }
 
-    private fun finishEditing(copy: Boolean) {
+    /**
+     * 复制：仅写入系统剪贴板（剪贴板数据库会自行监听并新增条目），不修改原文、不通过输入接口上屏。
+     */
+    private fun copyOnly() {
         val str = getCurrentText()
-        service.lifecycleScope.launch {
-            ClipboardManager.updateText(entryId, str)
-            if (copy) {
-                runCatching { context.clipboardManager.setPrimaryClip(ClipData.newPlainText("", str)) }
-            }
-            windowManager.attachWindow(KeyboardWindow)
-        }
+        runCatching { context.clipboardManager.setPrimaryClip(ClipData.newPlainText("", str)) }
+        windowManager.attachWindow(KeyboardWindow)
+    }
+
+    /**
+     * 确定：通过输入接口把文本逐字上屏（commitText），不写入剪贴板数据库。
+     */
+    private fun commitToInput() {
+        val str = getCurrentText()
+        service.commitText(str)
+        windowManager.attachWindow(KeyboardWindow)
     }
 
     override val title: String by lazy { context.getString(R.string.edit_clipboard) }
