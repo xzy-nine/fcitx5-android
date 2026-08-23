@@ -24,12 +24,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.quickphrase.QuickPhrase
@@ -70,6 +72,7 @@ fun QuickPhraseEditScreen(
     var loading by remember { mutableStateOf(true) }
     var editTarget by remember { mutableStateOf<Pair<Int, QuickPhraseEntry>?>(null) }
     var isNew by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(quickPhrase) {
         val data = quickPhrase?.let { withContext(Dispatchers.IO) { it.loadData() } }
@@ -80,7 +83,11 @@ fun QuickPhraseEditScreen(
     }
 
     fun save() {
-        quickPhrase?.saveData(QuickPhraseData(entries))
+        val qp = quickPhrase ?: return
+        val data = QuickPhraseData(entries)
+        scope.launch {
+            withContext(Dispatchers.IO) { qp.saveData(data) }
+        }
     }
 
     if (loading || quickPhrase == null) {

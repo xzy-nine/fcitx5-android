@@ -48,6 +48,7 @@
     <!-- Custom: table input methods -->
     <string name="table_im_delete_confirm">删除输入法 "%1$s"？</string>
     <string name="quickphrase_delete_confirm">确定删除短语“%1$s”？</string>
+    <string name="pinyin_dict_delete_confirm">确定删除词典“%1$s”？</string>
     
     <!-- Custom: settings search -->
     <string name="search">搜索</string>

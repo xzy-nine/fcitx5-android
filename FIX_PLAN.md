@@ -8,7 +8,7 @@
 | 优先级 | 数量 | 状态 |
 |:---:|:---:|:---:|
 | 🔴 Critical | 2 | ✅ 已修 |
-| 🟠 Major | 15 | ⬜ 待修 |
+| 🟠 Major | 15 | ✅ 已修（2026-08-23） |
 | 🟡 Minor | 12 | ⬜ 待修 |
 
 ---
@@ -35,76 +35,91 @@
 - **文件**: `ClipboardEditWindow.kt:149-150`, `AppPrefs.kt:476-478`
 - **问题**: `clipboardEditInsertSpace` 只读初始值，`setOnCheckedChangeListener` 未注册
 - **修复**: 在 `setupUi()` 中为 `clipboardEditInsertSpace` 注册 `setOnCheckedChangeListener`，将状态写回 `setValue()`
+- **状态**: ✅ 已修（2026-08-23）
 
 ### 4. SimpleTextFieldDialog 确认后调用方状态不同步
 - **文件**: `SimpleTextFieldDialog.kt:164-217`, `QuickPhraseListScreen.kt:161-180`
 - **问题**: 确认时内部 `show` 置 false，但调用方 `showCreateDialog` 仍为 true，对话框无法再次打开
 - **修复**: `SimpleTextFieldDialog` 确认后调用 `onDismiss()`；`QuickPhraseListScreen` 的 `onConfirm` 中设 `showCreateDialog = false`
+- **状态**: ✅ 已修（2026-08-23）
 
 ### 5. BroadcastScreen 配对码在组合阶段生成
 - **文件**: `BroadcastScreen.kt:68-73`
 - **问题**: `remember` 块中调用 `generatePairingCode()`，即使未开启广播也会生成；且在主线程执行加密+磁盘写入
 - **修复**: 移入 `LaunchedEffect(enabled)`，仅在 `enabled == true` 时在 `Dispatchers.IO` 上加载/生成
+- **状态**: ✅ 已修（2026-08-23）
 
 ### 6. BroadcastScreen 配对码未标记敏感/未过滤剪贴板历史
 - **文件**: `BroadcastScreen.kt:94-101`, `ClipboardManager.kt:171-198`
 - **问题**: 配对码复制到剪贴板后会被 `ClipboardManager` 持久化到数据库
 - **修复**: `copyPairingCode()` 中用 `EXTRA_IS_SENSITIVE` 标记 ClipData；`ClipboardManager.onPrimaryClipChanged()` 中在 `clbDao.insert` 前检查 `entry.sensitive`，跳过敏感条目
+- **状态**: ✅ 已修（2026-08-23）
 
 ### 7. InputMethodListScreen 添加输入法直接选第一个候选
 - **文件**: `InputMethodListScreen.kt:226-239`
 - **问题**: FAB `onClick` 取 `candidates.first()` 直接加入 enabled，用户无法选择
 - **修复**: 改为弹出候选列表对话框，由用户选择后再添加
+- **状态**: ✅ 已修（2026-08-23）
 
 ### 8. PinyinCustomPhraseScreen 编辑禁用短语会重新启用
 - **文件**: `PinyinCustomPhraseScreen.kt:230-237`, `PinyinCustomPhrase.kt:15`
 - **问题**: 编辑用 `order.toIntOrNull()`，`enabled` 由 `order > 0` 决定，编辑后 order 变正数
 - **修复**: 重建时保留原符号：`val signed = if (entry.enabled) parsed else -parsed`
+- **状态**: ✅ 已修（2026-08-23）
 
 ### 9. PinyinDictionaryScreen 删除词典无确认
 - **文件**: `PinyinDictionaryScreen.kt:147-156`
 - **问题**: 点击删除按钮立即 `entry.file.delete()`，不可撤销
 - **修复**: 弹出 `SimpleConfirmDialog`，确认后再删除
+- **状态**: ✅ 已修（2026-08-23）
 
 ### 10. QuickPhraseEditScreen save() 在主线程写文件
 - **文件**: `QuickPhraseEditScreen.kt:82-84`
 - **问题**: `quickPhrase?.saveData()` 在主线程执行，可能 ANR
 - **修复**: 用 `rememberCoroutineScope` + `Dispatchers.IO` 异步保存
+- **状态**: ✅ 已修（2026-08-23）
 
 ### 11. RawConfigHostScreen 连接与作用域未释放
 - **文件**: `RawConfigHostScreen.kt:48-69`
 - **问题**: `onDispose` 中只写回配置，未 `disconnect` 和 `scope.cancel()`
 - **修复**: 保存协程结束后 `FcitxDaemon.disconnect(connectionName)` + `scope.cancel()`
+- **状态**: ✅ 已修（2026-08-23）
 
 ### 12. TableInputMethodsScreen zip 导入未实现
 - **文件**: `TableInputMethodsScreen.kt:71-87`
 - **问题**: FAB 选择 zip 后只调用 `reload()`，从未调用 `TableManager.importFromZip()`
 - **修复**: 回调中 `TableManager.importFromZip(context.contentResolver.openInputStream(uri)!!)`；已有 API 在 `TableManager.kt:39`；导入失败用 `context.importErrorDialog()`
+- **状态**: ✅ 已修（2026-08-23，先前提交）
 
 ### 13. TableInputMethodsScreen 删除无确认/无 fcitx 重启
 - **文件**: `TableInputMethodsScreen.kt:113-125`
 - **问题**: (a) 替换按钮 `onClick` 为空 (b) 删除无确认 (c) 删除后未重启 fcitx
 - **修复**: (a) 移除未实现的替换按钮 (b) 弹出 `SimpleConfirmDialog` (c) 删除后重启 fcitx
+- **状态**: ✅ 已修（2026-08-23，先前提交）
 
 ### 14. ThemeScreen AndroidView 点击回调固化在首次 lambda
 - **文件**: `ThemeScreen.kt:513-528`, `ThemeScreen.kt:493-500`
 - **问题**: `factory` 中 `setOnClickListener` 捕获首次 `onClick`/`onLongClick`/`onEdit`，重组后不更新
 - **修复**: `factory` 仅创建 view；将所有 listener 移入 `update` 块
+- **状态**: ✅ 已修（2026-08-23）
 
 ### 15. ExpandableNumberPreference 逐字符提交打断输入
 - **文件**: `ExpandableNumberPreference.kt:44-83`
 - **问题**: `onValueChange` 每次按键都 `commit(t)`，clamp 后重置 text
 - **修复**: `onValueChange` 仅保存原始文本；焦点丢失时（用 Miuix `onLoseFocus` 回调）才 commit
+- **状态**: ✅ 已修（2026-08-23，先前提交）
 
 ### 16. SetupActivity 违反追加式锚点策略
 - **文件**: `SetupActivity.kt:14-37`
 - **问题**: 删除 83 行新增 23 行，不符合 AGENTS.md 对上游高频文件的策略
 - **修复**: 把 Compose 宿主逻辑移入新文件 `SetupComposeHost.kt`；`SetupActivity` 仅保留最小锚点
+- **状态**: ✅ 已修（2026-08-23）
 
 ### 17. clipboard_edit_window.xml 底部操作栏窄屏适配
 - **文件**: `clipboard_edit_window.xml:83-134`
 - **问题**: 6 个 `wrap_content` 按钮水平排列，窄屏被裁剪
 - **修复**: 将按钮分为两行（左3右3），或用 `FlexboxLayout` 支持换行
+- **状态**: ✅ 已修（2026-08-23）
 
 ---
 

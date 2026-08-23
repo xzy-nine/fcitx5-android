@@ -172,6 +172,7 @@ fun QuickPhraseListScreen(
                     reload()
                 }
                 createName = ""
+                showCreateDialog = false
             },
             onDismiss = {
                 showCreateDialog = false

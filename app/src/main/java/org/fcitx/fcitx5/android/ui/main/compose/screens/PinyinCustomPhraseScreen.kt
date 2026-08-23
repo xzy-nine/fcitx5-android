@@ -230,11 +230,14 @@ fun PinyinCustomPhraseScreen(onBack: () -> Unit) {
             value2 = entry.order.absoluteValue.toString(),
             value3 = entry.value,
             onConfirm = { key, order, phrase ->
+                val parsed = order.toIntOrNull() ?: 1
                 if (isNew) {
-                    entries = entries + PinyinCustomPhrase(key, order.toIntOrNull() ?: 1, phrase)
+                    entries = entries + PinyinCustomPhrase(key, parsed, phrase)
                 } else {
+                    // keep the disabled state: a negative order marks the phrase as disabled
+                    val signed = if (entry.enabled) parsed else -parsed
                     entries = entries.toMutableList().apply {
-                        set(index, PinyinCustomPhrase(key, order.toIntOrNull() ?: 1, phrase))
+                        set(index, PinyinCustomPhrase(key, signed, phrase))
                     }
                 }
                 save()

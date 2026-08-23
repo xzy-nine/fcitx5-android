@@ -54,6 +54,7 @@
     <!-- Custom: table input methods -->
     <string name="table_im_delete_confirm">Delete input method "%1$s"?</string>
     <string name="quickphrase_delete_confirm">Delete phrase "%1$s"?</string>
+    <string name="pinyin_dict_delete_confirm">Delete dictionary "%1$s"?</string>
     <!-- Custom: compose settings -->
     <string name="failed_to_load_config">Failed to load config</string>
     <string name="legacy_page_placeholder">This page is still rendered with the legacy UI</string>

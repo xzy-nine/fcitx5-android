@@ -44,6 +44,7 @@ import org.fcitx.fcitx5.android.data.pinyin.dict.LibIMEDictionary
 import org.fcitx.fcitx5.android.data.pinyin.dict.PinyinDictionary
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
+import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleConfirmDialog
 import org.fcitx.fcitx5.android.utils.importErrorDialog
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -71,6 +72,7 @@ fun PinyinDictionaryScreen(initialUri: String? = null, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val fcitx: FcitxConnection = remember { FcitxDaemon.connect("compose-pinyin-dict") }
     var entries by remember { mutableStateOf<List<PinyinDictionary>>(emptyList()) }
+    var pendingDelete by remember { mutableStateOf<LibIMEDictionary?>(null) }
 
     fun reload() {
         entries = PinyinDictManager.listDictionaries()
@@ -146,10 +148,7 @@ fun PinyinDictionaryScreen(initialUri: String? = null, onBack: () -> Unit) {
                             )
                             if (entry is LibIMEDictionary) {
                                 IconButton(
-                                    onClick = {
-                                        entry.file.delete()
-                                        reload()
-                                    },
+                                    onClick = { pendingDelete = entry },
                                 ) {
                                     Icon(MiuixIcons.Delete, stringResource(R.string.delete), Modifier.size(20.dp))
                                 }
@@ -174,6 +173,19 @@ fun PinyinDictionaryScreen(initialUri: String? = null, onBack: () -> Unit) {
                 }
             },
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+        )
+    }
+
+    pendingDelete?.let { target ->
+        SimpleConfirmDialog(
+            title = stringResource(R.string.delete),
+            message = stringResource(R.string.pinyin_dict_delete_confirm, target.name),
+            onConfirm = {
+                target.file.delete()
+                reload()
+                pendingDelete = null
+            },
+            onDismiss = { pendingDelete = null },
         )
     }
 }

@@ -495,13 +495,9 @@ private fun FollowSystemThemeConfirmDialog(
 
 @Composable
 private fun NewThemeEntryView(onClick: () -> Unit) {
-    val context = LocalContext.current
     AndroidView(
-        factory = { ctx ->
-            NewThemeEntryUi(ctx).root.apply {
-                setOnClickListener { onClick() }
-            }
-        },
+        factory = { ctx -> NewThemeEntryUi(ctx).root },
+        update = { root -> root.setOnClickListener { onClick() } },
         modifier = Modifier.size(128.dp, 92.dp),
     )
 }
@@ -517,17 +513,13 @@ private fun ThemeThumbnailView(
     val context = LocalContext.current
     val ui = remember { ThemeThumbnailUi(context) }
     AndroidView(
-        factory = {
-            ui.root.apply {
-                setOnClickListener { onClick() }
-                setOnLongClickListener { onLongClick(); true }
-            }
-            ui.editButton.setOnClickListener { onEdit() }
-            ui.root
-        },
+        factory = { ui.root },
         update = {
             ui.setTheme(theme)
             ui.setChecked(state)
+            ui.root.setOnClickListener { onClick() }
+            ui.root.setOnLongClickListener { onLongClick(); true }
+            ui.editButton.setOnClickListener { onEdit() }
         },
         modifier = Modifier.size(128.dp, 92.dp),
     )

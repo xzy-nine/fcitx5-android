@@ -148,6 +148,9 @@ class ClipboardEditWindow(
         }
         binding.clipboardEditInsertSpace.isChecked =
             AppPrefs.getInstance().clipboard.clipboardEditInsertSpace.getValue()
+        binding.clipboardEditInsertSpace.setOnCheckedChangeListener { _, checked ->
+            AppPrefs.getInstance().clipboard.clipboardEditInsertSpace.setValue(checked)
+        }
     }
 
     private fun initData() {
