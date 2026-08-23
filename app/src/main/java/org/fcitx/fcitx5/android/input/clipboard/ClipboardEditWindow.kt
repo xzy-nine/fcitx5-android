@@ -65,6 +65,7 @@ class ClipboardEditWindow(
         get() = if (segments.isEmpty()) listOf("") else segments
     private val chipViews = mutableListOf<TextView>()
     private val selectedSet = HashSet<Int>()
+    private var dataReady = false
 
     // 触摸/拖选状态（移植自原 Activity：长按震动 + 撤回到按下前选区）
     private val handler = Handler(Looper.getMainLooper())
@@ -105,6 +106,8 @@ class ClipboardEditWindow(
                 renderChips()
                 refreshVisible()
                 updatePreview()
+                dataReady = true
+                updateActionButtonsState()
             }
         }
     }
@@ -113,6 +116,7 @@ class ClipboardEditWindow(
         handler.removeCallbacksAndMessages(null)
         chipViews.clear()
         selectedSet.clear()
+        dataReady = false
     }
 
     private fun setupUi() {
@@ -138,19 +142,25 @@ class ClipboardEditWindow(
             toggleTextMode()
         }
         binding.clipboardEditCopy.setOnClickListener {
-            copyOnly()
+            if (dataReady) copyOnly()
         }
         binding.clipboardEditCancel.setOnClickListener {
             exitToPrevWindow()
         }
         binding.clipboardEditOk.setOnClickListener {
-            commitToInput()
+            if (dataReady) commitToInput()
         }
         binding.clipboardEditInsertSpace.isChecked =
             AppPrefs.getInstance().clipboard.clipboardEditInsertSpace.getValue()
         binding.clipboardEditInsertSpace.setOnCheckedChangeListener { _, checked ->
             AppPrefs.getInstance().clipboard.clipboardEditInsertSpace.setValue(checked)
         }
+        updateActionButtonsState()
+    }
+
+    private fun updateActionButtonsState() {
+        binding.clipboardEditCopy.isEnabled = dataReady
+        binding.clipboardEditOk.isEnabled = dataReady
     }
 
     private fun initData() {

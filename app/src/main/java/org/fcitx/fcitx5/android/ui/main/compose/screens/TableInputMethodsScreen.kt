@@ -120,8 +120,8 @@ fun TableInputMethodsScreen(onBack: () -> Unit) {
                 return@launch
             }
             val importId = IMPORT_ID++
-            notifyImporting(fileName, importId)
             try {
+                notifyImporting(fileName, importId)
                 withContext(Dispatchers.IO) {
                     val inputStream = context.contentResolver.openInputStream(uri)!!
                     TableManager.importFromZip(inputStream).getOrThrow()
@@ -131,7 +131,7 @@ fun TableInputMethodsScreen(onBack: () -> Unit) {
             } catch (e: Exception) {
                 context.importErrorDialog(e)
             } finally {
-                context.notificationManager.cancel(importId)
+                runCatching { context.notificationManager.cancel(importId) }
             }
         }
     }
@@ -141,16 +141,16 @@ fun TableInputMethodsScreen(onBack: () -> Unit) {
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         val im = replaceTarget ?: return@rememberLauncherForActivityResult
-        replaceTarget = null
         scope.launch {
+            replaceTarget = null
             val dictName = context.contentResolver.queryFileName(uri) ?: return@launch
             if (Dictionary.Type.fromFileName(dictName) == null) {
                 context.importErrorDialog(R.string.exception_table_dict_filename, dictName)
                 return@launch
             }
             val importId = IMPORT_ID++
-            notifyImporting(dictName, importId)
             try {
+                notifyImporting(dictName, importId)
                 val imported = withContext(Dispatchers.IO) {
                     val dictStream = context.contentResolver.openInputStream(uri)!!
                     val result =
@@ -163,7 +163,7 @@ fun TableInputMethodsScreen(onBack: () -> Unit) {
             } catch (e: Exception) {
                 context.importErrorDialog(e)
             } finally {
-                context.notificationManager.cancel(importId)
+                runCatching { context.notificationManager.cancel(importId) }
             }
         }
     }
@@ -175,11 +175,15 @@ fun TableInputMethodsScreen(onBack: () -> Unit) {
             onConfirm = {
                 deleteTarget = null
                 scope.launch {
-                    withContext(Dispatchers.IO) {
-                        target.delete()
-                        FcitxDaemon.restartFcitx()
+                    try {
+                        withContext(Dispatchers.IO) {
+                            target.delete().getOrThrow()
+                            FcitxDaemon.restartFcitx()
+                        }
+                        reload()
+                    } catch (e: Exception) {
+                        context.importErrorDialog(e)
                     }
-                    reload()
                 }
             },
             onDismiss = { deleteTarget = null },
@@ -198,7 +202,6 @@ fun TableInputMethodsScreen(onBack: () -> Unit) {
                 im.tableFileName,
             ),
             onConfirm = {
-                replaceTarget = null
                 replaceLauncher.launch("*/*")
             },
             onDismiss = { replaceTarget = null },

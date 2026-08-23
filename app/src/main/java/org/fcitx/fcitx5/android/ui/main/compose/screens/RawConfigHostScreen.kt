@@ -62,7 +62,10 @@ fun RawConfigHostScreen(
         onDispose {
             // flush last state before leaving
             raw?.let { r ->
-                fcitx.runIfReady { saveConfig(this, route, r["cfg"]) }
+                val saveJob = scope.launch {
+                    fcitx.runIfReady { saveConfig(this, route, r["cfg"]) }
+                }
+                runCatching { saveJob.cancel(); saveJob.join() }
             }
             FcitxDaemon.disconnect(connectionName)
             scope.cancel()

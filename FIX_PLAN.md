@@ -106,7 +106,7 @@
 ### 15. ExpandableNumberPreference 逐字符提交打断输入
 - **文件**: `ExpandableNumberPreference.kt:44-83`
 - **问题**: `onValueChange` 每次按键都 `commit(t)`，clamp 后重置 text
-- **修复**: `onValueChange` 仅保存原始文本；焦点丢失时（用 Miuix `onLoseFocus` 回调）才 commit
+- **修复**: `onValueChange` 仅保存原始文本；焦点丢失时（用 `Modifier.onFocusChanged` 检测）才 commit
 - **状态**: ✅ 已修（2026-08-23，先前提交）
 
 ### 16. SetupActivity 违反追加式锚点策略
@@ -202,35 +202,33 @@
 
 ## 调查结论
 
-### #12 TableInputMethodsScreen zip 导入 — 缺完整实现
+### #12 TableInputMethodsScreen zip 导入 — 已完整实现
 
-`zipLauncher` 回调中调用 `reload()` 仅刷新列表，**未调用 `TableManager.importFromZip()`**，zip 导入完全失效。
+`zipLauncher` 回调中已正确实现完整导入流程：
 
-旧版完整流程（`TableInputMethodFragment.kt:229-258`）：
-1. 校验文件名后缀
-2. 创建 notification channel + 发送 indeterminate 进度通知（`NotificationCompat`，`PRIORITY_HIGH`，不可清除）
+当前实现（`TableInputMethodsScreen.kt:112-137`）：
+1. 校验文件名后缀（`.zip`）
+2. 创建 notification channel（在 `remember` 块中，lines 82-92）+ 发送 indeterminate 进度通知（`NotificationCompat`，`PRIORITY_HIGH`，不可清除）
 3. `withContext(Dispatchers.IO)` 打开 InputStream → `TableManager.importFromZip(inputStream).getOrThrow()`
-4. 成功 → `ui.addItem()`；失败 → `importErrorDialog()`
+4. 成功 → `reload()`；失败 → `importErrorDialog()`
 5. 无论结果 → `nm.cancel()` 取消通知
-6. `onStop()` 中通过 `NaiveDustman` 检测变更 → `FcitxDaemon.restartFcitx()`
+6. 导入后立即 `FcitxDaemon.restartFcitx()`
 
-**修复要点**：需添加通知 channel 创建 + 进度通知 + 实际导入逻辑 + `FcitxDaemon.restartFcitx()`。通知对大型词典有必要（dict 转换涉及 native JNI）。
+**结论**：完整功能已实现，符合旧版流程。
 
-### #13 TableInputMethodsScreen 删除/替换码表
+### #13 TableInputMethodsScreen 删除/替换码表 — 已完整实现
 
-**替换按钮**：`onClick` 为空占位符。旧版流程：弹 dialog → 选择文件 → `TableManager.replaceTableDict(im, dictName, dictStream)` → 更新 `im.table` → 重启 fcitx。
+**替换按钮**：已完整实现（lines 139-206）。流程：点击按钮 → 弹 `SimpleConfirmDialog` → 选择文件 → `TableManager.replaceTableDict(im, dictName, dictStream)` → 更新 `im.table` → 重启 fcitx → `reload()`。
 
-**删除按钮**：直接 `entry.delete()` + `reload()`，无确认对话框，无 `FcitxDaemon.restartFcitx()`。
+**删除按钮**：已完整实现（lines 171-187）。流程：点击按钮 → 弹 `SimpleConfirmDialog` 确认 → `target.delete()` → `FcitxDaemon.restartFcitx()` → `reload()`。
 
-**修复要点**：
-- 删除：加 `SimpleConfirmDialog` 确认 + `FcitxDaemon.restartFcitx()`
-- 替换：需实现文件选择 → `TableManager.replaceTableDict()` → 重启（或暂时移除替换按钮标记 TODO）
+**结论**：删除和替换功能均已正确实现，包括确认对话框、错误处理和 fcitx 重启。
 
 ### #15 ExpandableNumberPreference 焦点 API
 
-Miuix `TextField` **没有暴露焦点回调 API**（无 `onLoseFocus` 等），但 `modifier` 直接传给底层 `BasicTextField`，标准 Compose 焦点 API 可用。
+Miuix `TextField` **没有暴露专用焦点回调 API**，但 `modifier` 直接传给底层 `BasicTextField`，标准 Compose 焦点 API 可用。
 
-**推荐方案**：`Modifier.onFocusChanged`
+**实际方案**：`Modifier.onFocusChanged`
 
 ```kotlin
 TextField(

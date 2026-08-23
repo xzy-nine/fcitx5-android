@@ -230,7 +230,7 @@ fun PinyinCustomPhraseScreen(onBack: () -> Unit) {
             value2 = entry.order.absoluteValue.toString(),
             value3 = entry.value,
             onConfirm = { key, order, phrase ->
-                val parsed = order.toIntOrNull() ?: 1
+                val parsed = order.toIntOrNull()?.takeIf { it > 0 } ?: 1
                 if (isNew) {
                     entries = entries + PinyinCustomPhrase(key, parsed, phrase)
                 } else {

@@ -20,18 +20,24 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.quickphrase.QuickPhrase
@@ -72,7 +78,9 @@ fun QuickPhraseEditScreen(
     var loading by remember { mutableStateOf(true) }
     var editTarget by remember { mutableStateOf<Pair<Int, QuickPhraseEntry>?>(null) }
     var isNew by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
+    val saveMutex = remember { Mutex() }
+    var currentSaveJob by remember { mutableStateOf<Job?>(null) }
 
     LaunchedEffect(quickPhrase) {
         val data = quickPhrase?.let { withContext(Dispatchers.IO) { it.loadData() } }
@@ -82,11 +90,20 @@ fun QuickPhraseEditScreen(
         loading = false
     }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            currentSaveJob?.let { runCatching { it.cancel(); it.join() } }
+            scope.cancel()
+        }
+    }
+
     fun save() {
         val qp = quickPhrase ?: return
         val data = QuickPhraseData(entries)
-        scope.launch {
-            withContext(Dispatchers.IO) { qp.saveData(data) }
+        currentSaveJob = scope.launch {
+            saveMutex.withLock {
+                withContext(Dispatchers.IO) { qp.saveData(data) }
+            }
         }
     }
 
