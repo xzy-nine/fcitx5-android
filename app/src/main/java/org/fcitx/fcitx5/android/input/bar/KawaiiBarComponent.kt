@@ -67,7 +67,7 @@ import org.fcitx.fcitx5.android.input.popup.PopupComponent
 import org.fcitx.fcitx5.android.input.status.StatusAreaWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
-import org.fcitx.fcitx5.android.utils.AppUtil
+import org.fcitx.fcitx5.android.input.clipboard.ClipboardEditWindow
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import org.mechdancer.dependency.DynamicScope
 import org.mechdancer.dependency.manager.must
@@ -345,7 +345,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 }
                 setOnLongClickListener {
                     ClipboardManager.lastEntry?.let {
-                        AppUtil.launchClipboardEdit(context, it.id, true)
+                        windowManager.attachWindow(ClipboardEditWindow(it.id, true))
                     }
                     true
                 }

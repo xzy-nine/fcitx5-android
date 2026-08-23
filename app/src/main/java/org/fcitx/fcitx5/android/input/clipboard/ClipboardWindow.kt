@@ -45,7 +45,6 @@ import org.fcitx.fcitx5.android.input.dependency.theme
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
-import org.fcitx.fcitx5.android.utils.AppUtil
 import org.fcitx.fcitx5.android.utils.EventStateMachine
 import org.fcitx.fcitx5.android.utils.item
 import org.mechdancer.dependency.manager.must
@@ -101,7 +100,7 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>() {
             }
 
             override fun onEdit(id: Int) {
-                AppUtil.launchClipboardEdit(context, id)
+                windowManager.attachWindow(ClipboardEditWindow(id))
             }
 
             override fun onShare(entry: ClipboardEntry) {
