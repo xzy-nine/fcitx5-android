@@ -214,6 +214,12 @@ abstract class BaseKeyboard(
         val rightInGroup = if (groupTotal > 0f) rightWidth / groupTotal else 0f
         val leftScale = if (leftRaw > 0f) 1f / leftRaw else 1f
         val rightScale = if (rightRaw > 0f) 1f / rightRaw else 1f
+        // 奇数行在 splitRowAtMiddle 中左右共享中间键（QWERTY 的 G/V 列），
+        // 让这些边界键向中间缝隙各突出半个键，形成分体键盘的阶梯错列。
+        val protrude = row.size % 2 == 1
+        val halfKeyInGroup = if (protrude && groupTotal > 0f) {
+            0.05f * scale / groupTotal
+        } else 0f
         return constraintLayout {
             val group = constraintLayout {
                 val gap = view(::View)
@@ -234,14 +240,14 @@ abstract class BaseKeyboard(
                     topOfParent()
                     bottomOfParent()
                     matchConstraintDefaultWidth = LayoutParams.MATCH_CONSTRAINT_PERCENT
-                    matchConstraintPercentWidth = leftInGroup
+                    matchConstraintPercentWidth = leftInGroup + halfKeyInGroup
                 })
                 add(gap, lParams(0, matchParent) {
                     startToEndOf(leftLayout)
                     topOfParent()
                     bottomOfParent()
                     matchConstraintDefaultWidth = LayoutParams.MATCH_CONSTRAINT_PERCENT
-                    matchConstraintPercentWidth = gapInGroup
+                    matchConstraintPercentWidth = gapInGroup - 2f * halfKeyInGroup
                 })
                 add(rightLayout, lParams(0, matchParent) {
                     startToEndOf(gap)
@@ -249,7 +255,7 @@ abstract class BaseKeyboard(
                     topOfParent()
                     bottomOfParent()
                     matchConstraintDefaultWidth = LayoutParams.MATCH_CONSTRAINT_PERCENT
-                    matchConstraintPercentWidth = rightInGroup
+                    matchConstraintPercentWidth = rightInGroup + halfKeyInGroup
                 })
             }
             add(group, lParams(0, matchParent) {
