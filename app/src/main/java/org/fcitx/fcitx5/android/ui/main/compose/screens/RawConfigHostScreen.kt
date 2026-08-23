@@ -16,11 +16,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.FcitxAPI
 import org.fcitx.fcitx5.android.core.RawConfig
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
@@ -49,6 +51,7 @@ fun RawConfigHostScreen(
     val connectionName = "compose-rawconfig-${route.kind.name}-${route.uniqueName ?: ""}"
     val fcitx: FcitxConnection = remember { FcitxDaemon.connect(connectionName) }
     val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
+    val context = LocalContext.current
 
     DisposableEffect(fcitx, connectionName) {
         scope.launch {
@@ -60,13 +63,12 @@ fun RawConfigHostScreen(
             }
         }
         onDispose {
-            // flush last state before leaving
+            // flush last state before leaving. runIfReady submits the save asynchronously on
+            // fcitx's own lifecycle scope, so never wait for it here: joining a Main-dispatched
+            // coroutine from onDispose used to deadlock the Compose dispatcher and trigger an ANR.
             raw?.let { r ->
-                val saveJob = scope.launch {
-                    fcitx.runIfReady { saveConfig(this, route, r["cfg"]) }
-                }
                 runCatching {
-                    kotlinx.coroutines.runBlocking { saveJob.join() }
+                    fcitx.runIfReady { saveConfig(this, route, r["cfg"]) }
                 }
             }
             FcitxDaemon.disconnect(connectionName)
@@ -86,6 +88,11 @@ fun RawConfigHostScreen(
                         fcitx.runIfReady { saveConfig(this, route, loaded["cfg"]) }
                     }
                 },
+                // fcitx reports the global config top-level name in English ("Global Options"),
+                // mirror the legacy GlobalConfigFragment and use the localized string instead.
+                titleOverride = if (route.kind == RawConfigHostType.GlobalConfig) {
+                    context.getString(R.string.global_options)
+                } else null,
             )
         }
         errorText != null -> {

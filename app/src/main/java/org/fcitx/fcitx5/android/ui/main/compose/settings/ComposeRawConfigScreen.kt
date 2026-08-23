@@ -81,6 +81,7 @@ fun RawConfigScreen(
     onNavigate: (AppRoute) -> Unit,
     onBack: () -> Unit,
     onSave: () -> Unit,
+    titleOverride: String? = null,
 ) {
     val context = LocalContext.current
     val cfg = raw["cfg"]
@@ -155,7 +156,7 @@ fun RawConfigScreen(
         }
         SmallTopAppBar(
             color = MiuixTheme.colorScheme.surfaceContainer,
-            title = topLevel?.name ?: stringResource(R.string.global_options),
+            title = titleOverride ?: topLevel?.name ?: stringResource(R.string.global_options),
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(MiuixIcons.Back, contentDescription = null, modifier = Modifier.size(24.dp))

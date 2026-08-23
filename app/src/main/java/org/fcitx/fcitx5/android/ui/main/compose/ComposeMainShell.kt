@@ -66,7 +66,9 @@ class ComposeMainShell(private val activity: MainActivity) {
     /**
      * Re-check the onboarding on every return to the foreground. Enabling/selecting the IME is a
      * core, non-skippable step, so whenever it's missing (including after the system resets the
-     * IME on a build update) the guide is re-shown.
+     * IME on a build update, which also restarts the process) the guide is re-shown. [SetupActivity]
+     * keeps a process-lifetime guard, so leaving the guide (skip / back) won't immediately launch
+     * it again and trap the user on the main screen.
      */
     fun onResume() {
         if (SetupActivity.shouldShowUp()) {

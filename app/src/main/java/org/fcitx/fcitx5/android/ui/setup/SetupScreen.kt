@@ -30,6 +30,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -131,6 +132,7 @@ private fun SetupStepContent(
             painter = painterResource(R.drawable.ic_baseline_keyboard_24),
             contentDescription = null,
             modifier = Modifier.size(72.dp),
+            colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurface),
         )
         Spacer(Modifier.height(32.dp))
         Text(
@@ -149,6 +151,7 @@ private fun SetupStepContent(
                     painter = painterResource(R.drawable.ic_baseline_check_circle_24),
                     contentDescription = null,
                     modifier = Modifier.size(24.dp),
+                    colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.primary),
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(

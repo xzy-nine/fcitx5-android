@@ -23,6 +23,10 @@ class SetupActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Remember that the guide was shown this process. Combined with shouldShowUp() this keeps
+        // MainActivity.onResume from instantly re-launching the guide after the user leaves it
+        // (skipped / unfinished), which would otherwise trap them in a show-exit-show loop.
+        shown = true
         enableEdgeToEdge()
         createNotificationChannel()
         setContent {
@@ -68,15 +72,18 @@ class SetupActivity : ComponentActivity() {
     }
 
     companion object {
+        // Process-lifetime guard: only re-prompt once per process. A fresh cold start (new process,
+        // e.g. right after a build update) still checks the real IME state, so the case where the
+        // system resets the IME selection ("losing permissions") keeps being covered.
+        private var shown = false
         private const val CHANNEL_ID = "setup"
         private const val NOTIFY_ID = 233
 
         /**
          * Show the onboarding whenever the IME is not set up (not enabled or not selected). The
-         * previous in-memory `shown` flag suppressed re-prompting within the same process; after a
-         * build update the system may reset the IME selection ("losing permissions"), so we always
-         * check the actual IME state instead and re-run the guide when needed.
+         * [shown] flag suppresses re-prompting after the guide has been presented once in this
+         * process, so the user can back out of the main screen even if setup was skipped.
          */
-        fun shouldShowUp() = hasUndonePage()
+        fun shouldShowUp() = !shown && hasUndonePage()
     }
 }
