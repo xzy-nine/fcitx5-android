@@ -39,6 +39,13 @@
     <string name="app_revoked">%1$s 的配对已撤销</string>
     <string name="broadcast_action">org.fcitx.fcitx5.android.action.CLIPBOARD_BROADCAST</string>
     <string name="clipboard_edit_insert_space">段间插入空格</string>
+    <!-- Custom: clipboard editor -->
+    <string name="clipboard_edit_select_all">全选</string>
+    <string name="clipboard_edit_invert">反选</string>
+    <string name="clipboard_edit_text_mode">文本编辑</string>
+    <string name="clipboard_edit_no_segment">无可分词的词条</string>
+    <!-- Custom: table input methods -->
+    <string name="table_im_delete_confirm">删除输入法 "%1$s"？</string>
     
     <!-- Custom: settings search -->
     <string name="search">搜索</string>

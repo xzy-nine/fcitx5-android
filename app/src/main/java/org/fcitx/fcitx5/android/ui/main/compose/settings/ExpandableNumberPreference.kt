@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Slider
@@ -72,13 +73,16 @@ fun ExpandableNumberPreference(
                     ) {
                         TextField(
                             value = text,
-                            onValueChange = { t ->
-                                text = t
-                                commit(t)
-                            },
+                            onValueChange = { text = it },
                             label = title,
                             singleLine = true,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .onFocusChanged { focusState ->
+                                    if (!focusState.isFocused) {
+                                        if (!commit(text)) text = value.toString()
+                                    }
+                                },
                         )
                     }
                     if (min != null && max != null && max > min) {
