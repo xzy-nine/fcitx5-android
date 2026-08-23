@@ -100,7 +100,7 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>() {
             }
 
             override fun onEdit(id: Int) {
-                windowManager.attachWindow(ClipboardEditWindow(id))
+                windowManager.attachWindow(ClipboardEditWindow(id, returnToClipboard = true))
             }
 
             override fun onShare(entry: ClipboardEntry) {

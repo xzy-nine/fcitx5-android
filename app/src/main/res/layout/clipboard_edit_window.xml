@@ -54,6 +54,23 @@
         </LinearLayout>
     </ScrollView>
 
+    <!-- 跨段写入/上屏时插入空格的开关（位于底部） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="2dp">
+
+        <Switch
+            android:id="@+id/clipboard_edit_insert_space"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/clipboard_edit_insert_space" />
+    </LinearLayout>
+
     <!-- 操作按钮：固定在底部，抬高以避开系统导航小白条 -->
     <LinearLayout
         android:layout_width="match_parent"

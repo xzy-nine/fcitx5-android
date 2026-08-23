@@ -23,6 +23,7 @@ import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.InputFeedbacks
 import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
+import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.databinding.ClipboardEditWindowBinding
@@ -46,7 +47,8 @@ import kotlin.math.abs
  */
 class ClipboardEditWindow(
     private val entryId: Int = -1,
-    private val useLastEntry: Boolean = false
+    private val useLastEntry: Boolean = false,
+    private val returnToClipboard: Boolean = false
 ) : InputWindow.ExtendedInputWindow<ClipboardEditWindow>() {
 
     private val service: FcitxInputMethodService by manager.inputMethodService()
@@ -124,6 +126,7 @@ class ClipboardEditWindow(
             onDown = ::onSegmentDown
             onMove = ::onSegmentMove
             onUp = ::onSegmentUp
+            onCancel = ::onSegmentCancel
         }
         binding.clipboardEditSelectAll.setOnClickListener {
             selectAll()
@@ -138,11 +141,13 @@ class ClipboardEditWindow(
             copyOnly()
         }
         binding.clipboardEditCancel.setOnClickListener {
-            windowManager.attachWindow(KeyboardWindow)
+            exitToPrevWindow()
         }
         binding.clipboardEditOk.setOnClickListener {
             commitToInput()
         }
+        binding.clipboardEditInsertSpace.isChecked =
+            AppPrefs.getInstance().clipboard.clipboardEditInsertSpace.getValue()
     }
 
     private fun initData() {
@@ -218,7 +223,11 @@ class ClipboardEditWindow(
 
     private fun onSegmentMove(x: Float, y: Float) {
         if (abs(x - downX) > context.dp(8) || abs(y - downY) > context.dp(8)) moved = true
-        if (!dragging) return
+        if (!dragging) {
+            // 长按触发前已发生移动（如滚动查看）→ 取消长按，避免拖选反转起点选区
+            if (moved) handler.removeCallbacksAndMessages(null)
+            return
+        }
         val cur = hitWordAt(x, y) ?: (nearestWord(y) ?: return)
         if (cur == lastIdx) return
         lastIdx = cur
@@ -240,6 +249,15 @@ class ClipboardEditWindow(
             toggleWord(downWord)
         }
         dragging = false
+        anchorIdx = -1
+        lastIdx = -1
+    }
+
+    // 父 ScrollView 拦截手势时调用：仅重置状态，不触发点选，避免滚动误选起点词块
+    private fun onSegmentCancel() {
+        handler.removeCallbacksAndMessages(null)
+        dragging = false
+        downWord = -1
         anchorIdx = -1
         lastIdx = -1
     }
@@ -343,9 +361,13 @@ class ClipboardEditWindow(
         return if (isTextMode) {
             binding.clipboardEditText.text.toString()
         } else {
+            val insertSpace = AppPrefs.getInstance().clipboard.clipboardEditInsertSpace.getValue()
             buildString {
                 segmentWords.forEachIndexed { index, seg ->
-                    if (selectedSet.contains(index)) append(seg)
+                    if (selectedSet.contains(index)) {
+                        if (insertSpace && isNotEmpty()) append(' ')
+                        append(seg)
+                    }
                 }
             }
         }
@@ -371,7 +393,7 @@ class ClipboardEditWindow(
     private fun copyOnly() {
         val str = getCurrentText()
         runCatching { context.clipboardManager.setPrimaryClip(ClipData.newPlainText("", str)) }
-        windowManager.attachWindow(KeyboardWindow)
+        exitToPrevWindow()
     }
 
     /**
@@ -380,7 +402,15 @@ class ClipboardEditWindow(
     private fun commitToInput() {
         val str = getCurrentText()
         service.commitText(str)
-        windowManager.attachWindow(KeyboardWindow)
+        exitToPrevWindow()
+    }
+
+    /**
+     * 从剪切板条目页进入时回到剪切板窗口，否则回到键盘。
+     */
+    private fun exitToPrevWindow() {
+        if (returnToClipboard) windowManager.attachWindow(ClipboardWindow())
+        else windowManager.attachWindow(KeyboardWindow)
     }
 
     override val title: String by lazy { context.getString(R.string.edit_clipboard) }

@@ -22,6 +22,8 @@ class SegmentContainer @JvmOverloads constructor(
     var onDown: ((x: Float, y: Float) -> Unit)? = null
     var onMove: ((x: Float, y: Float) -> Unit)? = null
     var onUp: (() -> Unit)? = null
+    // 父 View（如 ScrollView）拦截手势时触发，不应视为点选
+    var onCancel: (() -> Unit)? = null
 
     // 始终拦截，使整个手势归本容器处理（子 View 不再接收任何触摸）
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean = true
@@ -30,7 +32,8 @@ class SegmentContainer @JvmOverloads constructor(
         when (ev.action) {
             MotionEvent.ACTION_DOWN -> onDown?.invoke(ev.x, ev.y)
             MotionEvent.ACTION_MOVE -> onMove?.invoke(ev.x, ev.y)
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> onUp?.invoke()
+            MotionEvent.ACTION_UP -> onUp?.invoke()
+            MotionEvent.ACTION_CANCEL -> onCancel?.invoke()
         }
         return true
     }
