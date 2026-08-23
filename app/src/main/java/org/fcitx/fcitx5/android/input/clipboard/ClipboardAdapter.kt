@@ -128,6 +128,7 @@ abstract class ClipboardAdapter(
                     menu.item(R.string.delete, R.drawable.ic_baseline_delete_24, iconTint) {
                         onDelete(entry.id)
                     }
+                    popupMenu = popup
                     popup.show()
                     true
                 }

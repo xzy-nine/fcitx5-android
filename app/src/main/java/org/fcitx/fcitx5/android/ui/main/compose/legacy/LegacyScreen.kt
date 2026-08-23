@@ -7,8 +7,9 @@ package org.fcitx.fcitx5.android.ui.main.compose.legacy
 
 import android.view.View
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
@@ -35,13 +36,17 @@ fun LegacyScreen(route: SettingsRoute) {
     val container = remember {
         FragmentContainerView(activity).apply {
             id = View.generateViewId()
-            setBackgroundColor(bgArgb)
         }
     }
     AndroidView(
         factory = { container },
         modifier = Modifier.fillMaxSize(),
     )
+    // keep the container background in sync with the active theme (dynamic color / night mode
+    // changes), otherwise the legacy page keeps the color captured at first composition
+    SideEffect {
+        container.setBackgroundColor(bgArgb)
+    }
     DisposableEffect(container) {
         val fragmentManager = activity.supportFragmentManager
         val navHost = NavHostFragment()

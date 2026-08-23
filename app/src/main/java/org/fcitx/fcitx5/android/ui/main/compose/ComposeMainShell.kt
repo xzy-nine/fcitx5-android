@@ -22,7 +22,9 @@ class ComposeMainShell(private val activity: MainActivity) {
 
     private val fcitx: FcitxConnection = FcitxDaemon.connect(javaClass.name)
 
-    private val _intents = MutableSharedFlow<Intent>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    // replay = 1 so an intent emitted before any collector subscribes (e.g. the cold-start intent
+    // emitted right after construction, before the compose collector starts) is still delivered.
+    private val _intents = MutableSharedFlow<Intent>(replay = 1, extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     val intents: MutableSharedFlow<Intent> get() = _intents
 
     /**

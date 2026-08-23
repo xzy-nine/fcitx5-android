@@ -23,11 +23,12 @@ import org.fcitx.fcitx5.android.ui.main.settings.SearchResult
  */
 class MainActivity : AppCompatActivity() {
 
-    private val shell = ComposeMainShell(this)
+    private lateinit var shell: ComposeMainShell
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        shell = ComposeMainShell(this)
         setContent {
             FcitxComposeApp(this, shell)
         }

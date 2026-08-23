@@ -209,15 +209,18 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             jobs.consumeEach { it.join() }
         }
         lifecycleScope.launch {
-            fcitx.runImmediately {
-                // Custom: feed IME dictionaries into jieba custom dict for clipboard
-                // segmentation. Must run AFTER fcitx is ready (StandardPaths initialized),
-                // otherwise CustomPhraseManager.load() aborts with "Home is not set".
-                lifecycleScope.launch(Dispatchers.IO) { ClipboardDictFeeder.ensureFed() }
-                eventFlow
-            }.collect {
+            fcitx.runImmediately { eventFlow }.collect {
                 handleFcitxEvent(it)
             }
+        }
+        lifecycleScope.launch {
+            // Custom: feed IME dictionaries into jieba custom dict for clipboard
+            // segmentation. Must run AFTER fcitx is ready (StandardPaths initialized),
+            // otherwise CustomPhraseManager.load() aborts with "Home is not set".
+            // runImmediately executes in the caller thread before fcitx is ready, so gate on
+            // runOnReady first and only then hand the (blocking) feed off to the IO dispatcher.
+            fcitx.runOnReady { }
+            lifecycleScope.launch(Dispatchers.IO) { ClipboardDictFeeder.ensureFed() }
         }
         pkgNameCache = PackageNameCache(this)
         recreateInputViewPrefs.forEach {

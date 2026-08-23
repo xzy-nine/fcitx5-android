@@ -37,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -260,7 +261,7 @@ fun PluginListScreen(onBack: () -> Unit) {
             title = context.getString(R.string.plugins),
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
+                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
                 }
             },
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),

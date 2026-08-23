@@ -14,15 +14,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.core.app.NotificationCompat
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.ui.setup.SetupPage.Companion.hasUndonePage
 import org.fcitx.fcitx5.android.utils.notificationManager
-import top.yukonga.miuix.kmp.theme.ColorSchemeMode
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.theme.ThemeController
 
 class SetupActivity : ComponentActivity() {
 
@@ -31,9 +26,7 @@ class SetupActivity : ComponentActivity() {
         enableEdgeToEdge()
         createNotificationChannel()
         setContent {
-            MiuixTheme(controller = remember { ThemeController(ColorSchemeMode.System) }) {
-                SetupScreen(onFinish = { finish() })
-            }
+            SetupComposeHost(onFinish = { finish() })
         }
     }
 

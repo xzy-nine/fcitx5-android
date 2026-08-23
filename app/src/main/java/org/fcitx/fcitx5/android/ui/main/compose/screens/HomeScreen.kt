@@ -93,16 +93,32 @@ fun HomeScreen(
             title = appName,
             actions = {
                 IconButton(onClick = onSearch) {
-                    Icon(MiuixIcons.Search, contentDescription = null, modifier = Modifier.size(24.dp))
+                    Icon(
+                        MiuixIcons.Search,
+                        contentDescription = stringResource(R.string.search),
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
                 IconButton(onClick = { onOpenUrl(Const.faqUrl) }) {
-                    Icon(MiuixIcons.Help, contentDescription = null, modifier = Modifier.size(24.dp))
+                    Icon(
+                        MiuixIcons.Help,
+                        contentDescription = stringResource(R.string.help),
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
                 IconButton(onClick = { onNavigate(AppRoute.Developer) }) {
-                    Icon(MiuixIcons.Info, contentDescription = null, modifier = Modifier.size(24.dp))
+                    Icon(
+                        MiuixIcons.Info,
+                        contentDescription = stringResource(R.string.developer),
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
                 IconButton(onClick = { onNavigate(AppRoute.About) }) {
-                    Icon(MiuixIcons.MoreCircle, contentDescription = null, modifier = Modifier.size(24.dp))
+                    Icon(
+                        MiuixIcons.MoreCircle,
+                        contentDescription = stringResource(R.string.about),
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
             },
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
