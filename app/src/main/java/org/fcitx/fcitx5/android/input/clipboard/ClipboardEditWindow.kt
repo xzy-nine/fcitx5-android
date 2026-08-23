@@ -60,7 +60,7 @@ class ClipboardEditWindow(
     // 原始文本与分词结果
     private var entryText: String = ""
     private var originalText: String = ""
-    private lateinit var segments: List<String>
+    private var segments: List<String> = emptyList()
     private val segmentWords: List<String>
         get() = if (segments.isEmpty()) listOf("") else segments
     private val chipViews = mutableListOf<TextView>()

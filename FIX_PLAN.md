@@ -7,7 +7,7 @@
 
 | 优先级 | 数量 | 状态 |
 |:---:|:---:|:---:|
-| 🔴 Critical | 2 | ⬜ 待修 |
+| 🔴 Critical | 2 | ✅ 已修 |
 | 🟠 Major | 15 | ⬜ 待修 |
 | 🟡 Minor | 12 | ⬜ 待修 |
 
@@ -16,14 +16,16 @@
 ## 🔴 Critical（合并前必修）
 
 ### 1. ClipboardEditWindow segments lateinit 崩溃
-- **文件**: `app/src/main/java/org/fcitx/fcitx5/android/input/clipboard/ClipboardEditWindow.kt:63-65`
+- **文件**: `app/src/main/java/org/fcitx/fcitx5/android/input/clipboard/ClipboardEditWindow.kt:63`
 - **问题**: `segments` 是 `lateinit`，在协程异步加载完成前用户点击"全选/反选/确定"会触发 `UninitializedPropertyAccessException`
 - **修复**: `private lateinit var segments: List<String>` → `private var segments: List<String> = emptyList()`
+- **状态**: ✅ 已修（2026-08-23）
 
 ### 2. 冷启动 Intent 丢失
-- **文件**: `MainActivity.kt:26`, `ComposeMainShell.kt:25-26`
+- **文件**: `MainActivity.kt`, `ComposeMainShell.kt`
 - **问题**: `ComposeMainShell` 在构造阶段读取 `activity.intent`，但 `intents` 用 `replay = 0` 的 `MutableSharedFlow`，冷启动 Intent 可能永远不会被路由
-- **修复**: shell 延迟到 `onCreate` 初始化；`MutableSharedFlow` 改为 `replay = 1`；初始 Intent 在订阅建立后显式发射
+- **修复**: shell 延迟到 `onCreate` 初始化（`lateinit var`）；`MutableSharedFlow` 改为 `replay = 1` 保证订阅前发射的 Intent 仍会被回放；`init` 中的初始 Intent 在订阅建立后仍可被回放
+- **状态**: ✅ 已修（2026-08-23）
 
 ---
 
