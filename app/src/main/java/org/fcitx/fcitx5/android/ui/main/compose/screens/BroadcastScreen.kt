@@ -49,7 +49,7 @@ import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Promotions
+import top.yukonga.miuix.kmp.icon.extended.Lock
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -128,7 +128,7 @@ fun BroadcastScreen(onBack: () -> Unit) {
                             onClick = { copyPairingCode() },
                             startAction = {
                                 Icon(
-                                    MiuixIcons.Promotions,
+                                    MiuixIcons.Lock,
                                     null,
                                     Modifier.size(22.dp),
                                     tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,

@@ -46,6 +46,7 @@ import top.yukonga.miuix.kmp.icon.extended.Merge
 import top.yukonga.miuix.kmp.icon.extended.Messages
 import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.icon.extended.MoreCircle
+import top.yukonga.miuix.kmp.icon.extended.Promotions
 import top.yukonga.miuix.kmp.icon.extended.Search
 import top.yukonga.miuix.kmp.icon.extended.Theme
 import top.yukonga.miuix.kmp.icon.extended.Translate
@@ -148,7 +149,7 @@ private val homeAndroidItems = listOf(
     HomeDestination(R.string.virtual_keyboard, MiuixIcons.GridView, AppRoute.Prefs(PrefCategory.Keyboard)),
     HomeDestination(R.string.candidates_window, MiuixIcons.ListView, AppRoute.Prefs(PrefCategory.Candidates)),
     HomeDestination(R.string.clipboard, MiuixIcons.Copy, AppRoute.Prefs(PrefCategory.Clipboard)),
-    HomeDestination(R.string.broadcast_settings, MiuixIcons.Messages, AppRoute.Prefs(PrefCategory.Broadcast)),
+    HomeDestination(R.string.broadcast_settings, MiuixIcons.Promotions, AppRoute.Prefs(PrefCategory.Broadcast)),
     HomeDestination(R.string.emoji_and_symbols, MiuixIcons.Messages, AppRoute.Prefs(PrefCategory.Symbols)),
     HomeDestination(R.string.plugins, MiuixIcons.Layers, AppRoute.PluginList),
     HomeDestination(R.string.advanced, MiuixIcons.More, AppRoute.Prefs(PrefCategory.Advanced)),
