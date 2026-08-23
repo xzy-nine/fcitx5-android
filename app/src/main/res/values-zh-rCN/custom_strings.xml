@@ -42,6 +42,8 @@
     <!-- Custom: settings search -->
     <string name="search">搜索</string>
     <string name="search_settings">搜索设置</string>
+    <string name="search_no_results">没有找到“%1$s”相关设置</string>
+    <string name="search_hint">按名称搜索设置</string>
 
 
 </resources>
