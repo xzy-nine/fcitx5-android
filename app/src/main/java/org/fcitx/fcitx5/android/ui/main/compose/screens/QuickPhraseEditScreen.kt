@@ -123,7 +123,7 @@ fun QuickPhraseEditScreen(
                                     isNew = false
                                 },
                             ) {
-                                Icon(MiuixIcons.Tune, null, Modifier.size(20.dp))
+                                Icon(MiuixIcons.Tune, stringResource(R.string.edit), Modifier.size(20.dp))
                             }
                             IconButton(
                                 onClick = {
@@ -131,7 +131,7 @@ fun QuickPhraseEditScreen(
                                     save()
                                 },
                             ) {
-                                Icon(MiuixIcons.Delete, null, Modifier.size(20.dp))
+                                Icon(MiuixIcons.Delete, stringResource(R.string.delete), Modifier.size(20.dp))
                             }
                         }
                     }
@@ -145,14 +145,14 @@ fun QuickPhraseEditScreen(
             },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         ) {
-            Icon(MiuixIcons.Add, null)
+            Icon(MiuixIcons.Add, stringResource(R.string.add))
         }
         SmallTopAppBar(
             color = MiuixTheme.colorScheme.surfaceContainer,
             title = quickPhrase.name,
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
+                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
                 }
             },
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),

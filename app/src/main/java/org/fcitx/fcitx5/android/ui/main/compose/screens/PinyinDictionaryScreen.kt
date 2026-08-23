@@ -151,7 +151,7 @@ fun PinyinDictionaryScreen(initialUri: String? = null, onBack: () -> Unit) {
                                         reload()
                                     },
                                 ) {
-                                    Icon(MiuixIcons.Delete, null, Modifier.size(20.dp))
+                                    Icon(MiuixIcons.Delete, stringResource(R.string.delete), Modifier.size(20.dp))
                                 }
                             }
                         }
@@ -163,14 +163,14 @@ fun PinyinDictionaryScreen(initialUri: String? = null, onBack: () -> Unit) {
             onClick = { importLauncher.launch("*/*") },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         ) {
-            Icon(MiuixIcons.Add, null)
+            Icon(MiuixIcons.Add, stringResource(R.string.add))
         }
         SmallTopAppBar(
             color = MiuixTheme.colorScheme.surfaceContainer,
             title = stringResource(R.string.pinyin_dict),
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
+                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
                 }
             },
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),

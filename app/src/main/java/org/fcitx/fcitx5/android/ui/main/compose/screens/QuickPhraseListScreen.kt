@@ -38,6 +38,7 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.quickphrase.CustomQuickPhrase
 import org.fcitx.fcitx5.android.data.quickphrase.QuickPhrase
 import org.fcitx.fcitx5.android.data.quickphrase.QuickPhraseManager
+import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleConfirmDialog
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleTextFieldDialog
 import org.fcitx.fcitx5.android.utils.importErrorDialog
 import org.fcitx.fcitx5.android.utils.queryFileName
@@ -74,6 +75,7 @@ fun QuickPhraseListScreen(
     }
     var showCreateDialog by remember { mutableStateOf(false) }
     var createName by remember { mutableStateOf("") }
+    var pendingDelete by remember { mutableStateOf<CustomQuickPhrase?>(null) }
 
     fun reload() {
         entries = QuickPhraseManager.listQuickPhrase()
@@ -132,8 +134,7 @@ fun QuickPhraseListScreen(
                             },
                             onEdit = { onEdit(entry.file.name) },
                             onDelete = {
-                                entry.file.delete()
-                                reload()
+                                pendingDelete = entry as? CustomQuickPhrase
                             },
                         )
                     }
@@ -144,14 +145,14 @@ fun QuickPhraseListScreen(
             onClick = { showCreateDialog = true },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         ) {
-            Icon(MiuixIcons.Add, null)
+            Icon(MiuixIcons.Add, stringResource(R.string.add))
         }
         SmallTopAppBar(
             color = MiuixTheme.colorScheme.surfaceContainer,
             title = stringResource(R.string.quickphrase_editor),
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
+                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
                 }
             },
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
@@ -178,6 +179,19 @@ fun QuickPhraseListScreen(
             },
         )
     }
+
+    pendingDelete?.let { target ->
+        SimpleConfirmDialog(
+            title = stringResource(R.string.quickphrase_editor),
+            message = stringResource(R.string.quickphrase_delete_confirm, target.name),
+            onConfirm = {
+                target.file.delete()
+                reload()
+                pendingDelete = null
+            },
+            onDismiss = { pendingDelete = null },
+        )
+    }
 }
 
 @Composable
@@ -200,11 +214,11 @@ private fun QuickPhraseRow(
             onCheckedChange = { onToggle() },
         )
         IconButton(onClick = onEdit) {
-            Icon(MiuixIcons.Tune, null, Modifier.size(20.dp))
+            Icon(MiuixIcons.Tune, stringResource(R.string.edit), Modifier.size(20.dp))
         }
         if (entry is CustomQuickPhrase) {
             IconButton(onClick = onDelete) {
-                Icon(MiuixIcons.Delete, null, Modifier.size(20.dp))
+                Icon(MiuixIcons.Delete, stringResource(R.string.delete), Modifier.size(20.dp))
             }
         }
     }

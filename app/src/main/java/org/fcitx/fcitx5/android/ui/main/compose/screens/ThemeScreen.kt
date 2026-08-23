@@ -33,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -225,16 +226,21 @@ fun ThemeScreen(onBack: () -> Unit) {
                     .background(MiuixTheme.colorScheme.surfaceContainerHighest),
                 contentAlignment = Alignment.TopCenter,
             ) {
-                AndroidView(
-                    factory = {
-                        preview.root.apply {
-                            outlineProvider = ViewOutlineProvider.BOUNDS
-                            elevation = with(density) { 4.dp.toPx() }
-                        }
-                    },
-                    update = { preview.setTheme(activeTheme) },
-                    modifier = Modifier.fillMaxSize(),
-                )
+                // key on the orientation so AndroidView re-runs its factory when the device
+                // rotates: the factory is only executed once per composition slot, otherwise the
+                // old preview (with the previous keyboard-height percent) stays mounted
+                key(orientation) {
+                    AndroidView(
+                        factory = {
+                            preview.root.apply {
+                                outlineProvider = ViewOutlineProvider.BOUNDS
+                                elevation = with(density) { 4.dp.toPx() }
+                            }
+                        },
+                        update = { preview.setTheme(activeTheme) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
             TabRow(
                 tabs = listOf(
@@ -312,7 +318,7 @@ fun ThemeScreen(onBack: () -> Unit) {
                 onClick = { showNewDialog = true },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
             ) {
-                Icon(MiuixIcons.Add, null)
+                Icon(MiuixIcons.Add, stringResource(R.string.add))
             }
         }
 
@@ -321,7 +327,7 @@ fun ThemeScreen(onBack: () -> Unit) {
             title = stringResource(R.string.theme),
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
+                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
                 }
             },
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),

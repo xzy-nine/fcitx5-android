@@ -232,12 +232,12 @@ fun TableInputMethodsScreen(onBack: () -> Unit) {
                             IconButton(
                                 onClick = { replaceTarget = entry },
                             ) {
-                                Icon(MiuixIcons.Tune, null, Modifier.size(20.dp))
+                                Icon(MiuixIcons.Tune, stringResource(R.string.edit), Modifier.size(20.dp))
                             }
                             IconButton(
                                 onClick = { deleteTarget = entry },
                             ) {
-                                Icon(MiuixIcons.Delete, null, Modifier.size(20.dp))
+                                Icon(MiuixIcons.Delete, stringResource(R.string.delete), Modifier.size(20.dp))
                             }
                         }
                     }
@@ -248,14 +248,14 @@ fun TableInputMethodsScreen(onBack: () -> Unit) {
             onClick = { zipLauncher.launch("application/zip") },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         ) {
-            Icon(MiuixIcons.Add, null)
+            Icon(MiuixIcons.Add, stringResource(R.string.add))
         }
         SmallTopAppBar(
             color = MiuixTheme.colorScheme.surfaceContainer,
             title = stringResource(R.string.table_im),
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
+                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
                 }
             },
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),

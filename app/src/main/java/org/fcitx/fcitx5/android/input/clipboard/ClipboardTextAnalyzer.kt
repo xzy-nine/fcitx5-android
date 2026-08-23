@@ -97,8 +97,11 @@ object ClipboardTextAnalyzer {
                         w.indexOf('@') > 0 && w.indexOf('@') < w.length - 1 -> {
                     add(idx, EntityType.Email, w, markCovered = true)
                 }
-                // 验证码：非中文、长度 2~64 的独立片段（数字/字母/混合）
-                w.length in 2..64 -> {
+                // 验证码：非中文、长度 2~64、且为纯字母数字的独立片段。
+                // 排除含连字符/符号的 token（如 "123-456"、"#168"），避免把普通文本误判为验证码
+                w.length in 2..64 &&
+                        w.all { it.isLetterOrDigit() } &&
+                        w.any { it.isDigit() || it.isLetter() } -> {
                     add(idx, EntityType.Code, w)
                 }
             }

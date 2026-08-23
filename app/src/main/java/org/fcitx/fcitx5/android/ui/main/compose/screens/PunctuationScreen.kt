@@ -30,8 +30,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.getPunctuationConfig
 import org.fcitx.fcitx5.android.data.punctuation.PunctuationManager
 import org.fcitx.fcitx5.android.data.punctuation.PunctuationMapEntry
@@ -68,6 +70,7 @@ fun PunctuationScreen(
     val effectiveLang = lang ?: "zh_CN"
     var entries by remember { mutableStateOf<List<PunctuationMapEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var loadFailed by remember { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<Pair<Int, PunctuationMapEntry>?>(null) }
     var isNew by remember { mutableStateOf(false) }
     // labels come from the fcitx config description (same as the legacy fragment, no hardcoding)
@@ -76,16 +79,22 @@ fun PunctuationScreen(
     var altMappingLabel by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        val raw = fcitx.runOnReady { getPunctuationConfig(effectiveLang) }
-        entries = PunctuationManager.parseRawConfig(raw)
-        // parse the description of the map-entry options for the edit dialog field labels
-        raw["desc"][PunctuationManager.MAP_ENTRY_CONFIG].subItems?.forEach {
-            val desc = it["Description"].value
-            when (it.name) {
-                PunctuationManager.KEY -> keyLabel = desc
-                PunctuationManager.MAPPING -> mappingLabel = desc
-                PunctuationManager.ALT_MAPPING -> altMappingLabel = desc
+        try {
+            val raw = fcitx.runOnReady { getPunctuationConfig(effectiveLang) }
+            entries = PunctuationManager.parseRawConfig(raw)
+            // parse the description of the map-entry options for the edit dialog field labels
+            raw["desc"][PunctuationManager.MAP_ENTRY_CONFIG].subItems?.forEach {
+                val desc = it["Description"].value
+                when (it.name) {
+                    PunctuationManager.KEY -> keyLabel = desc
+                    PunctuationManager.MAPPING -> mappingLabel = desc
+                    PunctuationManager.ALT_MAPPING -> altMappingLabel = desc
+                }
             }
+        } catch (e: Exception) {
+            // fcitx may not be reachable (daemon down / service restart); fail gracefully
+            // instead of leaving the screen stuck on the loading spinner forever
+            loadFailed = true
         }
         loading = false
     }
@@ -108,6 +117,19 @@ fun PunctuationScreen(
             contentAlignment = Alignment.Center,
         ) {
             CircularProgressIndicator()
+        }
+        return
+    }
+
+    if (loadFailed) {
+        Box(
+            Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(R.string.failed_to_load_config),
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
         }
         return
     }
@@ -142,7 +164,7 @@ fun PunctuationScreen(
                                     isNew = false
                                 },
                             ) {
-                                Icon(MiuixIcons.Tune, null, Modifier.size(20.dp))
+                                Icon(MiuixIcons.Tune, stringResource(R.string.edit), Modifier.size(20.dp))
                             }
                             IconButton(
                                 onClick = {
@@ -150,7 +172,7 @@ fun PunctuationScreen(
                                     save()
                                 },
                             ) {
-                                Icon(MiuixIcons.Delete, null, Modifier.size(20.dp))
+                                Icon(MiuixIcons.Delete, stringResource(R.string.delete), Modifier.size(20.dp))
                             }
                         }
                     }
@@ -164,14 +186,14 @@ fun PunctuationScreen(
             },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         ) {
-            Icon(MiuixIcons.Add, null)
+            Icon(MiuixIcons.Add, stringResource(R.string.add))
         }
         SmallTopAppBar(
             color = MiuixTheme.colorScheme.surfaceContainer,
             title = title,
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
+                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
                 }
             },
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),

@@ -43,10 +43,15 @@ class LegacyNavRuntime {
      * "not consumed" (false) so [top.yukonga.miuix.kmp.nav.core.NavDisplay]'s `onBack` pops the
      * whole compose Legacy entry — a single back press therefore returns to the home screen
      * instead of stranding the user on the blank anchor between two back presses.
+     *
+     * The stack layout is [anchor][Index][page]: the invisible anchor starts the graph, the
+     * requested [route] is pushed on top of it, and any deeper pages sit above that. Hence at the
+     * top content page the stack holds anchor + Index + page (size 3), which is NOT "consumed" so
+     * the whole legacy entry is popped by the compose stack.
      */
     fun popLegacyBackStack(): Boolean {
         val controller = navController ?: return false
-        if (legacyStackSize() > 2) {
+        if (legacyStackSize() > 3) {
             controller.popBackStack()
             return true
         }

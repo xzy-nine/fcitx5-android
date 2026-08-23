@@ -204,7 +204,7 @@ fun InputMethodListScreen(
                                 )
                                 if (entry.isConfigurable) {
                                     IconButton(onClick = { onOpenConfig(entry.name, entry.uniqueName) }) {
-                                        Icon(MiuixIcons.Tune, null, Modifier.size(20.dp))
+                                        Icon(MiuixIcons.Tune, stringResource(R.string.edit), Modifier.size(20.dp))
                                     }
                                 }
                                 IconButton(
@@ -213,8 +213,9 @@ fun InputMethodListScreen(
                                         finishDrag()
                                     },
                                 ) {
-                                    Icon(MiuixIcons.Delete, null, Modifier.size(20.dp))
+                                    Icon(MiuixIcons.Delete, stringResource(R.string.delete), Modifier.size(20.dp))
                                 }
+                                // drag handle: non-interactive decoration, excluded from a11y tree
                                 Icon(MiuixIcons.More, null, Modifier.size(20.dp))
                             }
                         }
@@ -234,7 +235,7 @@ fun InputMethodListScreen(
                     .align(Alignment.BottomEnd)
                     .padding(16.dp),
             ) {
-                Icon(MiuixIcons.Add, null)
+                Icon(MiuixIcons.Add, stringResource(R.string.add))
             }
         }
         SmallTopAppBar(
@@ -242,7 +243,7 @@ fun InputMethodListScreen(
             title = stringResource(R.string.input_methods),
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
+                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
                 }
             },
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),

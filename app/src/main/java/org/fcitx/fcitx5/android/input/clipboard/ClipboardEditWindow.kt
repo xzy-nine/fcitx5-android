@@ -346,13 +346,15 @@ class ClipboardEditWindow(
             binding.clipboardEditPreview.visibility = View.GONE
             binding.clipboardEditSelectAll.visibility = View.GONE
             binding.clipboardEditInvert.visibility = View.GONE
-            binding.clipboardEditTextMode.setText(R.string.clipboard_edit_text_mode)
+            // in text mode the button offers switching over to the segment mode
+            binding.clipboardEditTextMode.setText(R.string.clipboard_edit_segment_mode)
         } else {
             binding.clipboardEditText.visibility = View.GONE
             binding.clipboardEditSegmentContainer.visibility = View.VISIBLE
             binding.clipboardEditPreview.visibility = View.VISIBLE
             binding.clipboardEditSelectAll.visibility = View.VISIBLE
             binding.clipboardEditInvert.visibility = View.VISIBLE
+            // in segment mode the button offers switching back to the text editor
             binding.clipboardEditTextMode.setText(R.string.clipboard_edit_text_mode)
         }
     }

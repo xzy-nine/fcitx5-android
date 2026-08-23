@@ -43,14 +43,19 @@
     <string name="clipboard_edit_select_all">全选</string>
     <string name="clipboard_edit_invert">反选</string>
     <string name="clipboard_edit_text_mode">文本编辑</string>
+    <string name="clipboard_edit_segment_mode">分词模式</string>
     <string name="clipboard_edit_no_segment">无可分词的词条</string>
     <!-- Custom: table input methods -->
     <string name="table_im_delete_confirm">删除输入法 "%1$s"？</string>
+    <string name="quickphrase_delete_confirm">确定删除短语“%1$s”？</string>
     
     <!-- Custom: settings search -->
     <string name="search">搜索</string>
     <string name="search_settings">搜索设置</string>
     <string name="search_no_results">没有找到“%1$s”相关设置</string>
     <string name="search_hint">按名称搜索设置</string>
+    <!-- Custom: accessibility labels -->
+    <string name="back">返回</string>
+    <string name="help">帮助</string>
 
 </resources>

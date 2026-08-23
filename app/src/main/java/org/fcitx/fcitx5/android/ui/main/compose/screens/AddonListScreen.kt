@@ -150,7 +150,7 @@ fun AddonListScreen(
                                 IconButton(
                                     onClick = { onOpenConfig(entry.displayName, entry.uniqueName) },
                                 ) {
-                                    Icon(MiuixIcons.Tune, null, Modifier.size(20.dp))
+                                    Icon(MiuixIcons.Tune, stringResource(R.string.edit), Modifier.size(20.dp))
                                 }
                             }
                         },
@@ -164,7 +164,7 @@ fun AddonListScreen(
             title = stringResource(R.string.addons),
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, null, Modifier.size(24.dp))
+                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
                 }
             },
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
