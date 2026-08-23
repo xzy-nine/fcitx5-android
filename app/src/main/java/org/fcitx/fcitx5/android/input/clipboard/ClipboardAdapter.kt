@@ -10,6 +10,11 @@ import android.widget.PopupMenu
 import androidx.paging.PagingDataAdapter
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
 import org.fcitx.fcitx5.android.data.theme.Theme
@@ -40,6 +45,9 @@ abstract class ClipboardAdapter(
                 return oldItem == newItem
             }
         }
+
+        // Cache for analyzed chips by entry ID to avoid reprocessing on rebind
+        private val chipsCache = mutableMapOf<Int, List<ClipboardTextAnalyzer.Entity>>()
 
         /**
          * excerpt text to show on ClipboardEntryUi, to reduce render time of very long text
@@ -83,6 +91,8 @@ abstract class ClipboardAdapter(
 
     private var popupMenu: PopupMenu? = null
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     class ViewHolder(val entryUi: ClipboardEntryUi) : RecyclerView.ViewHolder(entryUi.root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder =
@@ -92,12 +102,31 @@ abstract class ClipboardAdapter(
         val entry = getItem(position) ?: return
         // 整个 bind 过程兜底：任何异常都降级为纯文本，保证列表始终可渲染
         val display = excerptText(entry.text, entry.sensitive && maskSensitive)
+
+        // Check cache first; if not present, use empty list initially and analyze off the main thread
+        val cachedChips = chipsCache[entry.id]
         val chips = if (entry.sensitive && maskSensitive) {
             emptyList()
+        } else if (cachedChips != null) {
+            cachedChips
         } else {
-            runCatching { ClipboardTextAnalyzer.analyze(entry.text) }
-                .getOrDefault(emptyList())
+            // Start background analysis and update when ready
+            emptyList<ClipboardTextAnalyzer.Entity>().also {
+                scope.launch {
+                    val analyzed = withContext(Dispatchers.IO) {
+                        runCatching { ClipboardTextAnalyzer.analyze(entry.text) }
+                            .getOrDefault(emptyList())
+                    }
+                    chipsCache[entry.id] = analyzed
+                    // Refresh the affected item if still visible
+                    val currentEntry = getItem(position)
+                    if (currentEntry?.id == entry.id) {
+                        notifyItemChanged(position)
+                    }
+                }
+            }
         }
+
         runCatching {
             with(holder.entryUi) {
                 setEntry(display, entry.pinned, chips) { snippet ->

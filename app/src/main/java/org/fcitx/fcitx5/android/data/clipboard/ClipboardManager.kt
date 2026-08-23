@@ -168,6 +168,13 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
             lastClipTimestamp = timestamp
             lastClipHash = hash
         }
+        // Skip clips marked as sensitive via EXTRA_IS_SENSITIVE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val extras = clip.description.extras
+            if (extras?.getBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE, false) == true) {
+                return
+            }
+        }
         launch {
             mutex.withLock {
                 val entry = ClipboardEntry.fromClipData(clip, transformer) ?: return@withLock

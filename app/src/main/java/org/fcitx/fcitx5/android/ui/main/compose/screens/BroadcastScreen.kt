@@ -105,8 +105,10 @@ fun BroadcastScreen(onBack: () -> Unit) {
         pairingCode = code
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("pairing_code", code)
-        clip.description.extras = PersistableBundle().apply {
-            putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            clip.description.extras = PersistableBundle().apply {
+                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+            }
         }
         clipboard.setPrimaryClip(clip)
         context.toast(R.string.pairing_code_copied)

@@ -32,6 +32,7 @@ object ClipboardDictFeeder {
     private const val CACHE_SUBDIR = "clipboard_jieba"
     private const val USER_DICT_NAME = "user.dict"
     private const val FINGERPRINT_NAME = "fingerprint.txt"
+    private const val MAX_WORDS = 200_000
 
     @Volatile
     private var fed = false
@@ -145,6 +146,7 @@ object ClipboardDictFeeder {
     private fun readWords(file: File, words: MutableSet<String>) {
         if (!file.exists()) return
         file.bufferedReader(Charsets.UTF_8).forEachLine { line ->
+            if (words.size >= MAX_WORDS) return
             val word = line.substringBefore(' ').substringBefore('\t').trim()
             if (isValidWord(word)) words.add(word)
         }
