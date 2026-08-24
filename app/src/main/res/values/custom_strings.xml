@@ -58,6 +58,10 @@
     <!-- Custom: compose settings -->
     <string name="failed_to_load_config">Failed to load config</string>
     <string name="legacy_page_placeholder">This page is still rendered with the legacy UI</string>
+    <!-- Custom: landscape edge guard -->
+    <string name="edge_guard_enabled">Landscape edge guard</string>
+    <string name="edge_guard_width">Edge guard width</string>
+
     <!-- Custom: accessibility labels -->
     <string name="back">Back</string>
     <string name="help">Help</string>

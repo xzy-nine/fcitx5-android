@@ -298,6 +298,17 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             keyboardBottomPaddingLandscape = secondary
         }
 
+        val edgeGuardEnabled =
+            switch(R.string.edge_guard_enabled, "edge_guard_enabled", false)
+        val edgeGuardWidth = int(
+            R.string.edge_guard_width,
+            "edge_guard_width",
+            30,
+            8,
+            50,
+            "dp"
+        ) { edgeGuardEnabled.getValue() }
+
         val horizontalCandidateStyle = enumList(
             R.string.horizontal_candidate_style,
             "horizontal_candidate_style",
@@ -366,6 +377,8 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                     keyboardSidePaddingLandscape.key,
                     keyboardBottomPadding.key,
                     keyboardBottomPaddingLandscape.key,
+                    edgeGuardEnabled.key,
+                    edgeGuardWidth.key,
                 )),
                 SubGroup(R.string.group_split_keyboard, listOf(
                     splitKeyboard.key,
