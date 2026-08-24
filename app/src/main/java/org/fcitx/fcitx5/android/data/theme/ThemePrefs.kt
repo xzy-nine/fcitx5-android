@@ -89,7 +89,7 @@ class ThemePrefs(sharedPreferences: SharedPreferences) :
         int(R.string.text_editing_button_radius, "text_editing_button_radius", 8, 0, 48, "dp")
 
     val clipboardEntryRadius =
-        int(R.string.clipboard_entry_radius, "clipboard_entry_radius", 2, 0, 48, "dp")
+        int(R.string.clipboard_entry_radius, "clipboard_entry_radius", 12, 0, 48, "dp")
 
     enum class PunctuationPosition(override val stringRes: Int) : ManagedPreferenceEnum {
         None(R.string.punctuation_pos_none),

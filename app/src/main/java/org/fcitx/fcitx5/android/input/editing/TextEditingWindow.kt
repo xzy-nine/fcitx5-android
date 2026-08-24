@@ -18,6 +18,7 @@ import org.fcitx.fcitx5.android.input.dependency.theme
 import org.fcitx.fcitx5.android.input.keyboard.CustomGestureView
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
+import org.fcitx.fcitx5.android.utils.clipboardManager
 import org.mechdancer.dependency.manager.must
 
 class TextEditingWindow : InputWindow.ExtendedInputWindow<TextEditingWindow>(),
@@ -86,7 +87,9 @@ class TextEditingWindow : InputWindow.ExtendedInputWindow<TextEditingWindow>(),
             }
             pasteButton.setOnClickListener {
                 userSelection = false
-                service.currentInputConnection?.performContextMenuAction(android.R.id.paste)
+                val text = service.clipboardManager.primaryClip
+                    ?.getItemAt(0)?.text?.toString().orEmpty()
+                if (text.isNotEmpty()) service.commitText(text)
             }
             backspaceButton.onClickWithRepeating {
                 userSelection = false

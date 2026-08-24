@@ -29,7 +29,7 @@ class NumberKeyboard(
                 NumPadKey("1", 0xffb1, 30f, 0f),
                 NumPadKey("2", 0xffb2, 30f, 0f),
                 NumPadKey("3", 0xffb3, 30f, 0f),
-                NumPadKey("/", 0xffaf, 23f, 0.15f, KeyDef.Appearance.Variant.Alternative),
+                BackspaceKey()
             ),
             listOf(
                 NumPadKey("-", 0xffad, 23f, 0.15f, KeyDef.Appearance.Variant.Alternative),
@@ -43,7 +43,7 @@ class NumberKeyboard(
                 NumPadKey("7", 0xffb7, 30f, 0f),
                 NumPadKey("8", 0xffb8, 30f, 0f),
                 NumPadKey("9", 0xffb9, 30f, 0f),
-                BackspaceKey()
+                NumPadKey("/", 0xffaf, 23f, 0.15f, KeyDef.Appearance.Variant.Alternative)
             ),
             listOf(
                 LayoutSwitchKey("ABC", TextKeyboard.Name),

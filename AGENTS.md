@@ -23,6 +23,7 @@
 | 设置搜索+高亮+分组 | `SettingsSearch*.kt`、`PreferenceHighlightHelper.kt`、`PreferenceGroupUi.kt`、`search_dialog_layout.xml` |
 | 空格长按语音输入 | `SpaceLongPressBehavior.VoiceInput`; 图标显隐在 `KeyViewExt.kt` |
 | 键盘顶部圆角裁剪 | `input/ViewOutlineExt.kt` |
+| Compose 导航+设置 UI(miuix/miuix-nav) | 导航壳 `ui/main/compose/AppRoute.kt` + `FcitxComposeApp.kt`; 首页 `HomeScreen.kt`; 设置渲染器 `ComposeManagedPrefsScreen.kt` / `ComposeRawConfigScreen.kt` / `RawConfigHostScreen.kt`; 旧 Fragment 页经 `LegacyScreen.kt`(自建 `LegacyGraph.kt`, start 用空 anchor)桥接 |
 | 环境适配（勿在上游 PR 中出现） | `.gitmodules`(全部 gitee.com/xzy-ime 镜像)、`gradle.properties` 的 `ndkVersion`、gradle-wrapper 华为云镜像、`FindFcitx5Utils.cmake` WIN32 MSYS2 gettext 路径、thai 插件 Iconv CACHE 补丁 |
 
 ## 防冲突硬性约定
@@ -45,5 +46,10 @@
 ## 已知坑
 
 - **CRLF 幻影**：`core.autocrlf=true`，Gradle 构建会触碰大量文件导致 `git status` 出现上百个假 M（diff 内容为空）。不要提交它们：`git add --renormalize .` 或重新 `git status` 刷新索引即可消失。
+- **miuix 依赖**：`miuix-nav` 仅 `0.9.4-rc01` 一版(与 miuix-ui 同版本);其产物为 **JVM target 21 字节码**，因此 `build-logic/convention/.../Versions.kt` 的 `java` 需保持 `VERSION_21`(这是唯一一条为 Compose 引入的上游 build-logic 改动)。
+- **ComposeView 是 final 类**：不要把 Compose 宿主写成子类，用工厂函数包装;`setContent` 是它的**成员函数**，不需要 import。
+- **IME 内禁用 compose Window\* 弹层**：miuix `WindowDialog`/`WindowListPopup` 底层是系统 Dialog(Activity window token)，在 IME 浮窗层级必崩 `BadTokenException`；键盘内嵌 Compose 只做控件级替换（按钮等），弹层仍走旧 View 逻辑。若在 IME 视图树挂 `ComposeView`，必须手动补 owner 链（setViewTreeLifecycleOwner / setViewTreeSavedStateRegistryOwner / setViewTreeViewModelStoreOwner；注意 `SavedStateRegistryOwner : LifecycleOwner`）。
+- **Compose 栈与 legacy 双栈**：进入 Legacy 页时 `LegacyScreen` attach 全新 NavHostFragment(start=空 anchor `LegacyAnchorFragment`),返回由 `LegacyNavRuntime.popLegacyBackStack()` 协调;`SettingsRoute.kt` 上游文件保持零改动。
 - `.trae/hooks.json` 是本地 Trae IDE 的命令拦截钩子配置，与项目无关，勿删勿改。
 - 上游 README 描述的是官方功能集；custom 分支额外能力以上方特性表为准。
+- 新增的页面除了IME外其他的均应该使用compose界面而不是view

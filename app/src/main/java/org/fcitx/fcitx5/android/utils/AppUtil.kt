@@ -12,7 +12,6 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import org.fcitx.fcitx5.android.R
-import org.fcitx.fcitx5.android.ui.main.ClipboardEditActivity
 import org.fcitx.fcitx5.android.ui.main.MainActivity
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import kotlin.system.exitProcess
@@ -44,14 +43,6 @@ object AppUtil {
 
     fun launchMainToInputMethodConfig(context: Context, uniqueName: String, displayName: String) =
         launchMainToDest(context, SettingsRoute.InputMethodConfig(displayName, uniqueName))
-
-    fun launchClipboardEdit(context: Context, id: Int, lastEntry: Boolean = false) {
-        context.startActivity<ClipboardEditActivity> {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra(ClipboardEditActivity.ENTRY_ID, id)
-            putExtra(ClipboardEditActivity.LAST_ENTRY, lastEntry)
-        }
-    }
 
     fun exit() {
         exitProcess(0)

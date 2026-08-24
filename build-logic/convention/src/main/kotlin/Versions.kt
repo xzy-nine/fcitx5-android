@@ -7,9 +7,13 @@ import org.gradle.api.JavaVersion
 
 object Versions {
 
-    val java = JavaVersion.VERSION_11
-    const val compileSdk = 36
-    const val minSdk = 23
+    // NOTE: miuix 0.9.4-rc01 ships JVM 21 bytecode, so project bytecode target must be >= 21
+    val java = JavaVersion.VERSION_21
+    // NOTE: miuix 0.9.4-rc01 (+ androidx compose 1.12.0-rc01) requires compileSdk >= 37 and minSdk >= 24
+    // custom: bump minSdk to 26 for jieba-analysis WordDictionary.loadUserDict(Path) which
+    // relies on java.nio.file.Files.newBufferedReader (API 26+)
+    const val compileSdk = 37
+    const val minSdk = 26
     const val targetSdk = 36
 
     const val defaultCMake = "3.31.6"

@@ -473,6 +473,9 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         val clipboardMaskSensitive = switch(
             R.string.clipboard_mask_sensitive, "clipboard_mask_sensitive", true
         ) { clipboardListening.getValue() }
+        val clipboardEditInsertSpace =
+            ManagedPreference.PBool(sharedPreferences, "clipboard_edit_insert_space", true)
+                .apply { register() }
     }
 
     inner class Broadcast : ManagedPreferenceCategory(R.string.broadcast_settings, sharedPreferences) {

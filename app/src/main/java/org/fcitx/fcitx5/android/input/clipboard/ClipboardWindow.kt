@@ -19,8 +19,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import androidx.recyclerview.widget.StaggeredGridLayoutManager
 import com.google.android.material.snackbar.BaseTransientBottomBar.BaseCallback
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.snackbar.SnackbarContentLayout
@@ -45,7 +45,6 @@ import org.fcitx.fcitx5.android.input.dependency.theme
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
-import org.fcitx.fcitx5.android.utils.AppUtil
 import org.fcitx.fcitx5.android.utils.EventStateMachine
 import org.fcitx.fcitx5.android.utils.item
 import org.mechdancer.dependency.manager.must
@@ -101,7 +100,7 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>() {
             }
 
             override fun onEdit(id: Int) {
-                AppUtil.launchClipboardEdit(context, id)
+                windowManager.attachWindow(ClipboardEditWindow(id, returnToClipboard = true))
             }
 
             override fun onShare(entry: ClipboardEntry) {
@@ -126,13 +125,18 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>() {
                 service.commitText(entry.text)
                 if (clipboardReturnAfterPaste) windowManager.attachWindow(KeyboardWindow)
             }
+
+            override fun onPasteText(text: String) {
+                service.commitText(text)
+                if (clipboardReturnAfterPaste) windowManager.attachWindow(KeyboardWindow)
+            }
         }
     }
 
     private val ui by lazy {
         ClipboardUi(context, theme).apply {
             recyclerView.apply {
-                layoutManager = StaggeredGridLayoutManager(2, StaggeredGridLayoutManager.VERTICAL)
+                layoutManager = LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false)
                 adapter = this@ClipboardWindow.adapter
             }
             ItemTouchHelper(object : ItemTouchHelper.Callback() {

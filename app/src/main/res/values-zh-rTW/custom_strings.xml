@@ -38,9 +38,25 @@
     <string name="app_paired">%1$s 已完成配對</string>
     <string name="app_revoked">%1$s 的配對已撤銷</string>
     <string name="broadcast_action">org.fcitx.fcitx5.android.action.CLIPBOARD_BROADCAST</string>
+    <string name="clipboard_edit_insert_space">段間插入空格</string>
+    <!-- Custom: clipboard editor -->
+    <string name="clipboard_edit_select_all">全選</string>
+    <string name="clipboard_edit_invert">反選</string>
+    <string name="clipboard_edit_text_mode">文字編輯</string>
+    <string name="clipboard_edit_segment_mode">分詞模式</string>
+    <string name="clipboard_edit_no_segment">無可分詞的詞條</string>
+    <!-- Custom: table input methods -->
+    <string name="table_im_delete_confirm">刪除輸入法 "%1$s"？</string>
+    <string name="quickphrase_delete_confirm">確定刪除短語「%1$s」？</string>
+    <string name="pinyin_dict_delete_confirm">確定刪除辭典「%1$s」？</string>
 
     <!-- Custom: settings search -->
     <string name="search">搜尋</string>
     <string name="search_settings">搜尋設定</string>
+    <string name="search_no_results">沒有找到「%1$s」相關設定</string>
+    <string name="search_hint">依名稱搜尋設定</string>
+    <!-- Custom: accessibility labels -->
+    <string name="back">返回</string>
+    <string name="help">說明</string>
 
 </resources>
