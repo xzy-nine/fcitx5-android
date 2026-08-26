@@ -23,6 +23,7 @@
 | 设置搜索+高亮+分组 | `SettingsSearch*.kt`、`PreferenceHighlightHelper.kt`、`PreferenceGroupUi.kt`、`search_dialog_layout.xml` |
 | 空格长按语音输入 | `SpaceLongPressBehavior.VoiceInput`; 图标显隐在 `KeyViewExt.kt` |
 | 键盘顶部圆角裁剪 | `input/ViewOutlineExt.kt` |
+| 数字键盘解耦 | 主键盘 `?123` 恒进 9 宫格 (`TextKeyboard.kt` 直接指向 `NumberKeyboard.Name`)，`!?#` 进符号页；`KeyboardWindow.kt` 已移除 `lastSymbolType` 记忆，`AppPrefs` 的 `last_symbol_layout` 为孤儿配置勿用 |
 | Compose 导航+设置 UI(miuix/miuix-nav) | 导航壳 `ui/main/compose/AppRoute.kt` + `FcitxComposeApp.kt`; 首页 `HomeScreen.kt`; 设置渲染器 `ComposeManagedPrefsScreen.kt` / `ComposeRawConfigScreen.kt` / `RawConfigHostScreen.kt`; 旧 Fragment 页经 `LegacyScreen.kt`(自建 `LegacyGraph.kt`, start 用空 anchor)桥接 |
 | 环境适配（勿在上游 PR 中出现） | `.gitmodules`(全部 gitee.com/xzy-ime 镜像)、`gradle.properties` 的 `ndkVersion`、gradle-wrapper 华为云镜像、`FindFcitx5Utils.cmake` WIN32 MSYS2 gettext 路径、thai 插件 Iconv CACHE 补丁 |
 
