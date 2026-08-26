@@ -78,7 +78,15 @@ class KeyboardPreviewUi(override val ctx: Context, val theme: Theme) : Ui {
         }
 
     private val navbarBackground = ThemeManager.prefs.navbarBackground
-    private val keyBorder by ThemeManager.prefs.keyBorder
+    private val keyBorderPref = ThemeManager.prefs.keyBorder
+    private val keyBorder by keyBorderPref
+    private val keyBorderStroke = ThemeManager.prefs.keyBorderStroke
+    private val keyRippleEffect = ThemeManager.prefs.keyRippleEffect
+    private val keyHorizontalMargin = ThemeManager.prefs.keyHorizontalMargin
+    private val keyHorizontalMarginLandscape = ThemeManager.prefs.keyHorizontalMarginLandscape
+    private val keyVerticalMargin = ThemeManager.prefs.keyVerticalMargin
+    private val keyVerticalMarginLandscape = ThemeManager.prefs.keyVerticalMarginLandscape
+    private val keyRadius = ThemeManager.prefs.keyRadius
 
     private val navbarBkgChangeListener = ManagedPreference.OnChangeListener<Any> { _, _ ->
         recalculateSize()
@@ -88,6 +96,10 @@ class KeyboardPreviewUi(override val ctx: Context, val theme: Theme) : Ui {
     }
     private val splitThresholdListener = ManagedPreference.OnChangeListener<Float> { _, _ ->
         refreshSplitLayout()
+    }
+
+    private val themeAppearanceChangeListener = ManagedPreference.OnChangeListener<Any> { _, _ ->
+        setTheme(ThemeManager.activeTheme)
     }
 
     private val bkg = imageView {
@@ -130,6 +142,14 @@ class KeyboardPreviewUi(override val ctx: Context, val theme: Theme) : Ui {
             navbarBackground.registerOnChangeListener(navbarBkgChangeListener)
             splitKeyboardPref.registerOnChangeListener(splitPrefListener)
             splitThresholdPref.registerOnChangeListener(splitThresholdListener)
+            keyBorderPref.registerOnChangeListener(themeAppearanceChangeListener)
+            keyBorderStroke.registerOnChangeListener(themeAppearanceChangeListener)
+            keyRippleEffect.registerOnChangeListener(themeAppearanceChangeListener)
+            keyHorizontalMargin.registerOnChangeListener(themeAppearanceChangeListener)
+            keyHorizontalMarginLandscape.registerOnChangeListener(themeAppearanceChangeListener)
+            keyVerticalMargin.registerOnChangeListener(themeAppearanceChangeListener)
+            keyVerticalMarginLandscape.registerOnChangeListener(themeAppearanceChangeListener)
+            keyRadius.registerOnChangeListener(themeAppearanceChangeListener)
         }
 
         override fun onConfigurationChanged(newConfig: Configuration?) {
@@ -140,6 +160,14 @@ class KeyboardPreviewUi(override val ctx: Context, val theme: Theme) : Ui {
             navbarBackground.unregisterOnChangeListener(navbarBkgChangeListener)
             splitKeyboardPref.unregisterOnChangeListener(splitPrefListener)
             splitThresholdPref.unregisterOnChangeListener(splitThresholdListener)
+            keyBorderPref.unregisterOnChangeListener(themeAppearanceChangeListener)
+            keyBorderStroke.unregisterOnChangeListener(themeAppearanceChangeListener)
+            keyRippleEffect.unregisterOnChangeListener(themeAppearanceChangeListener)
+            keyHorizontalMargin.unregisterOnChangeListener(themeAppearanceChangeListener)
+            keyHorizontalMarginLandscape.unregisterOnChangeListener(themeAppearanceChangeListener)
+            keyVerticalMargin.unregisterOnChangeListener(themeAppearanceChangeListener)
+            keyVerticalMarginLandscape.unregisterOnChangeListener(themeAppearanceChangeListener)
+            keyRadius.unregisterOnChangeListener(themeAppearanceChangeListener)
             super.onDetachedFromWindow()
         }
     }
