@@ -12,9 +12,9 @@ import org.fcitx.fcitx5.android.input.keyboard.CustomGestureView
 import org.fcitx.fcitx5.android.utils.rippleDrawable
 import splitties.dimensions.dp
 import splitties.resources.drawable
+import androidx.constraintlayout.widget.ConstraintLayout
 import splitties.views.dsl.constraintlayout.after
 import splitties.views.dsl.constraintlayout.before
-import splitties.views.dsl.constraintlayout.centerInParent
 import splitties.views.dsl.constraintlayout.centerVertically
 import splitties.views.dsl.constraintlayout.constraintLayout
 import splitties.views.dsl.constraintlayout.endOfParent
@@ -41,7 +41,6 @@ class ClipboardSuggestionUi(override val ctx: Context, private val theme: Theme)
 
     val text = textView {
         isSingleLine = true
-        maxWidth = dp(120)
         ellipsize = TextUtils.TruncateAt.END
         setTextColor(theme.altKeyTextColor)
     }
@@ -66,9 +65,12 @@ class ClipboardSuggestionUi(override val ctx: Context, private val theme: Theme)
     }
 
     override val root = constraintLayout {
-        add(suggestionView, lParams(wrapContent, matchConstraints) {
-            centerInParent()
+        add(suggestionView, lParams(matchConstraints, matchConstraints) {
+            startOfParent()
+            centerVertically()
             verticalMargin = dp(4)
+            matchConstraintDefaultWidth = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+            matchConstraintPercentWidth = 0.6f
         })
     }
 }
