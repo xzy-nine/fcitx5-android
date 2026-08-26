@@ -66,4 +66,9 @@
     <string name="back">Back</string>
     <string name="help">Help</string>
 
+    <!-- Custom: number keyboard symbol slider -->
+    <string name="symbol_slider_visible_count">Symbol slider visible segments</string>
+    <string name="symbol_slider_edit_title">Edit symbol slider</string>
+    <string name="symbol_slider_edit_hint">e.g. +-*/=</string>
+
 </resources>

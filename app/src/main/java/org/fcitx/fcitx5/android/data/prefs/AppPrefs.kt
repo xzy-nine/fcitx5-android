@@ -507,6 +507,15 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             "default_emoji_skin_tone",
             EmojiModifier.SkinTone.Default,
         )
+
+        // Custom: number keyboard symbol slider
+        val symbolSliderVisibleCount = int(
+            R.string.symbol_slider_visible_count,
+            "symbol_slider_visible_count",
+            3,
+            min = 1,
+            max = 5
+        )
     }
 
     private val providers = mutableListOf<ManagedPreferenceProvider>()
