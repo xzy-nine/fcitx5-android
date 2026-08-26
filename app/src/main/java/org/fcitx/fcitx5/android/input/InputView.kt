@@ -283,6 +283,7 @@ class InputView(
         keyboardView.applyTopRoundedCornerClip(dp(16).toFloat())
 
         updateKeyboardSize()
+        updateEdgeGuard()
 
         add(preedit.ui.root, lParams(matchParent, wrapContent) {
             above(keyboardView)
