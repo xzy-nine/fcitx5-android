@@ -68,4 +68,7 @@
     <string name="symbol_slider_edit_title">编辑符号滑块</string>
     <string name="symbol_slider_edit_hint">例如 +-*/=</string>
 
+    <!-- Custom: number keyboard split history symbols -->
+    <string name="recent_symbols_empty_hint">暂无历史符号</string>
+
 </resources>

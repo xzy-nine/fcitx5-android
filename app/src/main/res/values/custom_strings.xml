@@ -71,4 +71,7 @@
     <string name="symbol_slider_edit_title">Edit symbol slider</string>
     <string name="symbol_slider_edit_hint">e.g. +-*/=</string>
 
+    <!-- Custom: number keyboard split history symbols -->
+    <string name="recent_symbols_empty_hint">No history symbols</string>
+
 </resources>

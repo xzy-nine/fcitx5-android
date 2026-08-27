@@ -183,7 +183,7 @@ abstract class BaseKeyboard(
         return (percent / 100f).coerceIn(0f, 0.9f)
     }
 
-    private fun isSplitAllowed(width: Int = this.width, height: Int = this.height): Boolean {
+    protected fun isSplitAllowed(width: Int = this.width, height: Int = this.height): Boolean {
         val w = if (width > 0) width else lastMeasuredWidth
         val h = if (height > 0) height else lastMeasuredHeight
         if (h <= 0) return false
