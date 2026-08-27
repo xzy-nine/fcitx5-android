@@ -99,7 +99,7 @@ class KeyboardPreviewUi(override val ctx: Context, val theme: Theme) : Ui {
     }
 
     private val themeAppearanceChangeListener = ManagedPreference.OnChangeListener<Any> { _, _ ->
-        setTheme(ThemeManager.activeTheme)
+        setTheme(theme)
     }
 
     private val bkg = imageView {
@@ -201,6 +201,9 @@ class KeyboardPreviewUi(override val ctx: Context, val theme: Theme) : Ui {
             height = keyboardHeight
             horizontalMargin = keyboardSidePaddingPx
         }
+        fakeKawaiiBar.updateLayoutParams<ConstraintLayout.LayoutParams> {
+            height = barHeightPx
+        }
         intrinsicWidth = keyboardWidth
         // KawaiiBar height + WindowManager view height
         intrinsicHeight = barHeightPx + keyboardHeight
@@ -232,6 +235,7 @@ class KeyboardPreviewUi(override val ctx: Context, val theme: Theme) : Ui {
     fun setTheme(theme: Theme, background: Drawable? = null) {
         setBackground(background ?: theme.backgroundDrawable(keyBorder))
         if (this::fakeKeyboardWindow.isInitialized) {
+            fakeKeyboardWindow.onDetach()
             fakeInputView.removeView(fakeKeyboardWindow)
         }
         fakeKawaiiBar.backgroundColor = if (keyBorder) Color.TRANSPARENT else theme.barColor

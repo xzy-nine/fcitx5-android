@@ -97,7 +97,7 @@ abstract class BaseKeyboard(
     private val disabledSwipeThreshold = dp(800f)
 
     private val bounds = Rect()
-    private var keyRows: List<ConstraintLayout> = emptyList()
+    protected var keyRows: List<ConstraintLayout> = emptyList()
     private var lastInputMethod: InputMethodEntry? = null
     private var lastSplitAllowed = false
     private var lastSplitRequested = false

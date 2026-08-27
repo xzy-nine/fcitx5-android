@@ -38,7 +38,7 @@ class SymbolSliderEditActivity : Activity() {
             symbolSliderEditCancel.setOnClickListener { finish() }
             symbolSliderEditOk.setOnClickListener {
                 SymbolSliderEditStore.set(
-                    symbolSliderEditInput.text?.toString()?.trim().orEmpty()
+                    symbolSliderEditInput.text?.toString().orEmpty()
                 )
                 finish()
             }
@@ -47,11 +47,6 @@ class SymbolSliderEditActivity : Activity() {
         inputMethodManager.showSoftInput(
             binding.symbolSliderEditInput, InputMethodManager.SHOW_IMPLICIT
         )
-    }
-
-    override fun onStop() {
-        super.onStop()
-        finish()
     }
 
     companion object {

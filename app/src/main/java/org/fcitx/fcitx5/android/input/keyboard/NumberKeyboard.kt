@@ -158,6 +158,8 @@ class NumberKeyboard(
         val row3 = buildRow3()
         val row4 = buildRow4()
 
+        keyRows = listOf(row1, row2, row3, row4)
+
         add(slider, lParams(0, 0) {
             startOfParent()
             topOfParent()
@@ -214,6 +216,8 @@ class NumberKeyboard(
         val row2 = buildRow2()
         val row3 = buildRow3()
         val row4 = buildRow4Split()
+
+        keyRows = listOf(row1, row2, row3, row4)
 
         // 左侧 45%：历史符号面板
         add(recent, lParams(0, 0) {
@@ -283,9 +287,13 @@ class NumberKeyboard(
         SymbolSliderEditStore.consume()?.let { applySymbols(it) }
     }
 
-    /** 应用编辑弹窗返回的符号串。 */
+    /** 应用编辑弹窗返回的符号串。按 Unicode 码点拆分，确保补充字符（emoji 等）不被拆碎。 */
     private fun applySymbols(newSymbols: String) {
-        sliderSymbols = newSymbols.map { it.toString() }.toMutableList()
+        sliderSymbols = newSymbols.codePoints()
+            .mapToObj { Character.toChars(it) }
+            .map { String(it) }
+            .collect(java.util.stream.Collectors.toList())
+            .toMutableList()
         refreshLayoutForPrefs()
     }
 

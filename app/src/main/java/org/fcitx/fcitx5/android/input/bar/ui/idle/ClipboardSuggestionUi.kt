@@ -52,7 +52,7 @@ class ClipboardSuggestionUi(override val ctx: Context, private val theme: Theme)
             before(text)
             centerVertically()
         })
-        add(text, lParams(wrapContent, wrapContent) {
+        add(text, lParams(matchConstraints, wrapContent) {
             after(icon, spacing)
             endOfParent(spacing)
             centerVertically()
@@ -60,7 +60,7 @@ class ClipboardSuggestionUi(override val ctx: Context, private val theme: Theme)
     }
 
     val suggestionView = CustomGestureView(ctx).apply {
-        add(layout, lParams(wrapContent, matchParent))
+        add(layout, lParams(matchParent, matchParent))
         background = rippleDrawable(theme.keyPressHighlightColor)
     }
 
