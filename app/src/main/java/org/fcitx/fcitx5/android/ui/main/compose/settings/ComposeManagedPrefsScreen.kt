@@ -324,6 +324,7 @@ private fun ManagedPrefRow(
                                 max = ui.max,
                                 step = ui.step,
                                 suffix = ui.unit,
+                                enabled = ui.isEnabled(),
                             )
                             ExpandableNumberPreference(
                                 title = stringResource(ui.secondaryLabel),
@@ -336,6 +337,7 @@ private fun ManagedPrefRow(
                                 max = ui.max,
                                 step = ui.step,
                                 suffix = ui.unit,
+                                enabled = ui.isEnabled(),
                             )
                         }
                     }
@@ -345,27 +347,47 @@ private fun ManagedPrefRow(
 
         is EditTextFloatUi -> {
             val pref = prefs[ui.key] as? ManagedPreference.PFloat ?: return
-            var showDialog by remember { mutableStateOf(false) }
-            ArrowPreference(
-                title = stringResource(ui.title),
-                summary = pref.getValue().toString() + ui.unit,
-                onClick = { showDialog = true },
-                holdDownState = showDialog,
-                enabled = ui.isEnabled(),
-            )
-            if (showDialog) {
-                EditValueDialog(
+            // unbounded / huge ranges have no meaningful slider -> keep the edit dialog
+            val hasRange = ui.max > ui.min && (ui.max.toDouble() - ui.min.toDouble()) <= 100.0
+            if (hasRange) {
+                val step = if (ui.max - ui.min <= 20f) 0.1f else 1f
+                ExpandableNumberPreference(
                     title = stringResource(ui.title),
-                    initialText = pref.getValue().toString(),
-                    onConfirm = { text ->
-                        val parsed = text.toFloatOrNull() ?: return@EditValueDialog false
-                        if (parsed < ui.min || parsed > ui.max) return@EditValueDialog false
-                        pref.setValue(parsed)
+                    value = pref.getValue(),
+                    onValueChange = { newValue ->
+                        pref.setValue(newValue.coerceIn(ui.min, ui.max))
                         fireChange(ui.key)
-                        true
                     },
-                    onDismiss = { showDialog = false },
+                    min = ui.min,
+                    max = ui.max,
+                    step = step,
+                    decimals = if (step < 1f) 1 else 0,
+                    suffix = ui.unit,
+                    enabled = ui.isEnabled(),
                 )
+            } else {
+                var showDialog by remember { mutableStateOf(false) }
+                ArrowPreference(
+                    title = stringResource(ui.title),
+                    summary = pref.getValue().toString() + ui.unit,
+                    onClick = { showDialog = true },
+                    holdDownState = showDialog,
+                    enabled = ui.isEnabled(),
+                )
+                if (showDialog) {
+                    EditValueDialog(
+                        title = stringResource(ui.title),
+                        initialText = pref.getValue().toString(),
+                        onConfirm = { text ->
+                            val parsed = text.toFloatOrNull() ?: return@EditValueDialog false
+                            if (parsed < ui.min || parsed > ui.max) return@EditValueDialog false
+                            pref.setValue(parsed)
+                            fireChange(ui.key)
+                            true
+                        },
+                        onDismiss = { showDialog = false },
+                    )
+                }
             }
         }
     }
