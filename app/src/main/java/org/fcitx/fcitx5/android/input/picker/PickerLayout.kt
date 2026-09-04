@@ -30,7 +30,12 @@ class PickerLayout(context: Context, theme: Theme, switchKey: KeyDef) :
     class Keyboard(context: Context, theme: Theme, switchKey: KeyDef) : BaseKeyboard(
         context, theme, listOf(
             listOf(
-                LayoutSwitchKey("ABC", TextKeyboard.Name),
+                ImageLayoutSwitchKey(
+                    R.drawable.ic_baseline_arrow_back_24,
+                    TextKeyboard.Name,
+                    percentWidth = 0.15f,
+                    variant = KeyDef.Appearance.Variant.Accent
+                ),
                 PunctuationKey(","),
                 switchKey,
                 SpaceKey(),

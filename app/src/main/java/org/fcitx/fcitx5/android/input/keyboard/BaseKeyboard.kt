@@ -97,7 +97,7 @@ abstract class BaseKeyboard(
     private val disabledSwipeThreshold = dp(800f)
 
     private val bounds = Rect()
-    private var keyRows: List<ConstraintLayout> = emptyList()
+    protected var keyRows: List<ConstraintLayout> = emptyList()
     private var lastInputMethod: InputMethodEntry? = null
     private var lastSplitAllowed = false
     private var lastSplitRequested = false
@@ -117,7 +117,7 @@ abstract class BaseKeyboard(
         prefs.keyboard.splitKeyboardBlankRatioLandscape.registerOnChangeListener(splitBlankRatioListener)
     }
 
-    private fun rebuildKeyboardRows(split: Boolean) {
+    protected open fun rebuildKeyboardRows(split: Boolean) {
         val effectiveSplit = split && supportsSplitLayout && isSplitAllowed()
         if (isSplitLayout == effectiveSplit && lastSplitRequested == split && keyRows.isNotEmpty()) return
         isSplitLayout = effectiveSplit
@@ -183,7 +183,7 @@ abstract class BaseKeyboard(
         return (percent / 100f).coerceIn(0f, 0.9f)
     }
 
-    private fun isSplitAllowed(width: Int = this.width, height: Int = this.height): Boolean {
+    protected fun isSplitAllowed(width: Int = this.width, height: Int = this.height): Boolean {
         val w = if (width > 0) width else lastMeasuredWidth
         val h = if (height > 0) height else lastMeasuredHeight
         if (h <= 0) return false
@@ -330,7 +330,7 @@ abstract class BaseKeyboard(
         }
     }
 
-    private fun createKeyRow(
+    protected open fun createKeyRow(
         row: List<KeyDef>,
         chainBias: Float? = null,
         widthScale: Float = 1f,
@@ -394,12 +394,15 @@ abstract class BaseKeyboard(
         }
     }
 
-    private fun createKeyView(def: KeyDef): KeyView {
-        return when (def.appearance) {
-            is KeyDef.Appearance.AltText -> AltTextKeyView(context, theme, def.appearance)
-            is KeyDef.Appearance.ImageText -> ImageTextKeyView(context, theme, def.appearance)
-            is KeyDef.Appearance.Text -> TextKeyView(context, theme, def.appearance)
-            is KeyDef.Appearance.Image -> ImageKeyView(context, theme, def.appearance)
+    protected open fun createKeyView(def: KeyDef): KeyView {
+        return when (def) {
+            is SymbolSliderKey -> SymbolSliderKeyView(context, theme, def)
+            else -> when (def.appearance) {
+                is KeyDef.Appearance.AltText -> AltTextKeyView(context, theme, def.appearance)
+                is KeyDef.Appearance.ImageText -> ImageTextKeyView(context, theme, def.appearance)
+                is KeyDef.Appearance.Text -> TextKeyView(context, theme, def.appearance)
+                is KeyDef.Appearance.Image -> ImageKeyView(context, theme, def.appearance)
+            }
         }.apply {
             soundEffect = when (def) {
                 is SpaceKey -> InputFeedbacks.SoundEffect.SpaceBar

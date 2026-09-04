@@ -15,7 +15,6 @@ import androidx.transition.Slide
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CapabilityFlags
 import org.fcitx.fcitx5.android.core.InputMethodEntry
-import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
@@ -73,7 +72,6 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         )
     }
     private var currentKeyboardName = ""
-    private var lastSymbolType: String by AppPrefs.getInstance().internal.lastSymbolLayout
 
     private val currentKeyboard: BaseKeyboard? get() = keyboards[currentKeyboardName]
 
@@ -125,23 +123,16 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         }
     }
 
-    fun switchLayout(to: String, remember: Boolean = true) {
-        val target = to.ifEmpty { lastSymbolType }
+    fun switchLayout(to: String) {
         ContextCompat.getMainExecutor(service).execute {
-            if (keyboards.containsKey(target)) {
-                if (remember && target != TextKeyboard.Name) {
-                    lastSymbolType = target
-                }
-                if (target == currentKeyboardName) return@execute
+            if (keyboards.containsKey(to)) {
+                if (to == currentKeyboardName) return@execute
                 detachCurrentLayout()
-                attachLayout(target)
+                attachLayout(to)
                 if (windowManager.isAttached(this)) {
                     notifyBarLayoutChanged()
                 }
             } else {
-                if (remember) {
-                    lastSymbolType = PickerWindow.Key.Symbol.name
-                }
                 windowManager.attachWindow(PickerWindow.Key.Symbol)
             }
         }
@@ -153,7 +144,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
             InputType.TYPE_CLASS_PHONE -> NumberKeyboard.Name
             else -> TextKeyboard.Name
         }
-        switchLayout(targetLayout, remember = false)
+        switchLayout(targetLayout)
         currentKeyboard?.refreshLayoutForPrefs()
     }
 

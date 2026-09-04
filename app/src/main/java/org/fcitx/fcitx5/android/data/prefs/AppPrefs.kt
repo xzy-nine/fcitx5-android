@@ -68,7 +68,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         val hapticOnKeyUp = switch(
             R.string.button_up_haptic_feedback,
             "haptic_on_keyup",
-            false
+            true
         ) { hapticOnKeyPress.getValue() != InputFeedbackMode.Disabled }
         val hapticOnRepeat = switch(R.string.haptic_on_repeat, "haptic_on_repeat", false)
 
@@ -80,10 +80,10 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                 R.string.button_vibration_milliseconds,
                 R.string.button_press,
                 "button_vibration_press_milliseconds",
-                0,
+                2,
                 R.string.button_long_press,
                 "button_vibration_long_press_milliseconds",
-                0,
+                24,
                 0,
                 100,
                 "ms",
@@ -101,10 +101,10 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                 R.string.button_vibration_amplitude,
                 R.string.button_press,
                 "button_vibration_press_amplitude",
-                0,
+                255,
                 R.string.button_long_press,
                 "button_vibration_long_press_amplitude",
-                0,
+                255,
                 0,
                 255,
                 defaultLabel = R.string.system_default
@@ -137,7 +137,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         val focusChangeResetKeyboard =
             switch(R.string.reset_keyboard_on_focus_change, "reset_keyboard_on_focus_change", true)
         val expandToolbarByDefault =
-            switch(R.string.expand_toolbar_by_default, "expand_toolbar_by_default", false)
+            switch(R.string.expand_toolbar_by_default, "expand_toolbar_by_default", true)
         val inlineSuggestions = switch(R.string.inline_suggestions, "inline_suggestions", true)
         val toolbarNumRowOnPassword =
             switch(R.string.toolbar_num_row_on_password, "toolbar_num_row_on_password", true)
@@ -145,7 +145,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         val keepLettersUppercase = switch(
             R.string.keep_keyboard_letters_uppercase,
             "keep_keyboard_letters_uppercase",
-            false
+            true
         )
 
         val showVoiceInputButton =
@@ -206,7 +206,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         val spaceKeyLongPressBehavior = enumList(
             R.string.space_long_press_behavior,
             "space_long_press_behavior",
-            SpaceLongPressBehavior.None
+            SpaceLongPressBehavior.VoiceInput
         )
         val spaceSwipeMoveCursor =
             switch(R.string.space_swipe_move_cursor, "space_swipe_move_cursor", true)
@@ -229,7 +229,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                 30,
                 R.string.landscape,
                 "keyboard_height_percent_landscape",
-                49,
+                39,
                 10,
                 90,
                 "%"
@@ -249,7 +249,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                 40,
                 R.string.landscape,
                 "toolbar_height_landscape",
-                40,
+                60,
                 20,
                 80,
                 "dp"
@@ -299,7 +299,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         }
 
         val edgeGuardEnabled =
-            switch(R.string.edge_guard_enabled, "edge_guard_enabled", false)
+            switch(R.string.edge_guard_enabled, "edge_guard_enabled", true)
         val edgeGuardWidth = int(
             R.string.edge_guard_width,
             "edge_guard_width",
@@ -312,12 +312,12 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         val horizontalCandidateStyle = enumList(
             R.string.horizontal_candidate_style,
             "horizontal_candidate_style",
-            HorizontalCandidateMode.AutoFillWidth
+            HorizontalCandidateMode.AlwaysFillWidth
         )
         val horizontalCandidateSwipe = switch(
             R.string.horizontal_candidate_swipe,
             "horizontal_candidate_swipe",
-            false
+            true
         )
         val expandedCandidateStyle = enumList(
             R.string.expanded_candidate_style,
@@ -507,6 +507,15 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             "default_emoji_skin_tone",
             EmojiModifier.SkinTone.Default,
         )
+
+        // Custom: number keyboard symbol slider
+        val symbolSliderVisibleCount = int(
+            R.string.symbol_slider_visible_count,
+            "symbol_slider_visible_count",
+            3,
+            min = 1,
+            max = 5
+        )
     }
 
     private val providers = mutableListOf<ManagedPreferenceProvider>()
@@ -557,7 +566,8 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             listOf(
                 keyboard,
                 candidates,
-                clipboard
+                clipboard,
+                symbols
             ).forEach { category ->
                 category.managedPreferences.forEach {
                     it.value.putValueTo(this@edit)
