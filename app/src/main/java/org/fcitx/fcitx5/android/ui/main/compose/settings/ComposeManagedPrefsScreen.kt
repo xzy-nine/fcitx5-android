@@ -241,7 +241,7 @@ private fun ManagedPrefRow(
         is ManagedPreferenceUi.EditTextInt -> {
             val pref = prefs[ui.key] as? ManagedPreference.PInt ?: return
             var showDialog by remember { mutableStateOf(false) }
-            val hasRange = ui.min < ui.max && (ui.max - ui.min) <= 10000
+            val hasRange = ui.min < ui.max && (ui.max.toLong() - ui.min.toLong()) <= 10000
             if (hasRange) {
                 ExpandableNumberPreference(
                     title = stringResource(ui.title),
