@@ -102,9 +102,15 @@ class KeyboardTuneOverlay(
     private val rightCard: Card
     private val leftEdgeCard: Card
     private val rightEdgeCard: Card
+    private val leftGrip: View
+    private val rightGrip: View
+    private val bottomGrip: View
     private val buttonBar: LinearLayout
 
     private val slopPx get() = dp(24f)
+    /** width of the grab band for side/bottom margins; kept inside the keyboard
+     *  so screen-edge system gestures never swallow the drag. */
+    private val grabPx get() = dp(20f)
 
     init {
         visibility = View.GONE
@@ -122,6 +128,10 @@ class KeyboardTuneOverlay(
         rightCard = Card(context, theme, R.string.keyboard_tune_split)
         leftEdgeCard = Card(context, theme, R.string.keyboard_tune_edge_guard)
         rightEdgeCard = Card(context, theme, R.string.keyboard_tune_edge_guard)
+
+        leftGrip = makeGrip()
+        rightGrip = makeGrip()
+        bottomGrip = makeGrip()
 
         // ----- action bar (always inside keyboard region, always clickable) -----
         val resetBtn = actionButton(panelCtx, R.drawable.ic_baseline_settings_backup_restore_24, R.string.tune_reset) {
@@ -153,6 +163,9 @@ class KeyboardTuneOverlay(
         addView(rightCard)
         addView(leftEdgeCard)
         addView(rightEdgeCard)
+        addView(leftGrip)
+        addView(rightGrip)
+        addView(bottomGrip)
         addView(buttonBar)
     }
 
@@ -200,6 +213,18 @@ class KeyboardTuneOverlay(
         private fun dp(v: Float, ctx: Context) = (v * ctx.resources.displayMetrics.density).toInt()
         private fun accentColor(ctx: Context) =
             ContextCompat.getColor(ctx, R.color.tune_accent)
+    }
+
+    /** Thin accent bar marking the draggable band for side/bottom margins. */
+    private fun makeGrip(): View = View(context).apply {
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(2f).toFloat()
+            setColor(accent)
+        }
+        alpha = 0.85f
+        isClickable = false
+        isFocusable = false
     }
 
     private fun actionButton(
@@ -251,6 +276,8 @@ class KeyboardTuneOverlay(
 
     fun hide() {
         onDismiss()
+        // 退出后必须归还系统手势区域，否则返回手势在键盘边缘会一直失效
+        if (Build.VERSION.SDK_INT >= 29) systemGestureExclusionRects = emptyList()
         visibility = View.GONE
         fullCard.setActive(false)
         leftCard.setActive(false)
@@ -317,6 +344,23 @@ class KeyboardTuneOverlay(
             rightEdgeCard.visibility = View.GONE
         }
 
+        // grips: thin accent bars just inside the card edges
+        val bar = dp(3f)
+        val inset = dp(24f)
+        positionCard(
+            leftGrip,
+            android.graphics.Rect(left + bar, top + inset, left + bar + dp(4f), kbBottom - inset)
+        )
+        positionCard(
+            rightGrip,
+            android.graphics.Rect(right - bar - dp(4f), top + inset, right - bar, kbBottom - inset)
+        )
+        positionCard(
+            bottomGrip,
+            android.graphics.Rect(left + inset, kbBottom - bar - dp(4f), right - inset, kbBottom - bar)
+        )
+        updateGestureExclusion()
+
         // action bar pinned to the bottom of the keyboard region, centered
         buttonBar.measure(
             MeasureSpec.makeMeasureSpec(width, MeasureSpec.AT_MOST),
@@ -340,6 +384,29 @@ class KeyboardTuneOverlay(
         lp.topMargin = r.top
         v.layoutParams = lp
         if (v is Card) v.setLabelVisible(r.width() >= dp(64f))
+    }
+
+    /**
+     * Ask the system not to treat touches inside the grab bands as edge-back /
+     * home gestures. Without this the side-margin drag is swallowed whenever the
+     * current padding is 0 (the band then sits right on the screen edge).
+     */
+    private fun updateGestureExclusion() {
+        if (Build.VERSION.SDK_INT < 29) return
+        val m = metricsProvider()
+        val top = m.keyboardRect.top
+        val bottom = m.keyboardRect.bottom
+        val left = m.keyboardRect.left
+        val right = m.keyboardRect.right
+        val rects = ArrayList<android.graphics.Rect>(5)
+        rects += android.graphics.Rect(left, top, left + grabPx, bottom)
+        rects += android.graphics.Rect(right - grabPx, top, right, bottom)
+        rects += android.graphics.Rect(left + grabPx, bottom - grabPx, right - grabPx, bottom)
+        if (edgeGuardActive(m)) {
+            rects += android.graphics.Rect(0, top, m.edgeWidthPx, height)
+            rects += android.graphics.Rect(width - m.edgeWidthPx, top, width, height)
+        }
+        systemGestureExclusionRects = rects
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -413,13 +480,15 @@ class KeyboardTuneOverlay(
             if (x in (width - m.edgeWidthPx - s)..width && y in kbTop..height) return DragMode.EDGE_RIGHT
         }
 
-        // bottom edge of the card -> bottom margin (drag up = more space below)
-        if (x in cardLeft..cardRight && y in (kbBottom - s)..(kbBottom + s)) return DragMode.BOTTOM
+        // bottom band (inside the card) -> bottom margin (drag up = more space below)
+        if (y in (kbBottom - grabPx)..kbBottom &&
+            x in (cardLeft + grabPx)..(cardRight - grabPx)
+        ) return DragMode.BOTTOM
 
-        // outer side edges of the card -> side margin
+        // side bands (inside the card, never on the screen edge) -> side margin
         if (y in kbTop..kbBottom) {
-            if (x in (cardLeft - s)..(cardLeft + s)) return DragMode.SIDE_LEFT
-            if (x in (cardRight - s)..(cardRight + s)) return DragMode.SIDE_RIGHT
+            if (x in cardLeft..(cardLeft + grabPx)) return DragMode.SIDE_LEFT
+            if (x in (cardRight - grabPx)..cardRight) return DragMode.SIDE_RIGHT
         }
 
         // split gap: inner edges of the two cards

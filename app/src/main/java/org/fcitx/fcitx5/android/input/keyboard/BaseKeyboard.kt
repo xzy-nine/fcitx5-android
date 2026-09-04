@@ -106,6 +106,7 @@ abstract class BaseKeyboard(
     private var lastMeasuredHeight = 0
 
     private var isSplitLayout = false
+    private var lastGapRatio = -1f
 
     init {
         isMotionEventSplittingEnabled = true
@@ -119,12 +120,16 @@ abstract class BaseKeyboard(
 
     protected open fun rebuildKeyboardRows(split: Boolean) {
         val effectiveSplit = split && supportsSplitLayout && isSplitAllowed()
-        if (isSplitLayout == effectiveSplit && lastSplitRequested == split && keyRows.isNotEmpty()) return
+        val gapRatio = splitGapRatio()
+        // 空白比例变化也必须触发重建，否则调节间距后只有重新开关分离键盘才生效
+        if (isSplitLayout == effectiveSplit && lastSplitRequested == split &&
+            lastGapRatio == gapRatio && keyRows.isNotEmpty()
+        ) return
         isSplitLayout = effectiveSplit
         lastSplitRequested = split
+        lastGapRatio = gapRatio
         spaceKeys.clear()
         removeAllViews()
-        val gapRatio = splitGapRatio()
         val rowGroupPercents = if (effectiveSplit) {
             computeRowGroupPercents(keyLayout, gapRatio)
         } else {
