@@ -73,12 +73,6 @@
 
     <!-- Custom: 键盘可视化调校浮层 -->
     <string name="keyboard_tune">调校键盘</string>
-    <string name="keyboard_tune_height_hint">拖动顶部手柄调整键盘高度</string>
-    <string name="keyboard_tune_side_hint">拖动左右两侧手柄调整左右边距</string>
-    <string name="keyboard_tune_bottom_hint">拖动底部手柄调整底部边距</string>
-    <string name="keyboard_tune_edge_guard">边缘防误触</string>
-    <string name="keyboard_tune_edge_guard_width">防误触宽度</string>
-    <string name="keyboard_tune_split_ratio">分离键盘间距</string>
     <string name="keyboard_tune_height">高度</string>
     <string name="keyboard_tune_split">分离</string>
     <string name="tune_reset">重置</string>

@@ -422,8 +422,7 @@ class InputView(
             val pct = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
                 keyboardHeightPercentLandscape.getValue() else keyboardHeightPercent.getValue()
             if (pct > 0) keyboardHeightPx * 100 / pct else resources.displayMetrics.heightPixels
-        },
-        edgeWidthPx = dp(keyboardPrefs.edgeGuardWidth.getValue())
+        }
     )
 
     override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {

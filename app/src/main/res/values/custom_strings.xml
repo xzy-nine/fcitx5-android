@@ -76,12 +76,6 @@
 
     <!-- Custom: keyboard visual tuning overlay -->
     <string name="keyboard_tune">Tune keyboard</string>
-    <string name="keyboard_tune_height_hint">Drag the top handle to adjust keyboard height</string>
-    <string name="keyboard_tune_side_hint">Drag the side handles to adjust side margin</string>
-    <string name="keyboard_tune_bottom_hint">Drag the bottom handle to adjust bottom margin</string>
-    <string name="keyboard_tune_edge_guard">Edge guard</string>
-    <string name="keyboard_tune_edge_guard_width">Edge guard width</string>
-    <string name="keyboard_tune_split_ratio">Split gap</string>
     <string name="keyboard_tune_height">Height</string>
     <string name="keyboard_tune_split">Split</string>
     <string name="tune_reset">Reset</string>

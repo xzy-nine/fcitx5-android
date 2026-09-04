@@ -33,8 +33,9 @@ import kotlin.math.roundToInt
  * - Frosted cards mark the adjustable regions. You drag a card to tune:
  *   - the keyboard card  -> keyboard height (drag up = taller)
  *   - split left/right cards -> the gap between them (split blank ratio)
- *   - edge-guard cards (landscape) -> guard width
  * - Toggling the toolbar tune button again, or tapping 完成/取消, exits.
+ *
+ * Edge guard (landscape) is intentionally NOT tuned here — it stays in settings.
  *
  * The overlay never covers the toolbar, so the toolbar toggle stays reachable.
  */
@@ -53,12 +54,11 @@ class KeyboardTuneOverlay(
         val keyboardRect: android.graphics.Rect,
         /** real bounds of the bottom padding space, in overlay coordinates */
         val bottomRect: android.graphics.Rect,
-        val heightBasePx: Int,
-        val edgeWidthPx: Int
+        val heightBasePx: Int
     )
 
     private enum class DragMode {
-        NONE, HEIGHT, BOTTOM, SIDE_LEFT, SIDE_RIGHT, GAP, EDGE_LEFT, EDGE_RIGHT
+        NONE, HEIGHT, BOTTOM, SIDE_LEFT, SIDE_RIGHT, GAP
     }
 
     private val density = context.resources.displayMetrics.density
@@ -68,8 +68,6 @@ class KeyboardTuneOverlay(
     private val fullRect = android.graphics.Rect()
     private val leftRect = android.graphics.Rect()
     private val rightRect = android.graphics.Rect()
-    private val leftEdgeRect = android.graphics.Rect()
-    private val rightEdgeRect = android.graphics.Rect()
     private val buttonBarRect = android.graphics.Rect()
 
     private var dragMode = DragMode.NONE
@@ -79,7 +77,6 @@ class KeyboardTuneOverlay(
     private var startBottomPx = 0
     private var startSidePx = 0
     private var startGapPx = 0
-    private var startEdgePx = 0
     private var startBaseWidthPx = 0
     private var startLandscape = false
 
@@ -88,20 +85,16 @@ class KeyboardTuneOverlay(
         val heightPercent: Int,
         val sideDp: Int,
         val bottomDp: Int,
-        val edgeEnabled: Boolean,
-        val edgeWidth: Int,
         val splitEnabled: Boolean,
         val splitRatio: Int
     )
 
-    private var snapshot = Snapshot(false, 30, 0, 0, true, 30, false, 30)
+    private var snapshot = Snapshot(false, 30, 0, 0, false, 30)
 
     // ----- views -----
     private val fullCard: Card
     private val leftCard: Card
     private val rightCard: Card
-    private val leftEdgeCard: Card
-    private val rightEdgeCard: Card
     private val leftGrip: View
     private val rightGrip: View
     private val bottomGrip: View
@@ -126,9 +119,6 @@ class KeyboardTuneOverlay(
         fullCard = Card(context, theme, R.string.keyboard_tune_height)
         leftCard = Card(context, theme, R.string.keyboard_tune_split)
         rightCard = Card(context, theme, R.string.keyboard_tune_split)
-        leftEdgeCard = Card(context, theme, R.string.keyboard_tune_edge_guard)
-        rightEdgeCard = Card(context, theme, R.string.keyboard_tune_edge_guard)
-
         leftGrip = makeGrip()
         rightGrip = makeGrip()
         bottomGrip = makeGrip()
@@ -161,8 +151,6 @@ class KeyboardTuneOverlay(
         addView(fullCard)
         addView(leftCard)
         addView(rightCard)
-        addView(leftEdgeCard)
-        addView(rightEdgeCard)
         addView(leftGrip)
         addView(rightGrip)
         addView(bottomGrip)
@@ -265,8 +253,6 @@ class KeyboardTuneOverlay(
             heightPercent = heightPref(m.isLandscape).getValue(),
             sideDp = sidePref(m.isLandscape).getValue(),
             bottomDp = bottomPref(m.isLandscape).getValue(),
-            edgeEnabled = keyboardPrefs.edgeGuardEnabled.getValue(),
-            edgeWidth = keyboardPrefs.edgeGuardWidth.getValue(),
             splitEnabled = keyboardPrefs.splitKeyboard.getValue(),
             splitRatio = splitRatioPref(m.isLandscape).getValue()
         )
@@ -282,16 +268,12 @@ class KeyboardTuneOverlay(
         fullCard.setActive(false)
         leftCard.setActive(false)
         rightCard.setActive(false)
-        leftEdgeCard.setActive(false)
-        rightEdgeCard.setActive(false)
     }
 
     private fun applySnapshot(close: Boolean) {
         heightPref(snapshot.landscape).setValue(snapshot.heightPercent)
         sidePref(snapshot.landscape).setValue(snapshot.sideDp)
         bottomPref(snapshot.landscape).setValue(snapshot.bottomDp)
-        keyboardPrefs.edgeGuardEnabled.setValue(snapshot.edgeEnabled)
-        keyboardPrefs.edgeGuardWidth.setValue(snapshot.edgeWidth)
         keyboardPrefs.splitKeyboard.setValue(snapshot.splitEnabled)
         splitRatioPref(snapshot.landscape).setValue(snapshot.splitRatio)
         if (close) hide() else syncBox()
@@ -328,20 +310,6 @@ class KeyboardTuneOverlay(
             rightCard.visibility = View.GONE
             fullRect.set(left, top, right, kbBottom)
             positionCard(fullCard, fullRect)
-        }
-
-        // edge-guard cards (landscape only)
-        val edgeOn = m.isLandscape && keyboardPrefs.edgeGuardEnabled.getValue() && m.edgeWidthPx > 0
-        if (edgeOn) {
-            leftEdgeCard.visibility = View.VISIBLE
-            rightEdgeCard.visibility = View.VISIBLE
-            leftEdgeRect.set(0, top, m.edgeWidthPx, height)
-            rightEdgeRect.set(width - m.edgeWidthPx, top, width, height)
-            positionCard(leftEdgeCard, leftEdgeRect)
-            positionCard(rightEdgeCard, rightEdgeRect)
-        } else {
-            leftEdgeCard.visibility = View.GONE
-            rightEdgeCard.visibility = View.GONE
         }
 
         // grips: thin accent bars just inside the card edges
@@ -398,15 +366,11 @@ class KeyboardTuneOverlay(
         val bottom = m.keyboardRect.bottom
         val left = m.keyboardRect.left
         val right = m.keyboardRect.right
-        val rects = ArrayList<android.graphics.Rect>(5)
-        rects += android.graphics.Rect(left, top, left + grabPx, bottom)
-        rects += android.graphics.Rect(right - grabPx, top, right, bottom)
-        rects += android.graphics.Rect(left + grabPx, bottom - grabPx, right - grabPx, bottom)
-        if (edgeGuardActive(m)) {
-            rects += android.graphics.Rect(0, top, m.edgeWidthPx, height)
-            rects += android.graphics.Rect(width - m.edgeWidthPx, top, width, height)
-        }
-        systemGestureExclusionRects = rects
+        systemGestureExclusionRects = listOf(
+            android.graphics.Rect(left, top, left + grabPx, bottom),
+            android.graphics.Rect(right - grabPx, top, right, bottom),
+            android.graphics.Rect(left + grabPx, bottom - grabPx, right - grabPx, bottom)
+        )
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -440,7 +404,6 @@ class KeyboardTuneOverlay(
                 startLandscape = m.isLandscape
                 startBaseWidthPx = m.keyboardRect.width().coerceAtLeast(1)
                 startGapPx = (startBaseWidthPx * splitRatioPref(m.isLandscape).getValue() / 100)
-                startEdgePx = m.edgeWidthPx
                 setCardActive(dragMode, true)
                 if (Build.VERSION.SDK_INT >= 21) {
                     performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
@@ -461,9 +424,6 @@ class KeyboardTuneOverlay(
         return false
     }
 
-    private fun edgeGuardActive(m: TuneMetrics) =
-        m.isLandscape && keyboardPrefs.edgeGuardEnabled.getValue() && m.edgeWidthPx > 0
-
     private fun hitTest(x: Int, y: Int, m: TuneMetrics): DragMode {
         val s = slopPx
         if (buttonBarRect.contains(x, y)) return DragMode.NONE
@@ -473,12 +433,6 @@ class KeyboardTuneOverlay(
         val cardLeft = m.keyboardRect.left
         val cardRight = m.keyboardRect.right
         val split = keyboardPrefs.splitKeyboard.getValue()
-
-        // edge-guard cards (screen edges, landscape only)
-        if (edgeGuardActive(m)) {
-            if (x in 0..(m.edgeWidthPx + s) && y in kbTop..height) return DragMode.EDGE_LEFT
-            if (x in (width - m.edgeWidthPx - s)..width && y in kbTop..height) return DragMode.EDGE_RIGHT
-        }
 
         // bottom band (inside the card) -> bottom margin (drag up = more space below)
         if (y in (kbBottom - grabPx)..kbBottom &&
@@ -533,14 +487,6 @@ class KeyboardTuneOverlay(
                 val ratio = ((newGap * 100 / startBaseWidthPx).roundToInt()).coerceIn(0, 60)
                 splitRatioPref(startLandscape).setValue(ratio)
             }
-            DragMode.EDGE_LEFT -> {
-                val newPx = (startEdgePx + totalDx).coerceIn(0f, 50f * density)
-                keyboardPrefs.edgeGuardWidth.setValue((newPx / density).roundToInt().coerceIn(0, 50))
-            }
-            DragMode.EDGE_RIGHT -> {
-                val newPx = (startEdgePx - totalDx).coerceIn(0f, 50f * density)
-                keyboardPrefs.edgeGuardWidth.setValue((newPx / density).roundToInt().coerceIn(0, 50))
-            }
             else -> return
         }
         syncBox()
@@ -554,8 +500,6 @@ class KeyboardTuneOverlay(
                 leftCard.setActive(active)
                 rightCard.setActive(active)
             }
-            DragMode.EDGE_LEFT -> leftEdgeCard.setActive(active)
-            DragMode.EDGE_RIGHT -> rightEdgeCard.setActive(active)
             else -> {}
         }
     }
