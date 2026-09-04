@@ -192,7 +192,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         val swipeSymbolDirection = enumList(
             R.string.swipe_symbol_behavior,
             "swipe_symbol_behavior",
-            SwipeSymbolDirection.Down
+            SwipeSymbolDirection.Up
         )
         val longPressDelay = int(
             R.string.keyboard_long_press_delay,
@@ -266,10 +266,10 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                 R.string.keyboard_side_padding,
                 R.string.portrait,
                 "keyboard_side_padding",
-                0,
+                5,
                 R.string.landscape,
                 "keyboard_side_padding_landscape",
-                0,
+                17,
                 0,
                 300,
                 "dp"
@@ -286,10 +286,10 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                 R.string.keyboard_bottom_padding,
                 R.string.portrait,
                 "keyboard_bottom_padding",
-                0,
+                22,
                 R.string.landscape,
                 "keyboard_bottom_padding_landscape",
-                0,
+                8,
                 0,
                 100,
                 "dp"
@@ -297,17 +297,6 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             keyboardBottomPadding = primary
             keyboardBottomPaddingLandscape = secondary
         }
-
-        val edgeGuardEnabled =
-            switch(R.string.edge_guard_enabled, "edge_guard_enabled", true)
-        val edgeGuardWidth = int(
-            R.string.edge_guard_width,
-            "edge_guard_width",
-            30,
-            8,
-            50,
-            "dp"
-        ) { edgeGuardEnabled.getValue() }
 
         val horizontalCandidateStyle = enumList(
             R.string.horizontal_candidate_style,
@@ -377,8 +366,6 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                     keyboardSidePaddingLandscape.key,
                     keyboardBottomPadding.key,
                     keyboardBottomPaddingLandscape.key,
-                    edgeGuardEnabled.key,
-                    edgeGuardWidth.key,
                 )),
                 SubGroup(R.string.group_split_keyboard, listOf(
                     splitKeyboard.key,

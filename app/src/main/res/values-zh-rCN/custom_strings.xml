@@ -55,10 +55,6 @@
     <string name="search_settings">搜索设置</string>
     <string name="search_no_results">没有找到“%1$s”相关设置</string>
     <string name="search_hint">按名称搜索设置</string>
-    <!-- Custom: landscape edge guard -->
-    <string name="edge_guard_enabled">横屏边缘防误触</string>
-    <string name="edge_guard_width">边缘防误触宽度</string>
-
     <!-- Custom: accessibility labels -->
     <string name="back">返回</string>
     <string name="help">帮助</string>

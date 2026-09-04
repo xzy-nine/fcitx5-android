@@ -145,8 +145,6 @@ class InputView(
     private val keyboardSidePaddingLandscape = keyboardPrefs.keyboardSidePaddingLandscape
     private val keyboardBottomPadding = keyboardPrefs.keyboardBottomPadding
     private val keyboardBottomPaddingLandscape = keyboardPrefs.keyboardBottomPaddingLandscape
-    private val edgeGuardEnabled = keyboardPrefs.edgeGuardEnabled
-    private val edgeGuardWidth = keyboardPrefs.edgeGuardWidth
 
     private val advancedPrefs = AppPrefs.getInstance().advanced
     private val keyboardHeightPercentBase = advancedPrefs.keyboardHeightPercentBase
@@ -161,8 +159,6 @@ class InputView(
         keyboardBottomPadding,
         keyboardBottomPaddingLandscape,
         keyboardHeightPercentBase,
-        edgeGuardEnabled,
-        edgeGuardWidth,
     )
 
     private val keyboardTuneOverlay by lazy {
@@ -227,7 +223,6 @@ class InputView(
     private val onKeyboardSizeChangeListener = ManagedPreferenceProvider.OnChangeListener { key ->
         if (keyboardSizePrefs.any { it.key == key }) {
             updateKeyboardSize()
-            updateEdgeGuard()
         }
     }
 
@@ -304,7 +299,6 @@ class InputView(
         })
 
         updateKeyboardSize()
-        updateEdgeGuard()
 
         add(preedit.ui.root, lParams(matchParent, wrapContent) {
             above(keyboardView)
@@ -364,19 +358,6 @@ class InputView(
         kawaiiBar.view.setPadding(sidePadding, 0, sidePadding, 0)
     }
 
-    private fun updateEdgeGuard() {
-        val kv = keyboardView
-        if (kv !is androidx.constraintlayout.widget.ConstraintLayout) return
-        val isLandscape =
-            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        LandscapeEdgeGuard.update(
-            keyboardView = kv,
-            topAnchor = kawaiiBar.view,
-            guardWidthDp = edgeGuardWidth.getValue(),
-            active = isLandscape && edgeGuardEnabled.getValue() && edgeGuardWidth.getValue() > 0
-        )
-    }
-
     // Custom: visual keyboard tuning overlay entry points
     fun showKeyboardTune() {
         keyboardTuneOverlay.show()
@@ -430,11 +411,6 @@ class InputView(
             bottomMargin = getNavBarBottomInset(insets)
         }
         return insets
-    }
-
-    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
-        super.onConfigurationChanged(newConfig)
-        updateEdgeGuard()
     }
 
     /**
