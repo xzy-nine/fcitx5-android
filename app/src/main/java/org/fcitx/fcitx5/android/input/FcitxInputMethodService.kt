@@ -38,6 +38,13 @@ import androidx.autofill.inline.common.ImageViewStyle
 import androidx.autofill.inline.common.TextViewStyle
 import androidx.autofill.inline.common.ViewStyle
 import androidx.autofill.inline.v1.InlineSuggestionUi
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CoroutineStart
@@ -104,6 +111,12 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private var inputView: InputView? = null
     private var candidatesView: CandidatesView? = null
 
+    // Compose host state: drives (re)composition of the InputView embedded via AndroidView.
+    // `themeState` mirrors the active theme; `recreateNonce` forces a full View rebuild on
+    // pref changes. Both are read inside the Compose tree, so writing them triggers recomposition.
+    private val themeState by lazy { mutableStateOf(ThemeManager.activeTheme) }
+    private val recreateNonce by lazy { mutableStateOf(0) }
+
     private val navbarMgr = NavigationBarManager()
     private val inputDeviceMgr = InputDeviceManager { isVirtualKeyboard ->
         postFcitxJob {
@@ -149,12 +162,40 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         prefs.advanced.ignoreSystemWindowInsets,
     )
 
-    private fun replaceInputView(theme: Theme): InputView {
-        val newInputView = InputView(this, fcitx, theme)
-        setInputView(newInputView)
-        inputDeviceMgr.setInputView(newInputView)
-        inputView = newInputView
-        return newInputView
+    /**
+     * Builds the IME input view as a Compose host: a [ComposeView] root whose content embeds the
+     * existing [InputView] (a traditional Android View) via [AndroidView]. The View implementation
+     * is left untouched; wrapping it this way only establishes a Compose root so the IME can be
+     * progressively migrated to Compose later.
+     *
+     * Theme changes and pref-driven rebuilds are handled by updating [themeState]/[recreateNonce],
+     * which re-runs the [key] block and recreates the [InputView] — equivalent to the old
+     * `replaceInputView` behaviour, but without manually calling the IMS `setInputView`.
+     */
+    private fun createComposeInputView(): View {
+        val composeView = ComposeView(this).apply {
+            setContent {
+                Box(Modifier.fillMaxSize()) {
+                    key(themeState.value, recreateNonce.value) {
+                        AndroidView(
+                            factory = { _ ->
+                                InputView(this@FcitxInputMethodService, fcitx, themeState.value)
+                                    .also {
+                                        inputView = it
+                                        inputDeviceMgr.setInputView(it)
+                                    }
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                            onRelease = { view ->
+                                if (inputView === view) inputView = null
+                                inputDeviceMgr.clearInputView(view)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+        return composeView
     }
 
     private fun replaceCandidateView(theme: Theme): CandidatesView {
@@ -170,13 +211,13 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     private fun replaceInputViews(theme: Theme) {
         navbarMgr.evaluate(window.window!!, inputDeviceMgr.isVirtualKeyboard)
-        replaceInputView(theme)
+        themeState.value = theme
         replaceCandidateView(theme)
     }
 
     @Keep
     private val recreateInputViewListener = ManagedPreference.OnChangeListener<Any> { _, _ ->
-        replaceInputView(ThemeManager.activeTheme)
+        recreateNonce.value++
     }
 
     @Keep
@@ -579,9 +620,16 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onCreateInputView(): View? {
-        replaceInputViews(ThemeManager.activeTheme)
-        // We will call `setInputView` by ourselves. This is fine.
-        return null
+        navbarMgr.evaluate(window.window!!, inputDeviceMgr.isVirtualKeyboard)
+        // `themeState` is lazily initialized, so it may still hold a theme from before the very
+        // first composition. Read the active theme once and make both sides (Compose InputView
+        // and the View-based CandidatesView) agree on it.
+        val theme = ThemeManager.activeTheme
+        themeState.value = theme
+        replaceCandidateView(theme)
+        // Return a ComposeView root that embeds the existing InputView via AndroidView.
+        // The framework calls `setInputView(composeView)` for us afterwards.
+        return createComposeInputView()
     }
 
     override fun setInputView(view: View) {
