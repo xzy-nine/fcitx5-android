@@ -61,6 +61,28 @@ object DictCollector {
         return result
     }
 
+    /**
+     * 纯函数：由词库文件相对路径推导需要写入 zip 的目录条目（不含尾斜杠）。
+     *
+     * 结果包含 [rootDirs] 并按字典序去重：zip 不允许重复条目，而根条目
+     * （external/data）同时也会由中间目录推导产生，必须在这里一并去重。
+     */
+    fun dirEntriesFor(
+        relativePaths: Iterable<String>,
+        rootDirs: Iterable<String> = listOf("external", "external/$DATA_DIR_NAME")
+    ): List<String> {
+        val result = sortedSetOf<String>()
+        rootDirs.forEach { result.add(it.trimEnd('/')) }
+        relativePaths.forEach { rel ->
+            var cur = rel.substringBeforeLast('/', "")
+            while (cur.isNotEmpty()) {
+                result.add("external/${cur.trimEnd('/')}")
+                cur = cur.substringBeforeLast('/', "")
+            }
+        }
+        return result.toList()
+    }
+
     /** 计算词库清单指纹：路径+大小+修改时间排序后做 SHA-256 摘要。 */
     fun fingerprint(entries: List<DictEntry>): String {
         val sb = StringBuilder()

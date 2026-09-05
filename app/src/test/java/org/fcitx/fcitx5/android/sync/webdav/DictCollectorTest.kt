@@ -77,6 +77,41 @@ class DictCollectorTest {
     }
 
     @Test
+    fun dirEntriesAreUniqueAndIncludeRoots() {
+        val paths = listOf(
+            "data/pinyin/dictionaries/a.dict",
+            "data/table/b.dict",
+            "data/c.dict"
+        )
+        val dirs = DictCollector.dirEntriesFor(paths)
+
+        // external/data 既是根条目，也会由中间目录推导产生，必须只出现一次
+        assertEquals("目录条目必须去重", dirs.toSet().size, dirs.size)
+        assertEquals("external/data 只能出现一次", 1, dirs.count { it == "external/data" })
+        assertTrue(
+            "必须包含各级目录",
+            dirs.containsAll(
+                listOf(
+                    "external",
+                    "external/data",
+                    "external/data/pinyin",
+                    "external/data/pinyin/dictionaries",
+                    "external/data/table"
+                )
+            )
+        )
+        assertFalse("文件不能作为目录条目", dirs.contains("external/data/c.dict"))
+    }
+
+    @Test
+    fun dirEntriesOfEmptyListAreRootsOnly() {
+        assertEquals(
+            listOf("external", "external/data"),
+            DictCollector.dirEntriesFor(emptyList())
+        )
+    }
+
+    @Test
     fun fingerprintSortsByRelativePath() {
         val entries = listOf(
             DictEntry("data/b/1", 2L, 10L),

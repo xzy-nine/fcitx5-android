@@ -84,27 +84,10 @@ object BackupZips {
         }
     }
 
-    /** 词库 zip 用：只写 data 下用户词库子树。 */
+    /** 词库 zip 用：只写 data 下用户词库子树。目录条目统一去重，避免 duplicate entry。 */
     private fun ZipOutputStream.zipDictTree(dataDir: File) {
         val entries = DictCollector.listSyncable(dataDir)
-        addDirEntry("external")
-        addDirEntry("external/$DATA_DIR_NAME")
-        // 中间目录条目（去重排序），避免目录缺失
-        entries
-            .map { it.relativePath }
-            .flatMap { rel ->
-                val parent = rel.substringBeforeLast('/', "")
-                if (parent.isEmpty()) emptyList()
-                else buildList {
-                    var cur = parent
-                    while (cur.isNotEmpty()) {
-                        add("external/$cur")
-                        cur = cur.substringBeforeLast('/', "")
-                    }
-                }
-            }
-            .toSortedSet()
-            .forEach { addDirEntry(it) }
+        DictCollector.dirEntriesFor(entries.map { it.relativePath }).forEach { addDirEntry(it) }
         entries.sortedBy { it.relativePath }.forEach { e ->
             putNextEntry(ZipEntry("external/${e.relativePath}"))
             File(externalDir, e.relativePath).inputStream().use { it.copyTo(this) }
