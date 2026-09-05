@@ -135,6 +135,20 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     private var capabilityFlags = CapabilityFlags.DefaultFlags
 
+    /**
+     * The ongoing input session, cached so that a recreated [InputView] (the Compose [key] remount
+     * triggered by a theme change or a recreate-pref) can be initialized with the very same state
+     * instead of starting blank — [InputView.startInput] is what feeds EditorInfo and
+     * [capabilityFlags] to the keyboard components and the return key drawable, and it is only
+     * dispatched from [onStartInputView].
+     *
+     * Cleared in [onFinishInputView], so a recreation after the session ended cannot replay a
+     * stale one. Only set when [onStartInputView] actually dispatched it to the live InputView,
+     * which keeps hardware-keyboard sessions (where InputView stays hidden) untouched.
+     */
+    private var currentEditorInfo: EditorInfo? = null
+    private var currentRestarting = false
+
     private val selection = CursorTracker()
 
     val currentInputSelection: CursorRange
@@ -183,6 +197,13 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                                     .also {
                                         inputView = it
                                         inputDeviceMgr.setInputView(it)
+                                        // A recreated InputView is blank: [InputView.startInput]
+                                        // only ever runs from onStartInputView, so replay the
+                                        // ongoing session here to feed EditorInfo/capFlags to the
+                                        // keyboard components and to the return key drawable.
+                                        currentEditorInfo?.let { info ->
+                                            it.startInput(info, capabilityFlags, currentRestarting)
+                                        }
                                     }
                             },
                             modifier = Modifier.fillMaxSize(),
@@ -822,6 +843,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         if (inputDeviceMgr.evaluateOnStartInputView(info, this)) {
             // because onStartInputView will always be called after onStartInput,
             // editorInfo and capFlags should be up-to-date
+            currentEditorInfo = info
+            currentRestarting = restarting
             inputView?.startInput(info, capabilityFlags, restarting)
         } else {
             if (currentInputConnection?.monitorCursorAnchor() != true) {
@@ -1108,6 +1131,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         Timber.d("onFinishInputView: finishingInput=$finishingInput")
+        // the session is over — a later InputView recreation must not replay it
+        currentEditorInfo = null
+        currentRestarting = false
         decorLocationUpdated = false
         inputDeviceMgr.onFinishInputView()
         currentInputConnection?.apply {
