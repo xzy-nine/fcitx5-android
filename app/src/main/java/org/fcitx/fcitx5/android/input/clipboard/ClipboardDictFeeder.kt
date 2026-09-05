@@ -9,6 +9,7 @@ import com.huaban.analysis.jieba.WordDictionary
 import org.fcitx.fcitx5.android.data.pinyin.CustomPhraseManager
 import org.fcitx.fcitx5.android.data.pinyin.PinyinDictManager
 import org.fcitx.fcitx5.android.data.pinyin.dict.PinyinDictionary
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.utils.appContext
 import java.io.File
 import java.nio.charset.Charset
@@ -65,6 +66,7 @@ object ClipboardDictFeeder {
             val dir = File(appContext.cacheDir, CACHE_SUBDIR)
             File(dir, FINGERPRINT_NAME).delete()
         }
+        AutoDictSync.notifyDictChanged()
     }
 
     private fun doFeed() {

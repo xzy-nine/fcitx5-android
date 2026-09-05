@@ -37,6 +37,7 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.RawConfigHostScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.SettingsSearchDialog
 import org.fcitx.fcitx5.android.ui.main.compose.screens.TableInputMethodsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.ThemeScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.WebDavSyncScreen
 import org.fcitx.fcitx5.android.ui.main.compose.settings.ManagedPrefsScreen
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.utils.parcelable
@@ -251,8 +252,14 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                             category = route.category.provider(),
                             onBack = { backStack.removeLastOrNull() },
                             highlightKey = route.highlightKey,
+                            onWebDavSync = if (route.category == PrefCategory.Advanced) {
+                                { navigateTo(AppRoute.WebDavSync) }
+                            } else null,
                         )
                     }
+                }
+                entry<AppRoute.WebDavSync> {
+                    WebDavSyncScreen(onBack = { backStack.removeLastOrNull() })
                 }
                 entry<AppRoute.RawConfigHost> { route ->
                     RawConfigHostScreen(

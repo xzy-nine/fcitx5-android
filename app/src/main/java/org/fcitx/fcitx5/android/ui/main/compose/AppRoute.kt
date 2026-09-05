@@ -32,6 +32,9 @@ sealed interface AppRoute : NavKey {
     data object Developer : AppRoute
 
     @Serializable
+    data object WebDavSync : AppRoute
+
+    @Serializable
     data class Legacy(val target: LegacyTarget) : AppRoute
 
     @Serializable

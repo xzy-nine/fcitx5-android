@@ -78,4 +78,52 @@
     <string name="tune_confirm">Done</string>
     <string name="tune_cancel">Cancel</string>
 
+    <!-- Custom: WebDAV cloud sync -->
+    <string name="webdav_settings_title">WebDAV Cloud Sync</string>
+    <string name="webdav_section_prefs">Preferences backup</string>
+    <string name="webdav_section_dict">Dictionary sync</string>
+    <string name="webdav_server_login">WebDAV server login</string>
+    <string name="webdav_login_dialog_title">WebDAV login</string>
+    <string name="webdav_login_summary_empty">Not configured yet</string>
+    <string name="webdav_server_url">Server URL</string>
+    <string name="webdav_username">Username</string>
+    <string name="webdav_password">Password</string>
+    <string name="webdav_device_name">Device name</string>
+    <string name="webdav_test_connection">Test connection</string>
+    <string name="webdav_test_summary">Check server address, account and network</string>
+    <string name="webdav_auto_dict_enable">Enable automatic dictionary sync</string>
+    <string name="webdav_auto_dict_summary">Only dictionaries sync automatically while this app is running: upload after dictionary changes, download when the cloud copy is newer.</string>
+    <string name="webdav_auto_dict_on">Automatic dictionary sync enabled</string>
+    <string name="webdav_upload_prefs">Upload preferences backup</string>
+    <string name="webdav_upload_prefs_summary">Date and device named file, skipped when unchanged</string>
+    <string name="webdav_download_prefs">Restore preferences from cloud</string>
+    <string name="webdav_download_prefs_summary">Choose a preferences backup to import</string>
+    <string name="webdav_upload_dict">Upload dictionary backup</string>
+    <string name="webdav_upload_dict_summary">Single fixed-name file, skipped when unchanged</string>
+    <string name="webdav_download_dict">Download and restore dictionary</string>
+    <string name="webdav_download_dict_summary">Overwrite local dictionaries with the cloud copy</string>
+    <string name="webdav_last_sync">Last sync</string>
+    <string name="webdav_busy">Working…</string>
+    <string name="webdav_need_server">Please fill in the server URL and username first</string>
+    <string name="webdav_no_prefs_remote">No preferences backup found on the cloud folder</string>
+    <string name="webdav_pick_prefs">Choose a preferences backup</string>
+    <string name="webdav_restore_title">Restore preferences</string>
+    <string name="webdav_restore_msg">This stops the input method and restarts the app afterwards. Continue?</string>
+    <string name="webdav_restore_dict_title">Restore dictionary</string>
+    <string name="webdav_restore_dict_msg">This overwrites current local dictionaries with the cloud copy and restarts the engine. Continue?</string>
+    <string name="webdav_restoring">Restoring…</string>
+    <string name="webdav_uploading_prefs">Uploading preferences…</string>
+    <string name="webdav_uploading_dict">Uploading dictionaries…</string>
+    <string name="webdav_loading_list">Loading cloud list…</string>
+    <string name="webdav_no_dict_remote">No dictionary backup found on the cloud folder</string>
+    <string name="webdav_dict_restored">Dictionary restored</string>
+    <string name="webdav_prefs_restored">Preferences restored</string>
+    <string name="webdav_restore_failed">Operation failed</string>
+    <!-- Custom: advanced page data management -->
+    <string name="data_management">Data</string>
+    <string name="data_browse_summary">Open the app data folder in DocumentsUI</string>
+    <string name="data_export_summary">Back up settings and dictionaries to a zip file</string>
+    <string name="data_import_summary">Restore from a previously exported zip file</string>
+    <string name="webdav_advanced_summary">Back up and sync dictionaries and preferences to a WebDAV server</string>
+
 </resources>

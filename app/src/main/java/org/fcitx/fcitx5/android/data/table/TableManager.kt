@@ -7,6 +7,7 @@ package org.fcitx.fcitx5.android.data.table
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.table.dict.Dictionary
 import org.fcitx.fcitx5.android.data.table.dict.LibIMEDictionary
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.utils.appContext
 import org.fcitx.fcitx5.android.utils.errorRuntime
 import org.fcitx.fcitx5.android.utils.extract
@@ -90,6 +91,7 @@ object TableManager {
             errorRuntime(R.string.invalid_table_dict, it.message)
         }
         im.save()
+        AutoDictSync.notifyDictChanged()
         return im
     }
 

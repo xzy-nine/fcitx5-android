@@ -75,4 +75,52 @@
     <string name="tune_confirm">完成</string>
     <string name="tune_cancel">取消</string>
 
+    <!-- Custom: WebDAV 云端同步 -->
+    <string name="webdav_settings_title">WebDAV 云端同步</string>
+    <string name="webdav_section_prefs">偏好设置备份</string>
+    <string name="webdav_section_dict">词库同步</string>
+    <string name="webdav_server_login">WebDAV 服务器登录</string>
+    <string name="webdav_login_dialog_title">WebDAV 登录</string>
+    <string name="webdav_login_summary_empty">尚未配置服务器登录信息</string>
+    <string name="webdav_server_url">服务器地址</string>
+    <string name="webdav_username">用户名</string>
+    <string name="webdav_password">密码</string>
+    <string name="webdav_device_name">设备名</string>
+    <string name="webdav_test_connection">测试连接</string>
+    <string name="webdav_test_summary">检查服务器地址、账号与网络</string>
+    <string name="webdav_auto_dict_enable">启用词库自动同步</string>
+    <string name="webdav_auto_dict_summary">仅词库在应用进程存活时自动同步：词库变更后自动上传，云端更新时自动下载。</string>
+    <string name="webdav_auto_dict_on">已启用词库自动同步</string>
+    <string name="webdav_upload_prefs">上传偏好设置备份</string>
+    <string name="webdav_upload_prefs_summary">按日期+设备名命名，内容未变化时自动跳过</string>
+    <string name="webdav_download_prefs">从云端恢复偏好设置</string>
+    <string name="webdav_download_prefs_summary">选择一份云端偏好备份进行导入</string>
+    <string name="webdav_upload_dict">上传词库备份</string>
+    <string name="webdav_upload_dict_summary">固定名单文件，内容未变化时自动跳过</string>
+    <string name="webdav_download_dict">下载并恢复词库</string>
+    <string name="webdav_download_dict_summary">用云端词库覆盖本地词库</string>
+    <string name="webdav_last_sync">上次同步</string>
+    <string name="webdav_busy">正在处理…</string>
+    <string name="webdav_need_server">请先填写服务器地址与用户名</string>
+    <string name="webdav_no_prefs_remote">云端目录未找到偏好备份</string>
+    <string name="webdav_pick_prefs">选择一份偏好备份</string>
+    <string name="webdav_restore_title">恢复偏好设置</string>
+    <string name="webdav_restore_msg">恢复会停止输入法并在之后重启应用，是否继续？</string>
+    <string name="webdav_restore_dict_title">恢复词库</string>
+    <string name="webdav_restore_dict_msg">将用云端词库覆盖当前本地词库并重启引擎，是否继续？</string>
+    <string name="webdav_restoring">正在恢复…</string>
+    <string name="webdav_uploading_prefs">正在上传偏好设置…</string>
+    <string name="webdav_uploading_dict">正在上传词库…</string>
+    <string name="webdav_loading_list">正在加载云端列表…</string>
+    <string name="webdav_no_dict_remote">云端目录未找到词库备份</string>
+    <string name="webdav_dict_restored">词库已恢复</string>
+    <string name="webdav_prefs_restored">偏好设置已恢复</string>
+    <string name="webdav_restore_failed">操作失败</string>
+    <!-- Custom: 高级页数据管理 -->
+    <string name="data_management">数据</string>
+    <string name="data_browse_summary">在系统文件管理中打开应用数据目录</string>
+    <string name="data_export_summary">将设置与词库备份为 zip 文件</string>
+    <string name="data_import_summary">从先前导出的 zip 文件恢复</string>
+    <string name="webdav_advanced_summary">把词库与偏好设置备份/同步到 WebDAV 服务器</string>
+
 </resources>
