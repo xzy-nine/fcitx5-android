@@ -55,10 +55,6 @@
     <string name="search_settings">搜索设置</string>
     <string name="search_no_results">没有找到“%1$s”相关设置</string>
     <string name="search_hint">按名称搜索设置</string>
-    <!-- Custom: landscape edge guard -->
-    <string name="edge_guard_enabled">横屏边缘防误触</string>
-    <string name="edge_guard_width">边缘防误触宽度</string>
-
     <!-- Custom: accessibility labels -->
     <string name="back">返回</string>
     <string name="help">帮助</string>
@@ -70,5 +66,13 @@
 
     <!-- Custom: number keyboard split history symbols -->
     <string name="recent_symbols_empty_hint">暂无历史符号</string>
+
+    <!-- Custom: 键盘可视化调校浮层 -->
+    <string name="keyboard_tune">调校键盘</string>
+    <string name="keyboard_tune_height">高度</string>
+    <string name="keyboard_tune_split">分离</string>
+    <string name="tune_reset">重置</string>
+    <string name="tune_confirm">完成</string>
+    <string name="tune_cancel">取消</string>
 
 </resources>

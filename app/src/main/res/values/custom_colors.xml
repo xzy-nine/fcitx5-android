@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="highlight_background">#E3F2FD</color>
+    <!-- Custom: keyboard visual tuning overlay -->
+    <color name="tune_accent">#3A7BFF</color>
 </resources>

@@ -12,6 +12,7 @@ import android.text.method.DigitsKeyListener
 import androidx.annotation.StringRes
 import androidx.preference.EditTextPreference
 import java.util.Locale
+import kotlin.math.roundToInt
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceUi
 
 class EditTextFloatPreference(context: Context) : EditTextPreference(context) {
@@ -20,6 +21,8 @@ class EditTextFloatPreference(context: Context) : EditTextPreference(context) {
     var min: Float = -Float.MAX_VALUE
     var max: Float = Float.MAX_VALUE
     var unit: String = ""
+    var step: Float = 0.1f
+    var decimals: Int = 1
 
     private var default: Float = 0f
 
@@ -34,7 +37,7 @@ class EditTextFloatPreference(context: Context) : EditTextPreference(context) {
         val value = defaultValue as? Float ?: return
         default = value
         // the underlying Preference is an "EditText", we must use String for it's defaultValue
-        super.setDefaultValue(value.toString())
+        super.setDefaultValue(formatValue(value))
     }
 
     override fun onGetDefaultValue(a: TypedArray, index: Int): Any {
@@ -45,8 +48,12 @@ class EditTextFloatPreference(context: Context) : EditTextPreference(context) {
         value = getPersistedFloat(default)
     }
 
+    private fun formatValue(v: Float): String =
+        if (decimals <= 0) v.roundToInt().toString()
+        else String.format(Locale.US, "%.${decimals}f", v)
+
     private fun textForValue(): String {
-        return getPersistedFloat(value).toString()
+        return formatValue(getPersistedFloat(value))
     }
 
     init {
@@ -91,6 +98,8 @@ class EditTextFloatUi(
     val min: Float,
     val max: Float,
     val unit: String = "",
+    val step: Float = 0.1f,
+    val decimals: Int = 1,
     enableUiOn: (() -> Boolean)? = null
 ) : ManagedPreferenceUi<EditTextPreference>(key, enableUiOn) {
     override fun createUi(context: Context) = EditTextFloatPreference(context).apply {
@@ -98,11 +107,13 @@ class EditTextFloatUi(
         isIconSpaceReserved = false
         isSingleLineTitle = false
         summaryProvider = EditTextFloatPreference.SimpleSummaryProvider
-        setDefaultValue(this@EditTextFloatUi.defaultValue)
-        setTitle(this@EditTextFloatUi.title)
-        setDialogTitle(this@EditTextFloatUi.title)
         min = this@EditTextFloatUi.min
         max = this@EditTextFloatUi.max
         unit = this@EditTextFloatUi.unit
+        step = this@EditTextFloatUi.step
+        decimals = this@EditTextFloatUi.decimals
+        setDefaultValue(this@EditTextFloatUi.defaultValue)
+        setTitle(this@EditTextFloatUi.title)
+        setDialogTitle(this@EditTextFloatUi.title)
     }
 }

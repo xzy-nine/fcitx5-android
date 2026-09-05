@@ -53,6 +53,10 @@ class ButtonsBarUi(override val ctx: Context, private val theme: Theme) : Ui {
         contentDescription = ctx.getString(R.string.status_area)
     }
 
+    val tuneButton = toolButton(R.drawable.ic_baseline_tune_24).apply {
+        contentDescription = ctx.getString(R.string.keyboard_tune)
+    }
+
     fun setSplitKeyboardEnabled(enabled: Boolean) {
         splitKeyboardButton.setIcon(
             if (enabled) R.drawable.ic_baseline_keyboard_24 else R.drawable.ic_split_keyboard

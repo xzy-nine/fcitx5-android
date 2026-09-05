@@ -58,6 +58,7 @@ import org.fcitx.fcitx5.android.input.clipboard.ClipboardWindow
 import org.fcitx.fcitx5.android.input.dependency.UniqueViewComponent
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
+import org.fcitx.fcitx5.android.input.dependency.inputView
 import org.fcitx.fcitx5.android.input.dependency.theme
 import org.fcitx.fcitx5.android.input.editing.TextEditingWindow
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
@@ -109,6 +110,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private val splitKeyboardPref = prefs.keyboard.splitKeyboard
     private val themePrefs = ThemeManager.prefs
     private val keyboardPrefs = prefs.keyboard
+    private val inputView by manager.inputView()
 
     private var clipboardTimeoutJob: Job? = null
 
@@ -330,6 +332,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
                 }
                 moreButton.setOnClickListener {
                     windowManager.attachWindow(StatusAreaWindow())
+                }
+                tuneButton.setOnClickListener {
+                    if (inputView.isKeyboardTuneShown()) inputView.hideKeyboardTune()
+                    else inputView.showKeyboardTune()
                 }
             }
             buttonsUiRef = buttonsUi

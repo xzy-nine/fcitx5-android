@@ -8,6 +8,7 @@ package org.fcitx.fcitx5.android.input
 import android.annotation.SuppressLint
 import android.content.res.Configuration
 import android.graphics.Point
+import android.graphics.Rect
 import android.os.Build
 import android.view.View
 import android.view.WindowInsets
@@ -16,6 +17,7 @@ import android.view.inputmethod.InlineSuggestionsResponse
 import android.widget.ImageView
 import androidx.annotation.Keep
 import androidx.annotation.RequiresApi
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.updateLayoutParams
 import org.fcitx.fcitx5.android.core.CapabilityFlags
 import org.fcitx.fcitx5.android.core.FcitxEvent
@@ -34,6 +36,7 @@ import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateC
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardHeightPercentBase.DisplayMetrics
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardHeightPercentBase.RealSize
+import org.fcitx.fcitx5.android.input.keyboard.KeyboardTuneOverlay
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
 import org.fcitx.fcitx5.android.input.picker.emojiPicker
 import org.fcitx.fcitx5.android.input.picker.emoticonPicker
@@ -142,8 +145,6 @@ class InputView(
     private val keyboardSidePaddingLandscape = keyboardPrefs.keyboardSidePaddingLandscape
     private val keyboardBottomPadding = keyboardPrefs.keyboardBottomPadding
     private val keyboardBottomPaddingLandscape = keyboardPrefs.keyboardBottomPaddingLandscape
-    private val edgeGuardEnabled = keyboardPrefs.edgeGuardEnabled
-    private val edgeGuardWidth = keyboardPrefs.edgeGuardWidth
 
     private val advancedPrefs = AppPrefs.getInstance().advanced
     private val keyboardHeightPercentBase = advancedPrefs.keyboardHeightPercentBase
@@ -158,9 +159,16 @@ class InputView(
         keyboardBottomPadding,
         keyboardBottomPaddingLandscape,
         keyboardHeightPercentBase,
-        edgeGuardEnabled,
-        edgeGuardWidth,
     )
+
+    private val keyboardTuneOverlay by lazy {
+        KeyboardTuneOverlay(
+            context,
+            theme,
+            keyboardPrefs,
+            onDismiss = { setKeyboardTuneBlur(false) }
+        ) { keyboardTuneMetrics() }
+    }
 
     private val keyboardHeightPx: Int
         get() {
@@ -215,7 +223,6 @@ class InputView(
     private val onKeyboardSizeChangeListener = ManagedPreferenceProvider.OnChangeListener { key ->
         if (keyboardSizePrefs.any { it.key == key }) {
             updateKeyboardSize()
-            updateEdgeGuard()
         }
     }
 
@@ -282,8 +289,16 @@ class InputView(
         // 为键盘区域添加顶部圆角裁剪效果
         keyboardView.applyTopRoundedCornerClip(dp(16).toFloat())
 
+        // Custom: 调校浮层挂在键盘主体内（match-constraint 填充 keyboardView），
+        // 这样它既不会撑高 InputView，也不会溢出到键盘之外。
+        keyboardView.add(keyboardTuneOverlay, ConstraintLayout.LayoutParams(matchParent, 0).apply {
+            topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+        })
+
         updateKeyboardSize()
-        updateEdgeGuard()
 
         add(preedit.ui.root, lParams(matchParent, wrapContent) {
             above(keyboardView)
@@ -343,29 +358,59 @@ class InputView(
         kawaiiBar.view.setPadding(sidePadding, 0, sidePadding, 0)
     }
 
-    private fun updateEdgeGuard() {
-        val kv = keyboardView
-        if (kv !is androidx.constraintlayout.widget.ConstraintLayout) return
-        val isLandscape =
-            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        LandscapeEdgeGuard.update(
-            keyboardView = kv,
-            topAnchor = kawaiiBar.view,
-            guardWidthDp = edgeGuardWidth.getValue(),
-            active = isLandscape && edgeGuardEnabled.getValue() && edgeGuardWidth.getValue() > 0
-        )
+    // Custom: visual keyboard tuning overlay entry points
+    fun showKeyboardTune() {
+        keyboardTuneOverlay.show()
+        setKeyboardTuneBlur(true)
     }
+
+    fun hideKeyboardTune() {
+        keyboardTuneOverlay.hide()
+        setKeyboardTuneBlur(false)
+    }
+
+    fun isKeyboardTuneShown(): Boolean = keyboardTuneOverlay.visibility == View.VISIBLE
+
+    @android.annotation.TargetApi(31)
+    private fun setKeyboardTuneBlur(enabled: Boolean) {
+        if (Build.VERSION.SDK_INT >= 31) {
+            val blur = if (enabled) {
+                android.graphics.RenderEffect.createBlurEffect(
+                    14f, 14f, android.graphics.Shader.TileMode.CLAMP
+                )
+            } else null
+            windowManager.view.setRenderEffect(blur)
+        }
+    }
+
+    private fun keyboardTuneMetrics() = KeyboardTuneOverlay.TuneMetrics(
+        isLandscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+        toolbarHeightPx = toolbarHeightPx,
+        // 实测键盘容器与底部留白的真实矩形（相对 keyboardView，即浮层坐标系）
+        keyboardRect = Rect(
+            windowManager.view.left,
+            windowManager.view.top,
+            windowManager.view.right,
+            windowManager.view.bottom
+        ),
+        bottomRect = Rect(
+            bottomPaddingSpace.left,
+            bottomPaddingSpace.top,
+            bottomPaddingSpace.right,
+            bottomPaddingSpace.bottom
+        ),
+        heightBasePx = run {
+            val pct = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
+                keyboardHeightPercentLandscape.getValue() else keyboardHeightPercent.getValue()
+            if (pct > 0) keyboardHeightPx * 100 / pct else resources.displayMetrics.heightPixels
+        }
+    )
 
     override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
         bottomPaddingSpace.updateLayoutParams<LayoutParams> {
             bottomMargin = getNavBarBottomInset(insets)
         }
         return insets
-    }
-
-    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
-        super.onConfigurationChanged(newConfig)
-        updateEdgeGuard()
     }
 
     /**
