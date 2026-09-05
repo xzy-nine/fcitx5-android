@@ -350,7 +350,6 @@ private fun ManagedPrefRow(
             // unbounded / huge ranges have no meaningful slider -> keep the edit dialog
             val hasRange = ui.max > ui.min && (ui.max.toDouble() - ui.min.toDouble()) <= 100.0
             if (hasRange) {
-                val step = if (ui.max - ui.min <= 20f) 0.1f else 1f
                 ExpandableNumberPreference(
                     title = stringResource(ui.title),
                     value = pref.getValue(),
@@ -360,8 +359,8 @@ private fun ManagedPrefRow(
                     },
                     min = ui.min,
                     max = ui.max,
-                    step = step,
-                    decimals = if (step < 1f) 1 else 0,
+                    step = ui.step,
+                    decimals = ui.decimals,
                     suffix = ui.unit,
                     enabled = ui.isEnabled(),
                 )

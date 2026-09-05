@@ -91,6 +91,8 @@ class EditTextFloatUi(
     val min: Float,
     val max: Float,
     val unit: String = "",
+    val step: Float = 0.1f,
+    val decimals: Int = 1,
     enableUiOn: (() -> Boolean)? = null
 ) : ManagedPreferenceUi<EditTextPreference>(key, enableUiOn) {
     override fun createUi(context: Context) = EditTextFloatPreference(context).apply {

@@ -189,7 +189,9 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                 1.5f,
                 1.0f,
                 4.0f,
-                "x"
+                "x",
+                step = 0.01f,
+                decimals = 2
             )
         }
         val swipeSymbolDirection = enumList(

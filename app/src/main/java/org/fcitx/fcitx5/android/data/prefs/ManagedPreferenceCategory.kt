@@ -120,11 +120,13 @@ abstract class ManagedPreferenceCategory(
         min: Float = -Float.MAX_VALUE,
         max: Float = Float.MAX_VALUE,
         unit: String = "",
+        step: Float = 0.1f,
+        decimals: Int = 1,
         enableUiOn: (() -> Boolean)? = null
     ): ManagedPreference.PFloat {
         val pref = ManagedPreference.PFloat(sharedPreferences, key, defaultValue)
         val ui = EditTextFloatUi(
-            title, key, defaultValue, min, max, unit, enableUiOn
+            title, key, defaultValue, min, max, unit, step, decimals, enableUiOn
         )
         pref.register()
         ui.registerUi()
