@@ -7,6 +7,8 @@ package org.fcitx.fcitx5.android.sync.webdav
 import github.xzynine.webdav.Authorization
 import github.xzynine.webdav.WebDav
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncConfig.Companion.CLOUD_DIR_NAME
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncConfig.Companion.DICT_FILE_NAME
@@ -135,33 +137,57 @@ object WebDavSyncEngine {
     fun prefsFileName(cfg: WebDavSyncConfig): String =
         "$PREFS_FILE_PREFIX$todayStr-${sanitizeFileNamePart(cfg.deviceName)}.zip"
 
+    /**
+     * 串行化所有读写同步状态的操作（手动与自动各一条链路），覆盖
+     * “读配置 → 网络传输 → 回写配置”全过程，避免并发下的读-改-写互相覆盖。
+     */
+    private val syncMutex = Mutex()
+
+    /** 以已持久化配置为准读取同步状态；读取失败时退回调用方传入的配置。 */
+    private fun persistedConfig(fallback: WebDavSyncConfig): WebDavSyncConfig =
+        runCatching { WebDavSyncConfig.load() }.getOrElse { fallback }
+
+    /**
+     * 重新读取已持久化配置，只合并本次操作变更的字段后原子写回，
+     * 避免用调用方传入的（可能缺少同步状态的）配置整体覆盖其它字段。
+     */
+    private fun commitConfig(
+        fallback: WebDavSyncConfig,
+        update: (WebDavSyncConfig) -> WebDavSyncConfig
+    ): Boolean = update(persistedConfig(fallback)).save().isSuccess
+
     /** 上传偏好 zip（同日同名且内容未变时跳过）。返回说明文案。 */
     suspend fun uploadPrefs(
         cfg: WebDavSyncConfig,
         onProgress: suspend (String) -> Unit = {}
     ): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val dirUrl = cloudDirUrl(cfg)
-            val name = prefsFileName(cfg)
-            val zipFile = File(tempDir, name)
-            onProgress("正在打包偏好设置…")
-            BackupZips.buildPrefsZip(zipFile).getOrThrow()
-            val digest = BackupZips.digest(zipFile)
-            if (cfg.lastPrefsUploadName == name && cfg.lastPrefsUploadDigest == digest) {
-                Result.success("偏好设置未发生变化，已跳过上传")
-            } else {
-                onProgress("正在上传 $name …")
-                uploadFile(cfg, dirUrl, name, zipFile)
-                cfg.copy(
-                    lastPrefsUploadName = name,
-                    lastPrefsUploadDigest = digest,
-                    lastSyncDescription = "偏好已上传：$name"
-                ).save()
-                Result.success("偏好设置已上传：$name")
+        syncMutex.withLock {
+            try {
+                val dirUrl = cloudDirUrl(cfg)
+                val name = prefsFileName(cfg)
+                val zipFile = File(tempDir, name)
+                onProgress("正在打包偏好设置…")
+                BackupZips.buildPrefsZip(zipFile).getOrThrow()
+                val digest = BackupZips.digest(zipFile)
+                val stored = persistedConfig(cfg)
+                if (stored.lastPrefsUploadName == name && stored.lastPrefsUploadDigest == digest) {
+                    Result.success("偏好设置未发生变化，已跳过上传")
+                } else {
+                    onProgress("正在上传 $name …")
+                    uploadFile(cfg, dirUrl, name, zipFile)
+                    commitConfig(stored) {
+                        it.copy(
+                            lastPrefsUploadName = name,
+                            lastPrefsUploadDigest = digest,
+                            lastSyncDescription = "偏好已上传：$name"
+                        )
+                    }
+                    Result.success("偏好设置已上传：$name")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "uploadPrefs failed: ${e.javaClass.simpleName}")
+                Result.failure(e)
             }
-        } catch (e: Exception) {
-            Timber.e(e, "uploadPrefs failed: ${e.javaClass.simpleName}")
-            Result.failure(e)
         }
     }
 
@@ -170,58 +196,92 @@ object WebDavSyncEngine {
         cfg: WebDavSyncConfig,
         onProgress: suspend (String) -> Unit = {}
     ): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val dirUrl = cloudDirUrl(cfg)
-            val zipFile = File(tempDir, DICT_FILE_NAME)
-            onProgress("正在打包词库…")
-            BackupZips.buildDictZip(zipFile).getOrThrow()
-            val digest = dictFingerprintOf(zipFile)
-            if (cfg.dictUploadFingerprint == digest) {
-                Result.success("词库未发生变化，已跳过上传")
-            } else {
-                onProgress("正在上传词库…")
-                uploadFile(cfg, dirUrl, DICT_FILE_NAME, zipFile)
-                // 记录上传后的远端 mtime，供自动下载方向“未变则跳过”使用
-                val remoteMtime = remoteEntryOrNull(cfg, dirUrl, DICT_FILE_NAME)?.lastModify ?: 0L
-                cfg.copy(
-                    dictUploadFingerprint = digest,
-                    dictRemoteMtime = remoteMtime,
-                    lastSyncDescription = "词库已上传：$todayStr"
-                ).save()
-                Result.success("词库已上传")
+        syncMutex.withLock {
+            try {
+                val dirUrl = cloudDirUrl(cfg)
+                val zipFile = File(tempDir, DICT_FILE_NAME)
+                onProgress("正在打包词库…")
+                BackupZips.buildDictZip(zipFile).getOrThrow()
+                val digest = dictFingerprintOf(zipFile)
+                val stored = persistedConfig(cfg)
+                if (stored.dictUploadFingerprint == digest) {
+                    Result.success("词库未发生变化，已跳过上传")
+                } else {
+                    onProgress("正在上传词库…")
+                    uploadFile(cfg, dirUrl, DICT_FILE_NAME, zipFile)
+                    // 记录上传后的远端 mtime，供自动下载方向“未变则跳过”使用
+                    val remoteMtime = remoteEntryOrNull(cfg, dirUrl, DICT_FILE_NAME)?.lastModify ?: 0L
+                    commitConfig(stored) {
+                        it.copy(
+                            dictUploadFingerprint = digest,
+                            dictRemoteMtime = remoteMtime,
+                            lastSyncDescription = "词库已上传：$todayStr"
+                        )
+                    }
+                    Result.success("词库已上传")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "uploadDict failed: ${e.javaClass.simpleName}")
+                Result.failure(e)
             }
-        } catch (e: Exception) {
-            Timber.e(e, "uploadDict failed: ${e.javaClass.simpleName}")
-            Result.failure(e)
         }
     }
 
-    /** 下载词库 zip 到 [dest]（远端 mtime 未变则跳过）。返回说明文案。 */
+    /** 下载词库的结果：[message] 等于 [DICT_DOWNLOADED_MSG] 时才需要恢复并调用 [commitDictDownloaded]。 */
+    data class DictDownloadResult(
+        val message: String,
+        /** 本次下载到的远端文件 mtime（未下载时为 0） */
+        val remoteMtime: Long
+    )
+
+    /**
+     * 下载词库 zip 到 [dest]（远端 mtime 未变则跳过）。
+     *
+     * 注意：此处不写 [WebDavSyncConfig.dictRemoteMtime]，只有恢复导入成功后才由
+     * [commitDictDownloaded] 提交，保证失败时保留旧状态、下次自动同步能重试。
+     */
     suspend fun downloadDictIfNewer(
         cfg: WebDavSyncConfig,
         dest: File,
         onProgress: suspend (String) -> Unit = {}
-    ): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val dirUrl = cloudDirUrl(cfg)
-            val remote = remoteEntryOrNull(cfg, dirUrl, DICT_FILE_NAME)
-                ?: throw IllegalStateException("云端不存在词库备份：$DICT_FILE_NAME")
-            if (remote.lastModify == cfg.dictRemoteMtime) {
-                Result.success("词库云端无更新，已跳过下载")
-            } else {
-                onProgress("正在下载词库备份…")
-                webDav(cfg, remote.url).downloadTo(dest.absolutePath, replaceExisting = true)
-                cfg.copy(
-                    dictRemoteMtime = remote.lastModify,
-                    lastSyncDescription = "词库已从云端下载：$todayStr"
-                ).save()
-                Result.success(DICT_DOWNLOADED_MSG)
+    ): Result<DictDownloadResult> = withContext(Dispatchers.IO) {
+        syncMutex.withLock {
+            try {
+                val dirUrl = cloudDirUrl(cfg)
+                val remote = remoteEntryOrNull(cfg, dirUrl, DICT_FILE_NAME)
+                    ?: throw IllegalStateException("云端不存在词库备份：$DICT_FILE_NAME")
+                val stored = persistedConfig(cfg)
+                if (remote.lastModify == stored.dictRemoteMtime) {
+                    Result.success(
+                        DictDownloadResult("词库云端无更新，已跳过下载", remote.lastModify)
+                    )
+                } else {
+                    onProgress("正在下载词库备份…")
+                    webDav(cfg, remote.url).downloadTo(dest.absolutePath, replaceExisting = true)
+                    Result.success(DictDownloadResult(DICT_DOWNLOADED_MSG, remote.lastModify))
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "downloadDictIfNewer failed: ${e.javaClass.simpleName}")
+                Result.failure(e)
             }
-        } catch (e: Exception) {
-            Timber.e(e, "downloadDictIfNewer failed: ${e.javaClass.simpleName}")
-            Result.failure(e)
         }
     }
+
+    /** 词库 zip 恢复成功后提交远端 mtime，使后续自动同步跳过该文件。 */
+    suspend fun commitDictDownloaded(remoteMtime: Long): Boolean =
+        withContext(Dispatchers.IO) {
+            if (remoteMtime <= 0L) return@withContext false
+            syncMutex.withLock {
+                // 读不到已持久化配置时不写盘，避免丢失连接信息
+                runCatching { WebDavSyncConfig.load() }.getOrNull()
+                    ?.copy(
+                        dictRemoteMtime = remoteMtime,
+                        lastSyncDescription = "词库已从云端下载：$todayStr"
+                    )
+                    ?.save()
+                    ?.isSuccess == true
+            }
+        }
 
     /** 列出云端偏好 zip 列表（按名称倒序）。 */
     suspend fun listRemotePrefs(cfg: WebDavSyncConfig): List<RemoteEntry> =
@@ -241,5 +301,9 @@ object WebDavSyncEngine {
         webDav(cfg, entry.url).downloadTo(dest.absolutePath, replaceExisting = true)
     }
 
-    private fun dictFingerprintOf(dictZip: File): String = BackupZips.digest(dictZip)
+    /**
+     * 词库指纹：跳过 metadata.json 中的 exportTime 等易变元数据，
+     * 只摘要稳定的词库内容，保证内容未变时指纹不变（内容未变则跳过上传）。
+     */
+    private fun dictFingerprintOf(dictZip: File): String = BackupZips.dictContentDigest(dictZip)
 }

@@ -227,6 +227,9 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         mutableStateOf(initial.deviceName.ifBlank { WebDavSyncConfig.defaultDeviceName() })
     }
     var autoDict by remember { mutableStateOf(initial.dictAutoSync) }
+    // 已持久化的同步状态（指纹/远端 mtime/摘要）：界面保存配置时原样保留，
+    // 否则每次操作前的 save() 都会清掉引擎写入的“内容未变则跳过”凭据
+    var syncState by remember { mutableStateOf(initial) }
     var showServerDialog by remember { mutableStateOf(false) }
 
     var busy by remember { mutableStateOf(false) }
@@ -238,7 +241,8 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
     var confirmDict by remember { mutableStateOf(false) }
     var confirmPrefsEntry by remember { mutableStateOf<RemoteEntry?>(null) }
 
-    fun currentCfg() = WebDavSyncConfig(
+    /** 以 [syncState] 为基础，只覆盖界面编辑的连接字段与自动同步开关。 */
+    fun currentCfg() = syncState.copy(
         serverUrl = serverUrl.trim(),
         username = username,
         password = password,
@@ -265,6 +269,8 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         scope.launch {
             val cfg = currentCfg().apply { save() }
             val result = op(cfg)
+            // 操作可能写入了指纹/远端 mtime，重新读取以免后续保存覆盖
+            syncState = WebDavSyncConfig.load()
             busy = false
             progress = null
             result.onSuccess {
@@ -316,6 +322,9 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                 }
                 WebDavSyncEngine.downloadRemoteZip(cfg, remote, dest)
                 SyncRestorer.restoreDictZip(dest).getOrThrow()
+                // 与自动同步一致：恢复成功才记录远端 mtime
+                WebDavSyncEngine.commitDictDownloaded(remote.lastModify)
+                syncState = WebDavSyncConfig.load()
                 context.toast(R.string.webdav_dict_restored)
                 lastSync = context.getString(R.string.webdav_dict_restored)
             } catch (e: Exception) {

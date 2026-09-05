@@ -16,6 +16,7 @@ import java.io.File
 import java.io.OutputStream
 import java.security.MessageDigest
 import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 /**
@@ -29,6 +30,9 @@ import java.util.zip.ZipOutputStream
  * 词库 zip：external/data/ 下用户词库子树（排除 libime 等只读模型/缓存）。
  */
 object BackupZips {
+
+    private const val METADATA_ENTRY_NAME = "metadata.json"
+    private const val BUFFER_SIZE = 8192
 
     private val json = Json { prettyPrint = true }
 
@@ -53,7 +57,7 @@ object BackupZips {
             versionName = Const.versionName,
             exportTime = timestamp
         )
-        putNextEntry(ZipEntry("metadata.json"))
+        putNextEntry(ZipEntry(METADATA_ENTRY_NAME))
         write(json.encodeToString(metadata).toByteArray())
         closeEntry()
     }
@@ -134,8 +138,40 @@ object BackupZips {
             dest
         }
 
-    /** 文件内容 SHA-256 摘要，用于“内容未变则跳过上传”。 */
-    fun digest(file: File): String =
-        MessageDigest.getInstance("SHA-256").digest(file.readBytes())
-            .joinToString("") { "%02x".format(it) }
+    /** 文件内容 SHA-256 摘要，用于“内容未变则跳过上传”。流式读取，避免整文件进内存。 */
+    fun digest(file: File): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input -> md.updateFrom(input) }
+        return md.digest().hex()
+    }
+
+    /**
+     * 词库 zip 内容指纹：跳过 metadata.json（其中的 exportTime 等字段每次导出都变），
+     * 只按“条目名 + 条目内容”排序摘要，保证词库内容未变时指纹稳定、内容变化时才更新。
+     */
+    fun dictContentDigest(file: File): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        ZipFile(file).use { zip ->
+            zip.entries().toList()
+                .filter { !it.isDirectory && it.name != METADATA_ENTRY_NAME }
+                .sortedBy { it.name }
+                .forEach { entry ->
+                    md.update(entry.name.toByteArray())
+                    md.update(0.toByte())
+                    zip.getInputStream(entry).use { input -> md.updateFrom(input) }
+                }
+        }
+        return md.digest().hex()
+    }
+
+    private fun MessageDigest.updateFrom(input: java.io.InputStream) {
+        val buf = ByteArray(BUFFER_SIZE)
+        while (true) {
+            val read = input.read(buf)
+            if (read < 0) break
+            update(buf, 0, read)
+        }
+    }
+
+    private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it) }
 }

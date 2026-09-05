@@ -109,6 +109,8 @@ object TableManager {
                 dict.toLibIMEDictionary(File(tempDir, im.tableFileName))
             }.onSuccess {
                 it.file.copyTo(File(tableDicDir, im.tableFileName), overwrite = true)
+                // 仅替换成功后才通知自动同步（与导入流程同一入口），失败路径不发通知
+                AutoDictSync.notifyDictChanged()
             }.onFailure {
                 dictFile.delete()
                 errorRuntime(R.string.invalid_table_dict, it.message)

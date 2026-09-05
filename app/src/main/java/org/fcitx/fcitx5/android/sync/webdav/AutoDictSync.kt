@@ -40,6 +40,9 @@ object AutoDictSync {
     @Volatile
     private var downloadLoopStarted = false
 
+    /** 保护 [uploadJob]：可从任意线程通知，取消与重新排期必须串行。 */
+    private val uploadLock = Any()
+
     private var uploadJob: Job? = null
 
     private val scope get() = FcitxApplication.getInstance().coroutineScope
@@ -71,13 +74,15 @@ object AutoDictSync {
         val cfg = runCatching { WebDavSyncConfig.load() }.getOrNull() ?: return
         if (!cfg.dictAutoSync || cfg.serverUrl.isBlank()) return
         runCatching {
-            uploadJob?.cancel()
-            uploadJob = scope.launch {
-                delay(UPLOAD_DEBOUNCE_MS)
-                val current = runCatching { WebDavSyncConfig.load() }.getOrNull() ?: return@launch
-                if (!current.dictAutoSync || current.serverUrl.isBlank()) return@launch
-                WebDavSyncEngine.uploadDict(current).onFailure {
-                    Timber.e(it, "$TAG auto upload failed: ${it.javaClass.simpleName}")
+            synchronized(uploadLock) {
+                uploadJob?.cancel()
+                uploadJob = scope.launch {
+                    delay(UPLOAD_DEBOUNCE_MS)
+                    val current = runCatching { WebDavSyncConfig.load() }.getOrNull() ?: return@launch
+                    if (!current.dictAutoSync || current.serverUrl.isBlank()) return@launch
+                    WebDavSyncEngine.uploadDict(current).onFailure {
+                        Timber.e(it, "$TAG auto upload failed: ${it.javaClass.simpleName}")
+                    }
                 }
             }
         }.onFailure {
@@ -91,17 +96,20 @@ object AutoDictSync {
         if (keyboardVisible) return
         val file = File(downloadDir, "dict-download.zip")
         val result = WebDavSyncEngine.downloadDictIfNewer(cfg, file)
-        val message = result.getOrNull()
-        if (message == null) {
+        val downloaded = result.getOrNull()
+        if (downloaded == null) {
             result.exceptionOrNull()?.let {
                 Timber.e(it, "$TAG auto download failed: ${it.javaClass.simpleName}")
             }
             return
         }
-        if (message == WebDavSyncEngine.DICT_DOWNLOADED_MSG) {
-            SyncRestorer.restoreDictZip(file).onFailure { e ->
-                Timber.e(e, "$TAG auto dict restore failed: ${e.javaClass.simpleName}")
-            }
+        if (downloaded.message == WebDavSyncEngine.DICT_DOWNLOADED_MSG) {
+            SyncRestorer.restoreDictZip(file)
+                // 仅恢复成功才提交远端 mtime，失败时保留旧状态让下次自动同步重试
+                .onSuccess { WebDavSyncEngine.commitDictDownloaded(downloaded.remoteMtime) }
+                .onFailure { e ->
+                    Timber.e(e, "$TAG auto dict restore failed: ${e.javaClass.simpleName}")
+                }
         }
     }
 }

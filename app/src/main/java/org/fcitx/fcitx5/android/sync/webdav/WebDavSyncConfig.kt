@@ -10,6 +10,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.fcitx.fcitx5.android.utils.appContext
 import java.io.File
+import java.io.IOException
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * WebDAV 连接与同步配置。存储于应用私有 filesDir，读取/写入均为同步阻塞，调用方在 IO 线程使用。
@@ -47,6 +51,9 @@ data class WebDavSyncConfig(
         private val configFile: File by lazy {
             File(appContext.filesDir, CONFIG_FILE_NAME)
         }
+
+        /** 配置文件写入锁：并发 save 时串行化，避免共用临时文件互相踩踏。 */
+        private val fileLock = Any()
 
         fun load(): WebDavSyncConfig {
             val config = runCatching {
@@ -92,10 +99,39 @@ data class WebDavSyncConfig(
         }
     }
 
-    fun save() {
+    /**
+     * 原子写入：先把完整 JSON 写到正式文件同目录的临时文件，再整体替换正式文件。
+     * 写入或替换失败时保留旧配置文件，并返回 failure 供调用方判断。
+     */
+    fun save(): Result<Unit> = synchronized(fileLock) {
         runCatching {
-            configFile.parentFile?.mkdirs()
-            configFile.writeText(json.encodeToString(WebDavSyncConfig.serializer(), this))
+            val dir = configFile.parentFile
+                ?: throw IOException("WebDAV config file has no parent directory")
+            if (!dir.isDirectory && !dir.mkdirs()) {
+                throw IOException("Cannot create WebDAV config directory: ${dir.absolutePath}")
+            }
+            val tmp = File(dir, "${configFile.name}.tmp")
+            try {
+                tmp.writeText(json.encodeToString(WebDavSyncConfig.serializer(), this))
+                replaceAtomically(tmp, configFile)
+            } finally {
+                // 替换失败时清理临时文件；成功时它已被移走
+                tmp.delete()
+            }
+        }
+    }
+
+    private fun replaceAtomically(src: File, dst: File) {
+        try {
+            Files.move(
+                src.toPath(), dst.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING
+            )
+        } catch (e: AtomicMoveNotSupportedException) {
+            if (!src.renameTo(dst)) {
+                throw IOException("Cannot replace WebDAV config: ${dst.absolutePath}")
+            }
         }
     }
 }
