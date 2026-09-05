@@ -20,6 +20,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.view.ContextThemeWrapper
 import androidx.core.content.ContextCompat
+import androidx.core.view.doOnLayout
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.theme.Theme
@@ -125,7 +126,7 @@ class KeyboardTuneOverlay(
 
         // ----- action bar (always inside keyboard region, always clickable) -----
         val resetBtn = actionButton(panelCtx, R.drawable.ic_baseline_settings_backup_restore_24, R.string.tune_reset) {
-            applySnapshot(false)
+            resetToDefaults()
         }
         val cancelBtn = actionButton(panelCtx, R.drawable.ic_baseline_close_24, R.string.tune_cancel) {
             applySnapshot(true)
@@ -277,6 +278,17 @@ class KeyboardTuneOverlay(
         keyboardPrefs.splitKeyboard.setValue(snapshot.splitEnabled)
         splitRatioPref(snapshot.landscape).setValue(snapshot.splitRatio)
         if (close) hide() else syncBox()
+    }
+
+    /** “重置”写入各 ManagedPreference 的默认值，而非恢复打开浮层时的值。 */
+    private fun resetToDefaults() {
+        val landscape = snapshot.landscape
+        heightPref(landscape).setValue(heightPref(landscape).defaultValue)
+        sidePref(landscape).setValue(sidePref(landscape).defaultValue)
+        bottomPref(landscape).setValue(bottomPref(landscape).defaultValue)
+        keyboardPrefs.splitKeyboard.setValue(keyboardPrefs.splitKeyboard.defaultValue)
+        splitRatioPref(landscape).setValue(splitRatioPref(landscape).defaultValue)
+        syncBox()
     }
 
     // ---------- layout sync ----------
@@ -489,7 +501,9 @@ class KeyboardTuneOverlay(
             }
             else -> return
         }
-        syncBox()
+        // 等 IME 窗口（windowManager.view）完成布局、约束更新生效后再刷新，
+        // 否则 syncBox() 读到的 keyboardRect 还是旧的键盘高度。
+        doOnLayout { syncBox() }
     }
 
     private fun setCardActive(mode: DragMode, active: Boolean) {
