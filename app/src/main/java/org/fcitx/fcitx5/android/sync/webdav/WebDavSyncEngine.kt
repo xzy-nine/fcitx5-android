@@ -11,7 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncConfig.Companion.CLOUD_DIR_NAME
-import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncConfig.Companion.DICT_FILE_NAME
+import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncConfig.Companion.DICT_DIR_NAME
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncConfig.Companion.PREFS_FILE_PREFIX
 import org.fcitx.fcitx5.android.utils.appContext
 import timber.log.Timber
@@ -33,8 +33,15 @@ object WebDavSyncEngine {
 
     private const val TAG = "WebDavSync"
 
-    /** 词库 zip 确实下载完成时返回的文案（供自动同步判断）。 */
-    const val DICT_DOWNLOADED_MSG = "词库备份已下载"
+    private val externalDir = appContext.getExternalFilesDir(null)!!
+
+    /** 云端词库目录：fcitx5xzy/dict（逐文件同步，不再打整包 zip） */
+    fun dictDirUrl(cfg: WebDavSyncConfig): String =
+        joinUrl(cloudDirUrl(cfg), DICT_DIR_NAME)
+
+    /** data/pinyin/user.dict -> pinyin/user.dict */
+    private fun relativeUnderData(relativePath: String): String =
+        relativePath.removePrefix("${DictCollector.DATA_DIR_NAME}/")
 
     data class RemoteEntry(
         val name: String,
@@ -119,10 +126,15 @@ object WebDavSyncEngine {
         }
     }
 
-    /** 上传文件到远端目录（PUT 覆盖）。 */
+    /**
+     * 上传文件到远端目录（PUT 覆盖）。[fileName] 允许包含子目录（如 `pinyin/user.dict`），
+     * 会先确保中间目录存在。
+     */
     suspend fun uploadFile(cfg: WebDavSyncConfig, remoteDirUrl: String, fileName: String, file: File) {
-        ensureDirChain(cfg, remoteDirUrl)
-        webDav(cfg, joinUrl(remoteDirUrl, fileName)).upload(file)
+        val parent = fileName.substringBeforeLast('/', "")
+        val dir = if (parent.isEmpty()) remoteDirUrl else joinUrl(remoteDirUrl, parent)
+        ensureDirChain(cfg, dir)
+        webDav(cfg, joinUrl(dir, fileName.substringAfterLast('/'))).upload(file)
     }
 
     suspend fun remoteEntryOrNull(cfg: WebDavSyncConfig, dirUrl: String, name: String): RemoteEntry? =
@@ -201,97 +213,182 @@ object WebDavSyncEngine {
         }
     }
 
-    /** 上传词库 zip（固定名；内容指纹未变则跳过）。返回说明文案。 */
-    suspend fun uploadDict(
+    /**
+     * 上传词库文件（逐文件 PUT 到 `fcitx5xzy/dict/<相对 data/ 的路径>`）。
+     *
+     * 文件级增量：本地内容摘要与已上传摘要一致、且远端快照存在时跳过该文件（不重复覆盖）。
+     * 每处理一个文件都通过 [onProgress] 上报“文件名 + 进度(第几个/共几个)”，
+     * 跳过未变文件时也会上报，便于界面展示“已避免的冗余上传”。
+     * 上传完成后立刻回读远端 size/mtime 记入快照，避免下次把刚传上去的内容又下载回来。
+     */
+    suspend fun uploadDictFiles(
         cfg: WebDavSyncConfig,
         onProgress: suspend (String) -> Unit = {}
     ): Result<String> = withContext(Dispatchers.IO) {
         syncMutex.withLock {
             try {
-                val dirUrl = cloudDirUrl(cfg)
-                val zipFile = File(tempDir, DICT_FILE_NAME)
-                onProgress("正在打包词库…")
-                BackupZips.buildDictZip(zipFile).getOrThrow()
-                val digest = dictFingerprintOf(zipFile)
+                val dirUrl = dictDirUrl(cfg)
+                ensureDirChain(cfg, dirUrl)
                 val stored = persistedConfig(cfg)
-                if (stored.dictUploadFingerprint == digest) {
-                    Result.success("词库未发生变化，已跳过上传")
-                } else {
-                    onProgress("正在上传词库…")
-                    uploadFile(cfg, dirUrl, DICT_FILE_NAME, zipFile)
-                    // 记录上传后的远端 mtime，供自动下载方向“未变则跳过”使用
-                    val remoteMtime = remoteEntryOrNull(cfg, dirUrl, DICT_FILE_NAME)?.lastModify ?: 0L
-                    commitConfig(stored) {
-                        it.copy(
-                            dictUploadFingerprint = digest,
-                            dictRemoteMtime = remoteMtime,
-                            lastSyncDescription = "词库已上传：$todayStr"
-                        )
+                val digests = stored.dictFileDigests.toMutableMap()
+                val snapshot = stored.dictRemoteSnapshot.toMutableMap()
+                val files = DictCollector.listSyncable(DictCollector.dataRoot())
+                    .sortedBy { it.relativePath }
+                val total = files.size
+                var uploaded = 0
+                var skipped = 0
+                files.forEachIndexed { index, entry ->
+                    val rel = relativeUnderData(entry.relativePath)
+                    val file = File(externalDir, entry.relativePath)
+                    if (!file.isFile) return@forEachIndexed
+                    val digest = BackupZips.digest(file)
+                    val pos = "${index + 1}/$total"
+                    if (digests[rel] == digest && snapshot.containsKey(rel)) {
+                        // 本地内容未变、且云端已知有相同内容：无需重复上传
+                        skipped++
+                        onProgress("已是最新，跳过 $rel（$pos）")
+                        return@forEachIndexed
                     }
-                    Result.success("词库已上传")
+                    onProgress("正在上传 $rel（$pos）")
+                    uploadFile(cfg, dirUrl, rel, file)
+                    remoteFileOrNull(cfg, dirUrl, rel)?.let {
+                        snapshot[rel] = "${it.size}:${it.lastModify}"
+                    }
+                    digests[rel] = digest
+                    uploaded++
                 }
+                commitConfig(stored) {
+                    it.copy(
+                        dictFileDigests = digests,
+                        dictRemoteSnapshot = snapshot,
+                        lastSyncDescription = "词库已上传：$todayStr"
+                    )
+                }
+                val msg = when {
+                    total == 0 -> "没有可上传的词库文件"
+                    uploaded == 0 -> "词库未发生变化，已跳过上传（$skipped 个文件）"
+                    skipped == 0 -> "词库已上传（$uploaded 个文件）"
+                    else -> "词库已上传（$uploaded 个文件，$skipped 个未变化已跳过）"
+                }
+                Timber.i("$TAG uploadDictFiles: $msg")
+                Result.success(msg)
             } catch (e: Exception) {
-                Timber.e(e, "uploadDict failed: ${e.javaClass.simpleName}")
+                Timber.e(
+                    "$TAG uploadDictFiles failed: ${e.javaClass.name}, message=${e.message}, " +
+                        "trace=${e.stackTraceToString()}"
+                )
                 Result.failure(e)
             }
         }
     }
 
-    /** 下载词库的结果：[message] 等于 [DICT_DOWNLOADED_MSG] 时才需要恢复并调用 [commitDictDownloaded]。 */
-    data class DictDownloadResult(
-        val message: String,
-        /** 本次下载到的远端文件 mtime（未下载时为 0） */
-        val remoteMtime: Long
+    /** 词库下载结果：[downloaded] 为实际更新文件数，[kinds] 供 [DictReload] 决定如何生效。 */
+    data class DictDownloadOutcome(
+        val downloaded: Int,
+        val kinds: Set<DictReload.Kind>
     )
 
     /**
-     * 下载词库 zip 到 [dest]（远端 mtime 未变则跳过）。
+     * 下载词库文件（逐文件 GET，覆盖本地同名文件）。
      *
-     * 注意：此处不写 [WebDavSyncConfig.dictRemoteMtime]，只有恢复导入成功后才由
-     * [commitDictDownloaded] 提交，保证失败时保留旧状态、下次自动同步能重试。
+     * 避免不必要的重复覆盖（[force]=false 时）：仅当远端 size+mtime 与本地快照一致才跳过，
+     * 即“远端确实没变”才不下载。不能用文件大小相等来代表内容相同（同大小完全可能内容不同，
+     * 误跳会丢同步）；也不在首同步时为省一次下载而凭大小猜内容。
+     * 每处理一个文件都通过 [onProgress] 上报“文件名 + 进度(第几个/共几个)”。
+     * 只有全部写盘成功后才提交快照，失败时保留旧状态、下次自动同步会重试。
      */
-    suspend fun downloadDictIfNewer(
+    suspend fun downloadDictFiles(
         cfg: WebDavSyncConfig,
-        dest: File,
+        force: Boolean = false,
         onProgress: suspend (String) -> Unit = {}
-    ): Result<DictDownloadResult> = withContext(Dispatchers.IO) {
+    ): Result<DictDownloadOutcome> = withContext(Dispatchers.IO) {
         syncMutex.withLock {
             try {
-                val dirUrl = cloudDirUrl(cfg)
-                val remote = remoteEntryOrNull(cfg, dirUrl, DICT_FILE_NAME)
-                    ?: throw IllegalStateException("云端不存在词库备份：$DICT_FILE_NAME")
+                val dirUrl = dictDirUrl(cfg)
+                // 云端还没有 dict/ 目录时视为“暂无词库备份”，而不是失败
+                val remoteFiles = runCatching { listRemoteDictFiles(cfg, dirUrl) }
+                    .onFailure {
+                        Timber.w("$TAG listRemoteDictFiles failed: ${it.javaClass.name}: ${it.message}")
+                    }
+                    .getOrDefault(emptyList())
                 val stored = persistedConfig(cfg)
-                if (remote.lastModify == stored.dictRemoteMtime) {
-                    Result.success(
-                        DictDownloadResult("词库云端无更新，已跳过下载", remote.lastModify)
-                    )
-                } else {
-                    onProgress("正在下载词库备份…")
-                    webDav(cfg, remote.url).downloadTo(dest.absolutePath, replaceExisting = true)
-                    Result.success(DictDownloadResult(DICT_DOWNLOADED_MSG, remote.lastModify))
+                val digests = stored.dictFileDigests.toMutableMap()
+                val snapshot = stored.dictRemoteSnapshot.toMutableMap()
+                val kinds = mutableSetOf<DictReload.Kind>()
+                val total = remoteFiles.size
+                var downloaded = 0
+                var skipped = 0
+                remoteFiles.forEachIndexed { index, (rel, entry) ->
+                    val current = "${entry.size}:${entry.lastModify}"
+                    val pos = "${index + 1}/$total"
+                    val local = File(externalDir, "${DictCollector.DATA_DIR_NAME}/$rel")
+                    if (!force) {
+                        // 远端 size+mtime 未变化：本地已是最新，跳过下载（不重复覆盖）。
+                        // 不能用“本地大小 == 远端大小”来判定内容相同——相等大小完全可能
+                        // 内容不同，那样会错误地跳过一次真实更新，反而丢同步。
+                        if (snapshot[rel] == current) {
+                            skipped++
+                            onProgress("已是最新，跳过 $rel（$pos）")
+                            return@forEachIndexed
+                        }
+                    }
+                    local.parentFile?.mkdirs()
+                    onProgress("正在下载 $rel（$pos）")
+                    webDav(cfg, entry.url).downloadTo(local.absolutePath, replaceExisting = true)
+                    snapshot[rel] = current
+                    digests[rel] = BackupZips.digest(local)
+                    kinds += DictReload.kindOf(rel)
+                    downloaded++
                 }
+                commitConfig(stored) {
+                    it.copy(
+                        dictFileDigests = digests,
+                        dictRemoteSnapshot = snapshot,
+                        lastSyncDescription = if (downloaded == 0) {
+                            it.lastSyncDescription
+                        } else {
+                            "词库已下载：$todayStr"
+                        }
+                    )
+                }
+                Timber.i("$TAG downloadDictFiles: downloaded=$downloaded skipped=$skipped kinds=$kinds")
+                Result.success(DictDownloadOutcome(downloaded, kinds))
             } catch (e: Exception) {
-                Timber.e(e, "downloadDictIfNewer failed: ${e.javaClass.simpleName}")
+                Timber.e(
+                    "$TAG downloadDictFiles failed: ${e.javaClass.name}, message=${e.message}, " +
+                        "trace=${e.stackTraceToString()}"
+                )
                 Result.failure(e)
             }
         }
     }
 
-    /** 词库 zip 恢复成功后提交远端 mtime，使后续自动同步跳过该文件。 */
-    suspend fun commitDictDownloaded(remoteMtime: Long): Boolean =
-        withContext(Dispatchers.IO) {
-            if (remoteMtime <= 0L) return@withContext false
-            syncMutex.withLock {
-                // 读不到已持久化配置时不写盘，避免丢失连接信息
-                runCatching { WebDavSyncConfig.load() }.getOrNull()
-                    ?.copy(
-                        dictRemoteMtime = remoteMtime,
-                        lastSyncDescription = "词库已从云端下载：$todayStr"
-                    )
-                    ?.save()
-                    ?.isSuccess == true
-            }
+    /** 递归列出 dict 目录下的所有文件，返回“相对 data/ 的路径 -> 远端条目”。 */
+    private suspend fun listRemoteDictFiles(
+        cfg: WebDavSyncConfig,
+        dirUrl: String,
+        prefix: String = ""
+    ): List<Pair<String, RemoteEntry>> {
+        val result = mutableListOf<Pair<String, RemoteEntry>>()
+        listRemoteDir(cfg, dirUrl).forEach { entry ->
+            val rel = if (prefix.isEmpty()) entry.name else "$prefix/${entry.name}"
+            if (entry.isDir) result += listRemoteDictFiles(cfg, entry.url, rel)
+            else result += rel to entry
         }
+        return result
+    }
+
+    /** 按多级相对路径查找远端文件：先定位父目录，再按末段名字匹配。 */
+    private suspend fun remoteFileOrNull(
+        cfg: WebDavSyncConfig,
+        dirUrl: String,
+        relativePath: String
+    ): RemoteEntry? {
+        val parent = relativePath.substringBeforeLast('/', "")
+        val name = relativePath.substringAfterLast('/')
+        val parentUrl = if (parent.isEmpty()) dirUrl else joinUrl(dirUrl, parent)
+        return remoteEntryOrNull(cfg, parentUrl, name)
+    }
 
     /** 列出云端偏好 zip 列表（按名称倒序）。 */
     suspend fun listRemotePrefs(cfg: WebDavSyncConfig): List<RemoteEntry> =
@@ -345,9 +442,4 @@ object WebDavSyncEngine {
             }
         }
 
-    /**
-     * 词库指纹：跳过 metadata.json 中的 exportTime 等易变元数据，
-     * 只摘要稳定的词库内容，保证内容未变时指纹不变（内容未变则跳过上传）。
-     */
-    private fun dictFingerprintOf(dictZip: File): String = BackupZips.dictContentDigest(dictZip)
 }

@@ -37,6 +37,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
+import org.fcitx.fcitx5.android.sync.webdav.DictReload
 import org.fcitx.fcitx5.android.sync.webdav.SyncRestorer
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncConfig
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncEngine
@@ -66,7 +67,6 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 import timber.log.Timber
 import java.io.File
-import java.io.IOException
 
 private const val TAG = "WebDavSync"
 
@@ -278,7 +278,7 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
 
     fun runOperation(
         busyMessage: String,
-        op: suspend (WebDavSyncConfig) -> Result<String>,
+        op: suspend (WebDavSyncConfig, onProgress: suspend (String) -> Unit) -> Result<String>,
     ) {
         if (busy) return
         if (!requireReady()) return
@@ -286,7 +286,8 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         progress = busyMessage
         scope.launch {
             val cfg = currentCfg().apply { save() }
-            val result = op(cfg)
+            val onProgress: suspend (String) -> Unit = { progress = it }
+            val result = op(cfg, onProgress)
             // 操作可能写入了指纹/远端 mtime，重新读取以免后续保存覆盖
             syncState = WebDavSyncConfig.load()
             busy = false
@@ -311,7 +312,9 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                 val dest = File(context.cacheDir, "webdav/${entry.name}").apply {
                     parentFile?.mkdirs()
                 }
+                progress = "正在下载偏好备份 ${entry.name}…"
                 WebDavSyncEngine.downloadRemoteZip(cfg, entry, dest)
+                progress = "正在导入偏好设置…"
                 SyncRestorer.restorePrefsZip(dest).getOrThrow()
                 context.toast(R.string.webdav_prefs_restored)
                 AppUtil.showRestartNotification(context)
@@ -334,19 +337,30 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         scope.launch {
             try {
                 val cfg = currentCfg()
-                val remote = WebDavSyncEngine.remoteEntryOrNull(
-                    cfg, WebDavSyncEngine.cloudDirUrl(cfg), WebDavSyncConfig.DICT_FILE_NAME
-                ) ?: throw IOException(context.getString(R.string.webdav_no_dict_remote))
-                val dest = File(context.cacheDir, "webdav/fcitx5-dict-restore.zip").apply {
-                    parentFile?.mkdirs()
+                // 手动恢复：force=true 忽略本地快照，始终按云端内容覆盖本地；
+                // 进度逐文件上报（文件名 + 第几个/共几个）
+                val onProgress: suspend (String) -> Unit = { progress = it }
+                val outcome =
+                    WebDavSyncEngine.downloadDictFiles(cfg, force = true, onProgress).getOrThrow()
+                if (outcome.downloaded == 0) {
+                    context.toast(R.string.webdav_dict_already_latest)
+                } else {
+                    // 拼音/自定义短语可热重载，无需重启；table 类词库需重建进程才稳定
+                    progress = "正在重新加载词库…"
+                    DictReload.applyReloadable(outcome.kinds)
+                    syncState = WebDavSyncConfig.load()
+                    if (DictReload.needsRestart(outcome.kinds)) {
+                        // custom: table 词库被改动，引擎没有热重载接口；且引擎重启后
+                        // IME 与引擎之间的连接状态不会复位（按键可响应但无法上屏），
+                        // 只有重建进程才稳定。与偏好恢复一致：发通知后重启进程。
+                        context.toast(R.string.webdav_dict_restored)
+                        AppUtil.showRestartNotification(context)
+                        delay(500)
+                        AppUtil.exit()
+                    } else {
+                        context.toast(R.string.webdav_dict_restored)
+                    }
                 }
-                WebDavSyncEngine.downloadRemoteZip(cfg, remote, dest)
-                SyncRestorer.restoreDictZip(dest).getOrThrow()
-                // 与自动同步一致：恢复成功才记录远端 mtime
-                WebDavSyncEngine.commitDictDownloaded(remote.lastModify)
-                syncState = WebDavSyncConfig.load()
-                context.toast(R.string.webdav_dict_restored)
-                lastSync = context.getString(R.string.webdav_dict_restored)
             } catch (e: Exception) {
                 logFailure("restoreDict", e)
                 context.toast(e.readable())
@@ -388,8 +402,8 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                     title = stringResource(R.string.webdav_upload_prefs),
                     summary = stringResource(R.string.webdav_upload_prefs_summary),
                     onClick = {
-                        runOperation(context.getString(R.string.webdav_uploading_prefs)) { cfg ->
-                            WebDavSyncEngine.uploadPrefs(cfg)
+                        runOperation(context.getString(R.string.webdav_uploading_prefs)) { cfg, onProgress ->
+                            WebDavSyncEngine.uploadPrefs(cfg, onProgress)
                         }
                     },
                 )
@@ -440,8 +454,8 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                     title = stringResource(R.string.webdav_upload_dict),
                     summary = stringResource(R.string.webdav_upload_dict_summary),
                     onClick = {
-                        runOperation(context.getString(R.string.webdav_uploading_dict)) { cfg ->
-                            WebDavSyncEngine.uploadDict(cfg)
+                        runOperation(context.getString(R.string.webdav_uploading_dict)) { cfg, onProgress ->
+                            WebDavSyncEngine.uploadDictFiles(cfg, onProgress = onProgress)
                         }
                     },
                 )

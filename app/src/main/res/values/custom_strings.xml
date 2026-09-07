@@ -117,6 +117,7 @@
     <string name="webdav_loading_list">Loading cloud list…</string>
     <string name="webdav_no_dict_remote">No dictionary backup found on the cloud folder</string>
     <string name="webdav_dict_restored">Dictionary restored</string>
+    <string name="webdav_dict_already_latest">Cloud dictionaries are already up to date</string>
     <string name="webdav_prefs_restored">Preferences restored</string>
     <string name="webdav_restore_failed">Operation failed</string>
     <!-- Custom: advanced page data management -->

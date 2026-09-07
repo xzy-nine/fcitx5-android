@@ -28,10 +28,16 @@ data class WebDavSyncConfig(
     val deviceName: String = DEFAULT_DEVICE_NAME,
     /** 词库自动同步开关（事件+常驻驱动，仅进程存活时生效） */
     val dictAutoSync: Boolean = false,
-    /** 最近一次词库上传指纹（内容未变则跳过上传） */
-    var dictUploadFingerprint: String = "",
-    /** 最近一次下载到的远端词库文件 mtime（未变则跳过下载） */
-    var dictRemoteMtime: Long = 0L,
+    /**
+     * 词库逐文件同步：最近一次上传成功的本地文件内容摘要（相对 data/ 的路径 -> SHA-256）。
+     * 与 [dictRemoteSnapshot] 同时存在才认为该文件“已同步且未变化”，可跳过上传。
+     */
+    var dictFileDigests: Map<String, String> = emptyMap(),
+    /**
+     * 词库逐文件同步：最近一次同步到的远端快照（相对 data/ 的路径 -> "size:lastModify"）。
+     * 用于判断远端是否被其它设备改过，只有快照变化才下载覆盖本地。
+     */
+    var dictRemoteSnapshot: Map<String, String> = emptyMap(),
     /** 最近一次成功上传的偏好 zip 文件名与内容摘要（同日同名同内容则跳过） */
     var lastPrefsUploadName: String = "",
     var lastPrefsUploadDigest: String = "",
@@ -41,12 +47,15 @@ data class WebDavSyncConfig(
     companion object {
         const val DEFAULT_SERVER_URL = "https://dav.jianguoyun.com/dav/"
         const val CLOUD_DIR_NAME = "fcitx5xzy"
-        const val DICT_FILE_NAME = "fcitx5-dict.zip"
+        /** 词库逐文件同步的云端子目录：fcitx5xzy/dict/<相对 data/ 的路径> */
+        const val DICT_DIR_NAME = "dict"
         const val PREFS_FILE_PREFIX = "fcitx5-settings_"
         const val CONFIG_FILE_NAME = "webdav_sync_config.json"
         private const val DEFAULT_DEVICE_NAME = "android"
 
-        private val json = Json { prettyPrint = true }
+        // ignoreUnknownKeys：旧版本配置里可能残留已删除字段（如旧的词库 zip 指纹），
+        // 未知字段不应导致解析失败——否则 load() 会退回默认配置、丢失服务器连接信息。
+        private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
 
         private val configFile: File by lazy {
             File(appContext.filesDir, CONFIG_FILE_NAME)

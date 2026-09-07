@@ -114,6 +114,7 @@
     <string name="webdav_loading_list">正在加载云端列表…</string>
     <string name="webdav_no_dict_remote">云端目录未找到词库备份</string>
     <string name="webdav_dict_restored">词库已恢复</string>
+    <string name="webdav_dict_already_latest">云端词库已是最新</string>
     <string name="webdav_prefs_restored">偏好设置已恢复</string>
     <string name="webdav_restore_failed">操作失败</string>
     <!-- Custom: 高级页数据管理 -->

@@ -14,14 +14,16 @@ import java.io.File
 import java.util.zip.ZipFile
 
 /**
- * 恢复器：把云端下载的 zip 恢复到本地。
+ * 恢复器：把云端下载的偏好 zip 恢复到本地。
  *
- * 偏好 zip / 词库 zip 均为 UserDataManager 分区兼容格式，因此走
- * [UserDataImportCompat]（UserDataManager 分区导入 + 历史 debug 包名兼容），
- * 天然实现“选择恢复偏好或词库”的分区级部分恢复。
+ * 偏好 zip 为 UserDataManager 分区兼容格式，因此走
+ * [UserDataImportCompat]（UserDataManager 分区导入 + 历史 debug 包名兼容）。
  *
- * 两个方向都会先停止 fcitx 再写盘，避免引擎占用/读到半成品；
- * 偏好恢复要求随后重启进程（由 UI 通知并退出），词库恢复后重启引擎即可。
+ * 导入前先停止 fcitx 再写盘，避免引擎占用/读到半成品；
+ * 导入成功后由调用方（UI）发重启通知并退出进程，使配置真正生效。
+ *
+ * 词库恢复走逐文件同步（[WebDavSyncEngine.downloadDictFiles] + [DictReload]），
+ * 不在此处处理，因为拼音/自定义短语可热重载、table 类需重建进程，路径不同。
  */
 object SyncRestorer {
 
@@ -76,27 +78,6 @@ object SyncRestorer {
                 logFailure("restorePrefsZip", e)
                 // 导入失败时恢复引擎运行
                 FcitxDaemon.startFcitx()
-                Result.failure(e)
-            }
-        }
-
-    /** 恢复词库 zip：停止 fcitx → 写盘 → 重启引擎加载新词库。 */
-    suspend fun restoreDictZip(zipFile: File): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            Timber.i("$TAG restoreDictZip begin")
-            logZipContent("dict", zipFile)
-            try {
-                Timber.i("$TAG restoreDictZip stopping fcitx ...")
-                FcitxDaemon.stopFcitx()
-                Timber.i("$TAG restoreDictZip fcitx stopped, importing ...")
-                UserDataImportCompat.import(zipFile.inputStream()).getOrThrow()
-                Timber.i("$TAG restoreDictZip imported, starting fcitx ...")
-                FcitxDaemon.startFcitx()
-                Timber.i("$TAG restoreDictZip done")
-                Result.success(Unit)
-            } catch (e: Exception) {
-                logFailure("restoreDictZip", e)
-                runCatching { FcitxDaemon.startFcitx() }
                 Result.failure(e)
             }
         }
