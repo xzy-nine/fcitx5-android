@@ -31,6 +31,8 @@ import java.time.format.DateTimeFormatter
  */
 object WebDavSyncEngine {
 
+    private const val TAG = "WebDavSync"
+
     /** 词库 zip 确实下载完成时返回的文案（供自动同步判断）。 */
     const val DICT_DOWNLOADED_MSG = "词库备份已下载"
 
@@ -124,7 +126,15 @@ object WebDavSyncEngine {
     }
 
     suspend fun remoteEntryOrNull(cfg: WebDavSyncConfig, dirUrl: String, name: String): RemoteEntry? =
-        listRemoteDir(cfg, dirUrl).firstOrNull { it.name == name && !it.isDir }
+        listRemoteDir(cfg, dirUrl)
+            .also { list ->
+                Timber.i(
+                    "$TAG remoteEntryOrNull want='$name' in $dirUrl, entries(${list.size}): " +
+                        list.joinToString { "${it.name}(dir=${it.isDir},size=${it.size})" }
+                )
+            }
+            .firstOrNull { it.name == name && !it.isDir }
+            .also { Timber.i("$TAG remoteEntryOrNull matched=${it?.url}") }
 
     fun sanitizeFileNamePart(s: String): String =
         s.replace(Regex("[^0-9A-Za-z._-]"), "-").ifBlank { "android" }
@@ -286,20 +296,54 @@ object WebDavSyncEngine {
     /** 列出云端偏好 zip 列表（按名称倒序）。 */
     suspend fun listRemotePrefs(cfg: WebDavSyncConfig): List<RemoteEntry> =
         withContext(Dispatchers.IO) {
+            val dirUrl = cloudDirUrl(cfg)
             try {
-                listRemoteDir(cfg, cloudDirUrl(cfg))
-                    .filter { it.name.startsWith(PREFS_FILE_PREFIX) && it.name.endsWith(".zip") }
+                val all = listRemoteDir(cfg, dirUrl)
+                Timber.i(
+                    "$TAG listRemotePrefs dir=$dirUrl entries(${
+                        all.size
+                    }): ${all.joinToString { "${it.name}(dir=${it.isDir},size=${it.size})" }}"
+                )
+                all.filter { it.name.startsWith(PREFS_FILE_PREFIX) && it.name.endsWith(".zip") }
                     .sortedByDescending { it.name }
+                    .also { Timber.i("$TAG listRemotePrefs matched ${it.size}") }
             } catch (e: Exception) {
-                Timber.e(e, "listRemotePrefs failed: ${e.javaClass.simpleName}")
+                Timber.e(
+                    "$TAG listRemotePrefs failed: ${e.javaClass.name}, message=${e.message}, " +
+                        "trace=${e.stackTraceToString()}"
+                )
                 emptyList()
             }
         }
 
-    /** 下载指定远端 zip 到本地文件（偏好 zip，供恢复）。 */
-    suspend fun downloadRemoteZip(cfg: WebDavSyncConfig, entry: RemoteEntry, dest: File) {
-        webDav(cfg, entry.url).downloadTo(dest.absolutePath, replaceExisting = true)
-    }
+    /**
+     * 下载指定远端 zip 到本地文件（偏好 zip，供恢复）。
+     *
+     * 必须切到 [Dispatchers.IO]：底层 OkHttp 使用同步 `execute()`，
+     * 在调用方（Compose 主线程）直接执行会抛 NetworkOnMainThreadException。
+     */
+    suspend fun downloadRemoteZip(cfg: WebDavSyncConfig, entry: RemoteEntry, dest: File) =
+        withContext(Dispatchers.IO) {
+            Timber.i(
+                "$TAG downloadRemoteZip: name=${entry.name}, url=${entry.url}, " +
+                    "remoteSize=${entry.size} -> ${dest.absolutePath}"
+            )
+            dest.parentFile?.mkdirs()
+            val start = System.currentTimeMillis()
+            try {
+                webDav(cfg, entry.url).downloadTo(dest.absolutePath, replaceExisting = true)
+                Timber.i(
+                    "$TAG downloadRemoteZip done in ${System.currentTimeMillis() - start}ms: " +
+                        "exists=${dest.exists()}, size=${dest.length()}"
+                )
+            } catch (e: Exception) {
+                Timber.e(
+                    "$TAG downloadRemoteZip failed: ${e.javaClass.name}, message=${e.message}, " +
+                        "trace=${e.stackTraceToString()}"
+                )
+                throw e
+            }
+        }
 
     /**
      * 词库指纹：跳过 metadata.json 中的 exportTime 等易变元数据，

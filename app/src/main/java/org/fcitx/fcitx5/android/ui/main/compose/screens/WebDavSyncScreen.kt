@@ -64,8 +64,26 @@ import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
+import timber.log.Timber
 import java.io.File
 import java.io.IOException
+
+private const val TAG = "WebDavSync"
+
+/**
+ * 失败详情文案：异常类名 + message。
+ * 部分异常（NPE / 无参 SecurityException / 取消异常）message 为 null，
+ * 此时至少能把异常类名暴露出来，便于定位。
+ */
+private fun Throwable.readable(): String {
+    val msg = message?.takeIf { it.isNotBlank() }
+    return if (msg == null) javaClass.simpleName else "${javaClass.simpleName}: $msg"
+}
+
+private fun logFailure(what: String, e: Throwable) {
+    // ConciseTree 会丢弃 Throwable，因此把堆栈写进 message 文本
+    Timber.e("$TAG $what failed: ${e.javaClass.name}, message=${e.message}, trace=${e.stackTraceToString()}")
+}
 
 /** 页面骨架：LazyColumn + 置顶小顶栏，与现有设置页一致。 */
 @Composable
@@ -277,7 +295,8 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                 lastSync = it
                 context.toast(it)
             }.onFailure {
-                context.toast("${it.message ?: context.getString(R.string.webdav_restore_failed)}")
+                logFailure("runOperation", it)
+                context.toast(it.readable())
             }
         }
     }
@@ -299,7 +318,8 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                 delay(500)
                 AppUtil.exit()
             } catch (e: Exception) {
-                context.toast("${e.message ?: context.getString(R.string.webdav_restore_failed)}")
+                logFailure("restorePrefs", e)
+                context.toast(e.readable())
             } finally {
                 busy = false
                 progress = null
@@ -328,7 +348,8 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                 context.toast(R.string.webdav_dict_restored)
                 lastSync = context.getString(R.string.webdav_dict_restored)
             } catch (e: Exception) {
-                context.toast("${e.message ?: context.getString(R.string.webdav_restore_failed)}")
+                logFailure("restoreDict", e)
+                context.toast(e.readable())
             } finally {
                 busy = false
                 progress = null

@@ -8,7 +8,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.data.UserDataManager
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
+import timber.log.Timber
 import java.io.File
+import java.util.zip.ZipFile
 
 /**
  * 恢复器：把云端下载的 zip 恢复到本地。
@@ -22,14 +24,55 @@ import java.io.File
  */
 object SyncRestorer {
 
+    private const val TAG = "WebDavSync"
+
+    /**
+     * 打印 zip 条目结构（含顶层分区与 metadata.json 内容），用于定位导入失败原因。
+     * 只做只读诊断，任何异常都被吞掉，不影响恢复流程。
+     */
+    private fun logZipContent(what: String, zipFile: File) {
+        runCatching {
+            Timber.i(
+                "$TAG $what zip: path=${zipFile.absolutePath}, exists=${zipFile.exists()}, size=${zipFile.length()}"
+            )
+            ZipFile(zipFile).use { zip ->
+                val names = zip.entries().toList().map { it.name }
+                Timber.i("$TAG $what zip entries(${names.size}): ${names.joinToString()}")
+                val meta = zip.getEntry("metadata.json")
+                if (meta == null) {
+                    Timber.w("$TAG $what zip has no metadata.json")
+                } else {
+                    val text = zip.getInputStream(meta).bufferedReader().use { it.readText() }
+                    Timber.i("$TAG $what metadata.json: $text")
+                }
+            }
+        }.onFailure {
+            Timber.e("$TAG $what cannot read zip: ${it.javaClass.name}: ${it.message}")
+        }
+    }
+
+    private fun logFailure(what: String, e: Throwable) {
+        // 显式输出类名/消息/堆栈：ConciseTree 会丢弃 Throwable，文本里必须自带堆栈
+        Timber.e(
+            "$TAG $what failed: ${e.javaClass.name}, message=${e.message}, " +
+                "trace=${e.stackTraceToString()}"
+        )
+    }
+
     /** 恢复偏好 zip。成功后应提示并退出进程让配置生效。返回导入元数据（含导出时间）。 */
     suspend fun restorePrefsZip(zipFile: File): Result<UserDataManager.Metadata> =
         withContext(Dispatchers.IO) {
+            Timber.i("$TAG restorePrefsZip begin")
+            logZipContent("prefs", zipFile)
             try {
+                Timber.i("$TAG restorePrefsZip stopping fcitx ...")
                 FcitxDaemon.stopFcitx()
+                Timber.i("$TAG restorePrefsZip fcitx stopped, importing ...")
                 val metadata = UserDataManager.import(zipFile.inputStream()).getOrThrow()
+                Timber.i("$TAG restorePrefsZip imported: $metadata")
                 Result.success(metadata)
             } catch (e: Exception) {
+                logFailure("restorePrefsZip", e)
                 // 导入失败时恢复引擎运行
                 FcitxDaemon.startFcitx()
                 Result.failure(e)
@@ -39,12 +82,19 @@ object SyncRestorer {
     /** 恢复词库 zip：停止 fcitx → 写盘 → 重启引擎加载新词库。 */
     suspend fun restoreDictZip(zipFile: File): Result<Unit> =
         withContext(Dispatchers.IO) {
+            Timber.i("$TAG restoreDictZip begin")
+            logZipContent("dict", zipFile)
             try {
+                Timber.i("$TAG restoreDictZip stopping fcitx ...")
                 FcitxDaemon.stopFcitx()
+                Timber.i("$TAG restoreDictZip fcitx stopped, importing ...")
                 UserDataManager.import(zipFile.inputStream()).getOrThrow()
+                Timber.i("$TAG restoreDictZip imported, starting fcitx ...")
                 FcitxDaemon.startFcitx()
+                Timber.i("$TAG restoreDictZip done")
                 Result.success(Unit)
             } catch (e: Exception) {
+                logFailure("restoreDictZip", e)
                 runCatching { FcitxDaemon.startFcitx() }
                 Result.failure(e)
             }
