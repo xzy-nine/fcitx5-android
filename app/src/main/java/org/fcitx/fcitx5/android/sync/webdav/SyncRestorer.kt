@@ -6,6 +6,7 @@ package org.fcitx.fcitx5.android.sync.webdav
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.fcitx.fcitx5.android.data.UserDataImportCompat
 import org.fcitx.fcitx5.android.data.UserDataManager
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import timber.log.Timber
@@ -15,9 +16,9 @@ import java.util.zip.ZipFile
 /**
  * 恢复器：把云端下载的 zip 恢复到本地。
  *
- * 偏好 zip / 词库 zip 均为 UserDataManager 分区兼容格式，因此直接走
- * [UserDataManager.import]（metadata 硬校验 + 分区缺失软容忍），天然实现
- * “选择恢复偏好或词库”的分区级部分恢复。
+ * 偏好 zip / 词库 zip 均为 UserDataManager 分区兼容格式，因此走
+ * [UserDataImportCompat]（UserDataManager 分区导入 + 历史 debug 包名兼容），
+ * 天然实现“选择恢复偏好或词库”的分区级部分恢复。
  *
  * 两个方向都会先停止 fcitx 再写盘，避免引擎占用/读到半成品；
  * 偏好恢复要求随后重启进程（由 UI 通知并退出），词库恢复后重启引擎即可。
@@ -68,7 +69,7 @@ object SyncRestorer {
                 Timber.i("$TAG restorePrefsZip stopping fcitx ...")
                 FcitxDaemon.stopFcitx()
                 Timber.i("$TAG restorePrefsZip fcitx stopped, importing ...")
-                val metadata = UserDataManager.import(zipFile.inputStream()).getOrThrow()
+                val metadata = UserDataImportCompat.import(zipFile.inputStream()).getOrThrow()
                 Timber.i("$TAG restorePrefsZip imported: $metadata")
                 Result.success(metadata)
             } catch (e: Exception) {
@@ -88,7 +89,7 @@ object SyncRestorer {
                 Timber.i("$TAG restoreDictZip stopping fcitx ...")
                 FcitxDaemon.stopFcitx()
                 Timber.i("$TAG restoreDictZip fcitx stopped, importing ...")
-                UserDataManager.import(zipFile.inputStream()).getOrThrow()
+                UserDataImportCompat.import(zipFile.inputStream()).getOrThrow()
                 Timber.i("$TAG restoreDictZip imported, starting fcitx ...")
                 FcitxDaemon.startFcitx()
                 Timber.i("$TAG restoreDictZip done")

@@ -16,6 +16,10 @@ android {
     defaultConfig {
         applicationId = "org.fcitx.fcitx5.android"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // custom: 应用名与图标不再随构建类型变化，debug/release 统一使用 release 版本
+        resValue("mipmap", "app_icon", "@mipmap/ic_launcher")
+        resValue("mipmap", "app_icon_round", "@mipmap/ic_launcher_round")
+        resValue("string", "app_name", "@string/app_name_release")
 
         @Suppress("UnstableApiUsage")
         externalNativeBuild {
@@ -42,15 +46,7 @@ android {
 
     buildTypes {
         release {
-            resValue("mipmap", "app_icon", "@mipmap/ic_launcher")
-            resValue("mipmap", "app_icon_round", "@mipmap/ic_launcher_round")
-            resValue("string", "app_name", "@string/app_name_release")
             proguardFile("proguard-rules.pro")
-        }
-        debug {
-            resValue("mipmap", "app_icon", "@mipmap/ic_launcher_debug")
-            resValue("mipmap", "app_icon_round", "@mipmap/ic_launcher_round_debug")
-            resValue("string", "app_name", "@string/app_name_debug")
         }
     }
 

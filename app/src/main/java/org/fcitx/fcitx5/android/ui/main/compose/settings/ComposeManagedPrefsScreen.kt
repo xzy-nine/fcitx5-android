@@ -41,6 +41,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.data.UserDataImportCompat
 import org.fcitx.fcitx5.android.data.UserDataManager
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
@@ -157,7 +158,7 @@ fun ManagedPrefsScreen(
                 // stop fcitx before overwriting files
                 FcitxDaemon.stopFcitx()
                 val metadata = withContext(Dispatchers.IO) {
-                    UserDataManager.import(context.contentResolver.openInputStream(uri)!!).getOrThrow()
+                    UserDataImportCompat.import(context.contentResolver.openInputStream(uri)!!).getOrThrow()
                 }
                 AppUtil.showRestartNotification(context)
                 context.toast(context.getString(R.string.user_data_imported, formatDateTime(metadata.exportTime)))
