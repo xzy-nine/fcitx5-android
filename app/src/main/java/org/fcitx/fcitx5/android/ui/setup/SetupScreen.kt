@@ -33,12 +33,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import android.database.ContentObserver
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.utils.appContext
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -47,8 +55,10 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 /**
  * Compose onboarding (replaces SetupFragment/ViewPager2). Follows the Notify-Relay guide pattern:
  * an enum of steps rendered in a non-swipeable HorizontalPager; each step shows an action button
- * until its condition is done, then a checkmark. State is refreshed on every ON_RESUME so returning
- * from the system IME settings re-evaluates completion.
+ * until its condition is done, then a checkmark. State is refreshed on every ON_RESUME, on every
+ * change to the underlying secure IME settings (a ContentObserver — the real completion signal that
+ * also works on Xiaomi/HyperOS where the picker never pauses this activity), and on a light poll
+ * while not finished.
  */
 @Composable
 fun SetupScreen(onFinish: () -> Unit) {
@@ -57,6 +67,42 @@ fun SetupScreen(onFinish: () -> Unit) {
 
     // re-read the IME state every time the screen is resumed (user returns from settings)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refreshTick++ }
+
+    // On Xiaomi/HyperOS showInputMethodPicker() is a system dialog that does NOT pause this
+    // activity, so ON_RESUME never fires and the picker offers no completion callback at all.
+    // Observe the underlying secure settings instead — this is the real, ROM-independent
+    // "callback" that fires the moment the default/enabled IME changes (catches the final
+    // 英语/拼音 confirmation too, since it writes DEFAULT_INPUT_METHOD).
+    DisposableEffect(Unit) {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                super.onChange(selfChange, uri)
+                refreshTick++
+            }
+
+            override fun onChange(selfChange: Boolean) {
+                super.onChange(selfChange)
+                refreshTick++
+            }
+        }
+        val resolver = appContext.contentResolver
+        resolver.registerContentObserver(
+            Settings.Secure.getUriFor(Settings.Secure.DEFAULT_INPUT_METHOD), false, observer
+        )
+        resolver.registerContentObserver(
+            Settings.Secure.getUriFor(Settings.Secure.ENABLED_INPUT_METHODS), false, observer
+        )
+        onDispose { resolver.unregisterContentObserver(observer) }
+    }
+
+    // Belt-and-suspenders: poll while not finished (matches Xime's 2s loop) in case the observer
+    // is throttled or coalesced on some ROMs. Stops as soon as every step is done.
+    LaunchedEffect(Unit) {
+        while (!SetupPage.entries.all { it.isDone() }) {
+            delay(1500)
+            refreshTick++
+        }
+    }
 
     val doneMap = remember(refreshTick) {
         SetupPage.entries.associateWith { it.isDone() }

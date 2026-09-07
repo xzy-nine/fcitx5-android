@@ -16,6 +16,7 @@ aboutlibraries = "14.2.1"
 arrow = "2.2.3"
 miuix = "0.9.4-rc01"
 jetbrainsCompose = "1.12.0-rc01"
+runtime = "1.12.0"
 
 [libraries]
 android-gradlePlugin = { group = "com.android.tools.build", name = "gradle", version.ref = "androidGradlePlugin" }
@@ -84,6 +85,7 @@ miuix-nav-android = { module = "top.yukonga.miuix.kmp:miuix-nav-android", versio
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version = "1.13.0" }
 jetbrains-compose-foundation-android = { module = "org.jetbrains.compose.foundation:foundation-android", version.ref = "jetbrainsCompose" }
 jieba-analysis = { module = "com.huaban:jieba-analysis", version = "1.0.2" }
+androidx-runtime = { group = "androidx.compose.runtime", name = "runtime", version.ref = "runtime" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
