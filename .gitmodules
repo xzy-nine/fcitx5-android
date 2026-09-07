@@ -58,4 +58,4 @@
 	url = https://gitee.com/xzy-ime/fcitx5-libthai
 [submodule "webdav"]
 	path = webdav
-	url = https://github.com/xzy-nine-common/WebDAV-Android.git
+	url = git@github.com:xzy-nine-common/WebDAV-Android.git
