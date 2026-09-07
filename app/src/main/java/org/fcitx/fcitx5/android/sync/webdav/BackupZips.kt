@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.fcitx.fcitx5.android.BuildConfig
 import org.fcitx.fcitx5.android.data.UserDataManager
+import org.fcitx.fcitx5.android.data.broadcast.BroadcastBackupFilter
 import org.fcitx.fcitx5.android.utils.Const
 import org.fcitx.fcitx5.android.utils.appContext
 import org.fcitx.fcitx5.android.utils.versionCodeCompat
@@ -68,7 +69,11 @@ object BackupZips {
     }
 
     /** 递归把 [srcDir] 整棵子树写入 zip（目录含尾斜杠条目），与 UserDataManager.writeFileTree 行为一致。 */
-    private fun ZipOutputStream.zipTree(srcDir: File, prefix: String) {
+    private fun ZipOutputStream.zipTree(
+        srcDir: File,
+        prefix: String,
+        excludeFile: (File) -> Boolean = { false }
+    ) {
         if (!srcDir.exists()) return
         addDirEntry(prefix)
         srcDir.walkTopDown().forEach { f ->
@@ -76,7 +81,7 @@ object BackupZips {
             if (related.isEmpty()) return@forEach
             if (f.isDirectory) {
                 addDirEntry("$prefix/${related.trimEnd('/')}")
-            } else if (f.isFile) {
+            } else if (f.isFile && !excludeFile(f)) {
                 putNextEntry(ZipEntry("$prefix/$related"))
                 f.inputStream().use { it.copyTo(this) }
                 closeEntry()
@@ -89,7 +94,10 @@ object BackupZips {
             dest.parentFile?.mkdirs()
             ZipOutputStream(dest.outputStream().buffered()).use { zip ->
                 zip.zipTree(sharedPrefsDir, "shared_prefs")
-                zip.zipTree(databasesDir, "databases")
+                // databases（剔除剪切板广播“已配对应用”库：配对密钥在本机 Keystore，不随备份迁移）
+                zip.zipTree(databasesDir, "databases") { f ->
+                    BroadcastBackupFilter.isBroadcastDatabaseFile(f.name)
+                }
                 if (externalConfigDir.exists()) {
                     zip.addDirEntry("external")
                     zip.zipTree(externalConfigDir, "external/config")

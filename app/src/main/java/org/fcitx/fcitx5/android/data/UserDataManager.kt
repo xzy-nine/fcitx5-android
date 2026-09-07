@@ -10,6 +10,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToStream
 import org.fcitx.fcitx5.android.BuildConfig
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.data.broadcast.BroadcastBackupFilter
 import org.fcitx.fcitx5.android.utils.Const
 import org.fcitx.fcitx5.android.utils.appContext
 import org.fcitx.fcitx5.android.utils.errorRuntime
@@ -36,14 +37,19 @@ object UserDataManager {
         val exportTime: Long
     )
 
-    private fun writeFileTree(srcDir: File, destPrefix: String, dest: ZipOutputStream) {
+    private fun writeFileTree(
+        srcDir: File,
+        destPrefix: String,
+        dest: ZipOutputStream,
+        excludeFile: (File) -> Boolean = { false }
+    ) {
         dest.putNextEntry(ZipEntry("$destPrefix/"))
         srcDir.walkTopDown().forEach { f ->
             val related = f.relativeTo(srcDir)
             if (related.path != "") {
                 if (f.isDirectory) {
                     dest.putNextEntry(ZipEntry("$destPrefix/${related.path}/"))
-                } else if (f.isFile) {
+                } else if (f.isFile && !excludeFile(f)) {
                     dest.putNextEntry(ZipEntry("$destPrefix/${related.path}"))
                     f.inputStream().use { it.copyTo(dest) }
                 }
@@ -61,8 +67,10 @@ object UserDataManager {
         ZipOutputStream(dest.buffered()).use { zipStream ->
             // shared_prefs
             writeFileTree(sharedPrefsDir, "shared_prefs", zipStream)
-            // databases
-            writeFileTree(dataBasesDir, "databases", zipStream)
+            // databases（剔除剪切板广播“已配对应用”库：配对密钥在本机 Keystore，不随备份迁移）
+            writeFileTree(dataBasesDir, "databases", zipStream) { f ->
+                BroadcastBackupFilter.isBroadcastDatabaseFile(f.name)
+            }
             // external
             writeFileTree(externalDir, "external", zipStream)
             // recently_used moved to SharedPreference and shoud not be exported
@@ -100,7 +108,11 @@ object UserDataManager {
                 if (metadata.packageName != BuildConfig.APPLICATION_ID)
                     errorRuntime(R.string.exception_user_data_package_name_mismatch)
                 copyDir(File(tempDir, "shared_prefs"), sharedPrefsDir)
-                copyDir(File(tempDir, "databases"), dataBasesDir)
+                // custom: 忽略备份 zip 内携带的广播“已配对应用”库（配对密钥在本机 Keystore，
+                // 不可迁移），只丢弃不解入，本机已有的有效配对保持不变
+                val tempDatabases = File(tempDir, "databases")
+                BroadcastBackupFilter.deleteBroadcastDatabaseFiles(tempDatabases)
+                copyDir(tempDatabases, dataBasesDir)
                 copyDir(File(tempDir, "external"), externalDir)
                 // keep importing recently_used for backwords compatibility
                 copyDir(File(tempDir, "recently_used"), recentlyUsedDir)

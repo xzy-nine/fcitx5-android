@@ -7,6 +7,7 @@ package org.fcitx.fcitx5.android.data
 import kotlinx.serialization.json.Json
 import org.fcitx.fcitx5.android.BuildConfig
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.data.broadcast.BroadcastBackupFilter
 import org.fcitx.fcitx5.android.utils.appContext
 import org.fcitx.fcitx5.android.utils.errorRuntime
 import org.fcitx.fcitx5.android.utils.extract
@@ -70,7 +71,11 @@ object UserDataImportCompat {
                     errorRuntime(R.string.exception_user_data_package_name_mismatch)
                 migrateLegacySharedPrefs(File(tempDir, "shared_prefs"))
                 copyDir(File(tempDir, "shared_prefs"), sharedPrefsDir)
-                copyDir(File(tempDir, "databases"), dataBasesDir)
+                // custom: 忽略备份 zip 内携带的广播“已配对应用”库（配对密钥在本机 Keystore，
+                // 不可迁移），只丢弃不解入，本机已有的有效配对保持不变
+                val tempDatabases = File(tempDir, "databases")
+                BroadcastBackupFilter.deleteBroadcastDatabaseFiles(tempDatabases)
+                copyDir(tempDatabases, dataBasesDir)
                 copyDir(File(tempDir, "external"), externalDir)
                 // keep importing recently_used for backwards compatibility
                 copyDir(File(tempDir, "recently_used"), recentlyUsedDir)
