@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
+import org.fcitx.fcitx5.android.data.UserDataImportCompat
 import org.fcitx.fcitx5.android.data.UserDataManager
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceFragment
@@ -61,7 +62,8 @@ class AdvancedSettingsFragment : ManagedPreferenceFragment(AppPrefs.getInstance(
                         FcitxDaemon.stopFcitx()
                         val metadata = withContext(Dispatchers.IO) {
                             val inputStream = cr.openInputStream(uri)!!
-                            UserDataManager.import(inputStream).getOrThrow()
+                            // custom: 兼容历史 debug 包名备份
+                            UserDataImportCompat.import(inputStream).getOrThrow()
                         }
                         AppUtil.showRestartNotification(ctx)
                         val exportTime = formatDateTime(metadata.exportTime)

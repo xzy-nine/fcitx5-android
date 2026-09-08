@@ -56,3 +56,6 @@
 [submodule "plugin/thai/src/main/cpp/fcitx5-libthai"]
 	path = plugin/thai/src/main/cpp/fcitx5-libthai
 	url = https://gitee.com/xzy-ime/fcitx5-libthai
+[submodule "webdav"]
+	path = webdav
+	url = git@github.com:xzy-nine-common/WebDAV-Android.git
