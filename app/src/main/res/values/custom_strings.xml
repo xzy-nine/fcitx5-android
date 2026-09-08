@@ -19,6 +19,7 @@
 
     <!-- Custom: candidate swipe -->
     <string name="horizontal_candidate_swipe">Swipe candidates</string>
+    <string name="candidate_divider">Show candidate divider</string>
 
     <!-- Custom: clipboard broadcast -->
     <string name="broadcast_settings">Clipboard Broadcast</string>

@@ -8,31 +8,30 @@ package org.fcitx.fcitx5.android.input.candidates.horizontal
 import android.content.Context
 import android.content.res.Configuration
 import android.view.View
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import org.fcitx.fcitx5.android.core.CandidateWord
 import org.fcitx.fcitx5.android.core.FcitxEvent
-import org.fcitx.fcitx5.android.daemon.FcitxConnection
 import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
-import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.BooleanKey.ExpandedCandidatesEmpty
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.TransitionEvent.ExpandedCandidatesUpdated
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.candidates.expanded.ExpandedCandidateStyle
+import org.fcitx.fcitx5.android.input.candidates.expanded.window.BaseExpandedCandidateWindow
 import org.fcitx.fcitx5.android.input.candidates.expanded.window.FlexboxExpandedCandidateWindow
 import org.fcitx.fcitx5.android.input.candidates.expanded.window.GridExpandedCandidateWindow
 import org.fcitx.fcitx5.android.input.dependency.UniqueViewComponent
@@ -42,6 +41,7 @@ import org.fcitx.fcitx5.android.input.dependency.fcitx
 import org.fcitx.fcitx5.android.input.dependency.inputView
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
 import org.fcitx.fcitx5.android.input.dependency.theme
+import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.mechdancer.dependency.manager.must
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
@@ -51,16 +51,6 @@ import top.yukonga.miuix.kmp.theme.ThemeController
 /**
  * Compose 候选栏组件
  * 替代 HorizontalCandidateComponent，使用 Compose LazyRow 实现
- *
- * 旧 View 实现对比：
- * - HorizontalCandidateComponent: 使用 RecyclerView + HorizontalCandidateViewAdapter
- * - ComposeCandidateComponent: 使用 Compose LazyRow + CandidateBarState 状态管理
- *
- * 主要变化：
- * 1. 候选列表：RecyclerView.Adapter → Compose LazyRow + itemsIndexed
- * 2. 状态管理：Adapter.notifyDataSetChanged() → MutableStateFlow<CandidateBarState>
- * 3. 滚动监听：RecyclerView.OnScrollListener → LazyListState.snapshotFlow
- * 4. 懒加载：Adapter.getItemCount() → snapshotFlow 检测滚动到底部
  */
 class ComposeCandidateComponent :
     UniqueViewComponent<ComposeCandidateComponent, View>(), InputBroadcastReceiver {
@@ -73,11 +63,13 @@ class ComposeCandidateComponent :
     private val service by manager.inputMethodService()
     private val windowManager: InputWindowManager by manager.must()
 
-    private val fillStyle by AppPrefs.getInstance().keyboard.horizontalCandidateStyle
-    private val swipeEnabledPref = AppPrefs.getInstance().keyboard.horizontalCandidateSwipe
-    private val expandedCandidateStyle by AppPrefs.getInstance().keyboard.expandedCandidateStyle
+    private val keyboardPrefs = AppPrefs.getInstance().keyboard
+    private val fillStyle by keyboardPrefs.horizontalCandidateStyle
+    private val swipeEnabledPref = keyboardPrefs.horizontalCandidateSwipe
+    private val candidateDividerPref = keyboardPrefs.candidateDivider
+    private val expandedCandidateStyle by keyboardPrefs.expandedCandidateStyle
     private val maxSpanCountPref by lazy {
-        AppPrefs.getInstance().keyboard.run {
+        keyboardPrefs.run {
             if (context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT)
                 expandedCandidateGridSpanCount
             else
@@ -174,7 +166,6 @@ class ComposeCandidateComponent :
         val currentState = _state.value
         if (currentState !is CandidateBarState.Active) return
         if (currentState.total >= 0 && currentState.candidates.size >= currentState.total) return
-        // 简化逻辑：总是尝试加载更多
         loadMore()
     }
 
@@ -183,11 +174,11 @@ class ComposeCandidateComponent :
         val currentState = _state.value
         if (currentState !is CandidateBarState.Active) return
         if (currentState.total >= 0 && currentState.candidates.size >= currentState.total) return
-        
+
         loadingMore = true
         val generation = candidateGeneration
         val currentOffset = currentState.candidates.size
-        
+
         fcitx.launchOnReady {
             val more = it.getCandidates(currentOffset, loadMoreBatch)
             if (generation == candidateGeneration) {
@@ -216,21 +207,20 @@ class ComposeCandidateComponent :
     ) {
         val candidates = data.candidates
         val total = data.total
-        
+
         _state.value = CandidateBarState.from(candidates, total)
-        
+
         loadingMore = false
         noMoreData = false
         candidateGeneration++
         lastExpandedOffset = -1
-        
+
         // 在滑动模式下，如果新数据是旧数据的前缀，保持滚动位置
         val keepScroll = prevData.candidates.isNotEmpty() &&
             candidates.size >= prevData.candidates.size &&
             candidates.take(prevData.candidates.size).toTypedArray().contentEquals(prevData.candidates)
-        
+
         if (!keepScroll) {
-            // 重置滚动位置
             _state.update { state ->
                 when (state) {
                     is CandidateBarState.Active -> state.copy(offset = 0)
@@ -238,8 +228,7 @@ class ComposeCandidateComponent :
                 }
             }
         }
-        
-        // 始终通知展开窗口更新状态（无论候选是否为空）
+
         refreshExpanded()
     }
 
@@ -252,6 +241,12 @@ class ComposeCandidateComponent :
         applyCandidates(data, prevData)
     }
 
+    override fun onWindowDetached(window: InputWindow) {
+        if (window is BaseExpandedCandidateWindow<*>) {
+            _isExpandedWindowShown.value = false
+        }
+    }
+
     /**
      * 获取当前候选栏的视觉配置
      */
@@ -260,7 +255,7 @@ class ComposeCandidateComponent :
             backgroundColor = androidx.compose.ui.graphics.Color(theme.barColor),
             textColor = androidx.compose.ui.graphics.Color(theme.candidateTextColor),
             commentColor = androidx.compose.ui.graphics.Color(theme.candidateCommentColor),
-            highlightColor = androidx.compose.ui.graphics.Color(theme.accentKeyBackgroundColor),
+            pressHighlightColor = androidx.compose.ui.graphics.Color(theme.keyPressHighlightColor),
             dividerColor = androidx.compose.ui.graphics.Color(theme.dividerColor),
         )
     }
@@ -284,22 +279,48 @@ class ComposeCandidateComponent :
                 MiuixTheme(controller = themeController) {
                     val state by _state.collectAsState()
                     val isExpandedWindowShown by _isExpandedWindowShown.collectAsState()
-                    // swipeEnabled 状态，监听偏好变化
+
+                    // 监听多个偏好变化，触发重组
                     val swipeEnabled = remember { mutableStateOf(swipeEnabledPref.getValue()) }
-                    
-                    // 监听 swipe 偏好变化
+                    val showDivider = remember { mutableStateOf(candidateDividerPref.getValue()) }
+                    val fillStyleVersion = remember { mutableIntStateOf(0) }
+                    val maxSpanCountVersion = remember { mutableIntStateOf(0) }
+
                     androidx.compose.runtime.DisposableEffect(Unit) {
-                        val listener = object : org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<Boolean> {
+                        val swipeListener = object : org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<Boolean> {
                             override fun onChange(key: String, value: Boolean) {
                                 swipeEnabled.value = value
                             }
                         }
-                        swipeEnabledPref.registerOnChangeListener(listener)
+                        val dividerListener = object : org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<Boolean> {
+                            override fun onChange(key: String, value: Boolean) {
+                                showDivider.value = value
+                            }
+                        }
+                        val fillStyleListener = org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<HorizontalCandidateMode> { _, _ ->
+                            fillStyleVersion.intValue++
+                        }
+                        val spanCountListener = org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<Int> { _, _ ->
+                            maxSpanCountVersion.intValue++
+                        }
+                        swipeEnabledPref.registerOnChangeListener(swipeListener)
+                        candidateDividerPref.registerOnChangeListener(dividerListener)
+                        keyboardPrefs.horizontalCandidateStyle.registerOnChangeListener(fillStyleListener)
+                        maxSpanCountPref.registerOnChangeListener(spanCountListener)
                         onDispose {
-                            swipeEnabledPref.unregisterOnChangeListener(listener)
+                            swipeEnabledPref.unregisterOnChangeListener(swipeListener)
+                            candidateDividerPref.unregisterOnChangeListener(dividerListener)
+                            keyboardPrefs.horizontalCandidateStyle.unregisterOnChangeListener(fillStyleListener)
+                            maxSpanCountPref.unregisterOnChangeListener(spanCountListener)
                         }
                     }
-                    
+
+                    // 读取当前值（version 变化触发重组）
+                    @Suppress("UNUSED_VARIABLE")
+                    val _fillVersion = fillStyleVersion.intValue
+                    @Suppress("UNUSED_VARIABLE")
+                    val _spanVersion = maxSpanCountVersion.intValue
+
                     ComposeCandidateBar(
                         state = state,
                         visuals = getVisuals(),
@@ -316,11 +337,9 @@ class ComposeCandidateComponent :
                             },
                             onExpandClick = {
                                 if (_isExpandedWindowShown.value) {
-                                    // 已展开，收起回到键盘
                                     windowManager.attachWindow(KeyboardWindow)
                                     _isExpandedWindowShown.value = false
                                 } else {
-                                    // 未展开，展开候选窗口
                                     windowManager.attachWindow(
                                         when (expandedCandidateStyle) {
                                             ExpandedCandidateStyle.Grid -> GridExpandedCandidateWindow()
@@ -341,6 +360,8 @@ class ComposeCandidateComponent :
                         maxSpanCount = maxSpanCountPref.getValue(),
                         userScrollEnabled = swipeEnabled.value,
                         isExpandMode = isExpandedWindowShown,
+                        barHeight = KawaiiBarComponent.HEIGHT.dp,
+                        showDivider = showDivider.value,
                     )
                 }
             }

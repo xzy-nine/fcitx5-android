@@ -19,6 +19,7 @@
 
     <!-- Custom: candidate swipe -->
     <string name="horizontal_candidate_swipe">滑動候選詞</string>
+    <string name="candidate_divider">顯示候選詞分割線</string>
 
     <!-- Custom: clipboard broadcast -->
     <string name="broadcast_settings">剪貼板廣播</string>

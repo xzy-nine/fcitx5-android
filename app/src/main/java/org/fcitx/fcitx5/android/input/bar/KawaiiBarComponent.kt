@@ -50,7 +50,6 @@ import org.fcitx.fcitx5.android.input.bar.ui.IdleUi
 import org.fcitx.fcitx5.android.input.bar.ui.TitleUi
 import org.fcitx.fcitx5.android.input.bar.ui.ToolButton
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
-import org.fcitx.fcitx5.android.input.candidates.expanded.ExpandedCandidateStyle
 import org.fcitx.fcitx5.android.input.candidates.expanded.window.FlexboxExpandedCandidateWindow
 import org.fcitx.fcitx5.android.input.candidates.expanded.window.GridExpandedCandidateWindow
 import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
@@ -104,7 +103,6 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private val clipboardSuggestion = prefs.clipboard.clipboardSuggestion
     private val clipboardItemTimeout = prefs.clipboard.clipboardItemTimeout
     private val clipboardMaskSensitive by prefs.clipboard.clipboardMaskSensitive
-    private val expandedCandidateStyle by prefs.keyboard.expandedCandidateStyle
     private val expandToolbarByDefault by prefs.keyboard.expandToolbarByDefault
     private val toolbarNumRowOnPassword by prefs.keyboard.toolbarNumRowOnPassword
     private val showVoiceInputButton by prefs.keyboard.showVoiceInputButton
