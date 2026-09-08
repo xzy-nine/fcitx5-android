@@ -107,7 +107,7 @@
     <string name="webdav_restore_title">恢复偏好设置</string>
     <string name="webdav_restore_msg">恢复会停止输入法并在之后重启应用，是否继续？</string>
     <string name="webdav_restore_dict_title">恢复词库</string>
-    <string name="webdav_restore_dict_msg">将用云端词库覆盖当前本地词库并重启引擎，是否继续？</string>
+    <string name="webdav_restore_dict_msg">将用云端词库覆盖当前本地词库，是否继续？</string>
     <string name="webdav_restoring">正在恢复…</string>
     <string name="webdav_uploading_prefs">正在上传偏好设置…</string>
     <string name="webdav_uploading_dict">正在上传词库…</string>

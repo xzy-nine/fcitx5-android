@@ -29,7 +29,7 @@ fun ZipInputStream.extract(destDir: File): List<File> {
             target.mkdirs()
         } else {
             target.parentFile?.mkdirs()
-            copyTo(target.outputStream())
+            target.outputStream().use { copyTo(it) }
         }
         entry = nextEntry
     }

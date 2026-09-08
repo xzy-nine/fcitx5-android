@@ -368,12 +368,40 @@ object WebDavSyncEngine {
                     staged += Staged(rel, current, stagedFile, local)
                     downloaded++
                 }
-                // 阶段 2：全部下载成功后才统一替换到最终位置
-                staged.forEach { (rel, current, stagedFile, local) ->
-                    local.parentFile?.mkdirs()
-                    Files.move(stagedFile.toPath(), local.toPath(), StandardCopyOption.REPLACE_EXISTING)
-                    snapshot[rel] = current
-                    digests[rel] = BackupZips.digest(local)
+                // 阶段 2：全部下载成功后才统一替换到最终位置；任一替换失败则回滚已替换的文件，
+                // 避免 data/ 停留在“半套新版 + 半套旧版”的混合状态（随后会被上传误用）。
+                val backupDir = File(tempDir, "download_backup").apply {
+                    if (exists()) deleteRecursively()
+                    mkdirs()
+                }
+                // 每替换一个本地文件前先备份原内容；中途失败时按相反顺序还原
+                val replaced = mutableListOf<Pair<File, File?>>()
+                try {
+                    staged.forEach { (rel, current, stagedFile, local) ->
+                        local.parentFile?.mkdirs()
+                        val backup = if (local.exists()) {
+                            File.createTempFile("dict_bak_", ".tmp", backupDir).also {
+                                Files.copy(local.toPath(), it.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                            }
+                        } else null
+                        replaced += local to backup
+                        Files.move(stagedFile.toPath(), local.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                        snapshot[rel] = current
+                        digests[rel] = BackupZips.digest(local)
+                    }
+                } catch (e: Exception) {
+                    // 回滚：把已替换的文件恢复为原内容（原本不存在的文件则删除），保持 data/ 一致性
+                    replaced.asReversed().forEach { (local, backup) ->
+                        runCatching {
+                            if (backup == null) local.delete()
+                            else Files.move(backup.toPath(), local.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                        }.onFailure {
+                            Timber.w("$TAG rollback failed for ${local.path}: ${it.javaClass.name}: ${it.message}")
+                        }
+                    }
+                    throw e
+                } finally {
+                    if (backupDir.exists()) backupDir.deleteRecursively()
                 }
                 commitConfig(stored) {
                     it.copy(

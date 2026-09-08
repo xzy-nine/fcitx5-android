@@ -110,7 +110,7 @@
     <string name="webdav_restore_title">Restore preferences</string>
     <string name="webdav_restore_msg">This stops the input method and restarts the app afterwards. Continue?</string>
     <string name="webdav_restore_dict_title">Restore dictionary</string>
-    <string name="webdav_restore_dict_msg">This overwrites current local dictionaries with the cloud copy and restarts the engine. Continue?</string>
+    <string name="webdav_restore_dict_msg">This overwrites the current local dictionaries with the cloud copy. Continue?</string>
     <string name="webdav_restoring">Restoring…</string>
     <string name="webdav_uploading_prefs">Uploading preferences…</string>
     <string name="webdav_uploading_dict">Uploading dictionaries…</string>

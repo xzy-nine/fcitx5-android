@@ -54,9 +54,8 @@ object AutoDictSync {
     @Volatile
     private var stoppingForRestart = false
 
-    /** 当前上传任务是否已越过去抖、进入实际传输阶段（此后不能取消，只能等待完成）。 */
-    @Volatile
-    private var uploadTransferInFlight = false
+    /** 实际传输任务：去抖任务越过延迟后启动并记录；一旦开始只等待不取消（取消会令远端写到一半）。 */
+    private var transferJob: Job? = null
 
     private val scope get() = FcitxApplication.getInstance().coroutineScope
 
@@ -88,20 +87,24 @@ object AutoDictSync {
             synchronized(uploadLock) {
                 // 锁内二次确认，防止与“排空退出”并发时排入退出后才会执行的上传
                 if (stoppingForRestart) return@synchronized
+                // 已有传输在进行：保留本次上传（取消会令远端文件写到一半），不再重复排期
+                if (transferJob?.isActive == true) return@synchronized
+                // 仍在去抖：尚未发生任何网络写，安全取消并重新排期
                 uploadJob?.cancel()
                 uploadJob = scope.launch {
                     delay(UPLOAD_DEBOUNCE_MS)
                     val current = runCatching { WebDavSyncConfig.load() }.getOrNull() ?: return@launch
                     if (!current.dictAutoSync || current.serverUrl.isBlank()) return@launch
                     if (stoppingForRestart) return@launch
-                    uploadTransferInFlight = true
-                    try {
+                    // 转移阶段以独立任务运行（不是 uploadJob 的子协程）：
+                    // 之后的 notifyDictChanged 不能再取消它，drainUploadAndExit 只等待它完成。
+                    val job = scope.launch {
                         WebDavSyncEngine.uploadDictFiles(current).onFailure {
                             Timber.e(it, "$TAG auto upload failed: ${it.javaClass.simpleName}")
                         }
-                    } finally {
-                        uploadTransferInFlight = false
                     }
+                    synchronized(uploadLock) { transferJob = job }
+                    job.join()
                 }
             }
         }.onFailure {
@@ -159,17 +162,18 @@ object AutoDictSync {
      */
     private suspend fun drainUploadAndExit() {
         stoppingForRestart = true
-        val job: Job? = synchronized(uploadLock) { uploadJob }
-        if (job != null && job.isActive) {
-            if (uploadTransferInFlight) {
-                Timber.i("$TAG auto upload in flight, wait up to ${WAIT_UPLOAD_TIMEOUT_MS}ms")
-                val joined = withTimeoutOrNull(WAIT_UPLOAD_TIMEOUT_MS) { job.join() }
-                if (joined == null) {
-                    Timber.w("$TAG timed out waiting for auto upload, exiting anyway")
-                }
-            } else {
-                runCatching { job.cancel() }
-                    .onFailure { Timber.w(it, "$TAG cancel pending auto upload failed") }
+        val (debounce, transfer) = synchronized(uploadLock) { uploadJob to transferJob }
+        // 仍在去抖的任务：尚未发生任何网络写，直接取消（不等待）
+        if (debounce != null && debounce.isActive) {
+            runCatching { debounce.cancel() }
+                .onFailure { Timber.w(it, "$TAG cancel pending auto upload failed") }
+        }
+        // 已在传输的任务：只等待其自然完成（带超时，超时仅告警后照常退出），绝不取消
+        if (transfer != null && transfer.isActive) {
+            Timber.i("$TAG auto upload in flight, wait up to ${WAIT_UPLOAD_TIMEOUT_MS}ms")
+            val joined = withTimeoutOrNull(WAIT_UPLOAD_TIMEOUT_MS) { transfer.join() }
+            if (joined == null) {
+                Timber.w("$TAG timed out waiting for auto upload, exiting anyway")
             }
         }
         runCatching { FcitxDaemon.stopFcitx() }
