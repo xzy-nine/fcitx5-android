@@ -28,7 +28,6 @@ import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
-import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcaster
 import org.fcitx.fcitx5.android.input.broadcast.PreeditEmptyStateComponent
 import org.fcitx.fcitx5.android.input.broadcast.PunctuationComponent
@@ -110,7 +109,6 @@ class InputView(
     private val composePreedit = ComposePreeditComponent()
     private val commonKeyActionListener = CommonKeyActionListener()
     private val windowManager = InputWindowManager()
-    private val kawaiiBar = KawaiiBarComponent()
     private val composeKawaiiBar = ComposeKawaiiBarComponent()
     // Compose 实现的候选栏组件
     // 旧 View 实现：HorizontalCandidateComponent（已断开接线，保留供对比）
@@ -267,7 +265,7 @@ class InputView(
                 centerVertically()
                 centerHorizontally()
             })
-            add(composeKawaiiBar.view, lParams(matchParent, dp(KawaiiBarComponent.HEIGHT)) {
+            add(composeKawaiiBar.view, lParams(matchParent, dp(ComposeKawaiiBarComponent.HEIGHT)) {
                 topOfParent()
                 centerHorizontally()
             })
@@ -311,7 +309,7 @@ class InputView(
 
         add(composePreedit.view, lParams(matchParent, wrapContent) {
             above(keyboardView)
-            centerHorizontally()
+            startOfParent()
         })
         add(keyboardView, lParams(matchParent, wrapContent) {
             centerHorizontally()

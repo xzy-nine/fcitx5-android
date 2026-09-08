@@ -15,8 +15,13 @@ import android.widget.inline.InlineContentView
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -27,7 +32,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import top.yukonga.miuix.kmp.basic.Icon
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -110,6 +118,8 @@ class ComposeKawaiiBarComponent :
     private var isCapabilityFlagsPassword: Boolean = false
     private var isKeyboardLayoutNumber: Boolean = false
     private var isToolbarManuallyToggled: Boolean = false
+    private var keyboardWidth: Int = 0
+    private var keyboardHeight: Int = 0
 
     private enum class NumberRowState { Auto, ForceShow, ForceHide }
     private var numberRowState = NumberRowState.Auto
@@ -131,6 +141,8 @@ class ComposeKawaiiBarComponent :
     private val _expandButtonState = kotlinx.coroutines.flow.MutableStateFlow<ExpandButtonStateMachine.State>(Hidden)
     private val _clipboardText = kotlinx.coroutines.flow.MutableStateFlow("")
     private val _isVoiceInputMode = kotlinx.coroutines.flow.MutableStateFlow(false)
+    private val _splitKeyboardEnabled = kotlinx.coroutines.flow.MutableStateFlow(splitKeyboardPref.getValue())
+    private val _menuRotation = kotlinx.coroutines.flow.MutableStateFlow(270f)
     private val _inlineSuggestions = kotlinx.coroutines.flow.MutableStateFlow<List<InlineSuggestion>>(emptyList())
 
     private var voiceInputSubtype: Pair<String, InputMethodSubtype>? = null
@@ -153,6 +165,12 @@ class ComposeKawaiiBarComponent :
                 }
                 evalIdleUiState()
             }
+        }
+
+    // 分割键盘偏好监听
+    private val splitKeyboardListener =
+        ManagedPreference.OnChangeListener<Boolean> { _, enabled ->
+            _splitKeyboardEnabled.value = enabled
         }
 
     private fun launchClipboardTimeoutJob() {
@@ -180,8 +198,10 @@ class ComposeKawaiiBarComponent :
     }
 
     private fun getVisuals(): ToolbarVisuals {
+        val useTransparent = ThemeManager.prefs.keyBorder.getValue()
         return ToolbarVisuals(
-            barColor = androidx.compose.ui.graphics.Color(theme.barColor),
+            barColor = if (useTransparent) androidx.compose.ui.graphics.Color.Transparent
+                else androidx.compose.ui.graphics.Color(theme.barColor),
             iconColor = androidx.compose.ui.graphics.Color(theme.altKeyTextColor),
             pressHighlightColor = androidx.compose.ui.graphics.Color(theme.keyPressHighlightColor),
             textColor = androidx.compose.ui.graphics.Color(theme.altKeyTextColor),
@@ -206,6 +226,8 @@ class ComposeKawaiiBarComponent :
                         _idleSubState.value = IdleSubState.Toolbar
                     }
                 }
+                // 更新菜单按钮旋转角度（收起时90°指向左，展开时270°指向右）
+                _menuRotation.value = if (_idleSubState.value == IdleSubState.Toolbar) 270f else 90f
                 if (clipboardTimeoutJob != null) {
                     launchClipboardTimeoutJob()
                 }
@@ -274,6 +296,7 @@ class ComposeKawaiiBarComponent :
                 numberRowState = NumberRowState.ForceShow
                 evalIdleUiState(fromUser = true)
             },
+            splitKeyboardEnabled = splitKeyboardPref.getValue(),
         )
     }
 
@@ -288,6 +311,7 @@ class ComposeKawaiiBarComponent :
             }
         }
         ClipboardManager.addOnUpdateListener(onClipboardUpdateListener)
+        splitKeyboardPref.registerOnChangeListener(splitKeyboardListener)
     }
 
     override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {
@@ -336,6 +360,11 @@ class ComposeKawaiiBarComponent :
         evalIdleUiState()
     }
 
+    fun onKeyboardSizeChanged(width: Int, height: Int) {
+        keyboardWidth = width
+        keyboardHeight = height
+    }
+
     @androidx.annotation.RequiresApi(android.os.Build.VERSION_CODES.R)
     fun handleInlineSuggestions(response: InlineSuggestionsResponse): Boolean {
         val suggestions = response.inlineSuggestions
@@ -364,6 +393,8 @@ class ComposeKawaiiBarComponent :
                     val expandButtonState by _expandButtonState.collectAsState()
                     val clipboardText by _clipboardText.collectAsState()
                     val inlineSuggestions by _inlineSuggestions.collectAsState()
+                    val splitKeyboardEnabled by _splitKeyboardEnabled.collectAsState()
+                    val menuRotation by _menuRotation.collectAsState()
 
                     val callbacks = remember { createCallbacks() }
                     val visuals = remember { getVisuals() }
@@ -375,6 +406,8 @@ class ComposeKawaiiBarComponent :
                         callbacks = callbacks,
                         visuals = visuals,
                         expandButtonState = expandButtonState,
+                        splitKeyboardEnabled = splitKeyboardEnabled,
+                        menuRotation = menuRotation,
                         candidateContent = {
                             // 候选栏内容由 ComposeCandidateComponent 提供
                             // 使用 AndroidView 包装其 ComposeView
@@ -400,20 +433,30 @@ class ComposeKawaiiBarComponent :
                         },
                         clipboardContent = {
                             if (clipboardText.isNotEmpty()) {
-                                Box(
+                                androidx.compose.foundation.layout.Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .inputFeedback()
                                         .clickable(
                                             interactionSource = remember { MutableInteractionSource() },
                                             indication = null,
                                             onClick = callbacks.onClipboardSuggestionClick,
                                         )
-                                        .padding(horizontal = 8.dp),
-                                    contentAlignment = Alignment.CenterStart,
+                                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_clipboard),
+                                        contentDescription = null,
+                                        tint = visuals.iconColor,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
                                     Text(
                                         text = clipboardText,
                                         color = visuals.textColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
                             }
@@ -424,7 +467,6 @@ class ComposeKawaiiBarComponent :
                                 titleExtensionView?.let { extView ->
                                     androidx.compose.ui.viewinterop.AndroidView(
                                         factory = { extView },
-                                        modifier = Modifier.fillMaxWidth(),
                                     )
                                 }
                             }

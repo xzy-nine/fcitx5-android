@@ -4,7 +4,13 @@
  */
 package org.fcitx.fcitx5.android.input.bar
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -51,6 +57,8 @@ fun ComposeToolbar(
     callbacks: ToolbarCallbacks,
     visuals: ToolbarVisuals,
     expandButtonState: ExpandButtonStateMachine.State,
+    splitKeyboardEnabled: Boolean = false,
+    menuRotation: Float = 0f,
     modifier: Modifier = Modifier,
     // 候选栏内容由外部传入
     candidateContent: @Composable () -> Unit = {},
@@ -70,6 +78,8 @@ fun ComposeToolbar(
                     subState = idleSubState,
                     callbacks = callbacks,
                     visuals = visuals,
+                    splitKeyboardEnabled = splitKeyboardEnabled,
+                    menuRotation = menuRotation,
                     numberRowContent = numberRowContent,
                     inlineSuggestionContent = inlineSuggestionContent,
                     clipboardContent = clipboardContent,
@@ -100,6 +110,8 @@ private fun IdleContent(
     subState: IdleSubState,
     callbacks: ToolbarCallbacks,
     visuals: ToolbarVisuals,
+    splitKeyboardEnabled: Boolean,
+    menuRotation: Float,
     numberRowContent: @Composable () -> Unit,
     inlineSuggestionContent: @Composable () -> Unit,
     clipboardContent: @Composable () -> Unit,
@@ -107,35 +119,58 @@ private fun IdleContent(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(KawaiiBarComponent.HEIGHT.dp),
+            .height(ComposeKawaiiBarComponent.HEIGHT.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 左侧：菜单按钮
         MenuButton(
             onClick = callbacks.onMenuClick,
             iconColor = visuals.iconColor,
+            rotation = menuRotation,
         )
 
         // 中间内容区
         Box(
             modifier = Modifier
                 .weight(1f)
-                .height(KawaiiBarComponent.HEIGHT.dp),
+                .height(ComposeKawaiiBarComponent.HEIGHT.dp),
             contentAlignment = Alignment.Center,
         ) {
-            when (subState) {
-                IdleSubState.Empty -> { /* 空白 */ }
-                IdleSubState.Toolbar -> {
-                    ToolbarButtonsRow(callbacks = callbacks, visuals = visuals)
-                }
-                IdleSubState.Clipboard -> {
-                    clipboardContent()
-                }
-                IdleSubState.NumberRow -> {
-                    numberRowContent()
-                }
-                IdleSubState.InlineSuggestion -> {
-                    inlineSuggestionContent()
+            AnimatedContent(
+                targetState = subState,
+                transitionSpec = {
+                    if (targetState == IdleSubState.Toolbar && initialState != IdleSubState.Toolbar) {
+                        // 展开工具栏：从左滑入
+                        slideInHorizontally { -it } + fadeIn() togetherWith
+                            slideOutHorizontally { it / 3 } + fadeOut()
+                    } else if (targetState != IdleSubState.Toolbar && initialState == IdleSubState.Toolbar) {
+                        // 收起工具栏：向左滑出
+                        slideInHorizontally { it / 3 } + fadeIn() togetherWith
+                            slideOutHorizontally { -it } + fadeOut()
+                    } else {
+                        fadeIn() togetherWith fadeOut()
+                    }
+                },
+                label = "toolbarContent",
+            ) { state ->
+                when (state) {
+                    IdleSubState.Empty -> { /* 空白 */ }
+                    IdleSubState.Toolbar -> {
+                        ToolbarButtonsRow(
+                            callbacks = callbacks,
+                            visuals = visuals,
+                            splitKeyboardEnabled = splitKeyboardEnabled,
+                        )
+                    }
+                    IdleSubState.Clipboard -> {
+                        clipboardContent()
+                    }
+                    IdleSubState.NumberRow -> {
+                        numberRowContent()
+                    }
+                    IdleSubState.InlineSuggestion -> {
+                        inlineSuggestionContent()
+                    }
                 }
             }
         }
@@ -159,7 +194,7 @@ private fun CandidateContent(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(KawaiiBarComponent.HEIGHT.dp)
+            .height(ComposeKawaiiBarComponent.HEIGHT.dp)
             .padding(end = 40.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -180,7 +215,7 @@ private fun TitleContent(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(KawaiiBarComponent.HEIGHT.dp),
+            .height(ComposeKawaiiBarComponent.HEIGHT.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 返回按钮
@@ -200,7 +235,10 @@ private fun TitleContent(
         }
 
         // 扩展内容
-        Box(modifier = Modifier.weight(1f)) {
+        Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.CenterEnd,
+        ) {
             extensionContent?.invoke()
         }
     }
@@ -210,11 +248,12 @@ private fun TitleContent(
 private fun ToolbarButtonsRow(
     callbacks: ToolbarCallbacks,
     visuals: ToolbarVisuals,
+    splitKeyboardEnabled: Boolean,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(KawaiiBarComponent.HEIGHT.dp)
+            .height(ComposeKawaiiBarComponent.HEIGHT.dp)
             .padding(horizontal = 4.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
@@ -245,7 +284,7 @@ private fun ToolbarButtonsRow(
         )
         ToolbarIconButton(
             onClick = callbacks.onSplitKeyboardToggle,
-            iconRes = R.drawable.ic_baseline_keyboard_24,
+            iconRes = if (splitKeyboardEnabled) R.drawable.ic_baseline_keyboard_24 else R.drawable.ic_split_keyboard,
             iconColor = visuals.iconColor,
             contentDescription = "Split Keyboard",
         )
@@ -268,18 +307,23 @@ private fun ToolbarButtonsRow(
 private fun MenuButton(
     onClick: () -> Unit,
     iconColor: Color,
+    rotation: Float = 0f,
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    var iconRotation by remember { mutableFloatStateOf(rotation) }
+    val animatedRotation by animateFloatAsState(targetValue = iconRotation, label = "menuRotation")
+    androidx.compose.runtime.LaunchedEffect(rotation) { iconRotation = rotation }
 
     Box(
         modifier = modifier
-            .size(KawaiiBarComponent.HEIGHT.dp)
+            .size(ComposeKawaiiBarComponent.HEIGHT.dp)
             .clip(CircleShape)
             .background(
                 if (isPressed) iconColor.copy(alpha = 0.1f) else Color.Transparent
             )
+            .inputFeedback()
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -291,7 +335,9 @@ private fun MenuButton(
             painter = painterResource(R.drawable.ic_baseline_expand_more_24),
             contentDescription = "Menu",
             tint = iconColor,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier
+                .size(24.dp)
+                .rotate(animatedRotation),
         )
     }
 }
@@ -309,11 +355,12 @@ private fun HideKeyboardButton(
 
     Box(
         modifier = modifier
-            .size(KawaiiBarComponent.HEIGHT.dp)
+            .size(ComposeKawaiiBarComponent.HEIGHT.dp)
             .clip(CircleShape)
             .background(
                 if (isPressed) iconColor.copy(alpha = 0.1f) else Color.Transparent
             )
+            .inputFeedback()
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragEnd = {
@@ -367,11 +414,12 @@ private fun ToolbarIconButton(
 
     Box(
         modifier = modifier
-            .size(KawaiiBarComponent.HEIGHT.dp)
+            .size(ComposeKawaiiBarComponent.HEIGHT.dp)
             .clip(CircleShape)
             .background(
                 if (isPressed) iconColor.copy(alpha = 0.1f) else Color.Transparent
             )
+            .inputFeedback()
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,

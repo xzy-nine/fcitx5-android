@@ -23,7 +23,7 @@ import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.BooleanKey.ExpandedCandidatesEmpty
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.TransitionEvent.ExpandedCandidatesAttached
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.TransitionEvent.ExpandedCandidatesDetached
-import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
+import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
 import org.fcitx.fcitx5.android.input.candidates.CandidateViewHolder
@@ -56,7 +56,7 @@ abstract class BaseExpandedCandidateWindow<T : BaseExpandedCandidateWindow<T>> :
     protected val fcitx by manager.fcitx()
     protected val inputView by manager.inputView()
     private val commonKeyActionListener: CommonKeyActionListener by manager.must()
-    private val bar: KawaiiBarComponent by manager.must()
+    private val bar: ComposeKawaiiBarComponent by manager.must()
     // Compose 实现的候选栏组件
     // 旧 View 实现：private val horizontalCandidate: HorizontalCandidateComponent by manager.must()（已断开接线）
     private val composeCandidate: ComposeCandidateComponent by manager.must()

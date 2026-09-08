@@ -30,6 +30,7 @@ data class ToolbarCallbacks(
     val onCursorMove: () -> Unit,
     val onClipboard: () -> Unit,
     val onSplitKeyboardToggle: () -> Unit,
+    val splitKeyboardEnabled: Boolean,
     val onMore: () -> Unit,
     val onTune: () -> Unit,
     val onTitleBack: () -> Unit,

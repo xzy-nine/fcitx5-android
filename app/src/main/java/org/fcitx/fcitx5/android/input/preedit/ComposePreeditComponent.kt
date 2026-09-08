@@ -89,10 +89,14 @@ class ComposePreeditComponent :
                 val themeController = remember { ThemeController(ColorSchemeMode.System) }
                 MiuixTheme(controller = themeController) {
                     val state by _state.collectAsState()
-                    ComposePreedit(
-                        state = state,
-                        visuals = getVisuals(),
-                    )
+                    androidx.compose.foundation.layout.Box(
+                        contentAlignment = androidx.compose.ui.Alignment.TopStart,
+                    ) {
+                        ComposePreedit(
+                            state = state,
+                            visuals = getVisuals(),
+                        )
+                    }
                 }
             }
         }
