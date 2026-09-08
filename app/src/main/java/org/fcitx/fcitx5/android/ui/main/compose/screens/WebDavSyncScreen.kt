@@ -150,6 +150,13 @@ private fun WebDavLoginDialog(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (serverUrl.trim().startsWith("http://", ignoreCase = true)) {
+                Text(
+                    text = stringResource(R.string.webdav_http_warning),
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
             TextField(
                 value = username,
                 onValueChange = { username = it; connectionResult = null },
@@ -268,6 +275,16 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         dictAutoSync = autoDict,
     )
 
+    /** 保存配置；失败时提示并记日志，返回是否成功。 */
+    fun persistCfg(cfg: WebDavSyncConfig): Boolean = cfg.save().fold(
+        onSuccess = { true },
+        onFailure = { e ->
+            logFailure("save config", e)
+            context.toast(R.string.webdav_save_failed)
+            false
+        },
+    )
+
     fun requireReady(): Boolean {
         if (serverUrl.isBlank() || username.isBlank()) {
             context.toast(R.string.webdav_need_server)
@@ -285,7 +302,12 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         busy = true
         progress = busyMessage
         scope.launch {
-            val cfg = currentCfg().apply { save() }
+            val cfg = currentCfg()
+            if (!persistCfg(cfg)) {
+                busy = false
+                progress = null
+                return@launch
+            }
             val onProgress: suspend (String) -> Unit = { progress = it }
             val result = op(cfg, onProgress)
             // 操作可能写入了指纹/远端 mtime，重新读取以免后续保存覆盖
@@ -309,12 +331,16 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         scope.launch {
             try {
                 val cfg = currentCfg()
-                val dest = File(context.cacheDir, "webdav/${entry.name}").apply {
+                // 文件名来自远端，先清洗成单段文件名再落盘，防止路径穿越覆盖缓存其它文件
+                val dest = File(
+                    context.cacheDir,
+                    "webdav/${WebDavSyncEngine.sanitizeFileNamePart(entry.name)}"
+                ).apply {
                     parentFile?.mkdirs()
                 }
-                progress = "正在下载偏好备份 ${entry.name}…"
+                progress = context.getString(R.string.webdav_downloading_backup, entry.name)
                 WebDavSyncEngine.downloadRemoteZip(cfg, entry, dest)
-                progress = "正在导入偏好设置…"
+                progress = context.getString(R.string.webdav_importing_prefs)
                 SyncRestorer.restorePrefsZip(dest).getOrThrow()
                 context.toast(R.string.webdav_prefs_restored)
                 AppUtil.showRestartNotification(context)
@@ -346,7 +372,7 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                     context.toast(R.string.webdav_dict_already_latest)
                 } else {
                     // 拼音/自定义短语可热重载，无需重启；table 类词库需重建进程才稳定
-                    progress = "正在重新加载词库…"
+                    progress = context.getString(R.string.webdav_reloading_dict)
                     DictReload.applyReloadable(outcome.kinds)
                     syncState = WebDavSyncConfig.load()
                     if (DictReload.needsRestart(outcome.kinds)) {
@@ -442,8 +468,10 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                     summary = stringResource(R.string.webdav_auto_dict_summary),
                     checked = autoDict,
                     onCheckedChange = { value ->
+                        // 先持久化成功再更新开关状态，失败时保持原状态并提示
+                        val cfg = currentCfg().copy(dictAutoSync = value)
+                        if (!persistCfg(cfg)) return@SwitchPreference
                         autoDict = value
-                        currentCfg().save()
                         if (value) {
                             AutoDictSync.startDownloadLoop()
                             context.toast(R.string.webdav_auto_dict_on)
@@ -491,11 +519,20 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         WebDavLoginDialog(
             initial = currentCfg(),
             onSave = { newUrl, newUser, newPass, newDevice ->
-                serverUrl = newUrl
-                username = newUser
-                password = newPass
-                deviceName = newDevice
-                currentCfg().save()
+                val cfg = syncState.copy(
+                    serverUrl = newUrl.trim(),
+                    username = newUser,
+                    password = newPass,
+                    deviceName = newDevice.ifBlank { WebDavSyncConfig.defaultDeviceName() },
+                    dictAutoSync = autoDict,
+                )
+                // 持久化成功才更新界面字段，失败则保持原配置
+                if (persistCfg(cfg)) {
+                    serverUrl = newUrl
+                    username = newUser
+                    password = newPass
+                    deviceName = newDevice
+                }
             },
             onDismiss = { showServerDialog = false },
         )

@@ -8,6 +8,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.fcitx.fcitx5.android.FcitxApplication
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.utils.AppUtil
@@ -34,6 +35,8 @@ object AutoDictSync {
     private const val CHECK_INTERVAL_MS = 30 * 60 * 1000L
     /** 结束进程前对“键盘仍隐藏”的复查间隔（下载+恢复耗时较长，期间用户可能重新唤出键盘） */
     private const val RESTART_RECHECK_DELAY_MS = 1000L
+    /** 重建进程前等待“已在进行中”的上传完成的上限；超时仅告警、不阻塞退出 */
+    private const val WAIT_UPLOAD_TIMEOUT_MS = 60 * 1000L
 
     /** 键盘当前是否处于激活状态：激活时不做自动下载（避免打断输入）。 */
     @Volatile
@@ -46,6 +49,14 @@ object AutoDictSync {
     private val uploadLock = Any()
 
     private var uploadJob: Job? = null
+
+    /** 为重建进程而退出前“排空上传”置位：置位后 [notifyDictChanged] 不再排期新上传。 */
+    @Volatile
+    private var stoppingForRestart = false
+
+    /** 当前上传任务是否已越过去抖、进入实际传输阶段（此后不能取消，只能等待完成）。 */
+    @Volatile
+    private var uploadTransferInFlight = false
 
     private val scope get() = FcitxApplication.getInstance().coroutineScope
 
@@ -69,17 +80,27 @@ object AutoDictSync {
 
     /** 词库变更通知：重新安排去抖后的自动上传。可在任意线程调用。 */
     fun notifyDictChanged() {
+        // 正在为重建进程退出而排空上传：不再接受新的排期
+        if (stoppingForRestart) return
         val cfg = runCatching { WebDavSyncConfig.load() }.getOrNull() ?: return
         if (!cfg.dictAutoSync || cfg.serverUrl.isBlank()) return
         runCatching {
             synchronized(uploadLock) {
+                // 锁内二次确认，防止与“排空退出”并发时排入退出后才会执行的上传
+                if (stoppingForRestart) return@synchronized
                 uploadJob?.cancel()
                 uploadJob = scope.launch {
                     delay(UPLOAD_DEBOUNCE_MS)
                     val current = runCatching { WebDavSyncConfig.load() }.getOrNull() ?: return@launch
                     if (!current.dictAutoSync || current.serverUrl.isBlank()) return@launch
-                    WebDavSyncEngine.uploadDictFiles(current).onFailure {
-                        Timber.e(it, "$TAG auto upload failed: ${it.javaClass.simpleName}")
+                    if (stoppingForRestart) return@launch
+                    uploadTransferInFlight = true
+                    try {
+                        WebDavSyncEngine.uploadDictFiles(current).onFailure {
+                            Timber.e(it, "$TAG auto upload failed: ${it.javaClass.simpleName}")
+                        }
+                    } finally {
+                        uploadTransferInFlight = false
                     }
                 }
             }
@@ -126,7 +147,31 @@ object AutoDictSync {
             Timber.i("$TAG keyboard showed up during recheck, skip restarting process")
             return
         }
-        Timber.i("$TAG dict restored, keyboard hidden, stopping fcitx and exiting process")
+        Timber.i("$TAG dict restored, keyboard hidden, draining pending upload before exit")
+        drainUploadAndExit()
+    }
+
+    /**
+     * 重建进程前排空待处理上传，避免把正在 PUT 的远端文件写到一半：
+     * 1. 置位 [stoppingForRestart]，[notifyDictChanged] 不再排期新上传；
+     * 2. 仍处于去抖延迟的任务直接取消（尚未发生任何网络写）；
+     * 3. 已开始传输的任务等待其自然完成（带超时，超时仅告警后照常退出）。
+     */
+    private suspend fun drainUploadAndExit() {
+        stoppingForRestart = true
+        val job: Job? = synchronized(uploadLock) { uploadJob }
+        if (job != null && job.isActive) {
+            if (uploadTransferInFlight) {
+                Timber.i("$TAG auto upload in flight, wait up to ${WAIT_UPLOAD_TIMEOUT_MS}ms")
+                val joined = withTimeoutOrNull(WAIT_UPLOAD_TIMEOUT_MS) { job.join() }
+                if (joined == null) {
+                    Timber.w("$TAG timed out waiting for auto upload, exiting anyway")
+                }
+            } else {
+                runCatching { job.cancel() }
+                    .onFailure { Timber.w(it, "$TAG cancel pending auto upload failed") }
+            }
+        }
         runCatching { FcitxDaemon.stopFcitx() }
             .onFailure { Timber.w(it, "$TAG stopFcitx before exit failed") }
         AppUtil.exit()

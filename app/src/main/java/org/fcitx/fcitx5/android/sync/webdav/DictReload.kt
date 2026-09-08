@@ -33,7 +33,20 @@ object DictReload {
         else -> Kind.TABLE
     }
 
-    /** 是否必须重建进程才能让词库生效（table 类词库被改动）。 */
+    /**
+     * 是否必须重建进程才能让词库生效（`table/` 目录下的词库——五笔、郑码、双拼方案等被改动）。
+     *
+     * 触发条件：本轮同步命中的文件相对 `data/` 的路径落在未知目录或 `table/` 下（保守按 table 处理）。
+     * 复现：覆盖任一 table 词库后只做热重载或 `FcitxDaemon.restartFcitx()`（引擎重启成功但
+     * IME 与引擎的连接不复位），随后输入表现为“按键有反馈却无法上屏”，只有重建进程才恢复。
+     *
+     * 调用方差异：
+     * - [AutoDictSync]：先 `stopFcitx()` 再 `AppUtil.exit()`（键盘隐藏且已排空待处理上传后）；
+     * - `WebDavSyncScreen` 的 table 分支：当前仅发重启通知并调用 `AppUtil.exit()`，
+     *   由进程退出连带回收引擎。
+     *
+     * 注意：不要为 `restartFcitx()` 失败增加回退逻辑——恢复后的生效路径只依赖进程重建。
+     */
     fun needsRestart(kinds: Set<Kind>): Boolean = Kind.TABLE in kinds
 
     /**

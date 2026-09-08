@@ -39,8 +39,15 @@ object SyncRestorer {
                 "$TAG $what zip: path=${zipFile.absolutePath}, exists=${zipFile.exists()}, size=${zipFile.length()}"
             )
             ZipFile(zipFile).use { zip ->
-                val names = zip.entries().toList().map { it.name }
-                Timber.i("$TAG $what zip entries(${names.size}): ${names.joinToString()}")
+                // 只打印条目总数 + 有限样本，避免超大 zip 时把所有条目名一次性载入内存
+                val entries = zip.entries()
+                val total = zip.size()
+                val sample = buildList {
+                    while (entries.hasMoreElements() && size < 30) {
+                        add(entries.nextElement().name)
+                    }
+                }
+                Timber.i("$TAG $what zip entries(total=$total, sample=$sample)")
                 val meta = zip.getEntry("metadata.json")
                 if (meta == null) {
                     Timber.w("$TAG $what zip has no metadata.json")

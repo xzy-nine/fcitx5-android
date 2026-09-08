@@ -12,11 +12,14 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncConfig.Companion.CLOUD_DIR_NAME
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncConfig.Companion.DICT_DIR_NAME
+import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncConfig.Companion.PREFS_FILE_PREFIX
 import org.fcitx.fcitx5.android.utils.appContext
 import timber.log.Timber
 import java.io.File
 import java.net.URLEncoder
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -32,6 +35,11 @@ import java.time.format.DateTimeFormatter
 object WebDavSyncEngine {
 
     private const val TAG = "WebDavSync"
+
+    /** 取字符串资源（进度/结果提示等用户可见文案跟随系统语言）。 */
+    private fun text(id: Int): String = appContext.getString(id)
+
+    private fun text(id: Int, vararg args: Any): String = appContext.getString(id, *args)
 
     private val externalDir = appContext.getExternalFilesDir(null)!!
 
@@ -91,7 +99,7 @@ object WebDavSyncEngine {
             try {
                 val wd = webDav(cfg, normalizeBase(cfg.serverUrl))
                 val entries = wd.listFiles()
-                Result.success("连接成功（可访问 ${entries.size} 个项目）")
+                Result.success(text(R.string.webdav_connection_ok, entries.size))
             } catch (e: Exception) {
                 Result.failure(e)
             }
@@ -188,23 +196,23 @@ object WebDavSyncEngine {
                 val dirUrl = cloudDirUrl(cfg)
                 val name = prefsFileName(cfg)
                 val zipFile = File(tempDir, name)
-                onProgress("正在打包偏好设置…")
+                onProgress(text(R.string.webdav_packing_prefs))
                 BackupZips.buildPrefsZip(zipFile).getOrThrow()
                 val digest = BackupZips.digest(zipFile)
                 val stored = persistedConfig(cfg)
                 if (stored.lastPrefsUploadName == name && stored.lastPrefsUploadDigest == digest) {
-                    Result.success("偏好设置未发生变化，已跳过上传")
+                    Result.success(text(R.string.webdav_prefs_unchanged_skip))
                 } else {
-                    onProgress("正在上传 $name …")
+                    onProgress(text(R.string.webdav_uploading_file, name))
                     uploadFile(cfg, dirUrl, name, zipFile)
                     commitConfig(stored) {
                         it.copy(
                             lastPrefsUploadName = name,
                             lastPrefsUploadDigest = digest,
-                            lastSyncDescription = "偏好已上传：$name"
+                            lastSyncDescription = text(R.string.webdav_last_prefs_uploaded, name)
                         )
                     }
-                    Result.success("偏好设置已上传：$name")
+                    Result.success(text(R.string.webdav_prefs_uploaded, name))
                 }
             } catch (e: Exception) {
                 Timber.e(e, "uploadPrefs failed: ${e.javaClass.simpleName}")
@@ -246,10 +254,10 @@ object WebDavSyncEngine {
                     if (digests[rel] == digest && snapshot.containsKey(rel)) {
                         // 本地内容未变、且云端已知有相同内容：无需重复上传
                         skipped++
-                        onProgress("已是最新，跳过 $rel（$pos）")
+                        onProgress(text(R.string.webdav_skip_unchanged, rel, pos))
                         return@forEachIndexed
                     }
-                    onProgress("正在上传 $rel（$pos）")
+                    onProgress(text(R.string.webdav_uploading_dict_file, rel, pos))
                     uploadFile(cfg, dirUrl, rel, file)
                     remoteFileOrNull(cfg, dirUrl, rel)?.let {
                         snapshot[rel] = "${it.size}:${it.lastModify}"
@@ -261,14 +269,14 @@ object WebDavSyncEngine {
                     it.copy(
                         dictFileDigests = digests,
                         dictRemoteSnapshot = snapshot,
-                        lastSyncDescription = "词库已上传：$todayStr"
+                        lastSyncDescription = text(R.string.webdav_last_dict_uploaded, todayStr)
                     )
                 }
                 val msg = when {
-                    total == 0 -> "没有可上传的词库文件"
-                    uploaded == 0 -> "词库未发生变化，已跳过上传（$skipped 个文件）"
-                    skipped == 0 -> "词库已上传（$uploaded 个文件）"
-                    else -> "词库已上传（$uploaded 个文件，$skipped 个未变化已跳过）"
+                    total == 0 -> text(R.string.webdav_dict_no_files)
+                    uploaded == 0 -> text(R.string.webdav_dict_unchanged_skip, skipped)
+                    skipped == 0 -> text(R.string.webdav_dict_uploaded_count, uploaded)
+                    else -> text(R.string.webdav_dict_uploaded_partial, uploaded, skipped)
                 }
                 Timber.i("$TAG uploadDictFiles: $msg")
                 Result.success(msg)
@@ -303,6 +311,12 @@ object WebDavSyncEngine {
         onProgress: suspend (String) -> Unit = {}
     ): Result<DictDownloadOutcome> = withContext(Dispatchers.IO) {
         syncMutex.withLock {
+            // 需要更新的文件一律先进入暂存目录，全部下载成功后再统一搬入 data/，
+            // 避免中途失败留下“半套已覆盖、半套未覆盖”的本地词库（随后被上传误用）。
+            val stagingDir = File(tempDir, "download_stage").apply {
+                if (exists()) deleteRecursively()
+                mkdirs()
+            }
             try {
                 val dirUrl = dictDirUrl(cfg)
                 // 云端还没有 dict/ 目录时视为“暂无词库备份”，而不是失败
@@ -318,9 +332,23 @@ object WebDavSyncEngine {
                 val total = remoteFiles.size
                 var downloaded = 0
                 var skipped = 0
+                // 阶段 1：把需要更新的文件全部下载到暂存目录，期间不动本地任何文件
+                data class Staged(
+                    val rel: String,
+                    val current: String,
+                    val stagedFile: File,
+                    val local: File
+                )
+                val staged = mutableListOf<Staged>()
                 remoteFiles.forEachIndexed { index, (rel, entry) ->
                     val current = "${entry.size}:${entry.lastModify}"
                     val pos = "${index + 1}/$total"
+                    if (!isSafeRelUnderData(rel)) {
+                        // 兜底：即便列表阶段有漏网，也绝不允许任何越界写入
+                        Timber.w("$TAG skip unsafe remote rel: '$rel'")
+                        skipped++
+                        return@forEachIndexed
+                    }
                     val local = File(externalDir, "${DictCollector.DATA_DIR_NAME}/$rel")
                     if (!force) {
                         // 远端 size+mtime 未变化：本地已是最新，跳过下载（不重复覆盖）。
@@ -328,17 +356,24 @@ object WebDavSyncEngine {
                         // 内容不同，那样会错误地跳过一次真实更新，反而丢同步。
                         if (snapshot[rel] == current) {
                             skipped++
-                            onProgress("已是最新，跳过 $rel（$pos）")
+                            onProgress(text(R.string.webdav_skip_unchanged, rel, pos))
                             return@forEachIndexed
                         }
                     }
+                    val stagedFile = File(stagingDir, rel)
+                    stagedFile.parentFile?.mkdirs()
+                    onProgress(text(R.string.webdav_downloading_dict_file, rel, pos))
+                    webDav(cfg, entry.url).downloadTo(stagedFile.absolutePath, replaceExisting = true)
+                    kinds += DictReload.kindOf(rel)
+                    staged += Staged(rel, current, stagedFile, local)
+                    downloaded++
+                }
+                // 阶段 2：全部下载成功后才统一替换到最终位置
+                staged.forEach { (rel, current, stagedFile, local) ->
                     local.parentFile?.mkdirs()
-                    onProgress("正在下载 $rel（$pos）")
-                    webDav(cfg, entry.url).downloadTo(local.absolutePath, replaceExisting = true)
+                    Files.move(stagedFile.toPath(), local.toPath(), StandardCopyOption.REPLACE_EXISTING)
                     snapshot[rel] = current
                     digests[rel] = BackupZips.digest(local)
-                    kinds += DictReload.kindOf(rel)
-                    downloaded++
                 }
                 commitConfig(stored) {
                     it.copy(
@@ -347,7 +382,7 @@ object WebDavSyncEngine {
                         lastSyncDescription = if (downloaded == 0) {
                             it.lastSyncDescription
                         } else {
-                            "词库已下载：$todayStr"
+                            text(R.string.webdav_last_dict_downloaded, todayStr)
                         }
                     )
                 }
@@ -359,9 +394,21 @@ object WebDavSyncEngine {
                         "trace=${e.stackTraceToString()}"
                 )
                 Result.failure(e)
+            } finally {
+                // 无论成败都清理暂存文件；失败时本地词库未被改动，下次自动同步会重试
+                if (stagingDir.exists()) stagingDir.deleteRecursively()
             }
         }
     }
+
+    /** 远端单段路径名必须非空、不含路径分隔符与 `..`（防服务器返回恶意名字越界写）。 */
+    private fun isSafePathSegment(segment: String): Boolean =
+        segment.isNotBlank() && segment != "." && segment != ".." &&
+            !segment.contains('/') && !segment.contains('\\')
+
+    /** 相对 data/ 的 rel 必须逐段合法；下载落盘前由此兜底拦截。 */
+    private fun isSafeRelUnderData(rel: String): Boolean =
+        rel.isNotBlank() && rel.split('/').all { isSafePathSegment(it) }
 
     /** 递归列出 dict 目录下的所有文件，返回“相对 data/ 的路径 -> 远端条目”。 */
     private suspend fun listRemoteDictFiles(
@@ -371,6 +418,10 @@ object WebDavSyncEngine {
     ): List<Pair<String, RemoteEntry>> {
         val result = mutableListOf<Pair<String, RemoteEntry>>()
         listRemoteDir(cfg, dirUrl).forEach { entry ->
+            if (!isSafePathSegment(entry.name)) {
+                Timber.w("$TAG skip unsafe remote entry name: '${entry.name}'")
+                return@forEach
+            }
             val rel = if (prefix.isEmpty()) entry.name else "$prefix/${entry.name}"
             if (entry.isDir) result += listRemoteDictFiles(cfg, entry.url, rel)
             else result += rel to entry

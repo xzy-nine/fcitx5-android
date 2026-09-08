@@ -120,6 +120,26 @@
     <string name="webdav_dict_already_latest">Cloud dictionaries are already up to date</string>
     <string name="webdav_prefs_restored">Preferences restored</string>
     <string name="webdav_restore_failed">Operation failed</string>
+    <string name="webdav_save_failed">Failed to save settings, please try again</string>
+    <string name="webdav_http_warning">Plain HTTP is not encrypted; the account password could be intercepted. Use HTTPS whenever possible.</string>
+    <string name="webdav_connection_ok">Connection succeeded (%1$d items accessible)</string>
+    <string name="webdav_packing_prefs">Packing preferences…</string>
+    <string name="webdav_uploading_file">Uploading %1$s…</string>
+    <string name="webdav_prefs_unchanged_skip">Preferences unchanged, skipped upload</string>
+    <string name="webdav_prefs_uploaded">Preferences uploaded: %1$s</string>
+    <string name="webdav_last_prefs_uploaded">Preferences uploaded: %1$s</string>
+    <string name="webdav_dict_no_files">No dictionaries to upload</string>
+    <string name="webdav_dict_unchanged_skip">Dictionaries unchanged, skipped upload (%1$d files)</string>
+    <string name="webdav_dict_uploaded_count">Dictionaries uploaded (%1$d files)</string>
+    <string name="webdav_dict_uploaded_partial">Dictionaries uploaded (%1$d files, %2$d unchanged skipped)</string>
+    <string name="webdav_skip_unchanged">Up to date, skip %1$s (%2$s)</string>
+    <string name="webdav_uploading_dict_file">Uploading %1$s (%2$s)</string>
+    <string name="webdav_downloading_dict_file">Downloading %1$s (%2$s)</string>
+    <string name="webdav_last_dict_uploaded">Dictionaries uploaded: %1$s</string>
+    <string name="webdav_last_dict_downloaded">Dictionaries downloaded: %1$s</string>
+    <string name="webdav_downloading_backup">Downloading preferences backup %1$s…</string>
+    <string name="webdav_importing_prefs">Importing preferences…</string>
+    <string name="webdav_reloading_dict">Reloading dictionaries…</string>
     <!-- Custom: advanced page data management -->
     <string name="data_management">Data</string>
     <string name="data_browse_summary">Open the app data folder in DocumentsUI</string>
