@@ -6,6 +6,7 @@ package org.fcitx.fcitx5.android.data.quickphrase
 
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.data.DataManager
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.utils.appContext
 import org.fcitx.fcitx5.android.utils.errorRuntime
 import org.fcitx.fcitx5.android.utils.withTempDir
@@ -35,6 +36,7 @@ object QuickPhraseManager {
     fun newEmpty(name: String): CustomQuickPhrase {
         val file = File(customQuickPhraseDir, "$name.${QuickPhrase.EXT}")
         file.createNewFile()
+        AutoDictSync.notifyDictChanged()
         return CustomQuickPhrase(file)
     }
 
@@ -48,6 +50,7 @@ object QuickPhraseManager {
             }
             val dest = File(customQuickPhraseDir, file.name)
             file.copyTo(dest)
+            AutoDictSync.notifyDictChanged()
             CustomQuickPhrase(dest)
         }
     }

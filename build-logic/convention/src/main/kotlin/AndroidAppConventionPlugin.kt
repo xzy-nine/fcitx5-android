@@ -46,10 +46,7 @@ class AndroidAppConventionPlugin : AndroidBaseConventionPlugin() {
                     signingConfig = signingConfigs.fromProjectEnv(target)
                     proguardFile(getDefaultProguardFile("proguard-android-optimize.txt"))
                 }
-                debug {
-                    applicationIdSuffix = ".debug"
-                }
-                all {
+                all { // custom: debug 不再使用 .debug 包名后缀
                     // remove META-INF/version-control-info.textproto
                     @Suppress("UnstableApiUsage")
                     vcsInfo.include = false

@@ -4,7 +4,6 @@
  */
 package org.fcitx.fcitx5.android.core.data
 
-import org.fcitx.fcitx5.android.BuildConfig
 import org.fcitx.fcitx5.android.core.data.PluginDescriptor.Companion.pluginPackagePrefix
 
 /**
@@ -12,7 +11,9 @@ import org.fcitx.fcitx5.android.core.data.PluginDescriptor.Companion.pluginPacka
  */
 data class PluginDescriptor(
     /**
-     * Must have [pluginPackagePrefix] prefix and end with `.debug` if it's debug variant
+     * Must have [pluginPackagePrefix] prefix
+     *
+     * custom: 不再区分 debug/release 包名后缀，插件包名统一为 prefix + 插件名
      */
     val packageName: String,
     /**
@@ -34,11 +35,10 @@ data class PluginDescriptor(
     val versionName: String,
     val nativeLibraryDir: String
 ) {
-    val name = packageName.removePrefix(pluginPackagePrefix).removeSuffix(pluginPackageSuffix)
+    val name = packageName.removePrefix(pluginPackagePrefix)
 
     companion object {
         const val pluginPackagePrefix = "org.fcitx.fcitx5.android.plugin."
-        const val pluginPackageSuffix = ".${BuildConfig.BUILD_TYPE}"
         const val pluginAPI = "0.1"
     }
 }

@@ -13,4 +13,9 @@ import androidx.room.RoomDatabase
 )
 abstract class BroadcastDatabase : RoomDatabase() {
     abstract fun broadcastDao(): BroadcastDao
+
+    companion object {
+        /** Room 数据库文件名（位于 filesDir/databases/，含 -wal/-shm 附属文件）。 */
+        const val DATABASE_NAME = "broadcast_db"
+    }
 }

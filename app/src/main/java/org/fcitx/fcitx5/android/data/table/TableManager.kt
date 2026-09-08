@@ -7,6 +7,7 @@ package org.fcitx.fcitx5.android.data.table
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.table.dict.Dictionary
 import org.fcitx.fcitx5.android.data.table.dict.LibIMEDictionary
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.utils.appContext
 import org.fcitx.fcitx5.android.utils.errorRuntime
 import org.fcitx.fcitx5.android.utils.extract
@@ -90,6 +91,7 @@ object TableManager {
             errorRuntime(R.string.invalid_table_dict, it.message)
         }
         im.save()
+        AutoDictSync.notifyDictChanged()
         return im
     }
 
@@ -107,6 +109,8 @@ object TableManager {
                 dict.toLibIMEDictionary(File(tempDir, im.tableFileName))
             }.onSuccess {
                 it.file.copyTo(File(tableDicDir, im.tableFileName), overwrite = true)
+                // 仅替换成功后才通知自动同步（与导入流程同一入口），失败路径不发通知
+                AutoDictSync.notifyDictChanged()
             }.onFailure {
                 dictFile.delete()
                 errorRuntime(R.string.invalid_table_dict, it.message)

@@ -6,6 +6,8 @@
 package org.fcitx.fcitx5.android.ui.main.compose.settings
 
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -23,26 +25,44 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.data.UserDataImportCompat
+import org.fcitx.fcitx5.android.data.UserDataManager
+import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceCategory
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceUi
+import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.EditValueDialog
+import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleConfirmDialog
 import org.fcitx.fcitx5.android.ui.main.settings.EditTextFloatUi
+import org.fcitx.fcitx5.android.utils.AppUtil
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
+import org.fcitx.fcitx5.android.utils.buildDocumentsProviderIntent
+import org.fcitx.fcitx5.android.utils.formatDateTime
+import org.fcitx.fcitx5.android.utils.importErrorDialog
+import org.fcitx.fcitx5.android.utils.iso8601UTCDateTime
+import org.fcitx.fcitx5.android.utils.queryFileName
+import org.fcitx.fcitx5.android.utils.toast
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
-
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -54,7 +74,6 @@ import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import androidx.compose.ui.res.stringResource
 
 /**
  * Compose renderer for a [ManagedPreferenceCategory]. Consumes the shared preference metadata
@@ -82,22 +101,77 @@ fun ManagedPrefsScreen(
     onBack: () -> Unit,
     highlightKey: String? = null,
     showTopBar: Boolean = true,
+    onWebDavSync: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val isAdvanced = category === AppPrefs.getInstance().advanced
+    // 高级分类页专属：数据管理（浏览数据目录/导出/导入）需要 fcitx 连接与 SAF launcher。
+    // 这些动作原位于 legacy AdvancedSettingsFragment 页尾，现直接并入该分类页列表底部。
+    val fcitx = if (isAdvanced) remember { FcitxDaemon.connect("compose-advanced-settings") } else null
     var version by remember { mutableIntStateOf(0) }
-    DisposableEffect(category) {
+    var exportTime by remember { mutableLongStateOf(0L) }
+    var confirmImport by remember { mutableStateOf(false) }
+
+    DisposableEffect(category, fcitx) {
         val listener = object : ManagedPreferenceProvider.OnChangeListener {
             override fun onChange(key: String) {
                 version += 1
             }
         }
         category.registerOnChangeListener(listener)
-        onDispose { category.unregisterOnChangeListener(listener) }
+        onDispose {
+            category.unregisterOnChangeListener(listener)
+            fcitx?.let { FcitxDaemon.disconnect("compose-advanced-settings") }
+        }
     }
 
-    val prefs = category.managedPreferences
-    val uiList = category.managedPreferencesUi
-    val uiMap = uiList.associateBy { it.key }
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)!!.use { out ->
+                        UserDataManager.export(out, exportTime).getOrThrow()
+                    }
+                }
+                context.toast(R.string.done)
+            } catch (e: Exception) {
+                context.toast(e)
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val name = context.contentResolver.queryFileName(uri) ?: return@launch
+            if (!name.endsWith(".zip")) {
+                context.importErrorDialog(R.string.exception_user_data_filename, name)
+                return@launch
+            }
+            try {
+                // stop fcitx before overwriting files
+                FcitxDaemon.stopFcitx()
+                val metadata = withContext(Dispatchers.IO) {
+                    UserDataImportCompat.import(context.contentResolver.openInputStream(uri)!!).getOrThrow()
+                }
+                AppUtil.showRestartNotification(context)
+                context.toast(context.getString(R.string.user_data_imported, formatDateTime(metadata.exportTime)))
+                // delay exit to ensure Notification and Toast has been created
+                delay(400)
+                AppUtil.exit()
+            } catch (e: Exception) {
+                FcitxDaemon.startFcitx()
+                context.importErrorDialog(e)
+            }
+        }
+    }
+
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val highlightColor = MiuixTheme.colorScheme.primary.copy(alpha = 0.15f)
 
@@ -116,31 +190,37 @@ fun ManagedPrefsScreen(
                             color = MiuixTheme.colorScheme.surfaceContainerHighest,
                         ),
                     ) {
-                        uiList.forEachIndexed { index, ui ->
+                        category.managedPreferencesUi.forEachIndexed { index, ui ->
                             val isHighlight = uiTitleString(context, ui) == highlightKey
                             Box(
                                 Modifier.background(
                                     if (isHighlight) highlightColor else Color.Transparent
                                 ),
                             ) {
-                                ManagedPrefRow(ui, prefs, version, category::fireChange)
+                                ManagedPrefRow(
+                                    ui,
+                                    category.managedPreferences,
+                                    version,
+                                    category::fireChange,
+                                )
                             }
-                            if (index < uiList.lastIndex) HorizontalDivider()
+                            if (index < category.managedPreferencesUi.lastIndex) HorizontalDivider()
                         }
                     }
                 }
             } else {
+                val uiMap = category.managedPreferencesUi.associateBy { it.key }
                 category.groups.forEach { group ->
                     item {
                         SmallTitle(text = stringResource(group.title))
                     }
                     item {
                         Card(
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        colors = CardDefaults.defaultColors(
-                            color = MiuixTheme.colorScheme.surfaceContainerHighest,
-                        ),
-                    ) {
+                            modifier = Modifier.padding(horizontal = 12.dp),
+                            colors = CardDefaults.defaultColors(
+                                color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                            ),
+                        ) {
                             val keys = group.keys.filter { uiMap.containsKey(it) }
                             keys.forEachIndexed { index, key ->
                                 val ui = uiMap.getValue(key)
@@ -150,10 +230,63 @@ fun ManagedPrefsScreen(
                                         else Color.Transparent
                                     ),
                                 ) {
-                                    ManagedPrefRow(ui, prefs, version, category::fireChange)
+                                    ManagedPrefRow(
+                                        ui,
+                                        category.managedPreferences,
+                                        version,
+                                        category::fireChange,
+                                    )
                                 }
                                 if (index < keys.lastIndex) HorizontalDivider()
                             }
+                        }
+                    }
+                }
+            }
+            if (isAdvanced) {
+                item {
+                    SmallTitle(text = stringResource(R.string.data_management))
+                }
+                item {
+                    Card(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        colors = CardDefaults.defaultColors(
+                            color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                        ),
+                    ) {
+                        ArrowPreference(
+                            title = stringResource(R.string.browse_user_data_dir),
+                            summary = stringResource(R.string.data_browse_summary),
+                            onClick = {
+                                try {
+                                    context.startActivity(buildDocumentsProviderIntent())
+                                } catch (e: Exception) {
+                                    context.toast(e)
+                                }
+                            },
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.export_user_data),
+                            summary = stringResource(R.string.data_export_summary),
+                            onClick = {
+                                scope.launch {
+                                    fcitx?.runOnReady { save() }
+                                    exportTime = System.currentTimeMillis()
+                                    exportLauncher.launch("fcitx5-android_${iso8601UTCDateTime(exportTime)}.zip")
+                                }
+                            },
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.import_user_data),
+                            summary = stringResource(R.string.data_import_summary),
+                            onClick = { confirmImport = true },
+                        )
+                        if (onWebDavSync != null) {
+                            ArrowPreference(
+                                title = stringResource(R.string.webdav_settings_title),
+                                summary = stringResource(R.string.webdav_advanced_summary),
+                                onClick = onWebDavSync,
+                            )
                         }
                     }
                 }
@@ -171,6 +304,18 @@ fun ManagedPrefsScreen(
                 modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
             )
         }
+    }
+
+    if (isAdvanced && confirmImport) {
+        SimpleConfirmDialog(
+            title = stringResource(R.string.import_user_data),
+            message = stringResource(R.string.confirm_import_user_data),
+            onConfirm = {
+                confirmImport = false
+                importLauncher.launch("application/zip")
+            },
+            onDismiss = { confirmImport = false },
+        )
     }
 }
 

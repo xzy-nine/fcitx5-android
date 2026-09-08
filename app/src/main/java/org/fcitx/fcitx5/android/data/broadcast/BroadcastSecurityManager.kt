@@ -61,7 +61,7 @@ object BroadcastSecurityManager : org.fcitx.fcitx5.android.data.clipboard.Clipbo
         db = Room.databaseBuilder(
             context,
             BroadcastDatabase::class.java,
-            "broadcast_db"
+            BroadcastDatabase.DATABASE_NAME
         ).build()
     }
 

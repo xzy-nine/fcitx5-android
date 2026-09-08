@@ -29,10 +29,11 @@ class AndroidPluginAppConventionPlugin : Plugin<Project> {
                     )
                 }
                 debug {
-                    buildConfigField("String", "MAIN_APPLICATION_ID", "\"org.fcitx.fcitx5.android.debug\"")
+                    // custom: 主应用不再有 .debug 后缀，插件的 IPC 权限/action 必须与其保持一致
+                    buildConfigField("String", "MAIN_APPLICATION_ID", "\"org.fcitx.fcitx5.android\"")
                     addManifestPlaceholders(
                         mapOf(
-                            "mainApplicationId" to "org.fcitx.fcitx5.android.debug",
+                            "mainApplicationId" to "org.fcitx.fcitx5.android",
                         )
                     )
                 }

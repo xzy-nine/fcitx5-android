@@ -9,6 +9,7 @@ import org.fcitx.fcitx5.android.core.data.DataManager
 import org.fcitx.fcitx5.android.data.pinyin.dict.BuiltinDictionary
 import org.fcitx.fcitx5.android.data.pinyin.dict.LibIMEDictionary
 import org.fcitx.fcitx5.android.data.pinyin.dict.PinyinDictionary
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.utils.appContext
 import org.fcitx.fcitx5.android.utils.errorArg
 import timber.log.Timber
@@ -62,6 +63,7 @@ object PinyinDictManager {
             )
         )
         Timber.d("Converted $raw to $new")
+        AutoDictSync.notifyDictChanged()
         new
     }
 

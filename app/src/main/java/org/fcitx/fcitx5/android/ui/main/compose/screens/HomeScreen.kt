@@ -51,6 +51,7 @@ import top.yukonga.miuix.kmp.icon.extended.Search
 import top.yukonga.miuix.kmp.icon.extended.Theme
 import top.yukonga.miuix.kmp.icon.extended.Translate
 import top.yukonga.miuix.kmp.icon.extended.Tune
+import top.yukonga.miuix.kmp.icon.extended.UploadCloud
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.compose.ui.res.stringResource
@@ -168,5 +169,6 @@ private val homeAndroidItems = listOf(
     HomeDestination(R.string.broadcast_settings, MiuixIcons.Promotions, AppRoute.Prefs(PrefCategory.Broadcast)),
     HomeDestination(R.string.emoji_and_symbols, MiuixIcons.Messages, AppRoute.Prefs(PrefCategory.Symbols)),
     HomeDestination(R.string.plugins, MiuixIcons.Layers, AppRoute.PluginList),
+    HomeDestination(R.string.webdav_settings_title, MiuixIcons.UploadCloud, AppRoute.WebDavSync),
     HomeDestination(R.string.advanced, MiuixIcons.More, AppRoute.Prefs(PrefCategory.Advanced)),
 )
