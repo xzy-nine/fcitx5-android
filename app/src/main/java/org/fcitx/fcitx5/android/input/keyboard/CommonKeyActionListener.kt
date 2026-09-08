@@ -12,7 +12,7 @@ import org.fcitx.fcitx5.android.core.FcitxAPI
 import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.broadcast.PreeditEmptyStateComponent
-import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateComponent
+import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.fcitx
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
@@ -53,7 +53,9 @@ class CommonKeyActionListener :
     private val fcitx by manager.fcitx()
     private val service by manager.inputMethodService()
     private val preeditState: PreeditEmptyStateComponent by manager.must()
-    private val horizontalCandidate: HorizontalCandidateComponent by manager.must()
+    // Compose 实现的候选栏组件
+    // 旧 View 实现：private val horizontalCandidate: HorizontalCandidateComponent by manager.must()（已断开接线）
+    private val composeCandidate: ComposeCandidateComponent by manager.must()
     private val windowManager: InputWindowManager by manager.must()
 
     private var lastPickerType by AppPrefs.getInstance().internal.lastPickerType
@@ -138,7 +140,7 @@ class CommonKeyActionListener :
                         Stopped -> {
                             backspaceSwipeState = if (
                                 preeditState.isEmpty &&
-                                horizontalCandidate.adapter.total <= 0 // total is -1 on initialization
+                                composeCandidate.total <= 0 // total is -1 on initialization
                             ) {
                                 service.applySelectionOffset(action.start, action.end)
                                 Selection

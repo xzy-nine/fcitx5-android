@@ -321,6 +321,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
 
         val expandedCandidateGridSpanCount: ManagedPreference.PInt
         val expandedCandidateGridSpanCountLandscape: ManagedPreference.PInt
+        val candidateDivider: ManagedPreference.PBool
 
         init {
             val (primary, secondary) = twinInt(
@@ -336,6 +337,11 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             )
             expandedCandidateGridSpanCount = primary
             expandedCandidateGridSpanCountLandscape = secondary
+            candidateDivider = switch(
+                R.string.candidate_divider,
+                "candidate_divider",
+                false
+            )
         }
 
         init {
@@ -391,6 +397,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                 SubGroup(R.string.group_candidate_style, listOf(
                     horizontalCandidateStyle.key,
                     horizontalCandidateSwipe.key,
+                    candidateDivider.key,
                     expandedCandidateStyle.key,
                     expandedCandidateGridSpanCount.key,
                     expandedCandidateGridSpanCountLandscape.key,

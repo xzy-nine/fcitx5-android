@@ -32,7 +32,7 @@ import org.fcitx.fcitx5.android.input.broadcast.InputBroadcaster
 import org.fcitx.fcitx5.android.input.broadcast.PreeditEmptyStateComponent
 import org.fcitx.fcitx5.android.input.broadcast.PunctuationComponent
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
-import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateComponent
+import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardHeightPercentBase.DisplayMetrics
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardHeightPercentBase.RealSize
@@ -108,7 +108,9 @@ class InputView(
     private val commonKeyActionListener = CommonKeyActionListener()
     private val windowManager = InputWindowManager()
     private val kawaiiBar = KawaiiBarComponent()
-    private val horizontalCandidate = HorizontalCandidateComponent()
+    // Compose 实现的候选栏组件
+    // 旧 View 实现：HorizontalCandidateComponent（已断开接线，保留供对比）
+    private val composeCandidate = ComposeCandidateComponent()
     private val keyboardWindow = KeyboardWindow()
     private val symbolPicker = symbolPicker()
     private val emojiPicker = emojiPicker()
@@ -129,7 +131,8 @@ class InputView(
         scope += commonKeyActionListener
         scope += windowManager
         scope += kawaiiBar
-        scope += horizontalCandidate
+        // 旧 View 实现：scope += horizontalCandidate（已断开接线）
+        scope += composeCandidate
         broadcaster.onScopeSetupFinished(scope)
     }
 

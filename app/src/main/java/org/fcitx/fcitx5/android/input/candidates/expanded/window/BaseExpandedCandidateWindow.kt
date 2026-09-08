@@ -31,7 +31,8 @@ import org.fcitx.fcitx5.android.input.candidates.expanded.CandidateTabActionsAda
 import org.fcitx.fcitx5.android.input.candidates.expanded.CandidatesPagingSource
 import org.fcitx.fcitx5.android.input.candidates.expanded.ExpandedCandidateLayout
 import org.fcitx.fcitx5.android.input.candidates.expanded.PagingCandidateViewAdapter
-import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateComponent
+import org.fcitx.fcitx5.android.input.candidates.horizontal.CandidateBarState
+import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
 import org.fcitx.fcitx5.android.input.dependency.fcitx
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
 import org.fcitx.fcitx5.android.input.dependency.inputView
@@ -56,7 +57,9 @@ abstract class BaseExpandedCandidateWindow<T : BaseExpandedCandidateWindow<T>> :
     protected val inputView by manager.inputView()
     private val commonKeyActionListener: CommonKeyActionListener by manager.must()
     private val bar: KawaiiBarComponent by manager.must()
-    private val horizontalCandidate: HorizontalCandidateComponent by manager.must()
+    // Compose 实现的候选栏组件
+    // 旧 View 实现：private val horizontalCandidate: HorizontalCandidateComponent by manager.must()（已断开接线）
+    private val composeCandidate: ComposeCandidateComponent by manager.must()
     private val windowManager: InputWindowManager by manager.must()
     private val returnKeyDrawable: ReturnKeyDrawableComponent by manager.must()
 
@@ -142,7 +145,7 @@ abstract class BaseExpandedCandidateWindow<T : BaseExpandedCandidateWindow<T>> :
             pagingSourceFactory = {
                 CandidatesPagingSource(
                     fcitx,
-                    total = horizontalCandidate.adapter.total
+                    total = composeCandidate.total
                 )
             }
         )
@@ -161,10 +164,10 @@ abstract class BaseExpandedCandidateWindow<T : BaseExpandedCandidateWindow<T>> :
         }
         updateTabs(fcitx.runImmediately { inputPanelCached.tabs })
         offsetJob = service.lifecycleScope.launch {
-            horizontalCandidate.expandedCandidateOffset.collect {
+            composeCandidate.expandedCandidateOffset.collect {
                 // in swipe mode the offset may be 0 even when candidates exist,
                 // judge "no candidates" by the adapter's total instead
-                if (horizontalCandidate.adapter.total <= 0) {
+                if (composeCandidate.total <= 0) {
                     windowManager.attachWindow(KeyboardWindow)
                 } else {
                     candidateLayout.resetPosition()
@@ -203,9 +206,13 @@ abstract class BaseExpandedCandidateWindow<T : BaseExpandedCandidateWindow<T>> :
     }
 
     override fun onDetached() {
+        val isEmpty = when (composeCandidate.currentState) {
+            is CandidateBarState.Idle -> true
+            is CandidateBarState.Active -> composeCandidate.total == adapter.offset
+        }
         bar.expandButtonStateMachine.push(
             ExpandedCandidatesDetached,
-            ExpandedCandidatesEmpty to (horizontalCandidate.adapter.total == adapter.offset)
+            ExpandedCandidatesEmpty to isEmpty
         )
         candidatesSubmitJob?.cancel()
         offsetJob?.cancel()

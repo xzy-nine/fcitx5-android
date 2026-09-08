@@ -35,7 +35,7 @@
 ## 防冲突硬性约定
 
 1. **新增字符串一律写入 `res/values*/custom_strings.xml`，颜色写 `custom_colors.xml`** —— 禁止加进上游的 `strings.xml` / `colors.xml`（Android 会自动合并多文件同名资源）。新语言翻译放对应 `values-xx/custom_strings.xml`。
-2. 对上游高频改动文件（AppPrefs.kt、MainActivity.kt、KawaiiBarComponent.kt、InputView.kt、KeyView.kt、ManagedPreferenceUi.kt 等）只允许追加式小锚点，逻辑体放新文件（模式参考现有 `*Ext.kt` / `Navigator` / `Math.kt`）。
+2. 对上游高频改动文件（AppPrefs.kt、MainActivity.kt、InputView.kt、KeyView.kt、ManagedPreferenceUi.kt 等）只允许追加式小锚点，逻辑体放新文件（模式参考现有 `*Ext.kt` / `Navigator` / `Math.kt`）。**例外**：`input/bar/` 和 `input/candidates/` 下的 UI 后端文件（KawaiiBarComponent.kt、BaseExpandedCandidateWindow.kt 等）正在经历 Compose 化大规模迁移，此条限制不适用。
 3. 新 AIDL 方法追加在接口末尾；Manifest 的 permission/service 追加块放在既有条目之后。
 4. 新设置项必须定义在 `AppPrefs` 对应 inner class 内（框架约束），用 `init {}` 块集中注册并放在类尾部区域；分组渲染走 `PreferenceGroupUi.kt`，不要重写 `createUi` 主体。
 5. 改完跑 `git diff main -- <上游文件>` 自查：预期只剩少量追加行；资源文件应零差异。
