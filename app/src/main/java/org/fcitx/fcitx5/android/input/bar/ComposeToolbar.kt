@@ -1,0 +1,389 @@
+/*
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
+ */
+package org.fcitx.fcitx5.android.input.bar
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import org.fcitx.fcitx5.android.R
+import top.yukonga.miuix.kmp.basic.Icon
+
+/**
+ * Compose 工具栏
+ *
+ * 三态切换：Idle / Candidate / Title
+ */
+@Composable
+fun ComposeToolbar(
+    barState: KawaiiBarStateMachine.State,
+    idleSubState: IdleSubState,
+    titleData: TitleData?,
+    callbacks: ToolbarCallbacks,
+    visuals: ToolbarVisuals,
+    expandButtonState: ExpandButtonStateMachine.State,
+    modifier: Modifier = Modifier,
+    // 候选栏内容由外部传入
+    candidateContent: @Composable () -> Unit = {},
+    // NumberRow 需要 AndroidView 包装
+    numberRowContent: @Composable () -> Unit = {},
+    // InlineSuggestions 需要 AndroidView 包装
+    inlineSuggestionContent: @Composable () -> Unit = {},
+    // Clipboard suggestion 内容
+    clipboardContent: @Composable () -> Unit = {},
+    // 标题扩展内容
+    titleExtensionContent: @Composable (() -> Unit)? = null,
+) {
+    Box(modifier = modifier.fillMaxWidth().background(visuals.barColor)) {
+        when (barState) {
+            KawaiiBarStateMachine.State.Idle -> {
+                IdleContent(
+                    subState = idleSubState,
+                    callbacks = callbacks,
+                    visuals = visuals,
+                    numberRowContent = numberRowContent,
+                    inlineSuggestionContent = inlineSuggestionContent,
+                    clipboardContent = clipboardContent,
+                )
+            }
+            KawaiiBarStateMachine.State.Candidate -> {
+                CandidateContent(
+                    callbacks = callbacks,
+                    visuals = visuals,
+                    expandButtonState = expandButtonState,
+                    candidateContent = candidateContent,
+                )
+            }
+            KawaiiBarStateMachine.State.Title -> {
+                TitleContent(
+                    titleData = titleData,
+                    callbacks = callbacks,
+                    visuals = visuals,
+                    extensionContent = titleExtensionContent,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun IdleContent(
+    subState: IdleSubState,
+    callbacks: ToolbarCallbacks,
+    visuals: ToolbarVisuals,
+    numberRowContent: @Composable () -> Unit,
+    inlineSuggestionContent: @Composable () -> Unit,
+    clipboardContent: @Composable () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(KawaiiBarComponent.HEIGHT.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // 左侧：菜单按钮
+        MenuButton(
+            onClick = callbacks.onMenuClick,
+            iconColor = visuals.iconColor,
+        )
+
+        // 中间内容区
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(KawaiiBarComponent.HEIGHT.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            when (subState) {
+                IdleSubState.Empty -> { /* 空白 */ }
+                IdleSubState.Toolbar -> {
+                    ToolbarButtonsRow(callbacks = callbacks, visuals = visuals)
+                }
+                IdleSubState.Clipboard -> {
+                    clipboardContent()
+                }
+                IdleSubState.NumberRow -> {
+                    numberRowContent()
+                }
+                IdleSubState.InlineSuggestion -> {
+                    inlineSuggestionContent()
+                }
+            }
+        }
+
+        // 右侧：收起键盘按钮
+        HideKeyboardButton(
+            onClick = callbacks.onHideKeyboard,
+            onSwipeLeft = callbacks.onNumberRowShow,
+            iconColor = visuals.iconColor,
+        )
+    }
+}
+
+@Composable
+private fun CandidateContent(
+    callbacks: ToolbarCallbacks,
+    visuals: ToolbarVisuals,
+    expandButtonState: ExpandButtonStateMachine.State,
+    candidateContent: @Composable () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(KawaiiBarComponent.HEIGHT.dp)
+            .padding(end = 40.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // 候选栏内容
+        Box(modifier = Modifier.weight(1f)) {
+            candidateContent()
+        }
+    }
+}
+
+@Composable
+private fun TitleContent(
+    titleData: TitleData?,
+    callbacks: ToolbarCallbacks,
+    visuals: ToolbarVisuals,
+    extensionContent: @Composable (() -> Unit)?,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(KawaiiBarComponent.HEIGHT.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // 返回按钮
+        ToolbarIconButton(
+            onClick = callbacks.onTitleBack,
+            iconRes = R.drawable.ic_baseline_arrow_back_24,
+            iconColor = visuals.iconColor,
+        )
+
+        // 标题文本
+        if (titleData?.showTitle == true) {
+            top.yukonga.miuix.kmp.basic.Text(
+                text = titleData.title,
+                color = visuals.textColor,
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
+
+        // 扩展内容
+        Box(modifier = Modifier.weight(1f)) {
+            extensionContent?.invoke()
+        }
+    }
+}
+
+@Composable
+private fun ToolbarButtonsRow(
+    callbacks: ToolbarCallbacks,
+    visuals: ToolbarVisuals,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(KawaiiBarComponent.HEIGHT.dp)
+            .padding(horizontal = 4.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ToolbarIconButton(
+            onClick = callbacks.onUndo,
+            iconRes = R.drawable.ic_baseline_undo_24,
+            iconColor = visuals.iconColor,
+            contentDescription = "Undo",
+        )
+        ToolbarIconButton(
+            onClick = callbacks.onRedo,
+            iconRes = R.drawable.ic_baseline_redo_24,
+            iconColor = visuals.iconColor,
+            contentDescription = "Redo",
+        )
+        ToolbarIconButton(
+            onClick = callbacks.onCursorMove,
+            iconRes = R.drawable.ic_cursor_move,
+            iconColor = visuals.iconColor,
+            contentDescription = "Cursor Move",
+        )
+        ToolbarIconButton(
+            onClick = callbacks.onClipboard,
+            iconRes = R.drawable.ic_clipboard,
+            iconColor = visuals.iconColor,
+            contentDescription = "Clipboard",
+        )
+        ToolbarIconButton(
+            onClick = callbacks.onSplitKeyboardToggle,
+            iconRes = R.drawable.ic_baseline_keyboard_24,
+            iconColor = visuals.iconColor,
+            contentDescription = "Split Keyboard",
+        )
+        ToolbarIconButton(
+            onClick = callbacks.onMore,
+            iconRes = R.drawable.ic_baseline_more_horiz_24,
+            iconColor = visuals.iconColor,
+            contentDescription = "More",
+        )
+        ToolbarIconButton(
+            onClick = callbacks.onTune,
+            iconRes = R.drawable.ic_baseline_tune_24,
+            iconColor = visuals.iconColor,
+            contentDescription = "Tune",
+        )
+    }
+}
+
+@Composable
+private fun MenuButton(
+    onClick: () -> Unit,
+    iconColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    Box(
+        modifier = modifier
+            .size(KawaiiBarComponent.HEIGHT.dp)
+            .clip(CircleShape)
+            .background(
+                if (isPressed) iconColor.copy(alpha = 0.1f) else Color.Transparent
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_baseline_expand_more_24),
+            contentDescription = "Menu",
+            tint = iconColor,
+            modifier = Modifier.size(24.dp),
+        )
+    }
+}
+
+@Composable
+private fun HideKeyboardButton(
+    onClick: () -> Unit,
+    onSwipeLeft: (() -> Unit)? = null,
+    iconColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    var iconRotation by remember { mutableFloatStateOf(0f) }
+
+    Box(
+        modifier = modifier
+            .size(KawaiiBarComponent.HEIGHT.dp)
+            .clip(CircleShape)
+            .background(
+                if (isPressed) iconColor.copy(alpha = 0.1f) else Color.Transparent
+            )
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragEnd = {
+                        iconRotation = 0f
+                    },
+                    onDragCancel = {
+                        iconRotation = 0f
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        val (dx, dy) = dragAmount
+                        // 垂直向下拖拽超过阈值时隐藏键盘
+                        if (dy > size.height / 2f) {
+                            onClick()
+                        }
+                        // 水平拖拽时旋转图标反馈
+                        if (onSwipeLeft != null && kotlin.math.abs(dx) > kotlin.math.abs(dy)) {
+                            iconRotation = (dx / size.width * 90f).coerceIn(-45f, 45f)
+                        }
+                    },
+                )
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_baseline_arrow_drop_down_24),
+            contentDescription = "Hide Keyboard",
+            tint = iconColor,
+            modifier = Modifier
+                .size(24.dp)
+                .rotate(iconRotation),
+        )
+    }
+}
+
+@Composable
+private fun ToolbarIconButton(
+    onClick: () -> Unit,
+    iconRes: Int,
+    iconColor: Color,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    Box(
+        modifier = modifier
+            .size(KawaiiBarComponent.HEIGHT.dp)
+            .clip(CircleShape)
+            .background(
+                if (isPressed) iconColor.copy(alpha = 0.1f) else Color.Transparent
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = contentDescription,
+            tint = iconColor,
+            modifier = Modifier.size(24.dp),
+        )
+    }
+}

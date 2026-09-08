@@ -27,6 +27,7 @@ import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
+import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcaster
 import org.fcitx.fcitx5.android.input.broadcast.PreeditEmptyStateComponent
@@ -42,6 +43,7 @@ import org.fcitx.fcitx5.android.input.picker.emojiPicker
 import org.fcitx.fcitx5.android.input.picker.emoticonPicker
 import org.fcitx.fcitx5.android.input.picker.symbolPicker
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
+import org.fcitx.fcitx5.android.input.preedit.ComposePreeditComponent
 import org.fcitx.fcitx5.android.input.preedit.PreeditComponent
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.unset
@@ -105,9 +107,11 @@ class InputView(
     private val returnKeyDrawable = ReturnKeyDrawableComponent()
     private val preeditEmptyState = PreeditEmptyStateComponent()
     private val preedit = PreeditComponent()
+    private val composePreedit = ComposePreeditComponent()
     private val commonKeyActionListener = CommonKeyActionListener()
     private val windowManager = InputWindowManager()
     private val kawaiiBar = KawaiiBarComponent()
+    private val composeKawaiiBar = ComposeKawaiiBarComponent()
     // Compose 实现的候选栏组件
     // 旧 View 实现：HorizontalCandidateComponent（已断开接线，保留供对比）
     private val composeCandidate = ComposeCandidateComponent()
@@ -127,10 +131,12 @@ class InputView(
         scope += punctuation
         scope += returnKeyDrawable
         scope += preeditEmptyState
-        scope += preedit
+        // 旧 View 实现：scope += preedit（已断开接线，保留供对比）
+        scope += composePreedit
         scope += commonKeyActionListener
         scope += windowManager
-        scope += kawaiiBar
+        // 旧 View 实现：scope += kawaiiBar（已断开接线，保留供对比）
+        scope += composeKawaiiBar
         // 旧 View 实现：scope += horizontalCandidate（已断开接线）
         scope += composeCandidate
         broadcaster.onScopeSetupFinished(scope)
@@ -261,22 +267,22 @@ class InputView(
                 centerVertically()
                 centerHorizontally()
             })
-            add(kawaiiBar.view, lParams(matchParent, dp(KawaiiBarComponent.HEIGHT)) {
+            add(composeKawaiiBar.view, lParams(matchParent, dp(KawaiiBarComponent.HEIGHT)) {
                 topOfParent()
                 centerHorizontally()
             })
             add(leftPaddingSpace, lParams {
-                below(kawaiiBar.view)
+                below(composeKawaiiBar.view)
                 startOfParent()
                 bottomOfParent()
             })
             add(rightPaddingSpace, lParams {
-                below(kawaiiBar.view)
+                below(composeKawaiiBar.view)
                 endOfParent()
                 bottomOfParent()
             })
             add(windowManager.view, lParams {
-                below(kawaiiBar.view)
+                below(composeKawaiiBar.view)
                 above(bottomPaddingSpace)
                 /**
                  * set start and end constrain in [updateKeyboardSize]
@@ -303,7 +309,7 @@ class InputView(
 
         updateKeyboardSize()
 
-        add(preedit.ui.root, lParams(matchParent, wrapContent) {
+        add(composePreedit.view, lParams(matchParent, wrapContent) {
             above(keyboardView)
             centerHorizontally()
         })
@@ -321,7 +327,7 @@ class InputView(
     }
 
     private fun updateKeyboardSize() {
-        kawaiiBar.view.updateLayoutParams {
+        composeKawaiiBar.view.updateLayoutParams {
             height = toolbarHeightPx
         }
         windowManager.view.updateLayoutParams {
@@ -357,8 +363,8 @@ class InputView(
                 endToStartOf(rightPaddingSpace)
             }
         }
-        preedit.ui.root.setPadding(sidePadding, 0, sidePadding, 0)
-        kawaiiBar.view.setPadding(sidePadding, 0, sidePadding, 0)
+        composePreedit.view.setPadding(sidePadding, 0, sidePadding, 0)
+        composeKawaiiBar.view.setPadding(sidePadding, 0, sidePadding, 0)
     }
 
     // Custom: visual keyboard tuning overlay entry points
@@ -470,7 +476,7 @@ class InputView(
 
     @RequiresApi(Build.VERSION_CODES.R)
     fun handleInlineSuggestions(response: InlineSuggestionsResponse): Boolean {
-        return kawaiiBar.handleInlineSuggestions(response)
+        return composeKawaiiBar.handleInlineSuggestions(response)
     }
 
     override fun onDetachedFromWindow() {
