@@ -313,11 +313,6 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             "horizontal_candidate_swipe",
             true
         )
-        val candidateDivider = switch(
-            R.string.candidate_divider,
-            "candidate_divider",
-            false
-        )
         val expandedCandidateStyle = enumList(
             R.string.expanded_candidate_style,
             "expanded_candidate_style",
@@ -326,6 +321,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
 
         val expandedCandidateGridSpanCount: ManagedPreference.PInt
         val expandedCandidateGridSpanCountLandscape: ManagedPreference.PInt
+        val candidateDivider: ManagedPreference.PBool
 
         init {
             val (primary, secondary) = twinInt(
@@ -341,6 +337,11 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             )
             expandedCandidateGridSpanCount = primary
             expandedCandidateGridSpanCountLandscape = secondary
+            candidateDivider = switch(
+                R.string.candidate_divider,
+                "candidate_divider",
+                false
+            )
         }
 
         init {

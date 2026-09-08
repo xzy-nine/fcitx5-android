@@ -59,6 +59,8 @@
     <!-- Custom: accessibility labels -->
     <string name="back">返回</string>
     <string name="help">帮助</string>
+    <string name="candidate_expand">展开</string>
+    <string name="candidate_collapse">收起</string>
 
     <!-- Custom: number keyboard symbol slider -->
     <string name="symbol_slider_visible_count">符号滑块可见段数</string>

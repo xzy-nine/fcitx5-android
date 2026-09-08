@@ -59,5 +59,7 @@
     <!-- Custom: accessibility labels -->
     <string name="back">返回</string>
     <string name="help">說明</string>
+    <string name="candidate_expand">展開</string>
+    <string name="candidate_collapse">收起</string>
 
 </resources>

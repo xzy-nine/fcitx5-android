@@ -31,6 +31,7 @@ import org.fcitx.fcitx5.android.input.candidates.expanded.CandidateTabActionsAda
 import org.fcitx.fcitx5.android.input.candidates.expanded.CandidatesPagingSource
 import org.fcitx.fcitx5.android.input.candidates.expanded.ExpandedCandidateLayout
 import org.fcitx.fcitx5.android.input.candidates.expanded.PagingCandidateViewAdapter
+import org.fcitx.fcitx5.android.input.candidates.horizontal.CandidateBarState
 import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
 import org.fcitx.fcitx5.android.input.dependency.fcitx
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
@@ -205,9 +206,13 @@ abstract class BaseExpandedCandidateWindow<T : BaseExpandedCandidateWindow<T>> :
     }
 
     override fun onDetached() {
+        val isEmpty = when (composeCandidate.currentState) {
+            is CandidateBarState.Idle -> true
+            is CandidateBarState.Active -> composeCandidate.total == adapter.offset
+        }
         bar.expandButtonStateMachine.push(
             ExpandedCandidatesDetached,
-            ExpandedCandidatesEmpty to (composeCandidate.total == adapter.offset)
+            ExpandedCandidatesEmpty to isEmpty
         )
         candidatesSubmitJob?.cancel()
         offsetJob?.cancel()

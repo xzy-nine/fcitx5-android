@@ -88,6 +88,7 @@ class ComposeCandidateComponent :
 
     val expandedCandidateOffset = _expandedCandidateOffset.asSharedFlow()
     val isExpandedWindowShown = _isExpandedWindowShown.asStateFlow()
+    val currentState: CandidateBarState get() = _state.value
 
     /**
      * 获取当前候选词总数
@@ -180,23 +181,28 @@ class ComposeCandidateComponent :
         val currentOffset = currentState.candidates.size
 
         fcitx.launchOnReady {
-            val more = it.getCandidates(currentOffset, loadMoreBatch)
-            if (generation == candidateGeneration) {
-                if (more.isNotEmpty()) {
-                    _state.update { state ->
-                        when (state) {
-                            is CandidateBarState.Active -> {
-                                state.copy(
-                                    candidates = state.candidates + more,
-                                )
+            try {
+                val more = it.getCandidates(currentOffset, loadMoreBatch)
+                if (generation == candidateGeneration) {
+                    if (more.isNotEmpty()) {
+                        _state.update { state ->
+                            when (state) {
+                                is CandidateBarState.Active -> {
+                                    state.copy(
+                                        candidates = state.candidates + more,
+                                    )
+                                }
+                                else -> state
                             }
-                            else -> state
                         }
+                    } else {
+                        noMoreData = true
                     }
-                } else {
-                    noMoreData = true
                 }
-                loadingMore = false
+            } finally {
+                if (generation == candidateGeneration) {
+                    loadingMore = false
+                }
             }
         }
     }
@@ -208,26 +214,30 @@ class ComposeCandidateComponent :
         val candidates = data.candidates
         val total = data.total
 
-        _state.value = CandidateBarState.from(candidates, total)
-
-        loadingMore = false
-        noMoreData = false
-        candidateGeneration++
-        lastExpandedOffset = -1
-
         // 在滑动模式下，如果新数据是旧数据的前缀，保持滚动位置
         val keepScroll = prevData.candidates.isNotEmpty() &&
             candidates.size >= prevData.candidates.size &&
             candidates.take(prevData.candidates.size).toTypedArray().contentEquals(prevData.candidates)
 
-        if (!keepScroll) {
-            _state.update { state ->
-                when (state) {
-                    is CandidateBarState.Active -> state.copy(offset = 0)
-                    else -> state
-                }
+        val prevState = _state.value
+        val prevOffset = if (keepScroll && prevState is CandidateBarState.Active) {
+            prevState.offset
+        } else {
+            0
+        }
+
+        _state.value = CandidateBarState.from(candidates, total).let { newState ->
+            if (keepScroll && newState is CandidateBarState.Active) {
+                newState.copy(offset = prevOffset)
+            } else {
+                newState
             }
         }
+
+        loadingMore = false
+        noMoreData = false
+        candidateGeneration++
+        lastExpandedOffset = -1
 
         refreshExpanded()
     }
@@ -252,7 +262,6 @@ class ComposeCandidateComponent :
      */
     private fun getVisuals(): CandidateBarVisuals {
         return CandidateBarVisuals(
-            backgroundColor = androidx.compose.ui.graphics.Color(theme.barColor),
             textColor = androidx.compose.ui.graphics.Color(theme.candidateTextColor),
             commentColor = androidx.compose.ui.graphics.Color(theme.candidateCommentColor),
             pressHighlightColor = androidx.compose.ui.graphics.Color(theme.keyPressHighlightColor),

@@ -36,10 +36,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.fcitx.fcitx5.android.R
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -53,7 +55,6 @@ import org.fcitx.fcitx5.android.core.CandidateWord
  */
 @Immutable
 data class CandidateBarVisuals(
-    val backgroundColor: Color,
     val textColor: Color,
     val commentColor: Color,
     val pressHighlightColor: Color,
@@ -100,17 +101,22 @@ fun ComposeCandidateBar(
 ) {
     val listState = rememberLazyListState()
     val currentState by rememberUpdatedState(state)
+    val callbacks by rememberUpdatedState(callbacks)
 
     // 懒加载监听 + 滚动 offset 同步
     LaunchedEffect(listState) {
-        snapshotFlow { listState.layoutInfo }
+        snapshotFlow {
+            val info = listState.layoutInfo
+            Triple(
+                info.visibleItemsInfo.firstOrNull()?.index ?: 0,
+                info.visibleItemsInfo.lastOrNull()?.index ?: 0,
+                info.totalItemsCount
+            )
+        }
             .distinctUntilChanged()
-            .collect { layoutInfo ->
+            .collect { (firstVisibleIndex, lastVisibleIndex, totalItems) ->
                 if (currentState is CandidateBarState.Active) {
-                    val firstVisibleIndex = layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: 0
                     callbacks.onScrollOffsetChanged?.invoke(firstVisibleIndex)
-                    val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                    val totalItems = layoutInfo.totalItemsCount
                     if (lastVisibleIndex >= totalItems - LOAD_MORE_THRESHOLD) {
                         callbacks.onLoadMore?.invoke()
                     }
@@ -156,10 +162,11 @@ fun ComposeCandidateBar(
                 )
 
                 // 内侧：展开/收起按钮
-                if (callbacks.onExpandClick != null) {
+                val expandClick = callbacks.onExpandClick
+                if (expandClick != null) {
                     Spacer(modifier = Modifier.width(8.dp))
                     ExpandButton(
-                        onClick = callbacks.onExpandClick,
+                        onClick = expandClick,
                         isExpanded = isExpandMode,
                         tint = visuals.textColor,
                     )
@@ -341,7 +348,9 @@ private fun ExpandButton(
     ) {
         Icon(
             if (isExpanded) MiuixIcons.ExpandLess else MiuixIcons.ExpandMore,
-            contentDescription = if (isExpanded) "收起" else "展开",
+            contentDescription = stringResource(
+                if (isExpanded) R.string.candidate_collapse else R.string.candidate_expand
+            ),
             tint = if (isPressed) tint.copy(alpha = 0.6f) else tint,
             modifier = Modifier.size(22.dp),
         )
