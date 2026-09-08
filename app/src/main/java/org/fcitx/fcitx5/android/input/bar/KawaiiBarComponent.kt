@@ -53,7 +53,7 @@ import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.candidates.expanded.ExpandedCandidateStyle
 import org.fcitx.fcitx5.android.input.candidates.expanded.window.FlexboxExpandedCandidateWindow
 import org.fcitx.fcitx5.android.input.candidates.expanded.window.GridExpandedCandidateWindow
-import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateComponent
+import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
 import org.fcitx.fcitx5.android.input.clipboard.ClipboardWindow
 import org.fcitx.fcitx5.android.input.dependency.UniqueViewComponent
 import org.fcitx.fcitx5.android.input.dependency.context
@@ -93,7 +93,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private val theme by manager.theme()
     private val service by manager.inputMethodService()
     private val windowManager: InputWindowManager by manager.must()
-    private val horizontalCandidate: HorizontalCandidateComponent by manager.must()
+    // Compose 实现的候选栏组件
+    // 旧 View 实现：private val horizontalCandidate: HorizontalCandidateComponent by manager.must()（已断开接线）
+    private val composeCandidate: ComposeCandidateComponent by manager.must()
     private val commonKeyActionListener: CommonKeyActionListener by manager.must()
     private val popup: PopupComponent by manager.must()
 
@@ -369,8 +371,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         }
     }
 
+    // 候选栏 UI：使用 Compose 实现的 candidate.view
+    // 旧 View 实现：CandidateUi(context, theme, horizontalCandidate.view)（已断开接线）
     private val candidateUi by lazy {
-        CandidateUi(context, theme, horizontalCandidate.view).apply {
+        CandidateUi(context, theme, composeCandidate.view).apply {
             expandButton.apply {
                 swipeEnabled = true
                 swipeThresholdY = dp(HEIGHT.toFloat())
@@ -387,34 +391,31 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         switchUiByState(it)
     }
 
+    // 工具栏按钮固定为收起键盘功能，不再随展开窗口状态变化
     val expandButtonStateMachine = ExpandButtonStateMachine.new {
         when (it) {
             ClickToAttachWindow -> {
-                setExpandButtonToAttach()
+                setExpandButtonToHideKeyboard()
                 setExpandButtonEnabled(true)
             }
             ClickToDetachWindow -> {
-                setExpandButtonToDetach()
+                setExpandButtonToHideKeyboard()
                 setExpandButtonEnabled(true)
             }
             Hidden -> {
-                setExpandButtonEnabled(false)
+                setExpandButtonToHideKeyboard()
+                setExpandButtonEnabled(true)
             }
         }
     }
 
-    // set expand candidate button to create expand candidate
-    private fun setExpandButtonToAttach() {
+    // 设置展开按钮为收起键盘功能（固定图标，不切换）
+    private fun setExpandButtonToHideKeyboard() {
         candidateUi.expandButton.setOnClickListener {
-            windowManager.attachWindow(
-                when (expandedCandidateStyle) {
-                    ExpandedCandidateStyle.Grid -> GridExpandedCandidateWindow()
-                    ExpandedCandidateStyle.Flexbox -> FlexboxExpandedCandidateWindow()
-                }
-            )
+            service.requestHideSelf(0)
         }
-        candidateUi.expandButton.setIcon(R.drawable.ic_baseline_expand_more_24)
-        candidateUi.expandButton.contentDescription = context.getString(R.string.expand_candidates_list)
+        candidateUi.expandButton.setIcon(R.drawable.ic_baseline_arrow_drop_down_24)
+        candidateUi.expandButton.contentDescription = context.getString(R.string.hide_keyboard)
     }
 
     fun onKeyboardSizeChanged(width: Int, height: Int) {
@@ -434,16 +435,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         }
     }
 
-    // set expand candidate button to close expand candidate
-    private fun setExpandButtonToDetach() {
-        candidateUi.expandButton.setOnClickListener {
-            windowManager.attachWindow(KeyboardWindow)
-        }
-        candidateUi.expandButton.setIcon(R.drawable.ic_baseline_expand_less_24)
-        candidateUi.expandButton.contentDescription = context.getString(R.string.hide_candidates_list)
-    }
-
-    // should be used with setExpandButtonToAttach or setExpandButtonToDetach
+    // should be used with setExpandButtonToHideKeyboard
     private fun setExpandButtonEnabled(enabled: Boolean) {
         candidateUi.expandButton.visibility = if (enabled) View.VISIBLE else View.INVISIBLE
     }
