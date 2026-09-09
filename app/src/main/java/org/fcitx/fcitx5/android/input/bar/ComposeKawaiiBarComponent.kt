@@ -152,7 +152,7 @@ class ComposeKawaiiBarComponent :
     private val _menuRotation = kotlinx.coroutines.flow.MutableStateFlow(270f)
 
     // InlineSuggestions 视图容器
-    private val inlineSuggestionsUi = InlineSuggestionsUi(context)
+    private val inlineSuggestionsUi by lazy { InlineSuggestionsUi(context) }
 
     private val suggestionSize by lazy {
         Size(ViewGroup.LayoutParams.WRAP_CONTENT, context.dp(HEIGHT))
@@ -473,6 +473,7 @@ class ComposeKawaiiBarComponent :
                             // 使用 AndroidView 包装其 ComposeView
                             androidx.compose.ui.viewinterop.AndroidView(
                                 factory = { composeCandidate.view },
+                                update = { it.requestLayout() },
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         },
