@@ -100,6 +100,12 @@ fun HomeScreen(
             HomeCard(homeFcitxItems, onNavigate)
         }
         item {
+            SmallTitle(text = stringResource(R.string.physical_keyboard))
+        }
+        item {
+            HomeCard(homePhysicalKeyboardItems, onNavigate)
+        }
+        item {
             SmallTitle(text = "Android")
         }
         item {
@@ -142,10 +148,14 @@ private val homeFcitxItems = listOf(
     HomeDestination(R.string.addons, MiuixIcons.Merge, AppRoute.AddonList),
 )
 
+private val homePhysicalKeyboardItems = listOf(
+    HomeDestination(R.string.hotkey, MiuixIcons.Tune, AppRoute.RawConfigHost(RawConfigHostType.PhysicalHotkey)),
+    HomeDestination(R.string.candidates_window, MiuixIcons.ListView, AppRoute.Prefs(PrefCategory.Candidates)),
+)
+
 private val homeAndroidItems = listOf(
     HomeDestination(R.string.theme, MiuixIcons.Theme, AppRoute.Theme),
     HomeDestination(R.string.virtual_keyboard, MiuixIcons.GridView, AppRoute.Prefs(PrefCategory.Keyboard)),
-    HomeDestination(R.string.candidates_window, MiuixIcons.ListView, AppRoute.Prefs(PrefCategory.Candidates)),
     HomeDestination(R.string.clipboard, MiuixIcons.Copy, AppRoute.Prefs(PrefCategory.Clipboard)),
     HomeDestination(R.string.broadcast_settings, MiuixIcons.Promotions, AppRoute.Prefs(PrefCategory.Broadcast)),
     HomeDestination(R.string.emoji_and_symbols, MiuixIcons.Messages, AppRoute.Prefs(PrefCategory.Symbols)),
