@@ -89,7 +89,6 @@ fun ThemeScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
-    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var previewHeightPx by remember { mutableIntStateOf(0) }
     var selectedTab by remember { mutableIntStateOf(0) }
     val pagerState = rememberPagerState { 2 }
@@ -203,8 +202,22 @@ fun ThemeScreen(onBack: () -> Unit) {
         }
     }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
-        Column(Modifier.fillMaxSize()) {
+    PageScaffold(
+        title = stringResource(R.string.theme),
+        onBack = onBack,
+        floatingActionButton = {
+            if (selectedTab == 0) {
+                FloatingActionButton(
+                    onClick = { showNewDialog = true },
+                    modifier = Modifier.padding(16.dp),
+                ) {
+                    Icon(MiuixIcons.Add, stringResource(R.string.add))
+                }
+            }
+        },
+    ) {
+        item {
+            Column(Modifier.fillParentMaxSize()) {
             // keyboard preview kept as a View. Rebuild on orientation change so the measured
             // height follows the active keyboard-height percent, and use the full measured size
             // (no extra 0.5 scaling, which shrank the preview to ~20% of the screen height).
@@ -217,8 +230,6 @@ fun ThemeScreen(onBack: () -> Unit) {
             Box(
                 Modifier
                     .fillMaxWidth()
-                    // leave room for the floating top app bar so the preview isn't clipped at the top
-                    .padding(top = topInset + 56.dp)
                     // keep the preview full-width so the keyboard's own side padding isn't
                     // clipped on the right by a horizontal inset
                     .height(with(density) { previewHeightPx.toDp() })
@@ -259,7 +270,7 @@ fun ThemeScreen(onBack: () -> Unit) {
             )
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().weight(1f),
             ) { page ->
                 when (page) {
                     0 -> {
@@ -311,27 +322,8 @@ fun ThemeScreen(onBack: () -> Unit) {
                     )
                 }
             }
-        }
-
-        if (selectedTab == 0) {
-            FloatingActionButton(
-                onClick = { showNewDialog = true },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-            ) {
-                Icon(MiuixIcons.Add, stringResource(R.string.add))
             }
         }
-
-        SmallTopAppBar(
-            color = MiuixTheme.colorScheme.surfaceContainer,
-            title = stringResource(R.string.theme),
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
-                }
-            },
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-        )
     }
 
     if (showNewDialog) {

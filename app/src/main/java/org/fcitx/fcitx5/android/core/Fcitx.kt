@@ -7,6 +7,7 @@ package org.fcitx.fcitx5.android.core
 import android.content.Context
 import android.os.Build
 import androidx.annotation.Keep
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow

@@ -150,4 +150,8 @@
     <string name="data_import_summary">Restore from a previously exported zip file</string>
     <string name="webdav_advanced_summary">Back up and sync dictionaries and preferences to a WebDAV server</string>
 
+    <!-- Custom: settings home physical keyboard group -->
+    <string name="physical_keyboard">Physical Keyboard</string>
+    <!-- Custom: physical hotkeys settings page -->
+    <string name="hotkey">Hotkey</string>
 </resources>

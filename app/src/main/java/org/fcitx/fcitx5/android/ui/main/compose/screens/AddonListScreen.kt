@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
@@ -42,7 +43,10 @@ import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Tune
@@ -117,68 +121,53 @@ fun AddonListScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
-        Column(Modifier.fillMaxSize()) {
-            LazyColumn(
-                contentPadding = PaddingValues(
-                    top = 64.dp + WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
-                ),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                items(addons, key = { it.uniqueName }) { entry ->
-                    CheckboxPreference(
-                        title = entry.displayName,
-                        summary = entry.comment,
-                        checked = entry.enabled,
-                        enabled = entry.uniqueName != "androidfrontend",
-                        onCheckedChange = { checked ->
-                            if (checked) {
-                                addons = addons.map {
-                                    if (it.uniqueName == entry.uniqueName) it.copy(enabled = true) else it
-                                }
-                                pushState()
-                            } else {
-                                attemptDisable(entry) {
-                                    // re-check in the UI on cancel (handled via state refresh)
-                                }
+    PageScaffold(
+        title = stringResource(R.string.addons),
+        onBack = onBack,
+    ) {
+        items(addons, key = { it.uniqueName }) { entry ->
+                CheckboxPreference(
+                    title = entry.displayName,
+                    summary = entry.comment,
+                    checked = entry.enabled,
+                    enabled = entry.uniqueName != "androidfrontend",
+                    onCheckedChange = { checked ->
+                        if (checked) {
+                            addons = addons.map {
+                                if (it.uniqueName == entry.uniqueName) it.copy(enabled = true) else it
                             }
-                        },
-                        endActions = {
-                            if (entry.isConfigurable && entry.enabled &&
-                                entry.uniqueName != "clipboard"
+                            pushState()
+                        } else {
+                            attemptDisable(entry) {
+                                // re-check in the UI on cancel (handled via state refresh)
+                            }
+                        }
+                    },
+                    endActions = {
+                        if (entry.isConfigurable && entry.enabled &&
+                            entry.uniqueName != "clipboard"
+                        ) {
+                            IconButton(
+                                onClick = { onOpenConfig(entry.displayName, entry.uniqueName) },
                             ) {
-                                IconButton(
-                                    onClick = { onOpenConfig(entry.displayName, entry.uniqueName) },
-                                ) {
-                                    Icon(MiuixIcons.Tune, stringResource(R.string.edit), Modifier.size(20.dp))
-                                }
+                                Icon(MiuixIcons.Tune, stringResource(R.string.edit), Modifier.size(20.dp))
                             }
-                        },
-                    )
-                    HorizontalDivider()
-                }
+                        }
+                    },
+                )
+                HorizontalDivider()
             }
-        }
-        SmallTopAppBar(
-            color = MiuixTheme.colorScheme.surfaceContainer,
-            title = stringResource(R.string.addons),
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
-                }
-            },
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-        )
     }
 
     pendingDisable?.let { (entry, dependents, reset) ->
+        @Composable
         fun summary(depType: FcitxAPI.AddonDep, template: Int): String? {
             val names = dependents
                 .filter { it.second == depType }
                 .map { (u, _) -> displayNames[u] ?: u }
             return names.takeIf { it.isNotEmpty() }
                 ?.joinToString(", ")
-                ?.let { context.getString(template, it) }
+                ?.let { stringResource(template, it) }
         }
         val dep = summary(FcitxAPI.AddonDep.Required, R.string.disable_addon_warn_dep)
         val optDep = summary(FcitxAPI.AddonDep.Optional, R.string.disable_addon_warn_optdep)

@@ -147,4 +147,8 @@
     <string name="data_import_summary">从先前导出的 zip 文件恢复</string>
     <string name="webdav_advanced_summary">把词库与偏好设置备份/同步到 WebDAV 服务器</string>
 
+    <!-- Custom: 物理键盘 -->
+    <string name="physical_keyboard">物理键盘</string>
+    <string name="hotkey">快捷键</string>
+
 </resources>
