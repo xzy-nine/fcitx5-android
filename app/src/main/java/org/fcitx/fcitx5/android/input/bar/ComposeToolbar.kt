@@ -348,6 +348,8 @@ private fun HideKeyboardButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     var iconRotation by remember { mutableFloatStateOf(0f) }
+    var cumulativeDx by remember { mutableFloatStateOf(0f) }
+    var swipeLeftTriggered by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -359,6 +361,10 @@ private fun HideKeyboardButton(
             .inputFeedback()
             .pointerInput(Unit) {
                 detectDragGestures(
+                    onDragStart = {
+                        cumulativeDx = 0f
+                        swipeLeftTriggered = false
+                    },
                     onDragEnd = {
                         iconRotation = 0f
                     },
@@ -374,8 +380,10 @@ private fun HideKeyboardButton(
                         }
                         // 水平拖拽时旋转图标反馈
                         if (onSwipeLeft != null && kotlin.math.abs(dx) > kotlin.math.abs(dy)) {
-                            iconRotation = (dx / size.width * 90f).coerceIn(-45f, 45f)
-                            if (dx < -size.width / 3f) {
+                            cumulativeDx += dx
+                            iconRotation = (cumulativeDx / size.width * 90f).coerceIn(-45f, 45f)
+                            if (!swipeLeftTriggered && cumulativeDx < -size.width / 3f) {
+                                swipeLeftTriggered = true
                                 onSwipeLeft()
                             }
                         }

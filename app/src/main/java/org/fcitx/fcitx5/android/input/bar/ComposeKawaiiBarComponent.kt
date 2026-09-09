@@ -153,6 +153,8 @@ class ComposeKawaiiBarComponent :
 
     // InlineSuggestions 视图容器
     private val inlineSuggestionsUi by lazy { InlineSuggestionsUi(context) }
+    private var inlineRenderJob: Job? = null
+    private var inlineRenderGeneration = 0
 
     private val suggestionSize by lazy {
         Size(ViewGroup.LayoutParams.WRAP_CONTENT, context.dp(HEIGHT))
@@ -335,6 +337,7 @@ class ComposeKawaiiBarComponent :
         splitKeyboardPref.unregisterOnChangeListener(splitKeyboardListener)
         clipboardTimeoutJob?.cancel()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            inlineRenderJob?.cancel()
             inlineSuggestionsUi.clear()
         }
         scope.cancel()
@@ -345,6 +348,7 @@ class ComposeKawaiiBarComponent :
         isInlineSuggestionPresent = false
         numberRowState = NumberRowState.Auto
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            inlineRenderJob?.cancel()
             inlineSuggestionsUi.clear()
         }
         evalIdleUiState()
@@ -396,6 +400,7 @@ class ComposeKawaiiBarComponent :
         if (suggestions.isEmpty()) {
             isInlineSuggestionPresent = false
             evalIdleUiState()
+            inlineRenderJob?.cancel()
             inlineSuggestionsUi.clear()
             return true
         }
@@ -413,19 +418,26 @@ class ComposeKawaiiBarComponent :
                 scrollable.add(it)
             }
         }
-        scope.launch {
-            inlineSuggestionsUi.setPinnedView(
-                pinned?.let { inflateInlineContentView(it) }
-            )
+        inlineRenderJob?.cancel()
+        val gen = ++inlineRenderGeneration
+        inlineSuggestionsUi.clear()
+        val pinnedJob = scope.launch {
+            val view = pinned?.let { inflateInlineContentView(it) }
+            if (inlineRenderGeneration == gen) {
+                inlineSuggestionsUi.setPinnedView(view)
+            }
         }
-        scope.launch {
+        val scrollableJob = scope.launch {
             val views = scrollable.map { s ->
                 async {
                     inflateInlineContentView(s)
                 }
             }.awaitAll()
-            inlineSuggestionsUi.setScrollableViews(views)
+            if (inlineRenderGeneration == gen) {
+                inlineSuggestionsUi.setScrollableViews(views)
+            }
         }
+        inlineRenderJob = pinnedJob  // 追踪主 Job 即可
         isInlineSuggestionPresent = true
         evalIdleUiState()
         return true
