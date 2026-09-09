@@ -22,12 +22,6 @@ import kotlin.math.roundToInt
  * 类似系统设置的音量滑块样式。
  */
 
-private fun roundToDecimals(value: Float, decimals: Int): Float {
-    if (decimals <= 0) return value.roundToInt().toFloat()
-    var factor = 1f
-    repeat(decimals) { factor *= 10f }
-    return (value * factor).roundToInt() / factor
-}
 @Composable
 fun SimpleSliderPreference(
     title: String,
@@ -132,7 +126,7 @@ fun SimpleSliderPreference(
                         .padding(horizontal = 4.dp),
                     enabled = enabled,
                     valueRange = min..max,
-                    steps = ((max - min) / realStep).roundToInt() - 1,
+                    steps = (((max - min) / realStep).toInt() - 1).coerceAtLeast(0),
                 )
             }
         },

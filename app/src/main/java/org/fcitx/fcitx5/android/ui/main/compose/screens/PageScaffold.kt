@@ -20,7 +20,6 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
@@ -85,59 +84,4 @@ fun PageScaffold(
     }
 }
 
-/**
- * 带 actions 的页面骨架版本，等价于 [PageScaffold]。
- */
-@Composable
-fun PageScaffoldWithActions(
-    title: String,
-    onBack: (() -> Unit)? = null,
-    actions: @Composable () -> Unit = {},
-    content: LazyListScope.() -> Unit,
-) {
-    PageScaffold(
-        title = title,
-        onBack = onBack,
-        actions = actions,
-        content = content,
-    )
-}
 
-/**
- * 简化版页面骨架：不带滚动行为，使用 SmallTopAppBar。
- * 适用于特殊布局（如 ThemeScreen）或不需要标题收缩效果的页面。
- *
- * @param title 页面标题
- * @param onBack 返回按钮回调
- * @param content LazyColumn 内容构建器
- */
-@Composable
-fun SimplePageScaffold(
-    title: String,
-    onBack: () -> Unit,
-    content: LazyListScope.() -> Unit,
-) {
-    val listState = rememberLazyListState()
-
-    Scaffold(
-        topBar = {
-            SmallTopAppBar(
-                color = MiuixTheme.colorScheme.surfaceContainer,
-                title = title,
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(MiuixIcons.Back, contentDescription = null)
-                    }
-                },
-            )
-        },
-        containerColor = MiuixTheme.colorScheme.surface,
-    ) { paddingValues ->
-        LazyColumn(
-            state = listState,
-            contentPadding = paddingValues,
-            modifier = Modifier.fillMaxSize(),
-            content = content,
-        )
-    }
-}

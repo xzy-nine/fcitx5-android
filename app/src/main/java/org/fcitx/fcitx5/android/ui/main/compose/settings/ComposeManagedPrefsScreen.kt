@@ -651,22 +651,17 @@ private fun findHighlightIndex(
         return if (hasHighlight) 0 else -1
     } else {
         // Grouped: SmallTitle (index 0) + Card (index 1), then next group...
-        category.groups.forEachIndexed { groupIdx, group ->
+        val uiMap = category.managedPreferencesUi.associateBy { it.key }
+        category.groups.forEach { group ->
             index += 1 // SmallTitle item
             val cardIndex = index
             index += 1 // Card item
-            val uiMap = category.managedPreferencesUi.associateBy { it.key }
             val keys = group.keys.filter { uiMap.containsKey(it) }
             val hasHighlight = keys.any { key ->
                 val ui = uiMap.getValue(key)
                 uiTitleString(context, ui) == highlightKey
             }
             if (hasHighlight) return cardIndex
-        }
-        // Check advanced section (data management)
-        if (category === AppPrefs.getInstance().advanced) {
-            index += 1 // SmallTitle for data management
-            index += 1 // Card for data management
         }
     }
     return -1

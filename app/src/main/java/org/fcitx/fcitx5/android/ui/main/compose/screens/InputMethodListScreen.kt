@@ -169,7 +169,8 @@ fun InputMethodListScreen(
         LazyColumn(
             contentPadding = PaddingValues(
                 top = paddingValues.calculateTopPadding(),
-                bottom = 24.dp,
+                bottom = paddingValues.calculateBottomPadding() + 24.dp
+                    + if (candidates.isNotEmpty()) 88.dp else 0.dp,
             ),
             modifier = Modifier
                 .fillMaxSize()
