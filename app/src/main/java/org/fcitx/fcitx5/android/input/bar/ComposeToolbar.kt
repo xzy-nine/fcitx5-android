@@ -87,9 +87,6 @@ fun ComposeToolbar(
             }
             KawaiiBarStateMachine.State.Candidate -> {
                 CandidateContent(
-                    callbacks = callbacks,
-                    visuals = visuals,
-                    expandButtonState = expandButtonState,
                     candidateContent = candidateContent,
                 )
             }
@@ -186,9 +183,6 @@ private fun IdleContent(
 
 @Composable
 private fun CandidateContent(
-    callbacks: ToolbarCallbacks,
-    visuals: ToolbarVisuals,
-    expandButtonState: ExpandButtonStateMachine.State,
     candidateContent: @Composable () -> Unit,
 ) {
     Row(
@@ -379,6 +373,9 @@ private fun HideKeyboardButton(
                         // 水平拖拽时旋转图标反馈
                         if (onSwipeLeft != null && kotlin.math.abs(dx) > kotlin.math.abs(dy)) {
                             iconRotation = (dx / size.width * 90f).coerceIn(-45f, 45f)
+                            if (dx < -size.width / 3f) {
+                                onSwipeLeft()
+                            }
                         }
                     },
                 )

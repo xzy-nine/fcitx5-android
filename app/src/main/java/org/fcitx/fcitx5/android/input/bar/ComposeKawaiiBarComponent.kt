@@ -5,13 +5,17 @@
 package org.fcitx.fcitx5.android.input.bar
 
 import android.content.res.Configuration
+import android.os.Build
+import android.util.Size
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InlineSuggestion
 import android.view.inputmethod.InlineSuggestionsResponse
-import android.view.inputmethod.InputMethodSubtype
 import android.widget.FrameLayout
 import android.widget.inline.InlineContentView
+import androidx.annotation.RequiresApi
+import androidx.compose.runtime.key
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -41,8 +45,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CapabilityFlag
 import org.fcitx.fcitx5.android.core.CapabilityFlags
@@ -59,6 +68,7 @@ import org.fcitx.fcitx5.android.input.bar.KawaiiBarStateMachine.TransitionEvent.
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarStateMachine.TransitionEvent.ExtendedWindowAttached
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarStateMachine.TransitionEvent.PreeditUpdated
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarStateMachine.TransitionEvent.WindowDetached
+import org.fcitx.fcitx5.android.input.bar.ui.idle.InlineSuggestionsUi
 import org.fcitx.fcitx5.android.input.bar.ui.idle.NumberRow
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
@@ -71,8 +81,8 @@ import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
-import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import org.fcitx.fcitx5.android.utils.appContext
+import java.util.concurrent.Executor
 import org.mechdancer.dependency.DynamicScope
 import org.mechdancer.dependency.manager.must
 import splitties.dimensions.dp
@@ -105,8 +115,6 @@ class ComposeKawaiiBarComponent :
     private val clipboardMaskSensitive by prefs.clipboard.clipboardMaskSensitive
     private val expandToolbarByDefault by prefs.keyboard.expandToolbarByDefault
     private val toolbarNumRowOnPassword by prefs.keyboard.toolbarNumRowOnPassword
-    private val showVoiceInputButton by prefs.keyboard.showVoiceInputButton
-    private val preferredVoiceInput by prefs.keyboard.preferredVoiceInput
     private val splitKeyboardPref = prefs.keyboard.splitKeyboard
     private val keyboardPrefs = prefs.keyboard
 
@@ -140,12 +148,19 @@ class ComposeKawaiiBarComponent :
     private val _titleExtensionView = kotlinx.coroutines.flow.MutableStateFlow<View?>(null)
     private val _expandButtonState = kotlinx.coroutines.flow.MutableStateFlow<ExpandButtonStateMachine.State>(Hidden)
     private val _clipboardText = kotlinx.coroutines.flow.MutableStateFlow("")
-    private val _isVoiceInputMode = kotlinx.coroutines.flow.MutableStateFlow(false)
     private val _splitKeyboardEnabled = kotlinx.coroutines.flow.MutableStateFlow(splitKeyboardPref.getValue())
     private val _menuRotation = kotlinx.coroutines.flow.MutableStateFlow(270f)
-    private val _inlineSuggestions = kotlinx.coroutines.flow.MutableStateFlow<List<InlineSuggestion>>(emptyList())
 
-    private var voiceInputSubtype: Pair<String, InputMethodSubtype>? = null
+    // InlineSuggestions 视图容器
+    private val inlineSuggestionsUi = InlineSuggestionsUi(context)
+
+    private val suggestionSize by lazy {
+        Size(ViewGroup.LayoutParams.WRAP_CONTENT, context.dp(HEIGHT))
+    }
+
+    private val directExecutor by lazy {
+        Executor { it.run() }
+    }
 
     // Clipboard 监听
     private val onClipboardUpdateListener =
@@ -180,6 +195,7 @@ class ComposeKawaiiBarComponent :
         clipboardTimeoutJob = scope.launch {
             delay(timeout)
             isClipboardFresh = false
+            evalIdleUiState()
             clipboardTimeoutJob = null
         }
     }
@@ -314,14 +330,23 @@ class ComposeKawaiiBarComponent :
         splitKeyboardPref.registerOnChangeListener(splitKeyboardListener)
     }
 
+    fun destroy() {
+        ClipboardManager.removeOnUpdateListener(onClipboardUpdateListener)
+        splitKeyboardPref.unregisterOnChangeListener(splitKeyboardListener)
+        clipboardTimeoutJob?.cancel()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            inlineSuggestionsUi.clear()
+        }
+        scope.cancel()
+    }
+
     override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {
         isCapabilityFlagsPassword = toolbarNumRowOnPassword && capFlags.has(CapabilityFlag.Password)
         isInlineSuggestionPresent = false
         numberRowState = NumberRowState.Auto
-        voiceInputSubtype = InputMethodUtil.findVoiceSubtype(preferredVoiceInput)
-        val shouldShowVoiceInput =
-            showVoiceInputButton && voiceInputSubtype != null && !capFlags.has(CapabilityFlag.Password)
-        _isVoiceInputMode.value = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            inlineSuggestionsUi.clear()
+        }
         evalIdleUiState()
     }
 
@@ -371,13 +396,48 @@ class ComposeKawaiiBarComponent :
         if (suggestions.isEmpty()) {
             isInlineSuggestionPresent = false
             evalIdleUiState()
-            _inlineSuggestions.value = emptyList()
+            inlineSuggestionsUi.clear()
             return true
         }
-        _inlineSuggestions.value = suggestions
+        var pinned: InlineSuggestion? = null
+        val scrollable = mutableListOf<InlineSuggestion>()
+        var extraPinnedCount = 0
+        suggestions.forEach {
+            if (it.info.isPinned) {
+                if (pinned == null) {
+                    pinned = it
+                } else {
+                    scrollable.add(extraPinnedCount++, it)
+                }
+            } else {
+                scrollable.add(it)
+            }
+        }
+        scope.launch {
+            inlineSuggestionsUi.setPinnedView(
+                pinned?.let { inflateInlineContentView(it) }
+            )
+        }
+        scope.launch {
+            val views = scrollable.map { s ->
+                async {
+                    inflateInlineContentView(s)
+                }
+            }.awaitAll()
+            inlineSuggestionsUi.setScrollableViews(views)
+        }
         isInlineSuggestionPresent = true
         evalIdleUiState()
         return true
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private suspend fun inflateInlineContentView(suggestion: InlineSuggestion): InlineContentView? {
+        return suspendCancellableCoroutine { c ->
+            suggestion.inflate(context, suggestionSize, directExecutor) { v ->
+                c.resume(v)
+            }
+        }
     }
 
     override val view by lazy {
@@ -392,12 +452,12 @@ class ComposeKawaiiBarComponent :
                     val titleExtensionView by _titleExtensionView.collectAsState()
                     val expandButtonState by _expandButtonState.collectAsState()
                     val clipboardText by _clipboardText.collectAsState()
-                    val inlineSuggestions by _inlineSuggestions.collectAsState()
                     val splitKeyboardEnabled by _splitKeyboardEnabled.collectAsState()
                     val menuRotation by _menuRotation.collectAsState()
 
                     val callbacks = remember { createCallbacks() }
-                    val visuals = remember { getVisuals() }
+                    val keyBorder = ThemeManager.prefs.keyBorder.getValue()
+                    val visuals = remember(keyBorder) { getVisuals() }
 
                     ComposeToolbar(
                         barState = barState,
@@ -426,9 +486,10 @@ class ComposeKawaiiBarComponent :
                             )
                         },
                         inlineSuggestionContent = {
-                            // InlineSuggestions 需要 AndroidView 包装
-                            InlineSuggestionsHost(
-                                suggestions = inlineSuggestions,
+                            // InlineSuggestionsUi 包含 SurfaceControl 生命周期管理
+                            androidx.compose.ui.viewinterop.AndroidView(
+                                factory = { inlineSuggestionsUi.root },
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         },
                         clipboardContent = {
@@ -465,9 +526,11 @@ class ComposeKawaiiBarComponent :
                             {
                                 // 扩展 View 用 AndroidView 包装
                                 titleExtensionView?.let { extView ->
-                                    androidx.compose.ui.viewinterop.AndroidView(
-                                        factory = { extView },
-                                    )
+                                    androidx.compose.runtime.key(extView) {
+                                        androidx.compose.ui.viewinterop.AndroidView(
+                                            factory = { extView },
+                                        )
+                                    }
                                 }
                             }
                         } else null,
@@ -527,26 +590,4 @@ private fun NumberRowHost(
         },
         modifier = Modifier.fillMaxWidth(),
     )
-}
-
-/**
- * InlineSuggestions 的 AndroidView 宿主
- */
-@Composable
-private fun InlineSuggestionsHost(
-    suggestions: List<InlineSuggestion>,
-) {
-    // InlineSuggestions 是系统 API，需要 AndroidView 包装
-    // 简单显示提示文本，实际 inflate 逻辑后续完善
-    if (suggestions.isNotEmpty()) {
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "${suggestions.size} suggestions",
-                color = androidx.compose.ui.graphics.Color.Gray,
-            )
-        }
-    }
 }

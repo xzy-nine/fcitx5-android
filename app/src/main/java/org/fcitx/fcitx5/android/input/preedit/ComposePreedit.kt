@@ -42,16 +42,19 @@ fun ComposePreedit(
         // 上行：auxUp + preedit（含光标）
         if (state.upText.isNotEmpty()) {
             val annotatedText = buildAnnotatedString {
-                if (state.upCursor < 0 || state.upCursor >= state.upText.length) {
-                    // 无光标或光标在末尾
+                val text = state.upText
+                val cursor = state.upCursor
+                if (cursor < 0) {
+                    // 无光标
                     withStyle(SpanStyle(color = visuals.textColor, fontSize = 16.sp)) {
-                        append(state.upText)
+                        append(text)
                     }
                 } else {
-                    // 光标在中间：前半 + 光标竖线 + 后半
-                    if (state.upCursor > 0) {
+                    // 有光标：前半 + 光标竖线 + 后半
+                    val clampedCursor = cursor.coerceAtMost(text.length)
+                    if (clampedCursor > 0) {
                         withStyle(SpanStyle(color = visuals.textColor, fontSize = 16.sp)) {
-                            append(state.upText.substring(0, state.upCursor))
+                            append(text.substring(0, clampedCursor))
                         }
                     }
                     // 光标竖线
@@ -64,9 +67,9 @@ fun ComposePreedit(
                     ) {
                         append("\u2502")
                     }
-                    if (state.upCursor < state.upText.length) {
+                    if (clampedCursor < text.length) {
                         withStyle(SpanStyle(color = visuals.textColor, fontSize = 16.sp)) {
-                            append(state.upText.substring(state.upCursor))
+                            append(text.substring(clampedCursor))
                         }
                     }
                 }
