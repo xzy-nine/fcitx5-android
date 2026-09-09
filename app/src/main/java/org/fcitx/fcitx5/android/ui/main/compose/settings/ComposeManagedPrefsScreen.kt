@@ -21,8 +21,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -172,9 +174,27 @@ fun ManagedPrefsScreen(
 
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val highlightColor = MiuixTheme.colorScheme.primary.copy(alpha = 0.15f)
+    val listState = rememberLazyListState()
+    var currentHighlight by remember { mutableStateOf(highlightKey) }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
+    // Auto-scroll to the highlighted item and clear highlight after delay
+    LaunchedEffect(highlightKey) {
+        if (highlightKey != null) {
+            currentHighlight = highlightKey
+            delay(300) // Wait for layout to complete
+            val index = findHighlightIndex(context, category, highlightKey)
+            if (index >= 0) {
+                listState.animateScrollToItem(index)
+            }
+            // Clear highlight after 2 seconds
+            delay(2000)
+            currentHighlight = null
+        }
+    }
+
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(
                 top = (if (showTopBar) 64.dp else 12.dp) + topInset
             ),
@@ -185,11 +205,11 @@ fun ManagedPrefsScreen(
                     Card(
                         modifier = Modifier.padding(horizontal = 12.dp),
                         colors = CardDefaults.defaultColors(
-                            color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                            color = MiuixTheme.colorScheme.surface,
                         ),
                     ) {
                         category.managedPreferencesUi.forEachIndexed { index, ui ->
-                            val isHighlight = uiTitleString(context, ui) == highlightKey
+                            val isHighlight = uiTitleString(context, ui) == currentHighlight
                             Box(
                                 Modifier.background(
                                     if (isHighlight) highlightColor else Color.Transparent
@@ -216,7 +236,7 @@ fun ManagedPrefsScreen(
                         Card(
                             modifier = Modifier.padding(horizontal = 12.dp),
                             colors = CardDefaults.defaultColors(
-                                color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                                color = MiuixTheme.colorScheme.surface,
                             ),
                         ) {
                             val keys = group.keys.filter { uiMap.containsKey(it) }
@@ -224,7 +244,7 @@ fun ManagedPrefsScreen(
                                 val ui = uiMap.getValue(key)
                                 Box(
                                     Modifier.background(
-                                        if (uiTitleString(context, ui) == highlightKey) highlightColor
+                                        if (uiTitleString(context, ui) == currentHighlight) highlightColor
                                         else Color.Transparent
                                     ),
                                 ) {
@@ -249,7 +269,7 @@ fun ManagedPrefsScreen(
                     Card(
                         modifier = Modifier.padding(horizontal = 12.dp),
                         colors = CardDefaults.defaultColors(
-                            color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                            color = MiuixTheme.colorScheme.surface,
                         ),
                     ) {
                         ArrowPreference(
@@ -367,7 +387,7 @@ private fun ManagedPrefRow(
             var showDialog by remember { mutableStateOf(false) }
             val hasRange = ui.min < ui.max && (ui.max.toLong() - ui.min.toLong()) <= 10000
             if (hasRange) {
-                ExpandableNumberPreference(
+                SimpleSliderPreference(
                     title = stringResource(ui.title),
                     value = pref.getValue(),
                     onValueChange = { newValue ->
@@ -407,7 +427,7 @@ private fun ManagedPrefRow(
 
         is ManagedPreferenceUi.SeekBarInt -> {
             val pref = prefs[ui.key] as? ManagedPreference.PInt ?: return
-            ExpandableNumberPreference(
+            SimpleSliderPreference(
                 title = stringResource(ui.title),
                 value = pref.getValue(),
                 onValueChange = { newValue ->
@@ -437,7 +457,7 @@ private fun ManagedPrefRow(
                 bottomAction = {
                     AnimatedVisibility(expanded && ui.isEnabled()) {
                         Column {
-                            ExpandableNumberPreference(
+                            SimpleSliderPreference(
                                 title = stringResource(ui.label),
                                 value = primaryPref.getValue(),
                                 onValueChange = { newValue ->
@@ -450,7 +470,7 @@ private fun ManagedPrefRow(
                                 suffix = ui.unit,
                                 enabled = ui.isEnabled(),
                             )
-                            ExpandableNumberPreference(
+                            SimpleSliderPreference(
                                 title = stringResource(ui.secondaryLabel),
                                 value = secondaryPref.getValue(),
                                 onValueChange = { newValue ->
@@ -474,7 +494,7 @@ private fun ManagedPrefRow(
             // unbounded / huge ranges have no meaningful slider -> keep the edit dialog
             val hasRange = ui.max > ui.min && (ui.max.toDouble() - ui.min.toDouble()) <= 100.0
             if (hasRange) {
-                ExpandableNumberPreference(
+                SimpleSliderPreference(
                     title = stringResource(ui.title),
                     value = pref.getValue(),
                     onValueChange = { newValue ->
@@ -514,4 +534,48 @@ private fun ManagedPrefRow(
             }
         }
     }
+}
+
+/**
+ * Find the LazyColumn item index that contains the highlighted preference.
+ * Returns the index to scroll to, or -1 if not found.
+ *
+ * LazyColumn structure:
+ * - For each group: 1 item for SmallTitle + 1 item for Card
+ * - For ungrouped: 1 item for Card
+ * - For advanced: 1 item for SmallTitle + 1 item for Card
+ */
+private fun findHighlightIndex(
+    context: Context,
+    category: ManagedPreferenceCategory,
+    highlightKey: String
+): Int {
+    var index = 0
+    if (category.groups.isEmpty()) {
+        // Ungrouped: single Card item at index 0
+        val hasHighlight = category.managedPreferencesUi.any {
+            uiTitleString(context, it) == highlightKey
+        }
+        return if (hasHighlight) 0 else -1
+    } else {
+        // Grouped: SmallTitle (index 0) + Card (index 1), then next group...
+        category.groups.forEachIndexed { groupIdx, group ->
+            index += 1 // SmallTitle item
+            val cardIndex = index
+            index += 1 // Card item
+            val uiMap = category.managedPreferencesUi.associateBy { it.key }
+            val keys = group.keys.filter { uiMap.containsKey(it) }
+            val hasHighlight = keys.any { key ->
+                val ui = uiMap.getValue(key)
+                uiTitleString(context, ui) == highlightKey
+            }
+            if (hasHighlight) return cardIndex
+        }
+        // Check advanced section (data management)
+        if (category === AppPrefs.getInstance().advanced) {
+            index += 1 // SmallTitle for data management
+            index += 1 // Card for data management
+        }
+    }
+    return -1
 }

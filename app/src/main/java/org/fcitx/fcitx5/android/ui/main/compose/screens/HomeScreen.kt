@@ -71,7 +71,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val appName = stringResource(R.string.app_name)
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
+    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
         LazyColumn(
             contentPadding = PaddingValues(top = 64.dp + topInset),
             modifier = Modifier.fillMaxSize(),
@@ -136,7 +136,7 @@ private fun HomeCard(
     Card(
         modifier = Modifier.padding(horizontal = 12.dp),
         colors = CardDefaults.defaultColors(
-            color = MiuixTheme.colorScheme.surfaceContainerHighest,
+            color = MiuixTheme.colorScheme.surface,
         ),
     ) {
         items.forEachIndexed { index, dest ->
