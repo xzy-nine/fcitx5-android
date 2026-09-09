@@ -72,6 +72,11 @@ fun ComposeToolbar(
     titleExtensionContent: @Composable (() -> Unit)? = null,
 ) {
     Box(modifier = modifier.fillMaxWidth().background(visuals.barColor)) {
+        // 候选栏始终留在组合树中（底层），避免 AndroidView 反复 attach/detach 导致渲染不同步
+        CandidateContent(
+            candidateContent = candidateContent,
+            visible = barState == KawaiiBarStateMachine.State.Candidate,
+        )
         when (barState) {
             KawaiiBarStateMachine.State.Idle -> {
                 IdleContent(
@@ -85,11 +90,6 @@ fun ComposeToolbar(
                     clipboardContent = clipboardContent,
                 )
             }
-            KawaiiBarStateMachine.State.Candidate -> {
-                CandidateContent(
-                    candidateContent = candidateContent,
-                )
-            }
             KawaiiBarStateMachine.State.Title -> {
                 TitleContent(
                     titleData = titleData,
@@ -98,6 +98,7 @@ fun ComposeToolbar(
                     extensionContent = titleExtensionContent,
                 )
             }
+            else -> {}
         }
     }
 }
@@ -184,18 +185,19 @@ private fun IdleContent(
 @Composable
 private fun CandidateContent(
     candidateContent: @Composable () -> Unit,
+    visible: Boolean,
 ) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(ComposeKawaiiBarComponent.HEIGHT.dp)
-            .padding(end = 40.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(end = 40.dp)
+            .graphicsLayer {
+                alpha = if (visible) 1f else 0f
+            },
+        contentAlignment = Alignment.CenterStart,
     ) {
-        // 候选栏内容
-        Box(modifier = Modifier.weight(1f)) {
-            candidateContent()
-        }
+        candidateContent()
     }
 }
 

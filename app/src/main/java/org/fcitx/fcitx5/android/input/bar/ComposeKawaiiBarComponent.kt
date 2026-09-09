@@ -473,7 +473,6 @@ class ComposeKawaiiBarComponent :
                             // 使用 AndroidView 包装其 ComposeView
                             androidx.compose.ui.viewinterop.AndroidView(
                                 factory = { composeCandidate.view },
-                                update = { it.requestLayout() },
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         },
