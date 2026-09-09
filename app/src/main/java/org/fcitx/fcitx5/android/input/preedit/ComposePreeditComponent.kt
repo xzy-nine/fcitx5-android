@@ -4,12 +4,9 @@
  */
 package org.fcitx.fcitx5.android.input.preedit
 
-import android.view.View
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -17,19 +14,24 @@ import org.fcitx.fcitx5.android.core.FcitxEvent
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
-import org.fcitx.fcitx5.android.input.dependency.UniqueViewComponent
+import org.mechdancer.dependency.Dependent
+import org.mechdancer.dependency.UniqueComponent
+import org.mechdancer.dependency.manager.ManagedHandler
+import org.mechdancer.dependency.manager.managedHandler
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.theme
-import top.yukonga.miuix.kmp.theme.ColorSchemeMode
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.theme.ThemeController
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 
 /**
  * Compose 预编辑栏组件
  * 替代 PreeditComponent，使用 Compose 实现
  */
 class ComposePreeditComponent :
-    UniqueViewComponent<ComposePreeditComponent, View>(), InputBroadcastReceiver {
+    UniqueComponent<ComposePreeditComponent>(),
+    Dependent,
+    ManagedHandler by managedHandler(),
+    InputBroadcastReceiver {
 
     private val context by manager.context()
     private val theme by manager.theme()
@@ -82,23 +84,21 @@ class ComposePreeditComponent :
         )
     }
 
-    override val view by lazy {
-        ComposeView(context).apply {
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            setContent {
-                val themeController = remember { ThemeController(ColorSchemeMode.System) }
-                MiuixTheme(controller = themeController) {
-                    val state by _state.collectAsState()
-                    androidx.compose.foundation.layout.Box(
-                        contentAlignment = androidx.compose.ui.Alignment.TopStart,
-                    ) {
-                        ComposePreedit(
-                            state = state,
-                            visuals = getVisuals(),
-                        )
-                    }
-                }
-            }
+    /**
+     * 预编辑栏 Composable 内容。
+     * 不再持有独立 ComposeView，由父级（合并后的单一 Composition）在 MiuixTheme 内直接调用。
+     */
+    @Composable
+    fun PreeditContent(modifier: Modifier = Modifier) {
+        val state by _state.collectAsState()
+        androidx.compose.foundation.layout.Box(
+            modifier = modifier,
+            contentAlignment = androidx.compose.ui.Alignment.TopStart,
+        ) {
+            ComposePreedit(
+                state = state,
+                visuals = getVisuals(),
+            )
         }
     }
 }

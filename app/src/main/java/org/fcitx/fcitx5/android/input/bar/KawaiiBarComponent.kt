@@ -358,10 +358,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         }
     }
 
-    // 候选栏 UI：使用 Compose 实现的 candidate.view
-    // 旧 View 实现：CandidateUi(context, theme, horizontalCandidate.view)（已断开接线）
+    // 候选栏 UI：ComposeCandidateComponent 已改为无 View 的纯 Composable（不再暴露 view），
+    // 本组件已断开接线、不会实例化，此处仅用一个占位 View 满足 CandidateUi 的形参。
     private val candidateUi by lazy {
-        CandidateUi(context, theme, composeCandidate.view).apply {
+        CandidateUi(context, theme, View(context)).apply {
             expandButton.apply {
                 swipeEnabled = true
                 swipeThresholdY = dp(HEIGHT.toFloat())
