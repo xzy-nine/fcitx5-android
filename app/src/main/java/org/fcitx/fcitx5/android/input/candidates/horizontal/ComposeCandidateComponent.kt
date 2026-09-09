@@ -7,15 +7,13 @@ package org.fcitx.fcitx5.android.input.candidates.horizontal
 
 import android.content.Context
 import android.content.res.Configuration
-import android.view.View
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -34,7 +32,10 @@ import org.fcitx.fcitx5.android.input.candidates.expanded.ExpandedCandidateStyle
 import org.fcitx.fcitx5.android.input.candidates.expanded.window.BaseExpandedCandidateWindow
 import org.fcitx.fcitx5.android.input.candidates.expanded.window.FlexboxExpandedCandidateWindow
 import org.fcitx.fcitx5.android.input.candidates.expanded.window.GridExpandedCandidateWindow
-import org.fcitx.fcitx5.android.input.dependency.UniqueViewComponent
+import org.mechdancer.dependency.Dependent
+import org.mechdancer.dependency.UniqueComponent
+import org.mechdancer.dependency.manager.ManagedHandler
+import org.mechdancer.dependency.manager.managedHandler
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.fcitx
@@ -44,16 +45,18 @@ import org.fcitx.fcitx5.android.input.dependency.theme
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.mechdancer.dependency.manager.must
-import top.yukonga.miuix.kmp.theme.ColorSchemeMode
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.theme.ThemeController
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalView
 
 /**
  * Compose 候选栏组件
  * 替代 HorizontalCandidateComponent，使用 Compose LazyRow 实现
  */
 class ComposeCandidateComponent :
-    UniqueViewComponent<ComposeCandidateComponent, View>(), InputBroadcastReceiver {
+    UniqueComponent<ComposeCandidateComponent>(),
+    Dependent,
+    ManagedHandler by managedHandler(),
+    InputBroadcastReceiver {
 
     private val context by manager.context()
     private val fcitx by manager.fcitx()
@@ -280,101 +283,101 @@ class ComposeCandidateComponent :
         }
     }
 
-    override val view by lazy {
-        ComposeView(context).apply {
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            setContent {
-                val themeController = remember { ThemeController(ColorSchemeMode.System) }
-                MiuixTheme(controller = themeController) {
-                    val state by _state.collectAsState()
-                    val isExpandedWindowShown by _isExpandedWindowShown.collectAsState()
+    /**
+     * 候选栏 Composable 内容。
+     * 不再持有独立 ComposeView，由父级（合并后的单一 Composition）在 MiuixTheme 内直接调用，
+     * 从而消除「ComposeView 内嵌 ComposeView」。
+     */
+    @Composable
+    fun CandidateBarContent(modifier: Modifier = Modifier) {
+        val view = LocalView.current
+        val state by _state.collectAsState()
+        val isExpandedWindowShown by _isExpandedWindowShown.collectAsState()
 
-                    // 监听多个偏好变化，触发重组
-                    val swipeEnabled = remember { mutableStateOf(swipeEnabledPref.getValue()) }
-                    val showDivider = remember { mutableStateOf(candidateDividerPref.getValue()) }
-                    val fillStyleVersion = remember { mutableIntStateOf(0) }
-                    val maxSpanCountVersion = remember { mutableIntStateOf(0) }
+        // 监听多个偏好变化，触发重组
+        val swipeEnabled = remember { mutableStateOf(swipeEnabledPref.getValue()) }
+        val showDivider = remember { mutableStateOf(candidateDividerPref.getValue()) }
+        val fillStyleVersion = remember { mutableIntStateOf(0) }
+        val maxSpanCountVersion = remember { mutableIntStateOf(0) }
 
-                    androidx.compose.runtime.DisposableEffect(Unit) {
-                        val swipeListener = object : org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<Boolean> {
-                            override fun onChange(key: String, value: Boolean) {
-                                swipeEnabled.value = value
-                            }
-                        }
-                        val dividerListener = object : org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<Boolean> {
-                            override fun onChange(key: String, value: Boolean) {
-                                showDivider.value = value
-                            }
-                        }
-                        val fillStyleListener = org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<HorizontalCandidateMode> { _, _ ->
-                            fillStyleVersion.intValue++
-                        }
-                        val spanCountListener = org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<Int> { _, _ ->
-                            maxSpanCountVersion.intValue++
-                        }
-                        swipeEnabledPref.registerOnChangeListener(swipeListener)
-                        candidateDividerPref.registerOnChangeListener(dividerListener)
-                        keyboardPrefs.horizontalCandidateStyle.registerOnChangeListener(fillStyleListener)
-                        maxSpanCountPref.registerOnChangeListener(spanCountListener)
-                        onDispose {
-                            swipeEnabledPref.unregisterOnChangeListener(swipeListener)
-                            candidateDividerPref.unregisterOnChangeListener(dividerListener)
-                            keyboardPrefs.horizontalCandidateStyle.unregisterOnChangeListener(fillStyleListener)
-                            maxSpanCountPref.unregisterOnChangeListener(spanCountListener)
-                        }
-                    }
-
-                    // 读取当前值（version 变化触发重组）
-                    @Suppress("UNUSED_VARIABLE")
-                    val _fillVersion = fillStyleVersion.intValue
-                    @Suppress("UNUSED_VARIABLE")
-                    val _spanVersion = maxSpanCountVersion.intValue
-
-                    ComposeCandidateBar(
-                        state = state,
-                        visuals = getVisuals(),
-                        callbacks = CandidateBarCallbacks(
-                            onCandidateSelect = { index ->
-                                fcitx.launchOnReady { it.select(index) }
-                            },
-                            onCandidateLongClick = { index, candidate ->
-                                inputView.showCandidateActionMenu(
-                                    index,
-                                    candidate.text,
-                                    this@apply
-                                )
-                            },
-                            onExpandClick = {
-                                if (_isExpandedWindowShown.value) {
-                                    windowManager.attachWindow(KeyboardWindow)
-                                    _isExpandedWindowShown.value = false
-                                } else {
-                                    windowManager.attachWindow(
-                                        when (expandedCandidateStyle) {
-                                            ExpandedCandidateStyle.Grid -> GridExpandedCandidateWindow()
-                                            ExpandedCandidateStyle.Flexbox -> FlexboxExpandedCandidateWindow()
-                                        }
-                                    )
-                                    _isExpandedWindowShown.value = true
-                                }
-                            },
-                            onLoadMore = {
-                                loadMoreIfNeeded()
-                            },
-                            onScrollOffsetChanged = { offset ->
-                                onScrollOffsetChanged(offset)
-                            },
-                        ),
-                        fillMode = getFillMode(),
-                        maxSpanCount = maxSpanCountPref.getValue(),
-                        userScrollEnabled = swipeEnabled.value,
-                        isExpandMode = isExpandedWindowShown,
-                        barHeight = ComposeKawaiiBarComponent.HEIGHT.dp,
-                        showDivider = showDivider.value,
-                    )
+        androidx.compose.runtime.DisposableEffect(Unit) {
+            val swipeListener = object : org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<Boolean> {
+                override fun onChange(key: String, value: Boolean) {
+                    swipeEnabled.value = value
                 }
             }
+            val dividerListener = object : org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<Boolean> {
+                override fun onChange(key: String, value: Boolean) {
+                    showDivider.value = value
+                }
+            }
+            val fillStyleListener = org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<HorizontalCandidateMode> { _, _ ->
+                fillStyleVersion.intValue++
+            }
+            val spanCountListener = org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<Int> { _, _ ->
+                maxSpanCountVersion.intValue++
+            }
+            swipeEnabledPref.registerOnChangeListener(swipeListener)
+            candidateDividerPref.registerOnChangeListener(dividerListener)
+            keyboardPrefs.horizontalCandidateStyle.registerOnChangeListener(fillStyleListener)
+            maxSpanCountPref.registerOnChangeListener(spanCountListener)
+            onDispose {
+                swipeEnabledPref.unregisterOnChangeListener(swipeListener)
+                candidateDividerPref.unregisterOnChangeListener(dividerListener)
+                keyboardPrefs.horizontalCandidateStyle.unregisterOnChangeListener(fillStyleListener)
+                maxSpanCountPref.unregisterOnChangeListener(spanCountListener)
+            }
         }
+
+        // 读取当前值（version 变化触发重组）
+        @Suppress("UNUSED_VARIABLE")
+        val _fillVersion = fillStyleVersion.intValue
+        @Suppress("UNUSED_VARIABLE")
+        val _spanVersion = maxSpanCountVersion.intValue
+
+        ComposeCandidateBar(
+            state = state,
+            visuals = getVisuals(),
+            callbacks = CandidateBarCallbacks(
+                onCandidateSelect = { index ->
+                    fcitx.launchOnReady { it.select(index) }
+                },
+                onCandidateLongClick = { index, candidate ->
+                    inputView.showCandidateActionMenu(
+                        index,
+                        candidate.text,
+                        view
+                    )
+                },
+                onExpandClick = {
+                    if (_isExpandedWindowShown.value) {
+                        windowManager.attachWindow(KeyboardWindow)
+                        _isExpandedWindowShown.value = false
+                    } else {
+                        windowManager.attachWindow(
+                            when (expandedCandidateStyle) {
+                                ExpandedCandidateStyle.Grid -> GridExpandedCandidateWindow()
+                                ExpandedCandidateStyle.Flexbox -> FlexboxExpandedCandidateWindow()
+                            }
+                        )
+                        _isExpandedWindowShown.value = true
+                    }
+                },
+                onLoadMore = {
+                    loadMoreIfNeeded()
+                },
+                onScrollOffsetChanged = { offset ->
+                    onScrollOffsetChanged(offset)
+                },
+            ),
+            fillMode = getFillMode(),
+            maxSpanCount = maxSpanCountPref.getValue(),
+            userScrollEnabled = swipeEnabled.value,
+            isExpandMode = isExpandedWindowShown,
+            barHeight = ComposeKawaiiBarComponent.HEIGHT.dp,
+            showDivider = showDivider.value,
+            modifier = modifier,
+        )
     }
 
     companion object {

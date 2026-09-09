@@ -34,8 +34,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -72,7 +70,10 @@ import org.fcitx.fcitx5.android.input.bar.ui.idle.InlineSuggestionsUi
 import org.fcitx.fcitx5.android.input.bar.ui.idle.NumberRow
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
-import org.fcitx.fcitx5.android.input.dependency.UniqueViewComponent
+import org.mechdancer.dependency.Dependent
+import org.mechdancer.dependency.UniqueComponent
+import org.mechdancer.dependency.manager.ManagedHandler
+import org.mechdancer.dependency.manager.managedHandler
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
 import org.fcitx.fcitx5.android.input.dependency.inputView
@@ -87,9 +88,7 @@ import org.mechdancer.dependency.DynamicScope
 import org.mechdancer.dependency.manager.must
 import splitties.dimensions.dp
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.ColorSchemeMode
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.theme.ThemeController
+
 import kotlin.math.min
 
 /**
@@ -97,7 +96,10 @@ import kotlin.math.min
  * 替代 KawaiiBarComponent，使用 Compose 实现
  */
 class ComposeKawaiiBarComponent :
-    UniqueViewComponent<ComposeKawaiiBarComponent, View>(), InputBroadcastReceiver {
+    UniqueComponent<ComposeKawaiiBarComponent>(),
+    Dependent,
+    ManagedHandler by managedHandler(),
+    InputBroadcastReceiver {
 
     private val context by manager.context()
     private val theme by manager.theme()
@@ -150,6 +152,19 @@ class ComposeKawaiiBarComponent :
     private val _clipboardText = kotlinx.coroutines.flow.MutableStateFlow("")
     private val _splitKeyboardEnabled = kotlinx.coroutines.flow.MutableStateFlow(splitKeyboardPref.getValue())
     private val _menuRotation = kotlinx.coroutines.flow.MutableStateFlow(270f)
+
+    private val _toolbarHeightVersion = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+    /**
+     * 工具栏高度偏好变更计数。
+     * 工具栏高度由 Composable 内部的 [HEIGHT] 决定，偏好变化后必须自增它并让父级重组才能生效。
+     */
+    val toolbarHeightVersion: kotlinx.coroutines.flow.StateFlow<Int>
+        get() = _toolbarHeightVersion
+
+    fun notifyToolbarHeightChanged() {
+        _toolbarHeightVersion.value++
+    }
 
     // InlineSuggestions 视图容器
     private val inlineSuggestionsUi by lazy { InlineSuggestionsUi(context) }
@@ -452,104 +467,98 @@ class ComposeKawaiiBarComponent :
         }
     }
 
-    override val view by lazy {
-        ComposeView(context).apply {
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            setContent {
-                val themeController = remember { ThemeController(ColorSchemeMode.System) }
-                MiuixTheme(controller = themeController) {
-                    val barState by _barState.collectAsState()
-                    val idleSubState by _idleSubState.collectAsState()
-                    val titleData by _titleData.collectAsState()
-                    val titleExtensionView by _titleExtensionView.collectAsState()
-                    val expandButtonState by _expandButtonState.collectAsState()
-                    val clipboardText by _clipboardText.collectAsState()
-                    val splitKeyboardEnabled by _splitKeyboardEnabled.collectAsState()
-                    val menuRotation by _menuRotation.collectAsState()
+    /**
+     * 工具栏 Composable 内容。
+     * 不再持有独立 ComposeView，由父级（合并后的单一 Composition）在 MiuixTheme 内直接调用。
+     */
+    @Composable
+    fun ToolbarContent(modifier: Modifier = Modifier) {
+        val barState by _barState.collectAsState()
+        val idleSubState by _idleSubState.collectAsState()
+        val titleData by _titleData.collectAsState()
+        val titleExtensionView by _titleExtensionView.collectAsState()
+        val expandButtonState by _expandButtonState.collectAsState()
+        val clipboardText by _clipboardText.collectAsState()
+        val splitKeyboardEnabled by _splitKeyboardEnabled.collectAsState()
+        val menuRotation by _menuRotation.collectAsState()
 
-                    val callbacks = remember { createCallbacks() }
-                    val keyBorder = ThemeManager.prefs.keyBorder.getValue()
-                    val visuals = remember(keyBorder) { getVisuals() }
+        val callbacks = remember { createCallbacks() }
+        val keyBorder = ThemeManager.prefs.keyBorder.getValue()
+        val visuals = remember(keyBorder) { getVisuals() }
 
-                    ComposeToolbar(
-                        barState = barState,
-                        idleSubState = idleSubState,
-                        titleData = titleData,
-                        callbacks = callbacks,
-                        visuals = visuals,
-                        expandButtonState = expandButtonState,
-                        splitKeyboardEnabled = splitKeyboardEnabled,
-                        menuRotation = menuRotation,
-                        candidateContent = {
-                            // 候选栏内容由 ComposeCandidateComponent 提供
-                            // 使用 AndroidView 包装其 ComposeView
-                            androidx.compose.ui.viewinterop.AndroidView(
-                                factory = { composeCandidate.view },
-                                modifier = Modifier.fillMaxWidth(),
+        ComposeToolbar(
+            barState = barState,
+            idleSubState = idleSubState,
+            titleData = titleData,
+            callbacks = callbacks,
+            visuals = visuals,
+            expandButtonState = expandButtonState,
+            splitKeyboardEnabled = splitKeyboardEnabled,
+            menuRotation = menuRotation,
+            modifier = modifier,
+            candidateContent = {
+                // 候选栏内容由 ComposeCandidateComponent 提供，直接作为 Composable 接入（去除嵌套 ComposeView）
+                composeCandidate.CandidateBarContent()
+            },
+            numberRowContent = {
+                // NumberRow 是 View (BaseKeyboard)，用 AndroidView 包装
+                NumberRowHost(
+                    theme = theme,
+                    onCollapse = callbacks.onNumberRowCollapse,
+                    keyActionListener = commonKeyActionListener.listener,
+                    popupActionListener = popup.listener,
+                )
+            },
+            inlineSuggestionContent = {
+                // InlineSuggestionsUi 包含 SurfaceControl 生命周期管理
+                androidx.compose.ui.viewinterop.AndroidView(
+                    factory = { inlineSuggestionsUi.root },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            clipboardContent = {
+                if (clipboardText.isNotEmpty()) {
+                    androidx.compose.foundation.layout.Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .inputFeedback()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = callbacks.onClipboardSuggestionClick,
                             )
-                        },
-                        numberRowContent = {
-                            // NumberRow 是 View (BaseKeyboard)，用 AndroidView 包装
-                            NumberRowHost(
-                                theme = theme,
-                                onCollapse = callbacks.onNumberRowCollapse,
-                                keyActionListener = commonKeyActionListener.listener,
-                                popupActionListener = popup.listener,
-                            )
-                        },
-                        inlineSuggestionContent = {
-                            // InlineSuggestionsUi 包含 SurfaceControl 生命周期管理
-                            androidx.compose.ui.viewinterop.AndroidView(
-                                factory = { inlineSuggestionsUi.root },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        },
-                        clipboardContent = {
-                            if (clipboardText.isNotEmpty()) {
-                                androidx.compose.foundation.layout.Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .inputFeedback()
-                                        .clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null,
-                                            onClick = callbacks.onClipboardSuggestionClick,
-                                        )
-                                        .padding(horizontal = 4.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_clipboard),
-                                        contentDescription = null,
-                                        tint = visuals.iconColor,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = clipboardText,
-                                        color = visuals.textColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                            }
-                        },
-                        titleExtensionContent = if (titleExtensionView != null) {
-                            {
-                                // 扩展 View 用 AndroidView 包装
-                                titleExtensionView?.let { extView ->
-                                    androidx.compose.runtime.key(extView) {
-                                        androidx.compose.ui.viewinterop.AndroidView(
-                                            factory = { extView },
-                                        )
-                                    }
-                                }
-                            }
-                        } else null,
-                    )
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_clipboard),
+                            contentDescription = null,
+                            tint = visuals.iconColor,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = clipboardText,
+                            color = visuals.textColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
-            }
-        }
+            },
+            titleExtensionContent = if (titleExtensionView != null) {
+                {
+                    // 扩展 View 用 AndroidView 包装
+                    titleExtensionView?.let { extView ->
+                        androidx.compose.runtime.key(extView) {
+                            androidx.compose.ui.viewinterop.AndroidView(
+                                factory = { extView },
+                            )
+                        }
+                    }
+                }
+            } else null,
+        )
     }
 
     companion object {
