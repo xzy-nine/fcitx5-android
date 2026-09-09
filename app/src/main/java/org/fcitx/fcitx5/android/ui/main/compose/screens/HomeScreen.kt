@@ -6,19 +6,9 @@
 package org.fcitx.fcitx5.android.ui.main.compose.screens
 
 import androidx.annotation.StringRes
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -34,7 +24,6 @@ import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Copy
 import top.yukonga.miuix.kmp.icon.extended.GridView
@@ -70,60 +59,52 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val appName = stringResource(R.string.app_name)
-    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
-        LazyColumn(
-            contentPadding = PaddingValues(top = 64.dp + topInset),
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            item {
-                SmallTitle(text = "Fcitx")
+
+    PageScaffold(
+        title = appName,
+        actions = {
+            IconButton(onClick = onSearch) {
+                Icon(
+                    MiuixIcons.Search,
+                    contentDescription = stringResource(R.string.search),
+                    modifier = Modifier.size(24.dp),
+                )
             }
-            item {
-                HomeCard(homeFcitxItems, onNavigate)
+            IconButton(onClick = { onOpenUrl(Const.faqUrl) }) {
+                Icon(
+                    MiuixIcons.Help,
+                    contentDescription = stringResource(R.string.help),
+                    modifier = Modifier.size(24.dp),
+                )
             }
-            item {
-                SmallTitle(text = "Android")
+            IconButton(onClick = { onNavigate(AppRoute.Developer) }) {
+                Icon(
+                    MiuixIcons.Info,
+                    contentDescription = stringResource(R.string.developer),
+                    modifier = Modifier.size(24.dp),
+                )
             }
-            item {
-                HomeCard(homeAndroidItems, onNavigate)
+            IconButton(onClick = { onNavigate(AppRoute.About) }) {
+                Icon(
+                    MiuixIcons.MoreCircle,
+                    contentDescription = stringResource(R.string.about),
+                    modifier = Modifier.size(24.dp),
+                )
             }
+        },
+    ) {
+        item {
+            SmallTitle(text = "Fcitx")
         }
-        SmallTopAppBar(
-            color = MiuixTheme.colorScheme.surfaceContainer,
-            title = appName,
-            actions = {
-                IconButton(onClick = onSearch) {
-                    Icon(
-                        MiuixIcons.Search,
-                        contentDescription = stringResource(R.string.search),
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-                IconButton(onClick = { onOpenUrl(Const.faqUrl) }) {
-                    Icon(
-                        MiuixIcons.Help,
-                        contentDescription = stringResource(R.string.help),
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-                IconButton(onClick = { onNavigate(AppRoute.Developer) }) {
-                    Icon(
-                        MiuixIcons.Info,
-                        contentDescription = stringResource(R.string.developer),
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-                IconButton(onClick = { onNavigate(AppRoute.About) }) {
-                    Icon(
-                        MiuixIcons.MoreCircle,
-                        contentDescription = stringResource(R.string.about),
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            },
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-        )
+        item {
+            HomeCard(homeFcitxItems, onNavigate)
+        }
+        item {
+            SmallTitle(text = "Android")
+        }
+        item {
+            HomeCard(homeAndroidItems, onNavigate)
+        }
     }
 }
 

@@ -6,16 +6,10 @@
 package org.fcitx.fcitx5.android.ui.main.compose.settings
 
 import android.util.Log
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,7 +17,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -56,16 +49,19 @@ import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import androidx.compose.ui.res.stringResource
-
+import org.fcitx.fcitx5.android.ui.main.compose.screens.PageScaffold
 /**
  * Compose renderer for fcitx's dynamic RawConfig pages (replaces the View-based
  * PreferenceScreenFactory rendering). Supports Bool / Enum / EnumList / Int / String / List /
@@ -90,16 +86,14 @@ fun RawConfigScreen(
         ConfigDescriptor.parseTopLevel(desc).getOrElse { null }
     }
     var cfgVersion by remember { mutableIntStateOf(0) }
-    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
-        LazyColumn(
-            contentPadding = PaddingValues(top = 64.dp + topInset),
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            if (topLevel == null) {
+    PageScaffold(
+        title = titleOverride ?: topLevel?.name ?: stringResource(R.string.global_options),
+        onBack = onBack,
+    ) {
+        if (topLevel == null) {
                 item {
-                    Box(Modifier.padding(16.dp)) {
+                    androidx.compose.foundation.layout.Box(Modifier.padding(16.dp)) {
                         Text(text = stringResource(R.string.failed_to_load_config))
                     }
                 }
@@ -153,17 +147,6 @@ fun RawConfigScreen(
                     }
                 }
             }
-        }
-        SmallTopAppBar(
-            color = MiuixTheme.colorScheme.surfaceContainer,
-            title = titleOverride ?: topLevel?.name ?: stringResource(R.string.global_options),
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, contentDescription = null, modifier = Modifier.size(24.dp))
-                }
-            },
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-        )
     }
 }
 

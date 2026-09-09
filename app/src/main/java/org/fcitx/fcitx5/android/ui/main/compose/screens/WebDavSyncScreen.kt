@@ -27,6 +27,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -52,11 +53,14 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Hide
@@ -83,33 +87,6 @@ private fun Throwable.readable(): String {
 private fun logFailure(what: String, e: Throwable) {
     // ConciseTree 会丢弃 Throwable，因此把堆栈写进 message 文本
     Timber.e("$TAG $what failed: ${e.javaClass.name}, message=${e.message}, trace=${e.stackTraceToString()}")
-}
-
-/** 页面骨架：LazyColumn + 置顶小顶栏，与现有设置页一致。 */
-@Composable
-private fun SyncPageScaffold(
-    title: String,
-    onBack: () -> Unit,
-    content: LazyListScope.() -> Unit,
-) {
-    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
-        LazyColumn(
-            contentPadding = PaddingValues(top = 64.dp + topInset, bottom = 24.dp),
-            modifier = Modifier.fillMaxSize(),
-            content = content,
-        )
-        SmallTopAppBar(
-            color = MiuixTheme.colorScheme.surfaceContainer,
-            title = title,
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, contentDescription = null, modifier = Modifier.size(24.dp))
-                }
-            },
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-        )
-    }
 }
 
 /** WebDAV 服务器登录弹窗：编辑连接信息并测试连接。 */
@@ -403,7 +380,11 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         "${serverUrl}${if (username.isNotBlank()) "（${username}）" else ""}"
     }
 
-    SyncPageScaffold(title = stringResource(R.string.webdav_settings_title), onBack = onBack) {
+    PageScaffold(
+        title = stringResource(R.string.webdav_settings_title),
+        onBack = onBack,
+        contentBottomPadding = 24.dp,
+    ) {
         item {
             Card(
                 modifier = Modifier.padding(horizontal = 12.dp),

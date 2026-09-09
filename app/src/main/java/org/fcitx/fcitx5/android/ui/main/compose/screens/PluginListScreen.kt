@@ -36,6 +36,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -52,9 +53,12 @@ import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Info
@@ -161,42 +165,54 @@ fun PluginListScreen(onBack: () -> Unit) {
 
     val (loaded, failed) = curSynced
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
-        Column(Modifier.fillMaxSize()) {
-            LazyColumn(
-                contentPadding = PaddingValues(
-                    top = 64.dp + WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
-                    bottom = 24.dp,
-                ),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                if (curSynced != curDetected) {
-                    item {
-                        Card(
-                            modifier = Modifier.padding(horizontal = 12.dp),
-                            colors = CardDefaults.defaultColors(
-                                color = MiuixTheme.colorScheme.surfaceContainerHighest,
-                            ),
-                        ) {
-                            ArrowPreference(
-                                title = context.getString(R.string.plugin_needs_reload),
-                                startAction = {
-                                    Icon(MiuixIcons.Info, null, Modifier.size(20.dp))
-                                },
-                                onClick = {
-                                    DataManager.addOnNextSyncedCallback {
-                                        scope.launch {
-                                            synced = DataManager.getSyncedPluginSet()
-                                            detected = DataManager.detectPlugins()
-                                        }
+    PageScaffold(
+        title = context.getString(R.string.plugins),
+        onBack = onBack,
+        contentBottomPadding = 24.dp,
+    ) {
+        if (curSynced != curDetected) {
+                item {
+                    Card(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        colors = CardDefaults.defaultColors(
+                            color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                        ),
+                    ) {
+                        ArrowPreference(
+                            title = context.getString(R.string.plugin_needs_reload),
+                            startAction = {
+                                Icon(MiuixIcons.Info, null, Modifier.size(20.dp))
+                            },
+                            onClick = {
+                                DataManager.addOnNextSyncedCallback {
+                                    scope.launch {
+                                        synced = DataManager.getSyncedPluginSet()
+                                        detected = DataManager.detectPlugins()
                                     }
-                                    FcitxDaemon.restartFcitx()
-                                },
-                            )
-                        }
+                                }
+                                FcitxDaemon.restartFcitx()
+                            },
+                        )
                     }
                 }
-                if (loaded.isEmpty() && failed.isEmpty()) {
+            }
+            if (loaded.isEmpty() && failed.isEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        colors = CardDefaults.defaultColors(
+                            color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                        ),
+                    ) {
+                        Text(
+                            text = context.getString(R.string.no_plugins),
+                            modifier = Modifier.padding(16.dp),
+                        )
+                    }
+                }
+            } else {
+                if (loaded.isNotEmpty()) {
+                    item { SmallTitle(text = context.getString(R.string.plugins_loaded)) }
                     item {
                         Card(
                             modifier = Modifier.padding(horizontal = 12.dp),
@@ -204,67 +220,39 @@ fun PluginListScreen(onBack: () -> Unit) {
                                 color = MiuixTheme.colorScheme.surfaceContainerHighest,
                             ),
                         ) {
-                            Text(
-                                text = context.getString(R.string.no_plugins),
-                                modifier = Modifier.padding(16.dp),
-                            )
-                        }
-                    }
-                } else {
-                    if (loaded.isNotEmpty()) {
-                        item { SmallTitle(text = context.getString(R.string.plugins_loaded)) }
-                        item {
-                            Card(
-                                modifier = Modifier.padding(horizontal = 12.dp),
-                                colors = CardDefaults.defaultColors(
-                                    color = MiuixTheme.colorScheme.surfaceContainerHighest,
-                                ),
-                            ) {
-                                loaded.forEachIndexed { index, p ->
-                                    ArrowPreference(
-                                        title = p.name,
-                                        summary = "${p.versionName}\n${p.description}",
-                                        onClick = { pluginAbout(p.packageName) },
-                                    )
-                                    if (index < loaded.size - 1) HorizontalDivider()
-                                }
+                            loaded.forEachIndexed { index, p ->
+                                ArrowPreference(
+                                    title = p.name,
+                                    summary = "${p.versionName}\n${p.description}",
+                                    onClick = { pluginAbout(p.packageName) },
+                                )
+                                if (index < loaded.size - 1) HorizontalDivider()
                             }
                         }
                     }
-                    if (failed.isNotEmpty()) {
-                        item { SmallTitle(text = context.getString(R.string.plugins_failed)) }
-                        item {
-                            Card(
-                                modifier = Modifier.padding(horizontal = 12.dp),
-                                colors = CardDefaults.defaultColors(
-                                    color = MiuixTheme.colorScheme.surfaceContainerHighest,
-                                ),
-                            ) {
-                                failed.entries.forEachIndexed { index, entry ->
-                                    val pkg = entry.key
-                                    val reason = entry.value
-                                    ArrowPreference(
-                                        title = pkg,
-                                        summary = failedSummary(reason),
-                                        onClick = { pluginAbout(pkg) },
-                                    )
-                                    if (index < failed.size - 1) HorizontalDivider()
-                                }
+                }
+                if (failed.isNotEmpty()) {
+                    item { SmallTitle(text = context.getString(R.string.plugins_failed)) }
+                    item {
+                        Card(
+                            modifier = Modifier.padding(horizontal = 12.dp),
+                            colors = CardDefaults.defaultColors(
+                                color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                            ),
+                        ) {
+                            failed.entries.forEachIndexed { index, entry ->
+                                val pkg = entry.key
+                                val reason = entry.value
+                                ArrowPreference(
+                                    title = pkg,
+                                    summary = failedSummary(reason),
+                                    onClick = { pluginAbout(pkg) },
+                                )
+                                if (index < failed.size - 1) HorizontalDivider()
                             }
                         }
                     }
                 }
             }
-        }
-        SmallTopAppBar(
-            color = MiuixTheme.colorScheme.surfaceContainer,
-            title = context.getString(R.string.plugins),
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
-                }
-            },
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-        )
     }
 }

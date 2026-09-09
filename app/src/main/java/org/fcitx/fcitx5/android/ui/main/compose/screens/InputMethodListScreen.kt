@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -58,8 +59,11 @@ import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Back
@@ -137,15 +141,40 @@ fun InputMethodListScreen(
         push(enabled)
     }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
-        Column(Modifier.fillMaxSize()) {
-            LazyColumn(
-                contentPadding = PaddingValues(
-                    top = 64.dp + WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
-                    bottom = 24.dp,
-                ),
-                modifier = Modifier.fillMaxSize(),
-            ) {
+    val candidates = available.filter { a -> enabled.none { it.uniqueName == a.uniqueName } }
+    val scrollBehavior = MiuixScrollBehavior(rememberTopAppBarState())
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = stringResource(R.string.input_methods),
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
+                    }
+                },
+                scrollBehavior = scrollBehavior,
+            )
+        },
+        floatingActionButton = {
+            if (candidates.isNotEmpty()) {
+                FloatingActionButton(
+                    onClick = { showAddPicker = true },
+                ) {
+                    Icon(MiuixIcons.Add, stringResource(R.string.add))
+                }
+            }
+        },
+    ) { paddingValues ->
+        LazyColumn(
+            contentPadding = PaddingValues(
+                top = paddingValues.calculateTopPadding(),
+                bottom = 24.dp,
+            ),
+            modifier = Modifier
+                .fillMaxSize()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+        ) {
                 itemsIndexed(enabled, key = { _, e -> e.uniqueName }) { index, entry ->
                     val isDragging = index == dragFrom
                     Row(
@@ -227,54 +256,34 @@ fun InputMethodListScreen(
                 }
             }
         }
-        val candidates = available.filter { a -> enabled.none { it.uniqueName == a.uniqueName } }
-        if (candidates.isNotEmpty()) {
-            FloatingActionButton(
-                onClick = { showAddPicker = true },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp),
-            ) {
-                Icon(MiuixIcons.Add, stringResource(R.string.add))
-            }
-        }
-        if (showAddPicker) {
-            WindowDialog(
-                show = showAddPicker,
-                title = stringResource(R.string.add),
-                onDismissRequest = { showAddPicker = false },
-            ) {
-                LazyColumn(Modifier.heightIn(max = 360.dp)) {
-                    items(candidates, key = { it.uniqueName }) { candidate ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
-                            colors = CardDefaults.defaultColors(
-                                color = MiuixTheme.colorScheme.surfaceContainerHighest,
-                            ),
-                            onClick = {
-                                enabled = enabled + candidate
-                                showAddPicker = false
-                                finishDrag()
-                            },
-                        ) {
-                            Text(
-                                text = candidate.displayName,
-                                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            )
-                        }
+
+    if (showAddPicker) {
+        WindowDialog(
+            show = showAddPicker,
+            title = stringResource(R.string.add),
+            onDismissRequest = { showAddPicker = false },
+        ) {
+            LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                items(candidates, key = { it.uniqueName }) { candidate ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                        colors = CardDefaults.defaultColors(
+                            color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                        ),
+                        onClick = {
+                            enabled = enabled + candidate
+                            showAddPicker = false
+                            finishDrag()
+                        },
+                    ) {
+                        Text(
+                            text = candidate.displayName,
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        )
                     }
                 }
             }
         }
-        SmallTopAppBar(
-            color = MiuixTheme.colorScheme.surfaceContainer,
-            title = stringResource(R.string.input_methods),
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
-                }
-            },
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-        )
     }
+
 }
