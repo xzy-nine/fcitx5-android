@@ -15,7 +15,7 @@ import androidx.transition.Slide
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CapabilityFlags
 import org.fcitx.fcitx5.android.core.InputMethodEntry
-import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
+import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
 import org.fcitx.fcitx5.android.input.dependency.fcitx
@@ -42,7 +42,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     private val commonKeyActionListener: CommonKeyActionListener by manager.must()
     private val windowManager: InputWindowManager by manager.must()
     private val popup: PopupComponent by manager.must()
-    private val bar: KawaiiBarComponent by manager.must()
+    private val bar: ComposeKawaiiBarComponent by manager.must()
     private val returnKeyDrawable: ReturnKeyDrawableComponent by manager.must()
 
     companion object : EssentialWindow.Key

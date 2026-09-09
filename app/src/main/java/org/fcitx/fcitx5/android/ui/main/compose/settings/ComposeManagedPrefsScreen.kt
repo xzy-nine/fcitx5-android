@@ -53,7 +53,6 @@ import org.fcitx.fcitx5.android.ui.main.compose.dialog.EditValueDialog
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleConfirmDialog
 import org.fcitx.fcitx5.android.ui.main.settings.EditTextFloatUi
 import org.fcitx.fcitx5.android.utils.AppUtil
-import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import org.fcitx.fcitx5.android.utils.buildDocumentsProviderIntent
 import org.fcitx.fcitx5.android.utils.formatDateTime
 import org.fcitx.fcitx5.android.utils.importErrorDialog
@@ -87,7 +86,6 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 private fun uiTitleString(context: Context, ui: ManagedPreferenceUi<*>): String = when (ui) {
     is ManagedPreferenceUi.Switch -> context.getString(ui.title)
     is ManagedPreferenceUi.StringList<*> -> context.getString(ui.title)
-    is ManagedPreferenceUi.VoiceInputList -> context.getString(ui.title)
     is ManagedPreferenceUi.EditTextInt -> context.getString(ui.title)
     is EditTextFloatUi -> context.getString(ui.title)
     is ManagedPreferenceUi.SeekBarInt -> context.getString(ui.title)
@@ -359,25 +357,6 @@ private fun ManagedPrefRow(
                     @Suppress("UNCHECKED_CAST")
                     (pref as ManagedPreference.PStringLike<Any>)
                         .setValue(ui.entryValues[index])
-                    fireChange(ui.key)
-                },
-            )
-        }
-
-        is ManagedPreferenceUi.VoiceInputList -> {
-            val pref = prefs[ui.key] as? ManagedPreference.PString ?: return
-            val voiceInputMethods = InputMethodUtil.listVoiceInputMethods()
-            val labels = listOf(stringResource(R.string.system_default)) +
-                voiceInputMethods.map { it.first.loadLabel(context.packageManager).toString() }
-            val values = listOf("") + voiceInputMethods.map { it.first.id }
-            val currentIndex = values.indexOf(pref.getValue()).coerceAtLeast(0)
-            WindowDropdownPreference(
-                items = labels,
-                selectedIndex = currentIndex,
-                title = stringResource(ui.title),
-                enabled = ui.isEnabled(),
-                onSelectedIndexChange = { index ->
-                    pref.setValue(values[index])
                     fireChange(ui.key)
                 },
             )

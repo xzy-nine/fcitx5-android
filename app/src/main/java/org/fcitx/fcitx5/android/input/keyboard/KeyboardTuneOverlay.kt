@@ -258,7 +258,12 @@ class KeyboardTuneOverlay(
             splitRatio = splitRatioPref(m.isLandscape).getValue()
         )
         visibility = View.VISIBLE
-        syncBox()
+        if (width > 0 && height > 0) {
+            syncBox()
+        } else {
+            // overlay 首次显示时尚未布局，等键盘容器布局完成后再同步尺寸
+            doOnLayout { syncBox() }
+        }
     }
 
     fun hide() {
@@ -302,7 +307,12 @@ class KeyboardTuneOverlay(
         val left = m.keyboardRect.left
         val right = m.keyboardRect.right
         if (kbBottom <= top || right <= left) return
-        val split = keyboardPrefs.splitKeyboard.getValue()
+        // 与 BaseKeyboard.isSplitAllowed() 保持一致：需同时满足偏好开启 + 宽高比 > 阈值
+        val splitPref = keyboardPrefs.splitKeyboard.getValue()
+        val threshold = keyboardPrefs.splitKeyboardThreshold.getValue()
+        val kbW = (right - left).toFloat()
+        val kbH = (kbBottom - top).toFloat()
+        val split = splitPref && kbH > 0f && (kbW / kbH) > threshold
 
         if (split) {
             fullCard.visibility = View.GONE
@@ -444,7 +454,11 @@ class KeyboardTuneOverlay(
         val kbBottom = m.keyboardRect.bottom
         val cardLeft = m.keyboardRect.left
         val cardRight = m.keyboardRect.right
-        val split = keyboardPrefs.splitKeyboard.getValue()
+        val splitPref = keyboardPrefs.splitKeyboard.getValue()
+        val threshold = keyboardPrefs.splitKeyboardThreshold.getValue()
+        val kbW = (cardRight - cardLeft).toFloat()
+        val kbH = (kbBottom - kbTop).toFloat()
+        val split = splitPref && kbH > 0f && (kbW / kbH) > threshold
 
         // bottom band (inside the card) -> bottom margin (drag up = more space below)
         if (y in (kbBottom - grabPx)..kbBottom &&
@@ -509,7 +523,7 @@ class KeyboardTuneOverlay(
     private fun setCardActive(mode: DragMode, active: Boolean) {
         when (mode) {
             DragMode.HEIGHT, DragMode.BOTTOM, DragMode.SIDE_LEFT, DragMode.SIDE_RIGHT ->
-                (if (keyboardPrefs.splitKeyboard.getValue()) leftCard else fullCard).setActive(active)
+                (if (leftCard.visibility == View.VISIBLE) leftCard else fullCard).setActive(active)
             DragMode.GAP -> {
                 leftCard.setActive(active)
                 rightCard.setActive(active)

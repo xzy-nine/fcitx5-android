@@ -28,7 +28,7 @@ import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.BooleanKey.ExpandedCandidatesEmpty
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.TransitionEvent.ExpandedCandidatesUpdated
-import org.fcitx.fcitx5.android.input.bar.KawaiiBarComponent
+import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.candidates.expanded.ExpandedCandidateStyle
 import org.fcitx.fcitx5.android.input.candidates.expanded.window.BaseExpandedCandidateWindow
@@ -59,7 +59,7 @@ class ComposeCandidateComponent :
     private val fcitx by manager.fcitx()
     private val theme by manager.theme()
     private val inputView by manager.inputView()
-    private val bar: KawaiiBarComponent by manager.must()
+    private val bar: ComposeKawaiiBarComponent by manager.must()
     private val service by manager.inputMethodService()
     private val windowManager: InputWindowManager by manager.must()
 
@@ -369,7 +369,7 @@ class ComposeCandidateComponent :
                         maxSpanCount = maxSpanCountPref.getValue(),
                         userScrollEnabled = swipeEnabled.value,
                         isExpandMode = isExpandedWindowShown,
-                        barHeight = KawaiiBarComponent.HEIGHT.dp,
+                        barHeight = ComposeKawaiiBarComponent.HEIGHT.dp,
                         showDivider = showDivider.value,
                     )
                 }

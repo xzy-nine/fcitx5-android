@@ -10,6 +10,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import org.fcitx.fcitx5.android.input.bar.inputFeedback
+import org.fcitx.fcitx5.android.data.InputFeedbacks
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -288,6 +290,7 @@ private fun CandidateItem(
             .background(
                 if (isPressed) pressHighlightColor else Color.Transparent
             )
+            .inputFeedback()
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -339,6 +342,7 @@ private fun ExpandButton(
         modifier = modifier
             .size(32.dp)
             .clip(RoundedCornerShape(16.dp))
+            .inputFeedback()
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
