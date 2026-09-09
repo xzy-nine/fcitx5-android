@@ -14,6 +14,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -158,13 +160,18 @@ private fun PreeditLine(
             .clipToBounds()
             .horizontalScroll(scrollState, enabled = false)
     ) {
-        BasicText(
-            text = text,
-            style = TextStyle(color = textColor, fontSize = PreeditTextSize),
-            softWrap = false,
-            maxLines = 1,
-            onTextLayout = onTextLayout,
-        )
+        // 用 Row 承载文本 + 尾部占位，使可滚动内容宽度 = 文本宽 + 光标宽。
+        // 否则光标仅靠 offset 定位、不计入测量宽度，末尾光标在滚到最大位置时被裁掉。
+        Row {
+            BasicText(
+                text = text,
+                style = TextStyle(color = textColor, fontSize = PreeditTextSize),
+                softWrap = false,
+                maxLines = 1,
+                onTextLayout = onTextLayout,
+            )
+            Spacer(modifier = Modifier.width(PreeditCursorWidth))
+        }
         if (layout != null && cursor >= 0 && layout.lineCount > 0) {
             val cursorX = with(density) { cursorOffsetX(layout, cursor).toDp() }
             val lineTop = with(density) { layout.getLineTop(0).toDp() }
