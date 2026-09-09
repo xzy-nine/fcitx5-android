@@ -148,25 +148,26 @@ fun PluginListScreen(onBack: () -> Unit) {
         }
     }
 
+    @Composable
     fun failedSummary(reason: PluginLoadFailed): String = when (reason) {
-        is PluginLoadFailed.DataDescriptorParseError -> context.getString(R.string.invalid_data_descriptor)
-        is PluginLoadFailed.MissingDataDescriptor -> context.getString(R.string.missing_data_descriptor)
-        PluginLoadFailed.MissingPluginDescriptor -> context.getString(R.string.missing_plugin_descriptor)
+        is PluginLoadFailed.DataDescriptorParseError -> stringResource(R.string.invalid_data_descriptor)
+        is PluginLoadFailed.MissingDataDescriptor -> stringResource(R.string.missing_data_descriptor)
+        PluginLoadFailed.MissingPluginDescriptor -> stringResource(R.string.missing_plugin_descriptor)
         is PluginLoadFailed.PathConflict -> {
             val owner = when (reason.existingSrc) {
-                FileSource.Main -> context.getString(R.string.main_program)
+                FileSource.Main -> stringResource(R.string.main_program)
                 is FileSource.Plugin -> reason.existingSrc.descriptor.name
             }
-            context.getString(R.string.path_conflict, reason.path, owner)
+            stringResource(R.string.path_conflict, reason.path, owner)
         }
-        is PluginLoadFailed.PluginAPIIncompatible -> context.getString(R.string.incompatible_api, reason.api)
-        PluginLoadFailed.PluginDescriptorParseError -> context.getString(R.string.invalid_plugin_descriptor)
+        is PluginLoadFailed.PluginAPIIncompatible -> stringResource(R.string.incompatible_api, reason.api)
+        PluginLoadFailed.PluginDescriptorParseError -> stringResource(R.string.invalid_plugin_descriptor)
     }
 
     val (loaded, failed) = curSynced
 
     PageScaffold(
-        title = context.getString(R.string.plugins),
+        title = stringResource(R.string.plugins),
         onBack = onBack,
         contentBottomPadding = 24.dp,
     ) {
@@ -179,7 +180,7 @@ fun PluginListScreen(onBack: () -> Unit) {
                         ),
                     ) {
                         ArrowPreference(
-                            title = context.getString(R.string.plugin_needs_reload),
+                            title = stringResource(R.string.plugin_needs_reload),
                             startAction = {
                                 Icon(MiuixIcons.Info, null, Modifier.size(20.dp))
                             },
@@ -205,14 +206,14 @@ fun PluginListScreen(onBack: () -> Unit) {
                         ),
                     ) {
                         Text(
-                            text = context.getString(R.string.no_plugins),
+                            text = stringResource(R.string.no_plugins),
                             modifier = Modifier.padding(16.dp),
                         )
                     }
                 }
             } else {
                 if (loaded.isNotEmpty()) {
-                    item { SmallTitle(text = context.getString(R.string.plugins_loaded)) }
+                    item { SmallTitle(text = stringResource(R.string.plugins_loaded)) }
                     item {
                         Card(
                             modifier = Modifier.padding(horizontal = 12.dp),
@@ -232,7 +233,7 @@ fun PluginListScreen(onBack: () -> Unit) {
                     }
                 }
                 if (failed.isNotEmpty()) {
-                    item { SmallTitle(text = context.getString(R.string.plugins_failed)) }
+                    item { SmallTitle(text = stringResource(R.string.plugins_failed)) }
                     item {
                         Card(
                             modifier = Modifier.padding(horizontal = 12.dp),

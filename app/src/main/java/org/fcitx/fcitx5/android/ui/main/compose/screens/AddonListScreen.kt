@@ -160,13 +160,14 @@ fun AddonListScreen(
     }
 
     pendingDisable?.let { (entry, dependents, reset) ->
+        @Composable
         fun summary(depType: FcitxAPI.AddonDep, template: Int): String? {
             val names = dependents
                 .filter { it.second == depType }
                 .map { (u, _) -> displayNames[u] ?: u }
             return names.takeIf { it.isNotEmpty() }
                 ?.joinToString(", ")
-                ?.let { context.getString(template, it) }
+                ?.let { stringResource(template, it) }
         }
         val dep = summary(FcitxAPI.AddonDep.Required, R.string.disable_addon_warn_dep)
         val optDep = summary(FcitxAPI.AddonDep.Optional, R.string.disable_addon_warn_optdep)

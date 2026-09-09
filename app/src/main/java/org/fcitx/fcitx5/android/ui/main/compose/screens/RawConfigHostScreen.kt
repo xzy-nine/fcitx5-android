@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -91,7 +92,7 @@ fun RawConfigHostScreen(
                 // fcitx reports the global config top-level name in English ("Global Options"),
                 // mirror the legacy GlobalConfigFragment and use the localized string instead.
                 titleOverride = if (route.kind == RawConfigHostType.GlobalConfig) {
-                    context.getString(R.string.global_options)
+                    stringResource(R.string.global_options)
                 } else null,
             )
         }
