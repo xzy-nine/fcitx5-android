@@ -185,3 +185,56 @@ FcitxInputMethodService
 | `UniqueViewComponent` 基类 | 三个 Component | 不再继承，改 `UniqueComponent + Dependent + ManagedHandler` |
 | 键盘顶圆角裁剪 | `InputView.applyCustomBackgroundClip` / `ViewOutlineExt.applyTopRoundedCornerClip` | 由裁 keyboardView 改为裁 `customBackground`+工具栏自身 |
 | `PreeditLine` / 光标受控滚动 | `ComposePreedit.kt` | `d83285bb` 新增，替代拼接字符的光标实现 |
+
+---
+
+**视图层级结构：合并容器回归修复后（当前状态）**
+
+> 背景：`e795b214` 将预编辑栏收进 `composeTopView` 后引入回归 —— 预编辑栏可变高度撑高 `keyboardView`（`wrapContent` 高度 + 底部锚定），`onComputeInsets` 的 `contentTopInsets = keyboardView.top` 随打字变化，应用页面反复伸缩。修复：预编辑栏移回键盘体之外悬浮，`composeTopView` 只保留工具栏（高度恒定 `HEIGHT`）；键盘体高度恢复恒定，insets 稳定。
+
+```
+FcitxInputMethodService
+├── ComposeView (Compose 根)
+│   └── AndroidView
+│       └── InputView (extends BaseInputView extends ConstraintLayout)
+│           ├── customBackground (ImageView - 主题背景，铺满键盘体)
+│           ├── composeTopView (单一 ComposeView - MiuixTheme，仅含工具栏)
+│           │   └── composeKawaiiBar.ToolbarContent() (工具栏)
+│           │       └── ComposeToolbar (Idle/Candidate/Title 态)
+│           │           ├── Idle 态: MenuButton + [Empty|Toolbar|Clipboard|NumberRow|InlineSuggestion] + HideKeyboardButton
+│           │           │   ├── Toolbar: ToolbarButtonsRow (undo/redo/cursor/clipboard/split/more/tune)
+│           │           │   ├── Clipboard: 文本行 (AndroidView 仅 InlineSuggestionsUi.root)
+│           │           │   ├── NumberRow: NumberRowContent (ComposeNumberRow，全 Compose)
+│           │           │   └── InlineSuggestion: AndroidView(inlineSuggestionsUi.root)
+│           │           ├── Candidate 态: composeCandidate.CandidateBarContent() (Composable，无嵌套 ComposeView) + ExpandButton
+│           │           └── Title 态: BackButton + TitleText + ExtensionSlot (AndroidView 包装 onCreateBarExtension)
+│           ├── windowManager.view (InputWindowManager - FrameLayout)
+│           │   └── 当前活跃窗口 (KeyboardWindow / PickerWindow / Grid|FlexboxExpandedCandidateWindow)
+│           ├── composePreedit.view (ComposeView - ComposePreeditComponent，悬浮在 keyboardView 上方)
+│           │   └── ComposePreedit (上行: auxUp + preedit + 光标竖线 / 下行: auxDown)
+│           ├── leftPaddingSpace, rightPaddingSpace, bottomPaddingSpace
+│           └── popup.root (弹出窗口)
+├── CandidatesView (独立的浮动候选视图，迁移范围外，保持 View 实现)
+│   ├── preeditUi.root (预编辑)
+│   └── candidatesUi.root (分页候选列表 - PagedCandidatesUi)
+```
+
+接线链路（回归修复后）：
+
+1. **工具栏保持单一 Composition**：`composeTopView`（一个 `ComposeView`）的 `setContent` 内 `MiuixTheme(ThemeController(ColorSchemeMode.System))` 直接调用 `composeKawaiiBar.ToolbarContent()`（无 `Column` 包裹，工具栏高度恒定为 `HEIGHT`）；偏好变化 → `notifyToolbarHeightChanged()` → `_toolbarHeightVersion` 自增 → `key(toolbarHeightVersion) { ToolbarContent() }` 触发重组。
+2. **候选栏仍在该 Composition 内**：`candidateContent = { composeCandidate.CandidateBarContent() }` 直接作为 Composable 接入，无嵌套 ComposeView。
+3. **预编辑栏恢复独立悬浮层**：`ComposePreeditComponent` 重新持有 `view`（`ComposeView` + `MiuixTheme` 包裹 `PreeditContent()`），`InputView` 中 `above(keyboardView)` 锚定、`wrapContent` 高度；其高度不参与 `keyboardView` 测量，键盘体高度恒定、insets 稳定，预编辑栏右侧天然透明。
+4. **顶部圆角恢复为裁 keyboardView**：删除按预编辑高度裁剪 `customBackground` 的逻辑（`preeditHeightPx`/`applyCustomBackgroundClip`），恢复 `keyboardView.applyTopRoundedCornerClip(dp(16))`（圆角落在工具栏顶部，预编辑栏在键盘体外不受影响）；`ViewOutlineExt.applyTopRoundedCornerClip` 的 `topInsetPx` 参数保留（默认 0，当前未使用）。
+5. **左右边距**：`updateKeyboardSize()` 对 `composeTopView` 与 `composePreedit.view` 分别 `setPadding(sidePadding, 0, sidePadding, 0)`。
+
+**后续主键盘迁移计划（不变）**：主键盘（`windowManager.view` 下的 `KeyboardWindow`/`BaseKeyboard` 及 Picker/展开候选窗口）同样落在 `composeTopView` 的单一 Composition 内 —— `composeTopView` 扩展到整个键盘体（matchParent 高度），Compose 内 `Column { ToolbarContent(); KeyboardContent() }`；窗口 attach/detach 改为状态驱动切换内容；按键弹窗保持 Compose 内叠加（不另开窗口，遵循 IME 弹层限制）。键盘体高度恒定，不影响 insets。预编辑栏维持独立悬浮层。
+
+旧文件/接口位置（本次回归修复变动）：
+
+| 项 | 路径/符号 | 状态 |
+|---|---|---|
+| `composePreedit.view` | `ComposePreeditComponent` | **恢复**：合并提交曾移除，回归修复后重新提供独立 `view`（悬浮 ComposeView），`PreeditContent()` 保留供其宿主调用 |
+| `composeKawaiiBar.view` | `ComposeKawaiiBarComponent` | 保持移除，入口为 `ToolbarContent()`（在 `composeTopView` 单一 Composition 内） |
+| `composeCandidate.view` | `ComposeCandidateComponent` | 保持移除，入口为 `CandidateBarContent()`（经 `candidateContent` 嵌入工具栏） |
+| `preeditHeightPx` / `InputView.applyCustomBackgroundClip` | `InputView.kt` | 已删除（合并提交引入，回归修复移除） |
+| 键盘顶圆角裁剪 | `InputView.kt` / `ViewOutlineExt.kt` | 恢复裁 `keyboardView`（`dp(16)`）；`applyTopRoundedCornerClip` 的 `topInsetPx` 默认 0 未使用 |

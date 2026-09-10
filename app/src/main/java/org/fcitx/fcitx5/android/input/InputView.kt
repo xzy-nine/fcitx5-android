@@ -19,17 +19,11 @@ import androidx.annotation.Keep
 import androidx.annotation.RequiresApi
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.updateLayoutParams
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.compose.ui.unit.dp as composeDp
 import org.fcitx.fcitx5.android.core.CapabilityFlags
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -133,8 +127,9 @@ class InputView(
     private val emoticonPicker = emoticonPicker()
 
     /**
-     * 合并后的单一 Compose 容器：预编辑栏 + 工具栏共享同一 Composition 与同一个 MiuixTheme，
-     * 替换原先各自独立持有的 ComposeView（消除 ComposeView 内嵌 ComposeView 的冗余 Composition）。
+     * 工具栏 Compose 容器：预编辑栏与工具栏合并后的单一 Composition 中仅保留工具栏。
+     * 预编辑栏必须悬浮在键盘体（keyboardView）之外，因此单独持有一个 View 宿主；
+     * 否则其可变高度会撑高键盘体，导致 IME 上报的 insets 随打字变化、应用页面反复伸缩。
      */
     private val composeTopView: ComposeView by lazy {
         ComposeView(themedContext).apply {
@@ -143,51 +138,13 @@ class InputView(
             )
             setContent {
                 MiuixTheme(controller = remember { ThemeController(ColorSchemeMode.System) }) {
-                    Column {
-                        // 预编辑栏在上、工具栏在下，与合并前的层级顺序保持一致
-                        // 其高度用于让键盘背景从工具栏顶部开始绘制，保证预编辑栏右侧保持透明
-                        composePreedit.PreeditContent(
-                            modifier = Modifier.onSizeChanged { updatePreeditHeight(it.height) }
-                        )
-                        // 工具栏高度由 Composable 内部的 HEIGHT 决定，偏好变化后用 key 触发重组
-                        key(composeKawaiiBar.toolbarHeightVersion.collectAsState().value) {
-                            composeKawaiiBar.ToolbarContent(
-                                // 键盘顶部圆角：背景图由 customBackground 裁剪，工具栏自身也裁同样的圆角
-                                modifier = Modifier.clip(
-                                    RoundedCornerShape(
-                                        topStart = KEYBOARD_CORNER_RADIUS_DP.composeDp,
-                                        topEnd = KEYBOARD_CORNER_RADIUS_DP.composeDp
-                                    )
-                                )
-                            )
-                        }
+                    // 工具栏高度由 Composable 内部的 HEIGHT 决定，偏好变化后用 key 触发重组
+                    key(composeKawaiiBar.toolbarHeightVersion.collectAsState().value) {
+                        composeKawaiiBar.ToolbarContent()
                     }
                 }
             }
         }
-    }
-
-    /**
-     * 预编辑栏当前高度（px，无预编辑时为 0）。
-     * 预编辑栏跟随工具栏一起被收进了 [composeTopView]，也就位于 keyboardView 之内，
-     * 若不处理，键盘背景（customBackground）会铺到预编辑行上，使右侧空白不再透明。
-     */
-    private var preeditHeightPx = 0
-
-    private fun updatePreeditHeight(heightPx: Int) {
-        if (preeditHeightPx == heightPx) return
-        preeditHeightPx = heightPx
-        applyCustomBackgroundClip()
-    }
-
-    /**
-     * 键盘背景只绘制到工具栏顶部以下，顶部圆角也因此保持在键盘视觉顶部（工具栏顶部）。
-     */
-    private fun applyCustomBackgroundClip() {
-        customBackground.applyTopRoundedCornerClip(
-            dp(KEYBOARD_CORNER_RADIUS_DP.toInt()).toFloat(),
-            preeditHeightPx.toFloat()
-        )
     }
 
     private fun setupScope() {
@@ -327,7 +284,6 @@ class InputView(
         broadcaster.onImeUpdate(fcitx.runImmediately { inputMethodEntryCached })
 
         customBackground.imageDrawable = theme.backgroundDrawable(keyBorder)
-        applyCustomBackgroundClip()
 
         keyboardView = constraintLayout {
             // allow MotionEvent to be delivered to keyboard while pressing on padding views.
@@ -366,8 +322,9 @@ class InputView(
             })
         }
 
-        // 键盘顶部圆角改为裁剪键盘背景（customBackground）与工具栏本身，
-        // 这样圆角始终落在工具栏顶部，而不会裁掉上方的预编辑栏。
+        // 为键盘区域添加顶部圆角裁剪效果（键盘体顶部即工具栏顶部，
+        // 预编辑栏悬浮在键盘体之外，不会被此圆角裁到）
+        keyboardView.applyTopRoundedCornerClip(dp(16).toFloat())
 
         // Custom: 调校浮层挂在键盘主体内（match-constraint 填充 keyboardView），
         // 这样它既不会撑高 InputView，也不会溢出到键盘之外。
@@ -383,6 +340,11 @@ class InputView(
         add(keyboardView, lParams(matchParent, wrapContent) {
             centerHorizontally()
             bottomOfParent()
+        })
+        // 预编辑栏悬浮在键盘体上方（透明背景），不影响键盘体高度与 IME insets
+        add(composePreedit.view, lParams(matchParent, wrapContent) {
+            above(keyboardView)
+            startOfParent()
         })
         add(popup.root, lParams(matchParent, matchParent) {
             centerVertically()
@@ -430,6 +392,7 @@ class InputView(
             }
         }
         composeTopView.setPadding(sidePadding, 0, sidePadding, 0)
+        composePreedit.view.setPadding(sidePadding, 0, sidePadding, 0)
     }
 
     // Custom: visual keyboard tuning overlay entry points
@@ -537,13 +500,6 @@ class InputView(
 
     fun updateSelection(start: Int, end: Int) {
         broadcaster.onSelectionUpdate(start, end)
-    }
-
-    companion object {
-        /**
-         * 键盘顶部圆角半径（dp）。View 侧（键盘背景裁剪）与 Compose 侧（工具栏裁剪）共用。
-         */
-        private const val KEYBOARD_CORNER_RADIUS_DP = 16f
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
