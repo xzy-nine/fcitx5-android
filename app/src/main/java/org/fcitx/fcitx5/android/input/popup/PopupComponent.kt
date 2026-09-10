@@ -192,7 +192,7 @@ class PopupComponent :
         }
         // 新建时顺带取消可能残留的延迟隐藏任务，避免把刚出现的气泡提前移除
         cancelDismissJob(viewId)
-        val (x, y) = PopupLayoutMath.computeEntryPosition(
+        val (windowX, windowY) = PopupLayoutMath.computeEntryPosition(
             bounds = bounds,
             popupWidth = popupWidth,
             popupHeight = popupHeight,
@@ -202,8 +202,9 @@ class PopupComponent :
             PopupEntryState(
                 viewId = viewId,
                 text = content,
-                x = x,
-                y = y,
+                // 与容器路径保持一致：窗口绝对坐标 → 相对 root 左上角
+                x = windowX - rootBounds.left,
+                y = windowY - rootBounds.top,
                 width = popupWidth,
                 height = popupHeight,
                 contentHeight = popupKeyHeight,
@@ -287,6 +288,9 @@ class PopupComponent :
     }
 
     private fun showMenu(viewId: Int, menu: KeyDef.Popup.Menu, bounds: Rect) {
+        // 空菜单没有可聚焦项，且会让 calcInitialFocusedColumn 的 coerceIn(0, -1) 抛异常
+        if (menu.items.isEmpty()) return
+
         // 菜单与气泡不共存：原实现立即移除气泡（不经过 100ms 延迟）
         cancelDismissJob(viewId)
         removeEntry(viewId)
@@ -394,6 +398,8 @@ class PopupComponent :
     }
 
     private fun dismissPopup(viewId: Int) {
+        // 先取消同 id 上残留的延迟隐藏任务，避免它稍后把新显示的气泡提前移除
+        cancelDismissJob(viewId)
         removeContainer(viewId)
         val entry = entryOf(viewId) ?: return
         val timeLeft = entry.lastShowTime + hideThreshold - System.currentTimeMillis()

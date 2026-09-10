@@ -72,10 +72,14 @@ object PopupLayoutMath {
 
     /**
      * 长按小键盘的行列数：每行最多 5 个键（对应 [PopupKeyboardUi] 的 `rowCount` / `columnCount`）。
+     *
+     * 列数用**向上取整**而非四舍五入：原实现的 `roundToInt` 会让行×列容量小于键数，
+     * 从而静默丢掉末尾的键（例如 `PopupPreset["e"]` 有 13 个键：rowCount=3、round(13/3)=4，
+     * 容量 12 < 13，最后一个 `ə` 永远不会显示）。向上取整保证容量不小于键数。
      */
     fun keyboardGrid(keyCount: Int): Pair<Int, Int> {
         val rowCount = ceil(keyCount.toFloat() / 5).toInt()
-        val columnCount = (keyCount.toFloat() / rowCount).roundToInt()
+        val columnCount = ceil(keyCount.toFloat() / rowCount).toInt()
         return rowCount to columnCount
     }
 
