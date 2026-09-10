@@ -67,7 +67,7 @@ fun NumberRowContent(
         modifier = modifier
             .fillMaxWidth()
             .fillMaxHeight()
-            .pointerInput(Unit) {
+            .pointerInput(thresholdPx, layoutDirection) {
                 // 左滑（LTR 下为向右位移）超过工具栏高度即收起，等价于原 NumberRow 的收起手势
                 var startX = 0f
                 var triggered = false
