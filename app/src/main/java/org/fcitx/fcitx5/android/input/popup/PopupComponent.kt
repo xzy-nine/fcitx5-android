@@ -6,11 +6,19 @@ package org.fcitx.fcitx5.android.input.popup
 
 import android.graphics.Rect
 import android.view.View
-import android.view.ViewGroup
-import android.widget.FrameLayout
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.unit.dp
+import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.broadcast.PunctuationComponent
@@ -25,11 +33,21 @@ import org.mechdancer.dependency.manager.ManagedHandler
 import org.mechdancer.dependency.manager.managedHandler
 import org.mechdancer.dependency.manager.must
 import splitties.dimensions.dp
-import splitties.views.dsl.core.add
-import splitties.views.dsl.core.frameLayout
-import splitties.views.dsl.core.lParams
-import java.util.LinkedList
+import top.yukonga.miuix.kmp.theme.ColorSchemeMode
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.ThemeController
 
+/**
+ * 按键弹窗层协调器。
+ *
+ * 对外契约（[PopupAction] / [PopupActionListener] / [listener] / [dismissAll]）与旧 View 实现完全一致，
+ * 但内部不再持有 View，而是维护一份 [PopupLayerState]，由 [root] 持有的 ComposeView 订阅渲染。
+ *
+ * 所有生产方（`BaseKeyboard` / `TextKeyboard` / `PickerWindow` / `PickerPageUi` / `ComposeNumberRow`）
+ * 仍以「窗口绝对坐标 [Rect]」作为锚点，无需改动。
+ *
+ * 旧实现 [PopupEntryUi] / [PopupKeyboardUi] / [PopupMenuUi] / [PopupContainerUi] 已断开接线，保留供对比。
+ */
 class PopupComponent :
     UniqueComponent<PopupComponent>(), Dependent, ManagedHandler by managedHandler() {
 
@@ -38,11 +56,10 @@ class PopupComponent :
     private val theme by manager.theme()
     private val punctuation: PunctuationComponent by manager.must()
 
-    private val showingEntryUi = HashMap<Int, PopupEntryUi>()
-    private val dismissJobs = HashMap<Int, Job>()
-    private val freeEntryUi = LinkedList<PopupEntryUi>()
+    private val _state = MutableStateFlow(PopupLayerState())
 
-    private val showingContainerUi = HashMap<Int, PopupContainerUi>()
+    /** 100ms 最小显示时长对应的延迟隐藏任务，按触发键 id 索引 */
+    private val dismissJobs = HashMap<Int, Job>()
 
     private val keyBottomMargin by lazy {
         context.dp(ThemeManager.prefs.keyVerticalMargin.getValue())
@@ -56,16 +73,55 @@ class PopupComponent :
     private val popupKeyHeight by lazy {
         context.dp(48)
     }
+    private val menuKeySize by lazy {
+        context.dp(48)
+    }
+    private val menuVerticalOffset by lazy {
+        context.dp(-52)
+    }
+    /** 圆角半径：偏好值本身以 dp 为单位（原实现是 `context.dp(...)` 转 px） */
     private val popupRadius by lazy {
-        context.dp(ThemeManager.prefs.keyRadius.getValue()).toFloat()
+        ThemeManager.prefs.keyRadius.getValue().dp
     }
     private val hideThreshold = 100L
 
     private val rootLocation = intArrayOf(0, 0)
+
+    /**
+     * [root] 在窗口中的位置。
+     *
+     * 继续沿用 View 的 `addOnLayoutChangeListener` + `getLocationInWindow`（ComposeView 本身也是 View）：
+     * 这样原 px 定位算式可以逐字保留，也避免 Compose 首次布局未完成时拿不到原点。
+     */
     private val rootBounds: Rect = Rect()
 
+    private val visuals by lazy {
+        PopupVisuals(
+            backgroundColor = Color(theme.popupBackgroundColor),
+            textColor = Color(theme.popupTextColor),
+            activeBackgroundColor = Color(theme.genericActiveBackgroundColor),
+            activeForegroundColor = Color(theme.genericActiveForegroundColor),
+            menuInactiveBackgroundColor = Color(theme.accentKeyBackgroundColor),
+            menuActiveBackgroundColor = Color(
+                ColorUtils.compositeColors(
+                    theme.keyPressHighlightColor,
+                    theme.accentKeyBackgroundColor
+                )
+            ),
+            menuIconTintColor = Color(theme.accentKeyTextColor),
+            radius = popupRadius,
+            elevation = 2.dp,
+        )
+    }
+
+    /**
+     * 弹窗层宿主。
+     *
+     * 位于 `InputView` 最顶层、键盘体之外，与 `composePreedit.view` 一样不影响键盘体高度与 IME insets。
+     * 不接收触摸：手势由键盘侧的 `CustomGestureView` 捕获后经 [listener] 转发。
+     */
     val root by lazy {
-        context.frameLayout {
+        ComposeView(context).apply {
             // we want (0, 0) at top left
             layoutDirection = View.LAYOUT_DIRECTION_LTR
             isClickable = false
@@ -77,159 +133,288 @@ class PopupComponent :
                 val height = bottom - top
                 rootBounds.set(x, y, x + width, y + height)
             }
-        }
-    }
 
-    private fun showPopup(viewId: Int, content: String, bounds: Rect) {
-        showingEntryUi[viewId]?.apply {
-            dismissJobs[viewId]?.also {
-                dismissJobs.remove(viewId)?.cancel()
-            }
-            lastShowTime = System.currentTimeMillis()
-            setText(content)
-            return
-        }
-        val popup = (freeEntryUi.poll()
-            ?: PopupEntryUi(context, theme, popupKeyHeight, popupRadius)).apply {
-            lastShowTime = System.currentTimeMillis()
-            setText(content)
-        }
-        popup.root.layoutParams = FrameLayout.LayoutParams(popupWidth, popupHeight).apply {
-            // align popup bottom with key border bottom [^1]
-            topMargin = bounds.bottom - popupHeight - keyBottomMargin
-            leftMargin = (bounds.left + bounds.right - popupWidth) / 2
-        }
-        // make sure that popup.root does not have parent view before adding it under root container
-        // it's wired that on some devices it would have a parent view despite it was newly created
-        // or just polled from freeEntryUi
-        if (popup.root.parent == null) {
-            root.addView(popup.root)
-        } else if (popup.root.parent !== root) {
-            (popup.root.parent as? ViewGroup)?.removeView(popup.root)
-            root.addView(popup.root)
-        }
-        showingEntryUi[viewId] = popup
-    }
-
-    private fun updatePopup(viewId: Int, content: String) {
-        showingEntryUi[viewId]?.setText(content)
-    }
-
-    private fun showKeyboard(viewId: Int, keyboard: KeyDef.Popup.Keyboard, bounds: Rect) {
-        var keys: Array<String>
-        var labels: Array<String>
-        when (keyboard) {
-            is KeyDef.Popup.Keyboard.Preset -> {
-                val preset = PopupPreset[keyboard.label] ?: return
-                keys = preset
-                labels = if (keyboard.transformPunctuation && punctuation.enabled) {
-                    Array(keys.size) { punctuation.transform(keys[it]) }
-                } else keys
-            }
-            is KeyDef.Popup.Keyboard.Explicit -> {
-                keys = keyboard.items
-                labels = keyboard.items
-            }
-        }
-        // clear popup preview text         OR create empty popup preview
-        showingEntryUi[viewId]?.setText("") ?: showPopup(viewId, "", bounds)
-        val keyboardUi = PopupKeyboardUi(
-            context,
-            theme,
-            rootBounds,
-            bounds,
-            { dismissPopup(viewId) },
-            popupRadius,
-            popupWidth,
-            popupKeyHeight,
-            // position popup keyboard higher, because of [^1]
-            popupHeight + keyBottomMargin,
-            keys,
-            labels
-        )
-        showPopupContainer(viewId, keyboardUi)
-    }
-
-    private fun showMenu(viewId: Int, menu: KeyDef.Popup.Menu, bounds: Rect) {
-        showingEntryUi[viewId]?.let {
-            dismissPopupEntry(viewId, it)
-        }
-        val menuUi = PopupMenuUi(
-            context,
-            theme,
-            rootBounds,
-            bounds,
-            { dismissPopup(viewId) },
-            menu.items,
-        )
-        showPopupContainer(viewId, menuUi)
-    }
-
-    private fun showPopupContainer(viewId: Int, ui: PopupContainerUi) {
-        root.apply {
-            add(ui.root, lParams {
-                leftMargin = ui.triggerBounds.left + ui.offsetX - rootBounds.left
-                topMargin = ui.triggerBounds.top + ui.offsetY - rootBounds.top
-            })
-        }
-        showingContainerUi[viewId] = ui
-    }
-
-    private fun changeFocus(viewId: Int, x: Float, y: Float): Boolean {
-        return showingContainerUi[viewId]?.changeFocus(x, y) ?: false
-    }
-
-    private fun triggerFocused(viewId: Int): KeyAction? {
-        return showingContainerUi[viewId]?.onTrigger()
-    }
-
-    private fun dismissPopup(viewId: Int) {
-        dismissPopupContainer(viewId)
-        showingEntryUi[viewId]?.also {
-            val timeLeft = it.lastShowTime + hideThreshold - System.currentTimeMillis()
-            if (timeLeft <= 0L) {
-                dismissPopupEntry(viewId, it)
-            } else {
-                dismissJobs[viewId] = service.lifecycleScope.launch {
-                    delay(timeLeft)
-                    dismissPopupEntry(viewId, it)
-                    dismissJobs.remove(viewId)
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                MiuixTheme(controller = remember { ThemeController(ColorSchemeMode.System) }) {
+                    PopupContent(state = _state.collectAsState().value, visuals = visuals)
                 }
             }
         }
     }
 
-    private fun dismissPopupContainer(viewId: Int) {
-        showingContainerUi[viewId]?.also {
-            showingContainerUi.remove(viewId)
-            root.removeView(it.root)
+    // region 状态读写
+
+    private fun entryOf(viewId: Int) = _state.value.entries.firstOrNull { it.viewId == viewId }
+
+    private fun containerOf(viewId: Int) = _state.value.containers.firstOrNull { it.viewId == viewId }
+
+    private fun upsertEntry(entry: PopupEntryState) = _state.update { state ->
+        val index = state.entries.indexOfFirst { it.viewId == entry.viewId }
+        val entries = if (index >= 0) {
+            state.entries.toMutableList().also { it[index] = entry }
+        } else {
+            state.entries + entry
+        }
+        state.copy(entries = entries)
+    }
+
+    private fun upsertContainer(container: PopupContainerState) = _state.update { state ->
+        val containers = state.containers.filterNot { it.viewId == container.viewId } + container
+        state.copy(containers = containers)
+    }
+
+    private fun removeEntry(viewId: Int) = _state.update { state ->
+        val entries = state.entries.filterNot { it.viewId == viewId }
+        if (entries.size == state.entries.size) state else state.copy(entries = entries)
+    }
+
+    private fun removeContainer(viewId: Int) = _state.update { state ->
+        val containers = state.containers.filterNot { it.viewId == viewId }
+        if (containers.size == state.containers.size) state else state.copy(containers = containers)
+    }
+
+    private fun cancelDismissJob(viewId: Int) {
+        dismissJobs.remove(viewId)?.cancel()
+    }
+
+    // endregion
+
+    // region 弹窗操作
+
+    private fun showPopup(viewId: Int, content: String, bounds: Rect) {
+        val existing = entryOf(viewId)
+        if (existing != null) {
+            // 位置保持不变，只刷新内容与显示时间
+            cancelDismissJob(viewId)
+            upsertEntry(existing.withText(content, System.currentTimeMillis()))
+            return
+        }
+        // 新建时顺带取消可能残留的延迟隐藏任务，避免把刚出现的气泡提前移除
+        cancelDismissJob(viewId)
+        val (x, y) = PopupLayoutMath.computeEntryPosition(
+            bounds = bounds,
+            popupWidth = popupWidth,
+            popupHeight = popupHeight,
+            keyBottomMargin = keyBottomMargin,
+        )
+        upsertEntry(
+            PopupEntryState(
+                viewId = viewId,
+                text = content,
+                x = x,
+                y = y,
+                width = popupWidth,
+                height = popupHeight,
+                contentHeight = popupKeyHeight,
+                lastShowTime = System.currentTimeMillis(),
+            )
+        )
+    }
+
+    private fun updatePopup(viewId: Int, content: String) {
+        // 与原实现一致：仅刷新内容，不更新 lastShowTime（最小显示时长从首次显示算起）
+        entryOf(viewId)?.let { upsertEntry(it.withText(content, it.lastShowTime)) }
+    }
+
+    private fun showKeyboard(viewId: Int, keyboard: KeyDef.Popup.Keyboard, bounds: Rect) {
+        val keys: List<String>
+        val labels: List<String>
+        when (keyboard) {
+            is KeyDef.Popup.Keyboard.Preset -> {
+                val preset = PopupPreset[keyboard.label] ?: return
+                keys = preset.toList()
+                labels = if (keyboard.transformPunctuation && punctuation.enabled) {
+                    keys.map { punctuation.transform(it) }
+                } else keys
+            }
+
+            is KeyDef.Popup.Keyboard.Explicit -> {
+                keys = keyboard.items.toList()
+                labels = keys
+            }
+        }
+        if (labels.isEmpty()) return
+
+        // 气泡是小键盘的「底座」占位：已存在则清空文本，否则新建一个空气泡
+        val existing = entryOf(viewId)
+        if (existing != null) {
+            updatePopup(viewId, "")
+        } else {
+            showPopup(viewId, "", bounds)
+        }
+
+        val keyCount = labels.size
+        val (rowCount, columnCount) = PopupLayoutMath.keyboardGrid(keyCount)
+        // 注意：原实现把 popupWidth 当作小键盘的 keyWidth（见 PopupKeyboardUi 的构造参数顺序）
+        val keyWidth = popupWidth
+        val keyHeight = popupKeyHeight
+        val focusColumn = PopupLayoutMath.calcInitialFocusedColumn(
+            columnCount = columnCount,
+            columnWidth = keyWidth,
+            outerBounds = rootBounds,
+            triggerBounds = bounds,
+        )
+        val (offsetX, offsetY) = PopupLayoutMath.computeKeyboardOffset(
+            triggerBounds = bounds,
+            keyWidth = keyWidth,
+            keyHeight = keyHeight,
+            // position popup keyboard higher, because of [^1]
+            popupHeight = popupHeight + keyBottomMargin,
+            rowCount = rowCount,
+            focusColumn = focusColumn,
+        )
+        val columnOrder = PopupLayoutMath.createColumnOrder(columnCount, focusColumn)
+        val keyOrders = PopupLayoutMath.computeKeyOrders(rowCount, columnCount, columnOrder)
+        upsertContainer(
+            PopupContainerState.Keyboard(
+                viewId = viewId,
+                x = bounds.left + offsetX - rootBounds.left,
+                y = bounds.top + offsetY - rootBounds.top,
+                // 初始焦点在最底行（行号 0）
+                focusedIndex = keyOrders[0][focusColumn],
+                offsetX = offsetX,
+                offsetY = offsetY,
+                keys = keys,
+                labels = labels,
+                keyOrders = keyOrders,
+                rowCount = rowCount,
+                columnCount = columnCount,
+                keyWidth = keyWidth,
+                keyHeight = keyHeight,
+            )
+        )
+    }
+
+    private fun showMenu(viewId: Int, menu: KeyDef.Popup.Menu, bounds: Rect) {
+        // 菜单与气泡不共存：原实现立即移除气泡（不经过 100ms 延迟）
+        cancelDismissJob(viewId)
+        removeEntry(viewId)
+
+        val keySize = menuKeySize
+        val columnCount = menu.items.size
+        val focusColumn = PopupLayoutMath.calcInitialFocusedColumn(
+            columnCount = columnCount,
+            columnWidth = keySize,
+            outerBounds = rootBounds,
+            triggerBounds = bounds,
+        )
+        val (offsetX, offsetY) = PopupLayoutMath.computeMenuOffset(
+            triggerBounds = bounds,
+            keySize = keySize,
+            focusColumn = focusColumn,
+            verticalOffset = menuVerticalOffset,
+        )
+        val columnOrder = PopupLayoutMath.createColumnOrder(columnCount, focusColumn)
+        upsertContainer(
+            PopupContainerState.Menu(
+                viewId = viewId,
+                x = bounds.left + offsetX - rootBounds.left,
+                y = bounds.top + offsetY - rootBounds.top,
+                focusedIndex = columnOrder[focusColumn],
+                offsetX = offsetX,
+                offsetY = offsetY,
+                items = menu.items.toList(),
+                columnOrder = columnOrder,
+                keySize = keySize,
+            )
+        )
+    }
+
+    /**
+     * 手势焦点变更。
+     *
+     * 返回值由调用方**同步**读取（[PopupAction.ChangeFocusAction.outResult]），用于决定是否消费手势。
+     */
+    private fun changeFocus(viewId: Int, x: Float, y: Float): Boolean {
+        return when (val container = containerOf(viewId)) {
+            is PopupContainerState.Keyboard -> {
+                val index = PopupLayoutMath.keyboardFocusIndex(
+                    x = x - container.offsetX,
+                    y = y - container.offsetY,
+                    rowCount = container.rowCount,
+                    columnCount = container.columnCount,
+                    keyWidth = container.keyWidth,
+                    keyHeight = container.keyHeight,
+                    keyCount = container.labels.size,
+                    keyOrders = container.keyOrders,
+                )
+                applyFocus(container, index)
+            }
+
+            is PopupContainerState.Menu -> {
+                val index = PopupLayoutMath.menuFocusIndex(
+                    x = x - container.offsetX,
+                    columnCount = container.items.size,
+                    keySize = container.keySize,
+                    columnOrder = container.columnOrder,
+                )
+                applyFocus(container, index)
+            }
+
+            null -> false
         }
     }
 
-    private fun dismissPopupEntry(viewId: Int, popup: PopupEntryUi) {
-        showingEntryUi.remove(viewId)
-        root.removeView(popup.root)
-        freeEntryUi.add(popup)
+    private fun applyFocus(container: PopupContainerState, index: Int): Boolean = when (index) {
+        PopupLayoutMath.FOCUS_DISMISS -> {
+            // 越界：关闭弹窗并消费手势
+            dismissPopup(container.viewId)
+            true
+        }
+
+        PopupLayoutMath.FOCUS_KEEP -> false
+
+        else -> {
+            if (index != container.focusedIndex) {
+                upsertContainer(
+                    when (container) {
+                        is PopupContainerState.Keyboard -> container.withFocus(index)
+                        is PopupContainerState.Menu -> container.withFocus(index)
+                    }
+                )
+            }
+            false
+        }
+    }
+
+    /**
+     * 取当前焦点项对应的按键动作。
+     *
+     * 返回值由调用方**同步**读取（[PopupAction.TriggerAction.outAction]）。
+     */
+    private fun triggerFocused(viewId: Int): KeyAction? = when (val container = containerOf(viewId)) {
+        is PopupContainerState.Keyboard ->
+            container.keys.getOrNull(container.focusedIndex)?.let { KeyAction.FcitxKeyAction(it) }
+
+        is PopupContainerState.Menu ->
+            container.items.getOrNull(container.focusedIndex)?.action
+
+        null -> null
+    }
+
+    private fun dismissPopup(viewId: Int) {
+        removeContainer(viewId)
+        val entry = entryOf(viewId) ?: return
+        val timeLeft = entry.lastShowTime + hideThreshold - System.currentTimeMillis()
+        if (timeLeft <= 0L) {
+            removeEntry(viewId)
+        } else {
+            dismissJobs[viewId] = service.lifecycleScope.launch {
+                delay(timeLeft)
+                removeEntry(viewId)
+                dismissJobs.remove(viewId)
+            }
+        }
     }
 
     fun dismissAll() {
-        // avoid modifying collection while iterating
-        dismissJobs.forEach { (_, job) ->
-            job.cancel()
-        }
+        dismissJobs.values.forEach { it.cancel() }
         dismissJobs.clear()
-        // too
-        showingContainerUi.forEach { (_, container) ->
-            root.removeView(container.root)
-        }
-        showingContainerUi.clear()
-        // too too
-        showingEntryUi.forEach { (_, entry) ->
-            root.removeView(entry.root)
-            freeEntryUi.add(entry)
-        }
-        showingEntryUi.clear()
+        _state.value = PopupLayerState()
     }
+
+    // endregion
 
     val listener = PopupActionListener { action ->
         with(action) {
