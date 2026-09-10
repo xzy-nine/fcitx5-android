@@ -22,6 +22,11 @@ import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.theme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import top.yukonga.miuix.kmp.theme.ColorSchemeMode
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.ThemeController
 
 /**
  * Compose 预编辑栏组件
@@ -85,8 +90,23 @@ class ComposePreeditComponent :
     }
 
     /**
-     * 预编辑栏 Composable 内容。
-     * 不再持有独立 ComposeView，由父级（合并后的单一 Composition）在 MiuixTheme 内直接调用。
+     * 预编辑栏 View 宿主。
+     * 预编辑栏必须悬浮在键盘体（keyboardView）之外，否则其可变高度会撑高键盘体，
+     * 导致 IME 上报的 insets 随打字变化、应用页面反复伸缩。
+     */
+    val view by lazy {
+        ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                MiuixTheme(controller = remember { ThemeController(ColorSchemeMode.System) }) {
+                    PreeditContent()
+                }
+            }
+        }
+    }
+
+    /**
+     * 预编辑栏 Composable 内容，由 [view] 宿主调用。
      */
     @Composable
     fun PreeditContent(modifier: Modifier = Modifier) {

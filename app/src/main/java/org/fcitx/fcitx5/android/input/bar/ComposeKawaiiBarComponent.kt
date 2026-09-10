@@ -29,7 +29,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -67,7 +66,7 @@ import org.fcitx.fcitx5.android.input.bar.KawaiiBarStateMachine.TransitionEvent.
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarStateMachine.TransitionEvent.PreeditUpdated
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarStateMachine.TransitionEvent.WindowDetached
 import org.fcitx.fcitx5.android.input.bar.ui.idle.InlineSuggestionsUi
-import org.fcitx.fcitx5.android.input.bar.ui.idle.NumberRow
+import org.fcitx.fcitx5.android.input.bar.ui.idle.NumberRowContent
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
 import org.mechdancer.dependency.Dependent
@@ -501,8 +500,8 @@ class ComposeKawaiiBarComponent :
                 composeCandidate.CandidateBarContent()
             },
             numberRowContent = {
-                // NumberRow 是 View (BaseKeyboard)，用 AndroidView 包装
-                NumberRowHost(
+                // NumberRow 已全 Compose 化（替代原 View / BaseKeyboard）
+                NumberRowContent(
                     theme = theme,
                     onCollapse = callbacks.onNumberRowCollapse,
                     keyActionListener = commonKeyActionListener.listener,
@@ -572,43 +571,4 @@ class ComposeKawaiiBarComponent :
                 }
             }
     }
-}
-
-/**
- * NumberRow 的 AndroidView 宿主
- */
-@Composable
-private fun NumberRowHost(
-    theme: org.fcitx.fcitx5.android.data.theme.Theme,
-    onCollapse: () -> Unit,
-    keyActionListener: org.fcitx.fcitx5.android.input.keyboard.KeyActionListener?,
-    popupActionListener: org.fcitx.fcitx5.android.input.popup.PopupActionListener?,
-) {
-    var numberRowRef by remember { mutableStateOf<NumberRow?>(null) }
-
-    // 监听 listener 变化
-    androidx.compose.runtime.DisposableEffect(keyActionListener, popupActionListener) {
-        numberRowRef?.let { nr ->
-            nr.keyActionListener = keyActionListener
-            nr.popupActionListener = popupActionListener
-        }
-        onDispose {
-            numberRowRef?.let { nr ->
-                nr.keyActionListener = null
-                nr.popupActionListener = null
-            }
-        }
-    }
-
-    androidx.compose.ui.viewinterop.AndroidView(
-        factory = { ctx ->
-            NumberRow(ctx, theme).also { nr ->
-                nr.keyActionListener = keyActionListener
-                nr.popupActionListener = popupActionListener
-                nr.onCollapseListener = onCollapse
-                numberRowRef = nr
-            }
-        },
-        modifier = Modifier.fillMaxWidth(),
-    )
 }
