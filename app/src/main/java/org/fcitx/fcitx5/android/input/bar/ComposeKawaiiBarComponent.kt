@@ -12,32 +12,24 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InlineSuggestion
 import android.view.inputmethod.InlineSuggestionsResponse
-import android.widget.FrameLayout
 import android.widget.inline.InlineContentView
 import androidx.annotation.RequiresApi
-import androidx.compose.runtime.key
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import top.yukonga.miuix.kmp.basic.Icon
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,7 +40,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CapabilityFlag
 import org.fcitx.fcitx5.android.core.CapabilityFlags
@@ -57,7 +48,7 @@ import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
-import org.fcitx.fcitx5.android.data.theme.ThemeManager
+import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent.Companion.HEIGHT
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.State.Hidden
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarStateMachine.BooleanKey.CandidateEmpty
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarStateMachine.BooleanKey.PreeditEmpty
@@ -69,26 +60,28 @@ import org.fcitx.fcitx5.android.input.bar.ui.idle.InlineSuggestionsUi
 import org.fcitx.fcitx5.android.input.bar.ui.idle.NumberRowContent
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
-import org.mechdancer.dependency.Dependent
-import org.mechdancer.dependency.UniqueComponent
-import org.mechdancer.dependency.manager.ManagedHandler
-import org.mechdancer.dependency.manager.managedHandler
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
 import org.fcitx.fcitx5.android.input.dependency.inputView
-import org.fcitx.fcitx5.android.input.dependency.theme
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.appContext
-import java.util.concurrent.Executor
+import org.mechdancer.dependency.Dependent
 import org.mechdancer.dependency.DynamicScope
+import org.mechdancer.dependency.UniqueComponent
+import org.mechdancer.dependency.manager.ManagedHandler
+import org.mechdancer.dependency.manager.managedHandler
 import org.mechdancer.dependency.manager.must
 import splitties.dimensions.dp
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
-
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import java.util.concurrent.Executor
+import kotlin.coroutines.resume
 import kotlin.math.min
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Compose 工具栏组件
@@ -101,7 +94,6 @@ class ComposeKawaiiBarComponent :
     InputBroadcastReceiver {
 
     private val context by manager.context()
-    private val theme by manager.theme()
     private val service by manager.inputMethodService()
     private val windowManager: InputWindowManager by manager.must()
     private val composeCandidate: ComposeCandidateComponent by manager.must()
@@ -209,7 +201,7 @@ class ComposeKawaiiBarComponent :
         val timeout = clipboardItemTimeout.getValue() * 1000L
         if (timeout < 0L) return
         clipboardTimeoutJob = scope.launch {
-            delay(timeout)
+            delay(timeout.milliseconds)
             isClipboardFresh = false
             evalIdleUiState()
             clipboardTimeoutJob = null
@@ -229,15 +221,15 @@ class ComposeKawaiiBarComponent :
         _idleSubState.value = newState
     }
 
+    /**
+     * 工具栏视觉配置，全部取自 miuix 主题（不再读 fcitx View 主题）。
+     */
+    @Composable
     private fun getVisuals(): ToolbarVisuals {
-        val useTransparent = ThemeManager.prefs.keyBorder.getValue()
         return ToolbarVisuals(
-            barColor = if (useTransparent) androidx.compose.ui.graphics.Color.Transparent
-                else androidx.compose.ui.graphics.Color(theme.barColor),
-            iconColor = androidx.compose.ui.graphics.Color(theme.altKeyTextColor),
-            pressHighlightColor = androidx.compose.ui.graphics.Color(theme.keyPressHighlightColor),
-            textColor = androidx.compose.ui.graphics.Color(theme.altKeyTextColor),
-            dividerColor = androidx.compose.ui.graphics.Color(theme.dividerColor),
+            barColor = MiuixTheme.colorScheme.background,
+            iconColor = MiuixTheme.colorScheme.onSurface,
+            textColor = MiuixTheme.colorScheme.onSurface,
         )
     }
 
@@ -408,7 +400,7 @@ class ComposeKawaiiBarComponent :
         keyboardHeight = height
     }
 
-    @androidx.annotation.RequiresApi(android.os.Build.VERSION_CODES.R)
+    @RequiresApi(android.os.Build.VERSION_CODES.R)
     fun handleInlineSuggestions(response: InlineSuggestionsResponse): Boolean {
         val suggestions = response.inlineSuggestions
         if (suggestions.isEmpty()) {
@@ -482,8 +474,7 @@ class ComposeKawaiiBarComponent :
         val menuRotation by _menuRotation.collectAsState()
 
         val callbacks = remember { createCallbacks() }
-        val keyBorder = ThemeManager.prefs.keyBorder.getValue()
-        val visuals = remember(keyBorder) { getVisuals() }
+        val visuals = getVisuals()
 
         ComposeToolbar(
             barState = barState,
@@ -502,7 +493,6 @@ class ComposeKawaiiBarComponent :
             numberRowContent = {
                 // NumberRow 已全 Compose 化（替代原 View / BaseKeyboard）
                 NumberRowContent(
-                    theme = theme,
                     onCollapse = callbacks.onNumberRowCollapse,
                     keyActionListener = commonKeyActionListener.listener,
                     popupActionListener = popup.listener,

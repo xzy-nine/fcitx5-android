@@ -4,26 +4,21 @@
  */
 package org.fcitx.fcitx5.android.input.preedit
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import org.fcitx.fcitx5.android.core.FcitxEvent
-import org.fcitx.fcitx5.android.data.theme.Theme
-import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
+import org.fcitx.fcitx5.android.input.dependency.context
 import org.mechdancer.dependency.Dependent
 import org.mechdancer.dependency.UniqueComponent
 import org.mechdancer.dependency.manager.ManagedHandler
 import org.mechdancer.dependency.manager.managedHandler
-import org.fcitx.fcitx5.android.input.dependency.context
-import org.fcitx.fcitx5.android.input.dependency.theme
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
@@ -39,12 +34,10 @@ class ComposePreeditComponent :
     InputBroadcastReceiver {
 
     private val context by manager.context()
-    private val theme by manager.theme()
 
     private val _state = MutableStateFlow(PreeditState())
 
     override fun onInputPanelUpdate(data: FcitxEvent.InputPanelEvent.Data) {
-        val activeBkg = theme.genericActiveBackgroundColor
         val preedit = data.preedit
         val auxUp = data.auxUp
         val auxDown = data.auxDown
@@ -75,17 +68,12 @@ class ComposePreeditComponent :
         )
     }
 
+    @Composable
     private fun getVisuals(): PreeditVisuals {
-        val keyBorder = ThemeManager.prefs.keyBorder.getValue()
-        val bkgColor = if (!keyBorder && theme is Theme.Builtin) {
-            androidx.compose.ui.graphics.Color(theme.barColor)
-        } else {
-            androidx.compose.ui.graphics.Color(theme.backgroundColor)
-        }
         return PreeditVisuals(
-            textColor = androidx.compose.ui.graphics.Color(theme.keyTextColor),
-            highlightColor = androidx.compose.ui.graphics.Color(theme.genericActiveBackgroundColor),
-            backgroundColor = bkgColor,
+            textColor = MiuixTheme.colorScheme.onSurface,
+            highlightColor = MiuixTheme.colorScheme.primary,
+            backgroundColor = MiuixTheme.colorScheme.background,
         )
     }
 

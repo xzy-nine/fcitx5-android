@@ -6,6 +6,7 @@ package org.fcitx.fcitx5.android.input.wm
 
 import android.view.View
 import android.widget.FrameLayout
+import androidx.compose.ui.platform.ComposeView
 import androidx.transition.Transition
 import androidx.transition.TransitionManager
 import androidx.transition.TransitionSet
@@ -121,7 +122,12 @@ class InputWindowManager : UniqueViewComponent<InputWindowManager, FrameLayout>(
         } else {
             // add the new window to scope, except essential windows (they are always in scope)
             scope += window
-            window.onCreateView()
+            // Compose 化窗口由统一 ComposeView 宿主承载，其余窗口维持 onCreateView() 兜底
+            if (window is ComposeWindow) {
+                createComposeWindowView(context) { window.Content() }
+            } else {
+                window.onCreateView()
+            }
         }
         if (currentWindow != null) {
             val oldWindow = currentWindow!!
@@ -136,6 +142,10 @@ class InputWindowManager : UniqueViewComponent<InputWindowManager, FrameLayout>(
             oldWindow.onDetached()
             // remove the old window from layout
             view.removeView(oldView)
+            // 释放非 essential Compose 窗口的 Composition，避免泄漏
+            if (oldWindow !is EssentialWindow && oldView is ComposeView) {
+                oldView.disposeComposition()
+            }
             // broadcast the old window was removed from layout
             broadcaster.onWindowDetached(oldWindow)
             Timber.d("Detach $oldWindow")

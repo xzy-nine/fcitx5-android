@@ -8,15 +8,13 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 
 /**
- * Compose 工具栏视觉配置
+ * Compose 工具栏视觉配置（颜色源：MiuixTheme.colorScheme）
  */
 @Immutable
 data class ToolbarVisuals(
     val barColor: Color,
     val iconColor: Color,
-    val pressHighlightColor: Color,
     val textColor: Color,
-    val dividerColor: Color,
 )
 
 /**

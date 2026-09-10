@@ -5,13 +5,8 @@
 package org.fcitx.fcitx5.android.input.popup
 
 import android.graphics.Rect
-import android.view.View
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.lifecycleScope
@@ -27,15 +22,14 @@ import org.fcitx.fcitx5.android.input.dependency.inputMethodService
 import org.fcitx.fcitx5.android.input.dependency.theme
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyDef
+import org.fcitx.fcitx5.android.input.wm.createComposeWindowView
 import org.mechdancer.dependency.Dependent
 import org.mechdancer.dependency.UniqueComponent
 import org.mechdancer.dependency.manager.ManagedHandler
 import org.mechdancer.dependency.manager.managedHandler
 import org.mechdancer.dependency.manager.must
 import splitties.dimensions.dp
-import top.yukonga.miuix.kmp.theme.ColorSchemeMode
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.theme.ThemeController
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 按键弹窗层协调器。
@@ -119,11 +113,15 @@ class PopupComponent :
      *
      * 位于 `InputView` 最顶层、键盘体之外，与 `composePreedit.view` 一样不影响键盘体高度与 IME insets。
      * 不接收触摸：手势由键盘侧的 `CustomGestureView` 捕获后经 [listener] 转发。
+     *
+     * ComposeView + MiuixTheme 宿主统一走 [createComposeWindowView]（与 wm 共存机制的窗口宿主一致），
+     * 这里只需补齐「不接收触摸」与窗口原点追踪。
      */
     val root by lazy {
-        ComposeView(context).apply {
+        createComposeWindowView(context) {
+            PopupContent(state = _state.collectAsState().value, visuals = visuals)
+        }.apply {
             // we want (0, 0) at top left
-            layoutDirection = View.LAYOUT_DIRECTION_LTR
             isClickable = false
             isFocusable = false
 
@@ -132,13 +130,6 @@ class PopupComponent :
                 val width = right - left
                 val height = bottom - top
                 rootBounds.set(x, y, x + width, y + height)
-            }
-
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            setContent {
-                MiuixTheme(controller = remember { ThemeController(ColorSchemeMode.System) }) {
-                    PopupContent(state = _state.collectAsState().value, visuals = visuals)
-                }
             }
         }
     }
@@ -407,7 +398,7 @@ class PopupComponent :
             removeEntry(viewId)
         } else {
             dismissJobs[viewId] = service.lifecycleScope.launch {
-                delay(timeLeft)
+                delay(timeLeft.milliseconds)
                 removeEntry(viewId)
                 dismissJobs.remove(viewId)
             }

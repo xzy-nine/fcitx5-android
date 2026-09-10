@@ -5,15 +5,15 @@
 
 package org.fcitx.fcitx5.android.input.candidates.horizontal
 
-import android.content.Context
 import android.content.res.Configuration
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -24,29 +24,27 @@ import kotlinx.coroutines.flow.update
 import org.fcitx.fcitx5.android.core.FcitxEvent
 import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.BooleanKey.ExpandedCandidatesEmpty
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.TransitionEvent.ExpandedCandidatesUpdated
-import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.candidates.expanded.ExpandedCandidateStyle
 import org.fcitx.fcitx5.android.input.candidates.expanded.window.BaseExpandedCandidateWindow
 import org.fcitx.fcitx5.android.input.candidates.expanded.window.FlexboxExpandedCandidateWindow
 import org.fcitx.fcitx5.android.input.candidates.expanded.window.GridExpandedCandidateWindow
+import org.fcitx.fcitx5.android.input.dependency.context
+import org.fcitx.fcitx5.android.input.dependency.fcitx
+import org.fcitx.fcitx5.android.input.dependency.inputMethodService
+import org.fcitx.fcitx5.android.input.dependency.inputView
+import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
+import org.fcitx.fcitx5.android.input.wm.InputWindow
+import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.mechdancer.dependency.Dependent
 import org.mechdancer.dependency.UniqueComponent
 import org.mechdancer.dependency.manager.ManagedHandler
 import org.mechdancer.dependency.manager.managedHandler
-import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
-import org.fcitx.fcitx5.android.input.dependency.context
-import org.fcitx.fcitx5.android.input.dependency.fcitx
-import org.fcitx.fcitx5.android.input.dependency.inputView
-import org.fcitx.fcitx5.android.input.dependency.inputMethodService
-import org.fcitx.fcitx5.android.input.dependency.theme
-import org.fcitx.fcitx5.android.input.wm.InputWindow
-import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.mechdancer.dependency.manager.must
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalView
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * Compose 候选栏组件
@@ -60,7 +58,6 @@ class ComposeCandidateComponent :
 
     private val context by manager.context()
     private val fcitx by manager.fcitx()
-    private val theme by manager.theme()
     private val inputView by manager.inputView()
     private val bar: ComposeKawaiiBarComponent by manager.must()
     private val service by manager.inputMethodService()
@@ -261,14 +258,15 @@ class ComposeCandidateComponent :
     }
 
     /**
-     * 获取当前候选栏的视觉配置
+     * 获取当前候选栏的视觉配置，全部取自 miuix 主题（不再读 fcitx View 主题）。
      */
+    @Composable
     private fun getVisuals(): CandidateBarVisuals {
         return CandidateBarVisuals(
-            textColor = androidx.compose.ui.graphics.Color(theme.candidateTextColor),
-            commentColor = androidx.compose.ui.graphics.Color(theme.candidateCommentColor),
-            pressHighlightColor = androidx.compose.ui.graphics.Color(theme.keyPressHighlightColor),
-            dividerColor = androidx.compose.ui.graphics.Color(theme.dividerColor),
+            textColor = MiuixTheme.colorScheme.onSurface,
+            commentColor = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            pressHighlightColor = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.1f),
+            dividerColor = MiuixTheme.colorScheme.dividerLine,
         )
     }
 
