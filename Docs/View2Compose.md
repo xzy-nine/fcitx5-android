@@ -238,3 +238,63 @@ FcitxInputMethodService
 | `composeCandidate.view` | `ComposeCandidateComponent` | 保持移除，入口为 `CandidateBarContent()`（经 `candidateContent` 嵌入工具栏） |
 | `preeditHeightPx` / `InputView.applyCustomBackgroundClip` | `InputView.kt` | 已删除（合并提交引入，回归修复移除） |
 | 键盘顶圆角裁剪 | `InputView.kt` / `ViewOutlineExt.kt` | 恢复裁 `keyboardView`（`dp(16)`）；`applyTopRoundedCornerClip` 的 `topInsetPx` 默认 0 未使用 |
+
+---
+
+**视图层级结构：按键弹窗层 Compose 化接线后（本次迁移）**
+
+```
+FcitxInputMethodService
+├── ComposeView (Compose 根)
+│   └── AndroidView
+│       └── InputView (extends BaseInputView extends ConstraintLayout)
+│           ├── customBackground (ImageView - 主题背景，铺满键盘体)
+│           ├── composeTopView (单一 ComposeView - MiuixTheme，仅含工具栏)
+│           │   └── composeKawaiiBar.ToolbarContent()
+│           │       └── ComposeToolbar (Idle/Candidate/Title 态)
+│           ├── windowManager.view (InputWindowManager - FrameLayout)
+│           │   └── 当前活跃窗口 (KeyboardWindow / PickerWindow / Grid|FlexboxExpandedCandidateWindow)
+│           ├── composePreedit.view (ComposeView - 悬浮在 keyboardView 上方)
+│           ├── popup.root ← [本次改动] FrameLayout → ComposeView (matchParent × matchParent，z 序最顶)
+│           │   └── MiuixTheme
+│           │       └── CompositionLocalProvider(LocalLayoutDirection = Ltr)
+│           │           └── PopupContent() (Compose)
+│           │               ├── PopupEntry × N (miuix Surface + miuix Text，Modifier.offset 绝对定位)
+│           │               └── PopupContainer × N (miuix Surface)
+│           │                   ├── PopupKeyboard (Row/Column 网格 + focusedIndex)
+│           │                   └── PopupMenu (CircleShape 圆底 + miuix Icon)
+│           ├── leftPaddingSpace, rightPaddingSpace, bottomPaddingSpace
+├── CandidatesView (独立的浮动候选视图，迁移范围外，保持 View 实现)
+│   ├── preeditUi.root (预编辑)
+│   └── candidatesUi.root (分页候选列表 - PagedCandidatesUi)
+```
+
+接线链路（本次按键弹窗层迁移）：
+
+1. **只换渲染层，不换协调层**：`PopupComponent` 继续担任协调器与唯一入口（`listener` / `dismissAll()` 契约不变），内部由「持有 View 引用」改为维护 `MutableStateFlow<PopupLayerState>`；`root` 由 `FrameLayout` 改为 `ComposeView`，`setContent` 内 `MiuixTheme(ThemeController(ColorSchemeMode.System))` 调用 `PopupContent(state, visuals)`。
+2. **弹窗层不接收触摸**：`root` 保持 `isClickable = false` / `isFocusable = false`，Compose 根 `Box` 不加任何点击修饰符；手势仍由 `BaseKeyboard` / `PickerPageUi` 侧的 `CustomGestureView` 捕获后经 `PopupActionListener` 转发。
+3. **锚点抽象化（关键）**：弹窗只消费「窗口绝对坐标 `Rect`」—— View 侧来自 `KeyView.bounds`（`getLocationInWindow`），Compose 侧来自 `boundsInWindow()`（`ComposeNumberRow` 已验证通用）。因此 `BaseKeyboard` / `TextKeyboard` / `PickerWindow` / `PickerPageUi` / `ComposeNumberRow` 五个生产方**零改动**。
+4. **同步返回语义保留**：`ChangeFocusAction.outResult` 与 `TriggerAction.outAction` 由调用方同步读取，故 `changeFocus` / `triggerFocused` 直接读写 `_state.value`，不经过重组或协程。
+5. **定位算式的来源**：`rootBounds` 继续用 `addOnLayoutChangeListener` + `getLocationInWindow()`（`ComposeView` 本身是 View），原 px 算式逐字保留，避开「Compose 首次布局未完成时拿不到原点」的时序问题；坐标一律是「相对 `popup.root` 左上角的 px」，Compose 侧用 `Modifier.offset { IntOffset(x, y) }` + `LocalDensity` 换算。
+6. **焦点热路径零分配**：行布局（`computeDisplayRows`）与 `keyOrders` 在容器创建时算一次，`remember` 缓存；`ChangeFocusAction`（手指 move 每帧）只替换 container 实例的 `focusedIndex` 单字段。
+7. **强制 LTR**：`CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr)`，等价原 View 的 `root.layoutDirection = LTR`，否则 RTL 下 `Modifier.offset` 方向反转。
+
+旧文件/接口位置（本次接线变动）：
+
+| 项 | 路径/符号 | 状态 |
+|---|---|---|
+| `popup.root` | `PopupComponent` | 由 `FrameLayout` 改为 `ComposeView`（宿主不变，仍由 `InputView` 第 349 行 `add(popup.root, lParams(matchParent, matchParent))` 挂载） |
+| `PopupLayerState.kt` | 新增 | `PopupLayerState` / `PopupEntryState` / `sealed PopupContainerState{Keyboard, Menu}` / `PopupVisuals` |
+| `PopupLayoutMath.kt` | 新增 | 纯计算（无 View 依赖）：`calcInitialFocusedColumn` / `createColumnOrder` / `limitIndex` / `keyboardGrid` / `computeKeyOrders` / `computeDisplayRows` / `computeEntryPosition` / `computeKeyboardOffset` / `computeMenuOffset` / `keyboardFocusIndex` / `menuFocusIndex` |
+| `ComposePopupLayer.kt` | 新增 | 渲染层：`PopupContent()` 入口；`PopupEntryItem` / `PopupKeyboardItem` / `PopupKeyCell` / `ScaledLabel` / `PopupMenuItem` / `PopupMenuCell` |
+| `PopupEntryUi.kt` | 同上目录 | 已断开接线，保留供对比 |
+| `PopupKeyboardUi.kt` | 同上 | 已断开接线，保留供对比 |
+| `PopupMenuUi.kt` | 同上 | 已断开接线，保留供对比 |
+| `PopupContainerUi.kt` | 同上 | 已断开接线，**保持零改动**（其纯计算已复制到 `PopupLayoutMath.kt`，避免上游合并冲突） |
+| `PopupAction.kt` / `PopupActionListener.kt` / `PopupPreset.kt` / `EmojiModifier.kt` | 同上 | 不动，对外契约 |
+
+组件选型：miuix 优先（主题 `MiuixTheme`、背景 `Surface`、文字 `Text`、图标 `Icon`），布局与定位用 foundation（`Box` / `Row` / `Column` / `Modifier.offset`，miuix 无对应基础件）。IME 内不使用任何 miuix `Window*` 弹层。
+
+**依赖统一（同批完成）**：Compose 由 JetBrains CMP 伞包（`org.jetbrains.compose.foundation:foundation-android`）改为 Google 官方 `androidx.compose.runtime` / `foundation` / `ui`，统一版本 `1.12.0`（`gradle/libs.versions.toml` 单一 `compose` 版本源），与 Notify-Relay / WebDAVPass 路线一致；不引入 compose BOM，避免与已固定版本冲突。
+
+**后续迁移计划（不变）**：主键盘（`windowManager.view` 下的 `KeyboardWindow`/`BaseKeyboard` 及 Picker 窗口）并入单一 Composition。本次已解除 `KeyView.bounds` 对弹窗层的耦合——键盘 Compose 化后只需把 Compose 坐标（`onGloballyPositioned`）换算成同一个 `Rect` 喂给 `PopupComponent.listener` 即可，两者不必同批迁移。

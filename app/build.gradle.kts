@@ -75,7 +75,7 @@ ksp {
 }
 
 dependencies {
-    implementation(libs.androidx.runtime)
+    implementation(libs.androidx.compose.runtime)
     ksp(project(":codegen"))
     implementation(project(":lib:fcitx5"))
     implementation(project(":lib:fcitx5-lua"))
@@ -130,7 +130,8 @@ dependencies {
     implementation(libs.miuix.icons.android)
     implementation(libs.miuix.nav.android)
     implementation(libs.androidx.activity.compose)
-    implementation(libs.jetbrains.compose.foundation.android)
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.ui)
     implementation(libs.jieba.analysis)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
