@@ -58,6 +58,8 @@ data class KeyboardVisuals(
     /** 键纵向视觉内缩（`def.margin == true` 时生效）。 */
     val vMargin: Dp,
     val keyboardColor: Color,
+    /** IME 主背景色（`Theme.backgroundColor`）：符号滑块等「非按键底」用它。 */
+    val backgroundColor: Color,
     val keyBackgroundColor: Color,
     val keyTextColor: Color,
     val altKeyBackgroundColor: Color,
@@ -157,6 +159,21 @@ data class KeyInsets(
 }
 
 /**
+ * 观察当前 fcitx 主题（换主题即重组）。凡是需要**原始 [Theme] 对象**而非
+ * [KeyboardVisuals] 的场景（如要构造 View 侧的 `RecentSymbolsView`）用它。
+ */
+@Composable
+fun rememberActiveTheme(): Theme {
+    var theme by remember { mutableStateOf(ThemeManager.activeTheme) }
+    DisposableEffect(Unit) {
+        val listener = ThemeManager.OnThemeChangeListener { theme = it }
+        ThemeManager.addOnChangedListener(listener)
+        onDispose { ThemeManager.removeOnChangedListener(listener) }
+    }
+    return theme
+}
+
+/**
  * 纯函数版本的主题桥，便于单测：[rememberKeyboardVisuals] 与（若需要的）预览工具共用。
  *
  * 纵向/横向边距按屏幕方向二选一，与 `KeyView.init` 一致。传入原语而非 `ThemePrefs`，
@@ -181,6 +198,7 @@ fun buildKeyboardVisuals(
     hMargin = (if (landscape) keyHorizontalMarginLandscape else keyHorizontalMargin).dp,
     vMargin = (if (landscape) keyVerticalMarginLandscape else keyVerticalMargin).dp,
     keyboardColor = Color(theme.keyboardColor),
+    backgroundColor = Color(theme.backgroundColor),
     keyBackgroundColor = Color(theme.keyBackgroundColor),
     keyTextColor = Color(theme.keyTextColor),
     altKeyBackgroundColor = Color(theme.altKeyBackgroundColor),
@@ -205,12 +223,7 @@ fun buildKeyboardVisuals(
 fun rememberKeyboardVisuals(): KeyboardVisuals {
     val landscape =
         LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    var theme by remember { mutableStateOf(ThemeManager.activeTheme) }
-    DisposableEffect(Unit) {
-        val listener = ThemeManager.OnThemeChangeListener { theme = it }
-        ThemeManager.addOnChangedListener(listener)
-        onDispose { ThemeManager.removeOnChangedListener(listener) }
-    }
+    val theme = rememberActiveTheme()
     return remember(theme, landscape) {
         val prefs = ThemeManager.prefs
         buildKeyboardVisuals(
