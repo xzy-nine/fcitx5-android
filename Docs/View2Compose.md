@@ -458,3 +458,27 @@ FcitxInputMethodService
 | `TextEditingUi.kt` / `TextEditingButton.kt` | `input/editing/` | 已断开接线，保留供对比 |
 | `ClipboardEditWindow.xml` / `ClipboardEditWindowBinding` | `res/layout/` | 已断开接线，保留供对比（binding 文件不再引用） |
 | `ClipboardEditActivity`（历史入口） | — | 早前已移除，不在此批 |
+
+---
+
+**复查修复（本次）**
+
+迁移批次的复查结论与修复记录：
+
+1. **删除链路恢复**：`ClipboardWindow` 在 Compose 化时丢失了旧实现的 Snackbar 撤销与 `realDelete()` 物理清理，
+   导致 `deleted=1` 记录永久残留、撤销功能消失。现恢复为：
+   - `onDelete` / `onConfirmDeleteAll` 软删除后记入 `_pendingDeleteIds`，并重置 4s 撤销窗口（`clearUndoJob`）；
+   - `ComposeClipboard.UndoBar`（BottomCenter 悬浮条，`num_items_deleted` + `undo`）提供撤销入口；
+   - 窗口结束 / 超时后调用 `ClipboardManager.realDelete()`，`deleteAll` 返回的 id 不再被丢弃。
+2. **偏好持久化**：`ClipboardEditWindow.setInsertSpace()` 补 `clipboardEditInsertSpace.setValue`。
+3. **选区态重组**：`TextEditingWindow.hasSelection` 由普通 `var` 改为 `MutableStateFlow`，`onSelectionUpdate` 写入,
+   保证剪切/全选按钮随选区刷新。
+4. **长按重复触发恢复**：新增 `Modifier.repeatableClick`（`input/bar/ComposeFeedbackExt.kt`），复刻
+   `CustomGestureView(repeatEnabled = true)` 语义（长按延迟 → 50ms 间隔重复 → 松手单击、移出取消），
+   接入 `ComposeTextEditing` 的方向键与退格，并按 `hapticOnRepeat` 提供重复期震动。
+5. **候选菜单锚点**：`CandidateBarCallbacks.onCandidateLongClick` 增加长按点 `Offset`；`ComposeCandidateComponent`
+   用 `LayoutCoordinates.positionInWindow()` + 长按点还原窗口绝对坐标，替换原先「整个候选栏矩形」的错误锚点。
+6. **条目缓存**：`ComposeClipboard` 的 `cardCache` key 由 `(id, mask)` 改为 `(id, text, mask)`（编辑后自然失效），
+   改为上限 256 的 LRU 并用锁保护跨线程读写。
+7. **文案与收尾**：三处 Compose 文件的硬编码中文改 `stringResource`，新增 16 个字符串键（中英双语）；
+   补文件末尾换行。

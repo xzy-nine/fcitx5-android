@@ -6,6 +6,8 @@
 package org.fcitx.fcitx5.android.input.candidates.horizontal
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -32,11 +34,17 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -68,7 +76,8 @@ data class CandidateBarVisuals(
  */
 data class CandidateBarCallbacks(
     val onCandidateSelect: (Int) -> Unit,
-    val onCandidateLongClick: ((Int, CandidateWord) -> Unit)? = null,
+    /** 长按候选词：回调窗口绝对坐标（x, y），供菜单锚定；由调用方完成坐标换算 */
+    val onCandidateLongClick: ((Int, CandidateWord, Offset) -> Unit)? = null,
     val onExpandClick: (() -> Unit)? = null,
     val onLoadMore: (() -> Unit)? = null,
     val onScrollOffsetChanged: ((Int) -> Unit)? = null,
@@ -194,7 +203,7 @@ private fun CandidateRow(
     dividerColor: Color,
     showDivider: Boolean,
     onCandidateSelect: (Int) -> Unit,
-    onCandidateLongClick: ((Int, CandidateWord) -> Unit)?,
+    onCandidateLongClick: ((Int, CandidateWord, Offset) -> Unit)?,
     endPadding: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
@@ -240,8 +249,8 @@ private fun CandidateRow(
                     CandidateItem(
                         candidate = candidate,
                         onClick = { onCandidateSelect(index) },
-                        onLongClick = {
-                            onCandidateLongClick?.invoke(index, candidate)
+                        onLongClick = { offset ->
+                            onCandidateLongClick?.invoke(index, candidate, offset)
                         },
                         textColor = textColor,
                         commentColor = commentColor,
@@ -275,7 +284,7 @@ private fun CandidateRow(
 private fun CandidateItem(
     candidate: CandidateWord,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
+    onLongClick: (Offset) -> Unit,
     textColor: Color,
     commentColor: Color,
     pressHighlightColor: Color,
@@ -283,6 +292,10 @@ private fun CandidateItem(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    // 最近一次按压点（本 item 局部坐标）
+    val pressOffset = remember { mutableStateOf(Offset.Zero) }
+    // 本 item 自身的坐标，用于把「item 局部长按点」换算成窗口绝对坐标
+    val itemCoordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
 
     Row(
         modifier = modifier
@@ -291,11 +304,22 @@ private fun CandidateItem(
                 if (isPressed) pressHighlightColor else Color.Transparent
             )
             .inputFeedback()
+            .onGloballyPositioned { itemCoordinates.value = it }
+            .pointerInput(candidate.text) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    pressOffset.value = down.position
+                }
+            }
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,
-                onLongClick = onLongClick,
+                onLongClick = {
+                    // 直接用 item 自身坐标换算，避免遗漏 item 在 LazyRow 内的偏移（含滚动）
+                    val origin = itemCoordinates.value?.positionInWindow() ?: Offset.Zero
+                    onLongClick(origin + pressOffset.value)
+                },
             )
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,

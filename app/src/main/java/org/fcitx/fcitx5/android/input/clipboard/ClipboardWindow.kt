@@ -13,6 +13,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
@@ -74,10 +75,12 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
     private val _uiState = MutableStateFlow<ClipboardStateMachine.State>(Normal)
     private val _showDeleteAllDialog = MutableStateFlow(false)
     private val _deleteAllLabel = MutableStateFlow("")
+    private val _pendingDeleteIds = MutableStateFlow<List<Int>>(emptyList())
 
     // 删除全部确认：skipPinned 由点击时 haveUnpinned() 决定
     private var deleteAllSkipPinned = true
     private var submitJob: Job? = null
+    private var clearUndoJob: Job? = null
 
     private lateinit var stateMachine: EventStateMachine<
         ClipboardStateMachine.State,
@@ -93,6 +96,7 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
         val entries by _entries.collectAsState()
         val showDeleteAllDialog by _showDeleteAllDialog.collectAsState()
         val deleteAllLabel by _deleteAllLabel.collectAsState()
+        val pendingDeleteIds by _pendingDeleteIds.collectAsState()
         ClipboardListContent(
             state = uiState,
             entries = entries,
@@ -115,21 +119,71 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
                     }
                     service.startActivity(chooser)
                 },
-                onDelete = { id -> service.lifecycleScope.launch { ClipboardManager.delete(id) } },
+                onDelete = ::onDelete,
                 onEnableListening = { clipboardEnabledPref.setValue(true) },
             ),
             showDeleteAllDialog = showDeleteAllDialog,
             deleteAllLabel = deleteAllLabel,
             onConfirmDeleteAll = {
-                service.lifecycleScope.launch { ClipboardManager.deleteAll(deleteAllSkipPinned) }
+                service.lifecycleScope.launch {
+                    val ids = ClipboardManager.deleteAll(deleteAllSkipPinned)
+                    onDeleted(ids.toList())
+                }
+                _showDeleteAllDialog.value = false
             },
             onCancelDeleteAll = { _showDeleteAllDialog.value = false },
+            pendingDeleteIds = pendingDeleteIds,
+            onUndoDelete = ::undoDelete,
         )
     }
 
     private fun onPaste(text: String) {
         service.commitText(text)
         if (clipboardReturnAfterPaste) windowManager.attachWindow(KeyboardWindow)
+    }
+
+    /**
+     * 删除条目（软删除）并开启撤销窗口。
+     *
+     * [ClipboardManager.delete] 仅置 `deleted=1`，条目本身仍在库中，因此撤销是可靠的。
+     * 撤销窗口结束后由 [onDeleted] 调度 [ClipboardManager.realDelete] 做物理清理。
+     */
+    private fun onDelete(id: Int) {
+        service.lifecycleScope.launch {
+            ClipboardManager.delete(id)
+            onDeleted(listOf(id))
+        }
+    }
+
+    private fun onDeleted(ids: Collection<Int>) {
+        if (ids.isEmpty()) return
+        _pendingDeleteIds.value = _pendingDeleteIds.value + ids
+        restartClearUndoJob()
+    }
+
+    private fun undoDelete() {
+        val ids = _pendingDeleteIds.value
+        _pendingDeleteIds.value = emptyList()
+        clearUndoJob?.cancel()
+        if (ids.isEmpty()) return
+        service.lifecycleScope.launch { ClipboardManager.undoDelete(*ids.toIntArray()) }
+    }
+
+    /**
+     * 撤销窗口到期后清理软删除记录。
+     *
+     * 每次新的删除都会重置计时，与旧实现「连续删除时后一个 Snackbar 取代前一个、前一批 id 累积」
+     * 的语义一致：窗口内撤销会一并恢复全部待撤销条目，窗口结束则全部物理删除。
+     */
+    private fun restartClearUndoJob() {
+        clearUndoJob?.cancel()
+        clearUndoJob = service.lifecycleScope.launch {
+            delay(UNDO_WINDOW_MS)
+            if (_pendingDeleteIds.value.isNotEmpty()) {
+                _pendingDeleteIds.value = emptyList()
+                ClipboardManager.realDelete()
+            }
+        }
     }
 
     private val deleteAllButton by lazy {
@@ -177,9 +231,20 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
         clipboardEnabledPref.unregisterOnChangeListener(clipboardEnabledListener)
         submitJob?.cancel()
         _showDeleteAllDialog.value = false
+        // 窗口销毁即撤销窗口结束：已软删除的条目做物理清理
+        clearUndoJob?.cancel()
+        if (_pendingDeleteIds.value.isNotEmpty()) {
+            _pendingDeleteIds.value = emptyList()
+            service.lifecycleScope.launch { ClipboardManager.realDelete() }
+        }
     }
 
     override val title: String by lazy {
         context.getString(R.string.clipboard)
+    }
+
+    private companion object {
+        /** 撤销窗口时长，与旧实现 Snackbar.LENGTH_LONG 的量级一致 */
+        const val UNDO_WINDOW_MS = 4000L
     }
 }

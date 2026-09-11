@@ -19,10 +19,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.input.bar.inputFeedback
+import org.fcitx.fcitx5.android.input.bar.repeatableClick
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
@@ -64,6 +66,7 @@ data class TextEditingCallbacks(
 fun TextEditingContent(
     hasSelection: Boolean,
     selectActivated: Boolean,
+    hapticOnRepeat: Boolean,
     callbacks: TextEditingCallbacks,
     modifier: Modifier = Modifier,
 ) {
@@ -86,6 +89,7 @@ fun TextEditingContent(
                     .fillMaxHeight(),
                 dirColor,
                 R.drawable.ic_baseline_keyboard_arrow_left_24,
+                hapticOnRepeat,
                 callbacks.onLeft,
             )
             // 列2：上 / 选区 / 下
@@ -101,6 +105,7 @@ fun TextEditingContent(
                         .fillMaxWidth(),
                     dirColor,
                     R.drawable.ic_baseline_keyboard_arrow_up_24,
+                    hapticOnRepeat,
                     callbacks.onUp,
                 )
                 SelectButton(Modifier
@@ -112,6 +117,7 @@ fun TextEditingContent(
                         .fillMaxWidth(),
                     dirColor,
                     R.drawable.ic_baseline_keyboard_arrow_down_24,
+                    hapticOnRepeat,
                     callbacks.onDown,
                 )
             }
@@ -122,6 +128,7 @@ fun TextEditingContent(
                     .fillMaxHeight(),
                 dirColor,
                 R.drawable.ic_baseline_keyboard_arrow_right_24,
+                hapticOnRepeat,
                 callbacks.onRight,
             )
             // 列4：全选 / 复制 / 粘贴
@@ -133,13 +140,13 @@ fun TextEditingContent(
             ) {
                 ActionButton(Modifier
                     .weight(1f)
-                    .fillMaxWidth(), "全选", callbacks.onSelectAll)
+                    .fillMaxWidth(), stringResource(R.string.select_all), onClick = callbacks.onSelectAll)
                 ActionButton(Modifier
                     .weight(1f)
-                    .fillMaxWidth(), "复制", callbacks.onCopy)
+                    .fillMaxWidth(), stringResource(R.string.copy), onClick = callbacks.onCopy)
                 ActionButton(Modifier
                     .weight(1f)
-                    .fillMaxWidth(), "粘贴", callbacks.onPaste)
+                    .fillMaxWidth(), stringResource(R.string.paste), onClick = callbacks.onPaste)
             }
         }
         Spacer(modifier = Modifier.height(gap))
@@ -156,6 +163,7 @@ fun TextEditingContent(
                     .fillMaxHeight(),
                 dirColor,
                 R.drawable.ic_baseline_first_page_24,
+                hapticOnRepeat,
                 callbacks.onHome,
             )
             DirIconButton(
@@ -164,25 +172,33 @@ fun TextEditingContent(
                     .fillMaxHeight(),
                 dirColor,
                 R.drawable.ic_baseline_last_page_24,
+                hapticOnRepeat,
                 callbacks.onEnd,
             )
             ActionButton(Modifier
                 .weight(1.2f)
-                .fillMaxHeight(), "⌫", callbacks.onBackspace)
+                .fillMaxHeight(), "⌫", hapticOnRepeat, onClick = callbacks.onBackspace)
         }
     }
 }
 
+/**
+ * 方向键按钮：长按连续触发（复刻旧 `CustomGestureView(repeatEnabled = true)`）。
+ *
+ * 单击与重复均由 [repeatableClick] 统一派发，因此 miuix 按钮自身的 `onClick` 传空实现，
+ * 避免短按被派发两次。
+ */
 @Composable
 private fun DirIconButton(
     modifier: Modifier,
     color: Color,
     iconRes: Int,
+    hapticOnRepeat: Boolean,
     onClick: () -> Unit,
 ) {
     IconButton(
-        onClick = onClick,
-        modifier = modifier.inputFeedback(),
+        onClick = {},
+        modifier = modifier.repeatableClick(hapticOnRepeat = hapticOnRepeat, onClick = onClick),
         backgroundColor = color,
         cornerRadius = 10.dp,
     ) {
@@ -208,19 +224,24 @@ private fun SelectButton(
         else ButtonDefaults.buttonColors(),
         cornerRadius = 10.dp,
     ) {
-        Text(text = "选区", fontSize = 14.sp)
+        Text(text = stringResource(R.string.selection), fontSize = 14.sp)
     }
 }
 
+/**
+ * 文本动作按钮（全选/复制/粘贴/退格）：单击与长按重复均由 [repeatableClick] 派发，
+ * 故按钮自身 `onClick` 传空实现，避免短按重复派发。
+ */
 @Composable
 private fun ActionButton(
     modifier: Modifier,
     text: String,
+    hapticOnRepeat: Boolean = false,
     onClick: () -> Unit,
 ) {
     Button(
-        onClick = onClick,
-        modifier = modifier.inputFeedback(),
+        onClick = {},
+        modifier = modifier.repeatableClick(hapticOnRepeat = hapticOnRepeat, onClick = onClick),
         colors = ButtonDefaults.buttonColorsPrimary(),
         cornerRadius = 10.dp,
     ) {

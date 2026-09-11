@@ -34,9 +34,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.input.bar.inputFeedback
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -161,7 +163,7 @@ fun ClipboardEditContent(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "插入空格",
+                text = stringResource(R.string.insert_space),
                 color = MiuixTheme.colorScheme.onSurface,
                 fontSize = 14.sp,
             )
@@ -172,7 +174,7 @@ fun ClipboardEditContent(
                 colors = if (insertSpace) ButtonDefaults.buttonColorsPrimary()
                 else ButtonDefaults.buttonColors()
             ) {
-                Text(text = if (insertSpace) "开" else "关", fontSize = 13.sp)
+                Text(text = stringResource(if (insertSpace) R.string.on else R.string.off), fontSize = 13.sp)
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
@@ -181,12 +183,12 @@ fun ClipboardEditContent(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             TextButton(
-                text = "全选",
+                text = stringResource(R.string.select_all),
                 onClick = { selected = segments.indices.toSet() },
                 modifier = Modifier.weight(1f).inputFeedback(),
             )
             TextButton(
-                text = "反选",
+                text = stringResource(R.string.invert_selection),
                 onClick = {
                     val next = segments.indices.toMutableSet()
                     next.removeAll(selected)
@@ -195,7 +197,7 @@ fun ClipboardEditContent(
                 modifier = Modifier.weight(1f).inputFeedback(),
             )
             TextButton(
-                text = if (isTextMode) "分词模式" else "文本模式",
+                text = stringResource(if (isTextMode) R.string.segment_mode else R.string.text_mode),
                 onClick = {
                     if (!isTextMode) textInput = currentText
                     isTextMode = !isTextMode
@@ -204,12 +206,12 @@ fun ClipboardEditContent(
             )
             Spacer(modifier = Modifier.weight(0.4f))
             TextButton(
-                text = "复制",
+                text = stringResource(R.string.copy),
                 onClick = { callbacks.onCopy(currentText) },
                 modifier = Modifier.weight(1f).inputFeedback(),
             )
             TextButton(
-                text = "取消",
+                text = stringResource(R.string.cancel),
                 onClick = callbacks.onExit,
                 modifier = Modifier.weight(1f).inputFeedback(),
             )
@@ -218,7 +220,7 @@ fun ClipboardEditContent(
                 modifier = Modifier.weight(1f).inputFeedback(),
                 colors = ButtonDefaults.buttonColorsPrimary(),
             ) {
-                Text(text = "确定", fontSize = 14.sp)
+                Text(text = stringResource(R.string.ok), fontSize = 14.sp)
             }
         }
     }

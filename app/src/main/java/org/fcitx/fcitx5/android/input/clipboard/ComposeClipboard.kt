@@ -43,6 +43,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,6 +59,7 @@ import org.fcitx.fcitx5.android.input.bar.inputFeedback
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** 剪贴板条目长按操作/确认等交互回调 */
@@ -72,11 +74,28 @@ data class ClipboardCallbacks(
     val onEnableListening: () -> Unit,
 )
 
-// 条目渲染数据缓存（按 entryId + mask）：同时缓存摘录正文与实体 chips，
-// 首次异步计算，之后滚动复用，避免主线程反复分词/截断导致的卡顿
+// 条目渲染数据缓存：同时缓存摘录正文与实体 chips，首次异步计算，之后滚动复用，
+// 避免主线程反复分词/截断导致的卡顿。
+// key 含 text，保证条目被编辑后旧缓存自然失效（不会显示过期内容）；
+// 使用有上限的 LRU，并由互斥锁保护跨线程读写（分词在 IO 线程完成）。
 private class CardData(val display: String, val chips: List<ClipboardTextAnalyzer.Entity>)
-private val cardCache = mutableMapOf<Int, MutableMap<Boolean, CardData>>()
 private val EMPTY_CARD_DATA = CardData("", emptyList())
+private const val CARD_CACHE_MAX = 256
+private val cardCacheLock = Any()
+private val cardCache = object : LinkedHashMap<CardCacheKey, CardData>(64, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<CardCacheKey, CardData>) =
+        size > CARD_CACHE_MAX
+}
+private data class CardCacheKey(val id: Int, val text: String, val mask: Boolean)
+
+private fun readCardCache(entry: ClipboardEntry, maskSensitive: Boolean): CardData? =
+    synchronized(cardCacheLock) { cardCache[CardCacheKey(entry.id, entry.text, maskSensitive)] }
+
+private fun writeCardCache(entry: ClipboardEntry, maskSensitive: Boolean, data: CardData) {
+    synchronized(cardCacheLock) {
+        cardCache[CardCacheKey(entry.id, entry.text, maskSensitive)] = data
+    }
+}
 
 @Composable
 private fun rememberCardData(
@@ -84,13 +103,14 @@ private fun rememberCardData(
     maskSensitive: Boolean,
 ): CardData {
     return produceState<CardData>(
-        initialValue = cardCache[entry.id]?.get(maskSensitive) ?: EMPTY_CARD_DATA,
+        initialValue = readCardCache(entry, maskSensitive) ?: EMPTY_CARD_DATA,
         key1 = entry.id,
         key2 = maskSensitive,
+        key3 = entry.text,
     ) {
-        val data = cardCache[entry.id]?.get(maskSensitive)
-        if (data != null) {
-            value = data
+        val cached = readCardCache(entry, maskSensitive)
+        if (cached != null) {
+            value = cached
         } else {
             val masked = entry.sensitive && maskSensitive
             // 分词/截断在 IO 线程执行，避免主线程卡顿
@@ -100,7 +120,7 @@ private fun rememberCardData(
                     chips = if (masked) emptyList() else ClipboardTextAnalyzer.analyze(entry.text),
                 )
             }
-            cardCache.getOrPut(entry.id) { mutableMapOf() }[maskSensitive] = value
+            writeCardCache(entry, maskSensitive, value)
         }
     }.value
 }
@@ -119,6 +139,8 @@ fun ClipboardListContent(
     deleteAllLabel: String,
     onConfirmDeleteAll: () -> Unit,
     onCancelDeleteAll: () -> Unit,
+    pendingDeleteIds: List<Int>,
+    onUndoDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -138,12 +160,60 @@ fun ClipboardListContent(
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                 )
-                MenuOptionRow(R.drawable.ic_baseline_delete_24, "删除") {
+                MenuOptionRow(R.drawable.ic_baseline_delete_24, stringResource(R.string.delete)) {
                     onConfirmDeleteAll()
-                    onCancelDeleteAll()
                 }
-                MenuOptionRowTextOnly("取消", onCancelDeleteAll)
+                MenuOptionRowTextOnly(stringResource(R.string.cancel), onCancelDeleteAll)
             }
+        }
+        // 撤销条：删除后限时提供恢复入口，替代旧实现的 Snackbar
+        if (pendingDeleteIds.isNotEmpty()) {
+            UndoBar(
+                count = pendingDeleteIds.size,
+                onUndo = onUndoDelete,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp),
+            )
+        }
+    }
+}
+
+/**
+ * 删除撤销条。
+ *
+ * 旧实现用 `Snackbar` + `realDelete()` 回调；Compose 版以悬浮条承载同一语义：
+ * 显示期间可撤销（恢复软删除条目），超时或窗口销毁由窗口侧执行物理清理。
+ */
+@Composable
+private fun UndoBar(
+    count: Int,
+    onUndo: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .inputFeedback(),
+        shape = RoundedCornerShape(12.dp),
+        color = MiuixTheme.colorScheme.surface,
+        shadowElevation = 8.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.num_items_deleted, count),
+                color = MiuixTheme.colorScheme.onSurface,
+                fontSize = 14.sp,
+            )
+            TextButton(
+                text = stringResource(R.string.undo),
+                onClick = onUndo,
+                modifier = Modifier.inputFeedback(),
+            )
         }
     }
 }
@@ -273,7 +343,7 @@ private fun EnableListeningUi(onEnable: () -> Unit) {
             .padding(12.dp),
     ) {
         Text(
-            text = "剪贴板监听未开启",
+            text = stringResource(R.string.clipboard_listening_disabled),
             color = MiuixTheme.colorScheme.onSurface,
             fontSize = 14.sp,
             modifier = Modifier.padding(12.dp, 8.dp),
@@ -287,7 +357,7 @@ private fun EnableListeningUi(onEnable: () -> Unit) {
             color = MiuixTheme.colorScheme.primary,
         ) {
             Text(
-                text = "开启监听",
+                text = stringResource(R.string.enable_listening),
                 color = MiuixTheme.colorScheme.onPrimary,
                 fontSize = 14.sp,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -311,7 +381,7 @@ private fun AddMoreUi() {
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "复制内容后会自动出现在这里",
+            text = stringResource(R.string.clipboard_empty_hint),
             color = MiuixTheme.colorScheme.onSurface,
             fontSize = 14.sp,
             textAlign = TextAlign.Center,
@@ -328,12 +398,12 @@ private fun ClipboardActionMenu(
 ) {
     AnchoredMenu(anchorOffset, onDismiss) {
         val pinned = entry.pinned
-        MenuOptionRow(R.drawable.ic_baseline_push_pin_24, if (pinned) "取消置顶" else "置顶") {
+        MenuOptionRow(R.drawable.ic_baseline_push_pin_24, if (pinned) stringResource(R.string.unpin) else stringResource(R.string.pin)) {
             if (pinned) callbacks.onUnpin(entry.id) else callbacks.onPin(entry.id)
         }
-        MenuOptionRow(R.drawable.ic_baseline_edit_24, "编辑") { callbacks.onEdit(entry.id) }
-        MenuOptionRow(R.drawable.ic_baseline_share_24, "分享") { callbacks.onShare(entry) }
-        MenuOptionRow(R.drawable.ic_baseline_delete_24, "删除") { callbacks.onDelete(entry.id) }
+        MenuOptionRow(R.drawable.ic_baseline_edit_24, stringResource(R.string.edit)) { callbacks.onEdit(entry.id) }
+        MenuOptionRow(R.drawable.ic_baseline_share_24, stringResource(R.string.share)) { callbacks.onShare(entry) }
+        MenuOptionRow(R.drawable.ic_baseline_delete_24, stringResource(R.string.delete)) { callbacks.onDelete(entry.id) }
     }
 }
 

@@ -10,9 +10,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.FcitxInputMethodService
 import org.fcitx.fcitx5.android.input.bar.ui.ToolButton
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
@@ -37,23 +36,31 @@ class TextEditingWindow : InputWindow.ExtendedInputWindow<TextEditingWindow>(),
     private val windowManager: InputWindowManager by manager.must()
     private val theme by manager.theme()
 
-    private var hasSelection = false
+    /** 长按方向键/退格连续触发时是否震动，与旧 CustomGestureView 行为一致 */
+    private val hapticOnRepeat by AppPrefs.getInstance().keyboard.hapticOnRepeat
 
+    /** 输入框中真实存在选区（由 [onSelectionUpdate] 回调驱动），需随重组刷新按钮态 */
+    private val _hasSelection = MutableStateFlow(false)
+    /** 用户手动进入的「选区」模式（未实际产生选区前也保持激活态） */
     private val _userSelection = MutableStateFlow(false)
-    private val userSelection: StateFlow<Boolean> = _userSelection.asStateFlow()
+
+    private val hasSelection: Boolean get() = _hasSelection.value
+    private val userSelection: Boolean get() = _userSelection.value
 
     private fun sendDirectionKey(keyEventCode: Int) {
-        service.sendCombinationKeyEvents(keyEventCode, shift = hasSelection || _userSelection.value)
+        service.sendCombinationKeyEvents(keyEventCode, shift = hasSelection || userSelection)
     }
 
     override fun onCreateView(): View = createComposeWindowView(context) { Content() }
 
     @Composable
     override fun Content() {
-        val userSel by userSelection.collectAsState()
+        val hasSel by _hasSelection.collectAsState()
+        val userSel by _userSelection.collectAsState()
         TextEditingContent(
-            hasSelection = hasSelection,
-            selectActivated = hasSelection || userSel,
+            hasSelection = hasSel,
+            selectActivated = hasSel || userSel,
+            hapticOnRepeat = hapticOnRepeat,
             callbacks = TextEditingCallbacks(
                 onUp = { sendDirectionKey(KeyEvent.KEYCODE_DPAD_UP) },
                 onDown = { sendDirectionKey(KeyEvent.KEYCODE_DPAD_DOWN) },
@@ -62,7 +69,7 @@ class TextEditingWindow : InputWindow.ExtendedInputWindow<TextEditingWindow>(),
                 onHome = { sendDirectionKey(KeyEvent.KEYCODE_MOVE_HOME) },
                 onEnd = { sendDirectionKey(KeyEvent.KEYCODE_MOVE_END) },
                 onSelect = {
-                    if (hasSelection) {
+                    if (hasSel) {
                         _userSelection.value = false
                         service.cancelSelection()
                     } else {
@@ -108,7 +115,7 @@ class TextEditingWindow : InputWindow.ExtendedInputWindow<TextEditingWindow>(),
     }
 
     override fun onSelectionUpdate(start: Int, end: Int) {
-        hasSelection = start != end
+        _hasSelection.value = start != end
     }
 
     override fun onCreateBarExtension(): View = context.horizontalLayout {

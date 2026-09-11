@@ -45,9 +45,12 @@ class ClipboardEditWindow(
     private val service: FcitxInputMethodService by manager.inputMethodService()
     private val windowManager: InputWindowManager by manager.must()
 
+    private val clipboardEditInsertSpacePref =
+        AppPrefs.getInstance().clipboard.clipboardEditInsertSpace
+
     private val _segments = MutableStateFlow<List<String>>(emptyList())
     private val _insertSpace = MutableStateFlow(
-        AppPrefs.getInstance().clipboard.clipboardEditInsertSpace.getValue()
+        clipboardEditInsertSpacePref.getValue()
     )
     private val segments: StateFlow<List<String>> = _segments.asStateFlow()
     private val insertSpace: StateFlow<Boolean> = _insertSpace.asStateFlow()
@@ -65,9 +68,17 @@ class ClipboardEditWindow(
                 onCommit = ::commitToInput,
                 onCopy = ::copyOnly,
                 onExit = ::exitToPrevWindow,
-                onInsertSpaceChange = { _insertSpace.value = it },
+                onInsertSpaceChange = ::setInsertSpace,
             ),
         )
+    }
+
+    /**
+     * 切换「插入空格」并持久化到偏好；窗口重开时以偏好值为准。
+     */
+    private fun setInsertSpace(value: Boolean) {
+        _insertSpace.value = value
+        clipboardEditInsertSpacePref.setValue(value)
     }
 
     override fun onAttached() {
