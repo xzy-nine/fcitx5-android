@@ -319,7 +319,10 @@ FcitxInputMethodService
 
 **剪贴板编辑**：
 1. `ClipboardEditWindow` 实现 `ComposeWindow`；分词用现成 `ClipboardTextAnalyzer.segment()`。
-2. `ComposeClipboardEdit.kt`（新增）：分词模式 `FlowRow` 词块（点击选中/长按单选）+ 重组预览；
+2. `ComposeClipboardEdit.kt`（新增）：分词模式 `FlowRow` 词块 + 重组预览；芯片手势由
+   `ComposeClipboardSegment.kt`（新增）：单击切换 / 长按进入拖选（此后才消费、接管手势）/ 拖动按
+   「锚点..当前」整段连选（区间外原选中态保留）/ 拖到可视区上下边缘自动滚动并继续扩选（越过视口边界越远越快）/
+   长按前超 `touchSlop` 移动则**放弃手势且不消费**，交还父级 `verticalScroll`，保证普通上下拖动可正常滚动；
    文本模式 miuix `TextField`；底部 全选/反选/模式切换 + 复制/取消/确定。复制/上屏借窗口
    `copyOnly` / `commitToInput` / `exitToPrevWindow`。设置项 `clipboardEditInsertSpace` 落
    `AppPrefs`。
