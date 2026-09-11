@@ -161,6 +161,31 @@ class ComposeKawaiiBarComponent :
         _toolbarHeightVersion.value++
     }
 
+    private var cachedHeightKey: Pair<Int, Int>? = null
+    private var cachedHeightValue = 0
+
+    /**
+     * 工具栏高度（dp 数值）。
+     *
+     * 组合期工具栏子树会读它十余次，若每次都走 `AppPrefs` + `SharedPreferences` 会重复付出
+     * 同步读取与配置查询的开销；这里按「偏好版本 + 屏幕方向」缓存，任一变化即重算。
+     * 版本变化本身已驱动父级重组（[toolbarHeightVersion] 被 InputView 收集），
+     * 方向变化则会重建 IME 视图树，故不会读到过期值。
+     */
+    val toolbarHeight: Int
+        get() {
+            val orientation = context.resources.configuration.orientation
+            val key = _toolbarHeightVersion.value to orientation
+            if (key != cachedHeightKey) {
+                cachedHeightKey = key
+                cachedHeightValue = if (orientation == Configuration.ORIENTATION_LANDSCAPE)
+                    keyboardPrefs.toolbarHeightLandscape.getValue()
+                else
+                    keyboardPrefs.toolbarHeight.getValue()
+            }
+            return cachedHeightValue
+        }
+
     // InlineSuggestions 视图容器
     private val inlineSuggestionsUi by lazy { InlineSuggestionsUi(context) }
     private var inlineRenderJob: Job? = null
@@ -520,6 +545,7 @@ class ComposeKawaiiBarComponent :
             splitKeyboardEnabled = splitKeyboardEnabled,
             menuRotation = menuRotation,
             modifier = modifier,
+            toolbarHeight = toolbarHeight.dp,
             candidateVisible = candidateVisible,
             candidateContent = {
                 // 候选栏内容由 ComposeCandidateComponent 提供，直接作为 Composable 接入（去除嵌套 ComposeView）

@@ -21,7 +21,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
+import org.fcitx.fcitx5.android.input.bar.LocalToolbarHeight
 import org.fcitx.fcitx5.android.input.keyboard.ComposeKey
 import org.fcitx.fcitx5.android.input.keyboard.KeyActionListener
 import org.fcitx.fcitx5.android.input.keyboard.rememberKeyboardVisuals
@@ -46,7 +46,7 @@ fun NumberRowContent(
     // 收起手势要按**系统**布局方向判定，因此必须在下面强制 LTR 之前读取
     val systemLayoutDirection = LocalLayoutDirection.current
     // 与原 NumberRow 一致：左滑（LTR 下为向右位移）超过工具栏高度即收起
-    val thresholdPx = with(density) { ComposeKawaiiBarComponent.HEIGHT.dp.toPx() }
+    val thresholdPx = with(density) { LocalToolbarHeight.current.toPx() }
     val visuals = rememberKeyboardVisuals()
     val row = NumberRowLayout.first()
     // 收起手势生效时递增：通知键取消当前手势，避免「滑收起的同时又上屏一个数字」

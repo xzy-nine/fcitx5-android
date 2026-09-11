@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -60,6 +59,36 @@ import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
 import kotlinx.coroutines.flow.distinctUntilChanged
 import org.fcitx.fcitx5.android.core.CandidateWord
+
+/**
+ * 候选列表容器。
+ *
+ * [CandidateWord] 数组在 Compose 里恒为 unstable，直接作为参数会强制子组合每次执行；
+ * 用 [Immutable] 包装并按内容比较相等性后，「内容未变」的重组可被跳过。
+ */
+@Immutable
+class CandidateList(private val items: Array<CandidateWord>) {
+
+    val size: Int get() = items.size
+
+    val lastIndex: Int get() = items.lastIndex
+
+    operator fun get(index: Int): CandidateWord = items[index]
+
+    /** 追加（懒加载更多候选）；返回新实例，不修改原对象 */
+    fun append(more: Array<CandidateWord>): CandidateList = CandidateList(items + more)
+
+    fun isEmpty(): Boolean = items.isEmpty()
+
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is CandidateList && items.contentEquals(other.items))
+
+    override fun hashCode(): Int = items.contentHashCode()
+
+    companion object {
+        val Empty = CandidateList(emptyArray())
+    }
+}
 
 /**
  * 候选栏视觉配置
@@ -153,7 +182,7 @@ fun ComposeCandidateBar(
         // LazyRow 始终留在组合中（空态 items=0）：候选栏 Idle→Active 时不重新创建 LazyRow，
         // 避免首次进入组合的测量/布局延迟导致显示时整行闪烁
         CandidateRow(
-            candidates = if (state is CandidateBarState.Active) state.candidates else emptyArray(),
+            candidates = if (state is CandidateBarState.Active) state.candidates else CandidateList.Empty,
             fillMode = fillMode,
             maxSpanCount = maxSpanCount,
             listState = listState,
@@ -189,7 +218,7 @@ fun ComposeCandidateBar(
  */
 @Composable
 private fun CandidateRow(
-    candidates: Array<CandidateWord>,
+    candidates: CandidateList,
     fillMode: CandidateFillMode,
     maxSpanCount: Int,
     listState: androidx.compose.foundation.lazy.LazyListState,
@@ -211,6 +240,18 @@ private fun CandidateRow(
         CandidateFillMode.NeverFillWidth -> false
         CandidateFillMode.AutoFillWidth -> candidates.size >= maxSpanCount
         CandidateFillMode.AlwaysFillWidth -> true
+    }
+
+    // item key 取候选词文本：击键后候选集整体位移时，内容未变的候选可复用原有组合节点；
+    // 同一文本重复出现时追加出现序号，保证 key 在整表内唯一（LazyList 要求 key 唯一）。
+    val itemKeys = remember(candidates) {
+        val seen = HashMap<String, Int>(candidates.size)
+        Array(candidates.size) { index ->
+            val text = candidates[index].text
+            val occurrence = (seen[text] ?: 0) + 1
+            seen[text] = occurrence
+            if (occurrence == 1) text else "$text#$occurrence"
+        }
     }
 
     BoxWithConstraints(modifier = modifier) {
@@ -236,10 +277,12 @@ private fun CandidateRow(
                 Arrangement.spacedBy(if (showDivider) 1.dp else 4.dp)
             },
         ) {
-            itemsIndexed(
-                items = candidates,
-                key = { index, candidate -> "$index-${candidate.text}" },
-            ) { index, candidate ->
+            items(
+                count = candidates.size,
+                key = { index -> itemKeys[index] },
+                contentType = { "candidate" },
+            ) { index ->
+                val candidate = candidates[index]
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

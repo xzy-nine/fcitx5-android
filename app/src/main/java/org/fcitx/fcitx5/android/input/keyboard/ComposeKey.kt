@@ -180,10 +180,19 @@ fun ComposeKey(
             }
             .onGloballyPositioned { coordinates ->
                 // 只在布局后取一次窗口坐标（D7）：气泡锚点，按下那一刻再读
+                // 位置未变则不重新分配 Rect —— onGloballyPositioned 每次布局都会回调，
+                // 而键位绝大多数情况下并没有移动
                 val r = coordinates.boundsInWindow()
-                windowBounds.rect = Rect(
-                    r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt()
-                )
+                val left = r.left.toInt()
+                val top = r.top.toInt()
+                val right = r.right.toInt()
+                val bottom = r.bottom.toInt()
+                val rect = windowBounds.rect
+                if (rect.left != left || rect.top != top ||
+                    rect.right != right || rect.bottom != bottom
+                ) {
+                    windowBounds.rect = Rect(left, top, right, bottom)
+                }
             }
             .alpha(if (enabled) 1f else disabledAlpha),
         contentAlignment = Alignment.Center,

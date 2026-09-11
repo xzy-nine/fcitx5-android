@@ -16,14 +16,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -33,6 +32,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -121,12 +123,11 @@ private fun PreeditLine(
     var viewportWidthPx by remember { mutableIntStateOf(0) }
 
     val currentCursor by rememberUpdatedState(cursor)
-    val currentLayout by rememberUpdatedState(layoutResult)
-    val currentViewportWidthPx by rememberUpdatedState(viewportWidthPx)
-
-    // 受控滚动：光标移动 / 文本变化后把光标滚动到可视区域内
+    // layoutResult / viewportWidthPx 刻意**不用** rememberUpdatedState 包裹：那样会在组合期
+    // 读取 State，使每次文本布局回调都额外触发一次重组。snapshotFlow 的读取发生在协程里，
+    // 同样能拿到最新值，且不会引起重组（cursor 是参数而非 State，仍需 rememberUpdatedState）。
     LaunchedEffect(Unit) {
-        snapshotFlow { Triple(currentLayout, currentViewportWidthPx, currentCursor) }
+        snapshotFlow { Triple(layoutResult, viewportWidthPx, currentCursor) }
             .collectLatest { (layout, viewportWidth, cursorPosition) ->
                 if (layout == null || viewportWidth <= 0 || cursorPosition < 0) {
                     return@collectLatest
@@ -147,15 +148,30 @@ private fun PreeditLine(
             }
     }
 
-    // 光标闪烁：在组合阶段读取，保证每帧刷新光标颜色
-    val cursorAlpha = if (cursor >= 0) preeditCursorBlinkAlpha() else 1f
+    // 光标闪烁：alpha 只持有 State，实际读取下沉到 draw 阶段，
+    // 使每帧只触发重绘而不触发重组
+    val cursorAlpha = if (cursor >= 0) preeditCursorBlinkAlpha() else null
     val onTextLayout: (TextLayoutResult) -> Unit = remember { { layoutResult = it } }
-    val layout = layoutResult
 
     Box(
         modifier = Modifier
             .onSizeChanged { viewportWidthPx = it.width }
             .clipToBounds()
+            // 光标几何同样只在 draw 阶段读取：layoutResult 与 scrollState 的读取都落在绘制期，
+            // 因此文本布局回调只引起重绘，不再引起预编辑栏的第二次重组
+            .drawWithContent {
+                drawContent()
+                val layout = layoutResult ?: return@drawWithContent
+                if (cursor < 0 || layout.lineCount == 0) return@drawWithContent
+                val lineTop = layout.getLineTop(0)
+                drawRect(
+                    color = textColor,
+                    // 内容已由 horizontalScroll 平移，绘制在未平移的坐标系里需自行减去滚动量
+                    topLeft = Offset(cursorOffsetX(layout, cursor) - scrollState.value, lineTop),
+                    size = Size(cursorWidthPx, layout.getLineBottom(0) - lineTop),
+                    alpha = textColor.alpha * (cursorAlpha?.value ?: 1f),
+                )
+            }
             .horizontalScroll(scrollState, enabled = false)
     ) {
         // 用 Row 承载文本 + 尾部占位，使可滚动内容宽度 = 文本宽 + 光标宽。
@@ -171,30 +187,18 @@ private fun PreeditLine(
             )
             Spacer(modifier = Modifier.width(PreeditCursorWidth))
         }
-        if (layout != null && cursor >= 0 && layout.lineCount > 0) {
-            val cursorX = with(density) { cursorOffsetX(layout, cursor).toDp() }
-            val lineTop = with(density) { layout.getLineTop(0).toDp() }
-            val lineHeight = with(density) {
-                (layout.getLineBottom(0) - layout.getLineTop(0)).toDp()
-            }
-            Box(
-                modifier = Modifier
-                    .offset(x = cursorX, y = lineTop)
-                    .width(PreeditCursorWidth)
-                    .height(lineHeight)
-                    .background(textColor.copy(alpha = textColor.alpha * cursorAlpha))
-            )
-        }
     }
 }
 
 /**
  * 光标闪烁动画：1 秒一个亮灭循环（前 500ms 由亮到灭，后 500ms 由灭到亮）。
+ *
+ * 返回 [State] 而非当前值，供调用方在 draw 阶段读取，避免逐帧重组。
  */
 @Composable
-private fun preeditCursorBlinkAlpha(): Float {
+private fun preeditCursorBlinkAlpha(): State<Float> {
     val transition = rememberInfiniteTransition(label = "PreeditCursorBlink")
-    val alpha by transition.animateFloat(
+    return transition.animateFloat(
         initialValue = 1f,
         targetValue = 0f,
         animationSpec = infiniteRepeatable(
@@ -206,7 +210,6 @@ private fun preeditCursorBlinkAlpha(): Float {
         ),
         label = "PreeditCursorBlinkAlpha",
     )
-    return alpha
 }
 
 /**

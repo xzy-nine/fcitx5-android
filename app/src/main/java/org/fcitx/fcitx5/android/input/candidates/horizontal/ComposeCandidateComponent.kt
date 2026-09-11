@@ -15,7 +15,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,10 +22,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import org.fcitx.fcitx5.android.core.CandidateWord
 import org.fcitx.fcitx5.android.core.FcitxEvent
 import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
+import org.fcitx.fcitx5.android.input.bar.LocalToolbarHeight
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.BooleanKey.ExpandedCandidatesEmpty
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.TransitionEvent.ExpandedCandidatesUpdated
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
@@ -79,6 +80,12 @@ class ComposeCandidateComponent :
 
     // 候选栏状态
     private val _state = MutableStateFlow<CandidateBarState>(CandidateBarState.Idle)
+    /**
+     * 首个可见候选下标（候选栏横向滑动偏移）。
+     * **不放进 [_state]**：它是「通知展开窗口」的纯事件，寄生于内容状态会让滑动期间
+     * 每跨过一个 item 就触发一次 _state 更新，连带重组工具栏等所有订阅者。
+     */
+    private val _scrollOffset = MutableStateFlow(0)
     private val _expandedCandidateOffset = MutableSharedFlow<Int>(
         replay = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
@@ -146,7 +153,7 @@ class ComposeCandidateComponent :
             return
         }
 
-        val offset = currentState.offset
+        val offset = _scrollOffset.value
         if (offset == lastExpandedOffset) return
         lastExpandedOffset = offset
         _expandedCandidateOffset.tryEmit(offset)
@@ -161,15 +168,9 @@ class ComposeCandidateComponent :
      * 当 LazyRow 滚动时更新 offset 并通知展开窗口
      */
     fun onScrollOffsetChanged(firstVisibleIndex: Int) {
-        val currentState = _state.value
-        if (currentState !is CandidateBarState.Active) return
-        if (firstVisibleIndex == currentState.offset) return
-        _state.update { state ->
-            when (state) {
-                is CandidateBarState.Active -> state.copy(offset = firstVisibleIndex)
-                else -> state
-            }
-        }
+        if (_state.value !is CandidateBarState.Active) return
+        if (firstVisibleIndex == _scrollOffset.value) return
+        _scrollOffset.value = firstVisibleIndex
         refreshExpanded()
     }
 
@@ -200,7 +201,7 @@ class ComposeCandidateComponent :
                             when (state) {
                                 is CandidateBarState.Active -> {
                                     state.copy(
-                                        candidates = state.candidates + more,
+                                        candidates = state.candidates.append(more),
                                     )
                                 }
                                 else -> state
@@ -226,24 +227,14 @@ class ComposeCandidateComponent :
         val total = data.total
 
         // 在滑动模式下，如果新数据是旧数据的前缀，保持滚动位置
-        val keepScroll = prevData.candidates.isNotEmpty() &&
-            candidates.size >= prevData.candidates.size &&
-            candidates.take(prevData.candidates.size).toTypedArray().contentEquals(prevData.candidates)
+        val keepScroll = isPrefixOf(prevData.candidates, candidates)
 
-        val prevState = _state.value
-        val prevOffset = if (keepScroll && prevState is CandidateBarState.Active) {
-            prevState.offset
-        } else {
-            0
+        // 非「前缀延续」时候选集整体更换，滚动偏移归零（与旧实现的 offset 语义一致）
+        if (!keepScroll) {
+            _scrollOffset.value = 0
         }
 
-        _state.value = CandidateBarState.from(candidates, total).let { newState ->
-            if (keepScroll && newState is CandidateBarState.Active) {
-                newState.copy(offset = prevOffset)
-            } else {
-                newState
-            }
-        }
+        _state.value = CandidateBarState.from(candidates, total)
 
         loadingMore = false
         noMoreData = false
@@ -251,6 +242,18 @@ class ComposeCandidateComponent :
         lastExpandedOffset = -1
 
         refreshExpanded()
+    }
+
+    /**
+     * [next] 是否以 [prev] 为前缀。用于判断候选集是「追加」还是「整体更换」。
+     * 用索引循环代替 `take(...).toTypedArray().contentEquals(...)`，避免每次击键两次集合分配。
+     */
+    private fun isPrefixOf(prev: Array<CandidateWord>, next: Array<CandidateWord>): Boolean {
+        if (prev.isEmpty() || next.size < prev.size) return false
+        for (i in prev.indices) {
+            if (next[i] != prev[i]) return false
+        }
+        return true
     }
 
     override fun onCandidateUpdate(data: FcitxEvent.CandidateListEvent.Data) {
@@ -303,10 +306,12 @@ class ComposeCandidateComponent :
         val isExpandedWindowShown by _isExpandedWindowShown.collectAsState()
 
         // 监听多个偏好变化，触发重组
+        // 偏好「值」就地缓存：组合期只读 State，不再反复走 AppPrefs/SharedPreferences；
+        // 监听器写值即自然触发重组（无需额外的 version 计数）
         val swipeEnabled = remember { mutableStateOf(swipeEnabledPref.getValue()) }
         val showDivider = remember { mutableStateOf(candidateDividerPref.getValue()) }
-        val fillStyleVersion = remember { mutableIntStateOf(0) }
-        val maxSpanCountVersion = remember { mutableIntStateOf(0) }
+        val fillMode = remember { mutableStateOf(getFillMode()) }
+        val maxSpanCount = remember { mutableStateOf(maxSpanCountPref.getValue()) }
 
         androidx.compose.runtime.DisposableEffect(Unit) {
             val swipeListener = object : org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<Boolean> {
@@ -320,10 +325,10 @@ class ComposeCandidateComponent :
                 }
             }
             val fillStyleListener = org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<HorizontalCandidateMode> { _, _ ->
-                fillStyleVersion.intValue++
+                fillMode.value = getFillMode()
             }
             val spanCountListener = org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<Int> { _, _ ->
-                maxSpanCountVersion.intValue++
+                maxSpanCount.value = maxSpanCountPref.getValue()
             }
             swipeEnabledPref.registerOnChangeListener(swipeListener)
             candidateDividerPref.registerOnChangeListener(dividerListener)
@@ -336,12 +341,6 @@ class ComposeCandidateComponent :
                 maxSpanCountPref.unregisterOnChangeListener(spanCountListener)
             }
         }
-
-        // 读取当前值（version 变化触发重组）
-        @Suppress("UNUSED_VARIABLE")
-        val _fillVersion = fillStyleVersion.intValue
-        @Suppress("UNUSED_VARIABLE")
-        val _spanVersion = maxSpanCountVersion.intValue
 
         ComposeCandidateBar(
             state = state,
@@ -382,11 +381,11 @@ class ComposeCandidateComponent :
                     onScrollOffsetChanged(offset)
                 },
             ),
-            fillMode = getFillMode(),
-            maxSpanCount = maxSpanCountPref.getValue(),
+            fillMode = fillMode.value,
+            maxSpanCount = maxSpanCount.value,
             userScrollEnabled = swipeEnabled.value,
             isExpandMode = isExpandedWindowShown,
-            barHeight = ComposeKawaiiBarComponent.HEIGHT.dp,
+            barHeight = LocalToolbarHeight.current,
             showDivider = showDivider.value,
             modifier = modifier,
         )

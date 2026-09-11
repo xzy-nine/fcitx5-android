@@ -144,8 +144,10 @@ class InputView(
             setContent {
                 MiuixTheme(controller = remember { ThemeController(ColorSchemeMode.System) }) {
                     // 预编辑栏高度变化时同步键盘背景裁剪：跳过预编辑行、圆角落在工具栏顶部
+                    // 用 LaunchedEffect 而非 SideEffect：后者在每次成功重组后都会执行，
+                    // 而裁剪参数只在高度变化时才需要重新下发（避免反复重建 OutlineProvider）
                     val preeditHeightPx = composePreedit.heightPx.collectAsState().value
-                    androidx.compose.runtime.SideEffect {
+                    androidx.compose.runtime.LaunchedEffect(preeditHeightPx) {
                         customBackground.applyTopRoundedCornerClip(
                             dp(16).toFloat(),
                             preeditHeightPx.toFloat()
