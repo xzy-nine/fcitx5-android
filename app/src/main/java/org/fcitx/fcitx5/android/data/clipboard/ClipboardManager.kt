@@ -113,8 +113,6 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
 
     fun allEntries() = clbDao.allEntries()
 
-    fun observeAllEntries() = clbDao.observeAllEntries()
-
     /**
      * 分页加载剪贴板条目（供 Compose 的 `collectAsLazyPagingItems` 消费）。
      *

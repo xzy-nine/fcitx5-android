@@ -42,6 +42,13 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -394,6 +401,9 @@ private fun ClipboardEntryCard(
     // 否则 callbacks / onLongPress 变化后手势仍会调用旧闭包。
     val currentOnPaste by rememberUpdatedState(onPaste)
     val currentOnLongPressAction by rememberUpdatedState(onLongPressAction)
+    // 无障碍标签：onClick/customAction 的语义 lambda 非 Composable，需先取出字符串
+    val pasteLabel = stringResource(R.string.paste)
+    val moreOptionsLabel = stringResource(R.string.more_options)
     // 触摸锚点：用于长按菜单跟随点击位置浮现
     val tapHandler = Modifier
         .onGloballyPositioned { containerCoords.value = it }
@@ -411,7 +421,23 @@ private fun ClipboardEntryCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .inputFeedback()
-                .then(tapHandler),
+                .then(tapHandler)
+                // 无障碍语义：卡片本体可点即粘贴，并额外暴露「更多操作」自定义动作以触发
+                // 长按菜单（编辑/置顶/删除），与触摸手势路径互为补充；芯片各自保留独立语义。
+                .semantics {
+                    role = Role.Button
+                    contentDescription = display
+                    onClick(label = pasteLabel) {
+                        currentOnPaste()
+                        true
+                    }
+                    customActions = listOf(
+                        CustomAccessibilityAction(label = moreOptionsLabel) {
+                            currentOnLongPressAction(Offset.Zero)
+                            true
+                        }
+                    )
+                },
             cornerRadius = 12.dp,
             insideMargin = PaddingValues(start = 14.dp, top = 10.dp, end = 14.dp, bottom = 10.dp),
             colors = CardDefaults.defaultColors(color = MiuixTheme.colorScheme.surfaceVariant),

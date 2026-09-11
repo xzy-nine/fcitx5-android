@@ -5,6 +5,7 @@
 
 package org.fcitx.fcitx5.android.input.editing
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -177,7 +178,7 @@ fun TextEditingContent(
             )
             ActionButton(Modifier
                 .weight(1.2f)
-                .fillMaxHeight(), "⌫", hapticOnRepeat, onClick = callbacks.onBackspace)
+                .fillMaxHeight(), "⌫", repeatable = true, hapticOnRepeat = hapticOnRepeat, onClick = callbacks.onBackspace)
         }
     }
 }
@@ -229,19 +230,27 @@ private fun SelectButton(
 }
 
 /**
- * 文本动作按钮（全选/复制/粘贴/退格）：单击与长按重复均由 [repeatableClick] 派发，
- * 故按钮自身 `onClick` 传空实现，避免短按重复派发。
+ * 文本动作按钮（全选/复制/粘贴/退格）。
+ *
+ * 仅退格（[repeatable] = true）走 [repeatableClick] 支持长按连续删除；全选/复制/粘贴
+ * 为一次性动作，用普通点击即可，避免长按误触连续触发。
  */
 @Composable
 private fun ActionButton(
     modifier: Modifier,
     text: String,
+    repeatable: Boolean = false,
     hapticOnRepeat: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val clickModifier = if (repeatable) {
+        Modifier.repeatableClick(hapticOnRepeat = hapticOnRepeat, onClick = onClick)
+    } else {
+        Modifier.inputFeedback().clickable(onClick = onClick)
+    }
     Button(
         onClick = {},
-        modifier = modifier.repeatableClick(hapticOnRepeat = hapticOnRepeat, onClick = onClick),
+        modifier = modifier.then(clickModifier),
         colors = ButtonDefaults.buttonColorsPrimary(),
         cornerRadius = 10.dp,
     ) {

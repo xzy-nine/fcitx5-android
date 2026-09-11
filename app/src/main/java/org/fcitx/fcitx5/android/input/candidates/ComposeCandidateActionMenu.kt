@@ -85,6 +85,11 @@ class ComposeCandidateActionMenu :
     private val _state = MutableStateFlow<CandidateActionMenuState?>(null)
     val state: StateFlow<CandidateActionMenuState?> = _state.asStateFlow()
 
+    // 请求版本号：show()/dismiss() 每次都会自增。异步 fcitx.runOnReady 完成后，仅当
+    // 其捕获的版本仍是最新（未被更新的 show 或 dismiss 取代）时，才允许覆写 _state，
+    // 防止旧请求回来时重新弹出菜单，或覆盖掉更新的菜单。
+    private var requestVersion = 0L
+
     val root: ComposeView by lazy {
         createComposeWindowView(service) {
             CandidateActionMenuOverlay(
@@ -99,8 +104,10 @@ class ComposeCandidateActionMenu :
     }
 
     fun show(idx: Int, text: String, anchor: Rect) {
+        val version = ++requestVersion
         service.lifecycleScope.launch {
             val actions = fcitx.runOnReady { getCandidateActions(idx) }
+            if (version != requestVersion) return@launch
             if (actions.isEmpty()) return@launch
             if (_state.value?.idx == idx) return@launch
             _state.value = CandidateActionMenuState(idx, text, actions.toList(), anchor)
@@ -111,6 +118,7 @@ class ComposeCandidateActionMenu :
     }
 
     fun dismiss() {
+        requestVersion++
         _state.value = null
     }
 

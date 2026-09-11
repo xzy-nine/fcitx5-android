@@ -180,20 +180,23 @@ fun ClipboardEditContent(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            TextButton(
-                text = stringResource(R.string.select_all),
-                onClick = { selected = segments.indices.toSet() },
-                modifier = Modifier.weight(1f).inputFeedback(),
-            )
-            TextButton(
-                text = stringResource(R.string.invert_selection),
-                onClick = {
-                    val next = segments.indices.toMutableSet()
-                    next.removeAll(selected)
-                    selected = next
-                },
-                modifier = Modifier.weight(1f).inputFeedback(),
-            )
+            // 全选/反选只对分词模式有意义：文本模式下分词芯片不展示，隐藏以免误操作
+            if (!isTextMode) {
+                TextButton(
+                    text = stringResource(R.string.select_all),
+                    onClick = { selected = segments.indices.toSet() },
+                    modifier = Modifier.weight(1f).inputFeedback(),
+                )
+                TextButton(
+                    text = stringResource(R.string.invert_selection),
+                    onClick = {
+                        val next = segments.indices.toMutableSet()
+                        next.removeAll(selected)
+                        selected = next
+                    },
+                    modifier = Modifier.weight(1f).inputFeedback(),
+                )
+            }
             TextButton(
                 text = stringResource(if (isTextMode) R.string.segment_mode else R.string.text_mode),
                 onClick = {

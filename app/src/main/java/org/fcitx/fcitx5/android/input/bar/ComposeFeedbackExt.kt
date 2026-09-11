@@ -96,6 +96,10 @@ fun Modifier.repeatableClick(
     onClick: () -> Unit,
 ): Modifier = composed {
     val view = LocalView.current
+    // 重复协程挂在与 composable 同存亡的普通作用域上（pointerInput / awaitEachGesture 的
+    // 作用域受限，不能直接 launch）。重复协程的停止由手势末段的 finally 统一负责：无论
+    // 手势正常结束还是指针作用域被取消，都会先 cancelAndJoin。交互发射改用非挂起的
+    // tryEmit，避免在受限作用域的 finally 里再发起协程。
     val scope = rememberCoroutineScope()
     val currentOnClick by rememberUpdatedState(onClick)
     val currentHaptic by rememberUpdatedState(hapticOnRepeat)
@@ -108,14 +112,15 @@ fun Modifier.repeatableClick(
             val down = awaitFirstDown(requireUnconsumed = false)
             InputFeedbacks.hapticFeedback(view)
             InputFeedbacks.soundEffect(InputFeedbacks.SoundEffect.Standard)
-            scope.launch {
-                interactionSource.emit(PressInteraction.Press(down.position))
-            }
+            interactionSource.tryEmit(PressInteraction.Press(down.position))
 
             // 是否已进入重复，用于抑制松手时的单击。
             // 写入来自重复协程、读取在主协程，用原子量保证可见性，
             // 避免「长按已生效却仍触发单击」的竞态。
             val repeated = AtomicBoolean(false)
+            // 重复协程：长按阈值后开始循环触发 onClick。放在手势外层的普通作用域里运行，
+            // 由下面的 finally cancelAndJoin 保证在 enabled 变化 / 手势被取消 / 正常结束
+            // 三种情况下都停止，不会漏掉取消导致 onClick 无限泄漏。
             val repeatJob = scope.launch {
                 if (longPressDelay > 0) delay(longPressDelay.toLong())
                 repeated.set(true)
@@ -131,29 +136,33 @@ fun Modifier.repeatableClick(
             // 直接用触摸 slop 判定手指是否已移出控件边界。
             val touchSlop = viewConfiguration.touchSlop
             var released = false
-            while (true) {
-                val event = awaitPointerEvent()
-                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                if (!change.pressed) {
-                    released = true
+            try {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) {
+                        released = true
+                        change.consume()
+                        break
+                    }
                     change.consume()
-                    break
+                    // 进入重复后不再因移出而取消，与 CustomGestureView 一致
+                    if (!repeated.get()) {
+                        val p = change.position
+                        val out = p.x < -touchSlop || p.y < -touchSlop ||
+                                p.x > size.width + touchSlop || p.y > size.height + touchSlop
+                        if (out) break
+                    }
                 }
-                change.consume()
-                // 进入重复后不再因移出而取消，与 CustomGestureView 一致
-                if (!repeated.get()) {
-                    val p = change.position
-                    val out = p.x < -touchSlop || p.y < -touchSlop ||
-                            p.x > size.width + touchSlop || p.y > size.height + touchSlop
-                    if (out) break
-                }
+            } finally {
+                // 无论手势正常结束还是被取消（enabled 变化 / pointerInput 失效导致本次
+                // 手势协程取消），都先把重复协程停掉再收尾，杜绝重复 onClick 泄漏。
+                // 受限作用域里不能 suspend，故用非挂起的 cancel()：它标记取消后，重复协程
+                // 在下一次 delay 立即抛出 CancellationException，循环随即停止，效果等价。
+                repeatJob.cancel()
+                interactionSource.tryEmit(PressInteraction.Release(PressInteraction.Press(down.position)))
+                InputFeedbacks.hapticFeedback(view, longPress = false, keyUp = true)
             }
-
-            repeatJob.cancel()
-            scope.launch {
-                interactionSource.emit(PressInteraction.Release(PressInteraction.Press(down.position)))
-            }
-            InputFeedbacks.hapticFeedback(view, longPress = false, keyUp = true)
 
             // 未进入重复且正常抬起 → 单击
             if (released && !repeated.get()) currentOnClick()
