@@ -383,3 +383,78 @@ miuix 主题」的落地之一。
 **后续迁移计划（不变）**：主键盘（`windowManager.view` 下的 `KeyboardWindow`/`BaseKeyboard` 及 Picker
 窗口）可复用 wm 共存机制逐个 Compose 化，或并入 `composeTopView` 单一 Composition；`KeyView.bounds`
 对弹窗层的耦合已解除，两者不必同批迁移。
+
+---
+
+**视图层级结构：候选操作菜单 + 剪贴板主页/编辑 + 文本编辑 Compose 化接线后（本次迁移）**
+
+> 计划按「候选操作菜单 → 剪切板 → 文本编辑」从易到难推进；**展开候选（候选网格）页按用户要求跳过**，
+> 后续再处理。候选操作菜单改为 IME 安全的 Compose 覆盖层，替代系统 `PopupMenu`。
+
+```
+FcitxInputMethodService
+├── ComposeView (Compose 根)
+│   └── AndroidView
+│       └── InputView (extends BaseInputView extends ConstraintLayout)
+│           ├── customBackground (ImageView - 主题背景)
+│           ├── composeTopView (单一 ComposeView - 仅含工具栏)
+│           ├── windowManager.view (InputWindowManager - FrameLayout)
+│           │   └── 当前活跃窗口:
+│           │       ├── KeyboardWindow / PickerWindow / Grid|FlexboxExpandedCandidateWindow (View 窗口)
+│           │       ├── StatusAreaWindow (ComposeWindow - 更多页，上批)
+│           │       ├── ClipboardWindow (ComposeWindow - 剪贴板主页) [本次]
+│           │       ├── ClipboardEditWindow (ComposeWindow - 剪贴板编辑) [本次]
+│           │       └── TextEditingWindow (ComposeWindow - 文本编辑) [本次]
+│           ├── composePreedit.view (ComposeView - 悬浮预编辑)
+│           ├── popup.root (ComposeView - 按键弹窗层)
+│           ├── candidateActionMenu.root (ComposeView - 候选操作菜单覆盖层) [本次新增，z 序最高]
+│           │   └── ComposeCandidateActionMenu overlay (Rect 锚定 + dismiss 蒙层)
+│           ├── leftPaddingSpace, rightPaddingSpace, bottomPaddingSpace
+├── CandidatesView (独立的浮动候选视图，迁移范围外，保持 View 实现)
+```
+
+**候选操作菜单（本次）**：
+
+1. `BaseInputView.showCandidateActionMenu` 增加基于 `Rect` 的重载（`open`，默认 no-op），供 Compose 调用方使用。
+2. `InputView` 内新增 `candidateActionMenu`（`ComposeCandidateActionMenu`，`UniqueComponent + Dependent + ManagedHandler`），
+   其 `root`（ComposeView，经 `createComposeWindowView`）作为 `popup.root` 同级覆盖层加入 `InputView`（matchParent）。
+3. `showCandidateActionMenu(idx, text, anchor: Rect)` → `candidateActionMenu.show(...)`：`MutableStateFlow<CandidateActionMenuState?>`
+   驱动 `CandidateActionMenuOverlay` 渲染（Rect 锚定 + 透明 dismiss 蒙层），动作回调触发 fcitx 动作后 dismiss。
+4. `ComposeCandidateComponent` 长按候选改用 `getLocationInWindow()` 换算 `Rect` 喂新菜单；`CandidatesView`（浮动候选，
+   范围外）仍保留原系统 `PopupMenu`。
+
+**剪贴板主页（本次）**：
+
+1. `ClipboardWindow` 实现 `ComposeWindow`，`onCreateView()` 改 `createComposeWindowView { Content() }`。
+2. 数据：`MutableStateFlow<List<ClipboardEntry>>` 订阅新增的 `ClipboardManager.observeAllEntries()`（Room Flow）；
+   `ClipboardDao` 追加 `observeAllEntries(): Flow<List<ClipboardEntry>>`（`allEntries()` 仍为 `PagingSource`，与旧
+   `ClipboardAdapter` 共存）。UI 态复用 `ClipboardStateMachine`（EnableListening/AddMore/Normal）用
+   `MutableStateFlow<State>` 驱动。
+3. `ComposeClipboard.kt`（新增）：`ClipboardListContent`（按 state 切 EnableListening/AddMore/列表）、
+   `ClipboardEntryCard`（`combinedClickable` 点击上屏/长按菜单，实体气泡点击上屏片段，钉标记叠加）、删除全部确认层。
+   图标一律 `painterResource`（material `Icons` 依赖未引入，改用既有 drawable）。
+
+**剪贴板编辑（本次）**：
+
+1. `ClipboardEditWindow` 实现 `ComposeWindow`，`onCreateView()` 改 `createComposeWindowView { Content() }`；
+   分词用现成 `ClipboardTextAnalyzer.segment()`。
+2. `ComposeClipboardEdit.kt`（新增）：`ClipboardEditContent`——分词模式 `FlowRow` 词块（点击选中/长按单选，
+   简化原拖选语义）+ 重组预览；文本模式 `BasicTextField`；底部 全选/反选/模式切换 + 复制/取消/确定。复制/上屏仍
+   借窗口 `copyOnly` / `commitToInput` / `exitToPrevWindow`。
+
+**文本编辑（本次）**：
+
+1. `TextEditingWindow` 实现 `ComposeWindow` + `InputBroadcastReceiver`；方向键/全选/剪切/复制/粘贴/退格动作逻辑保留（
+   `sendCombinationKeyEvents` / `performContextMenuAction` / `sendDownUpKeyEvents`），`hasSelection` 与
+   `_userSelection`（`MutableStateFlow`）驱动选区态；`onCreateBarExtension()` 仍返回含剪贴板 `ToolButton` 的 View。
+2. `ComposeTextEditing.kt`（新增）：`TextEditingContent` 复刻原 constraint 网格——左侧 2 列 3 行方向键 + 起始/结尾，
+   右侧 30% 动作列（全选/剪切↔、复制/粘贴/退格），方向键/动作键均 miuix `Surface`。
+
+旧文件位置（断开接线，均保留供对比）：
+
+| 旧文件 | 路径 | 状态 |
+|---|---|---|
+| `ClipboardUi.kt` / `ClipboardAdapter.kt` / `ClipboardEntryUi.kt` / `ClipboardInstructionUi.kt` / `ClipboardStateMachine.kt` / `ClipboardTextAnalyzer.kt` / `SpacesItemDecoration.kt` | `input/clipboard/` | 除 `ClipboardStateMachine`/`ClipboardTextAnalyzer`（仍被 Compose 复用）外其余断开接线、保留供对比 |
+| `TextEditingUi.kt` / `TextEditingButton.kt` | `input/editing/` | 已断开接线，保留供对比 |
+| `ClipboardEditWindow.xml` / `ClipboardEditWindowBinding` | `res/layout/` | 已断开接线，保留供对比（binding 文件不再引用） |
+| `ClipboardEditActivity`（历史入口） | — | 早前已移除，不在此批 |
