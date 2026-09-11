@@ -172,4 +172,5 @@
     <string name="enable_listening">Enable listening</string>
     <string name="clipboard_listening_disabled">Clipboard listening is disabled</string>
     <string name="clipboard_empty_hint">Copied content will show up here</string>
+    <string name="retry">Retry</string>
 </resources>

@@ -9,11 +9,17 @@ import android.content.Intent
 import android.view.View
 import androidx.annotation.Keep
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.lifecycleScope
+import androidx.paging.LoadState
+import androidx.paging.PagingData
+import androidx.paging.compose.collectAsLazyPagingItems
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
@@ -38,16 +44,18 @@ import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.input.wm.createComposeWindowView
 import org.fcitx.fcitx5.android.utils.EventStateMachine
 import org.mechdancer.dependency.manager.must
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 剪贴板主页窗口（Compose 化）。
  *
  * 复用 [ClipboardStateMachine]（EnableListening / AddMore / Normal 三态）与
- * [ClipboardTextAnalyzer]（分词实体提取）。数据以 `MutableStateFlow` 驱动，
- * 列表直接订阅 `ClipboardManager.allEntries()`。
+ * [ClipboardTextAnalyzer]（分词实体提取）。列表以 Paging 3 分页消费
+ * [ClipboardManager.entriesPager]（内部复用 [ClipboardManager] 的 Room `PagingSource`），
+ * 其余状态（UI 态、待撤销 id）以 `MutableStateFlow` 驱动。
+ *
+ * 删除采用「软删除 + 限时撤销 + 到期物理清理」：软删除后立即调用 [invalidatePaging]
+ * 让分页重排，撤销或超时清理后再失效一次。
  *
  * 交互：点击条目上屏、长按出操作菜单（置顶/取消置顶/编辑/分享/删除）、
  * 条目内实体气泡点击上屏片段、工具栏“删除全部”按钮经 Compose 确认层二次确认。
@@ -71,15 +79,16 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
     private val clipboardReturnAfterPaste by prefs.clipboardReturnAfterPaste
     private val clipboardMaskSensitive by prefs.clipboardMaskSensitive
 
-    private val _entries = MutableStateFlow<List<ClipboardEntry>>(emptyList())
     private val _uiState = MutableStateFlow<ClipboardStateMachine.State>(Normal)
     private val _showDeleteAllDialog = MutableStateFlow(false)
     private val _deleteAllLabel = MutableStateFlow("")
     private val _pendingDeleteIds = MutableStateFlow<List<Int>>(emptyList())
 
+    /** 分页数据流：单例复用 [ClipboardManager.entriesPager]，不可在本窗口重复构造。 */
+    private val pagedEntries: Flow<PagingData<ClipboardEntry>> = ClipboardManager.entriesPager
+
     // 删除全部确认：skipPinned 由点击时 haveUnpinned() 决定
     private var deleteAllSkipPinned = true
-    private var submitJob: Job? = null
     private var clearUndoJob: Job? = null
 
     private lateinit var stateMachine: EventStateMachine<
@@ -93,13 +102,27 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
     @Composable
     override fun Content() {
         val uiState by _uiState.collectAsState()
-        val entries by _entries.collectAsState()
         val showDeleteAllDialog by _showDeleteAllDialog.collectAsState()
         val deleteAllLabel by _deleteAllLabel.collectAsState()
         val pendingDeleteIds by _pendingDeleteIds.collectAsState()
+
+        val pagingItems = pagedEntries.collectAsLazyPagingItems()
+
+        // 列表是否为空由分页加载状态推导（替代原先直接读 Flow 列表）：
+        // 首屏加载完成且无数据才算空，避免加载中误显示"复制内容后会自动出现"。
+        val loadState = pagingItems.loadState
+        val isEmpty = loadState.refresh is LoadState.NotLoading &&
+                loadState.append.endOfPaginationReached &&
+                pagingItems.itemCount < 1
+        LaunchedEffect(isEmpty) {
+            if (::stateMachine.isInitialized) {
+                stateMachine.push(ClipboardDbUpdated, ClipboardDbEmpty to isEmpty)
+            }
+        }
+
         ClipboardListContent(
             state = uiState,
-            entries = entries,
+            entries = pagingItems,
             maskSensitive = clipboardMaskSensitive,
             callbacks = ClipboardCallbacks(
                 onPaste = { entry -> onPaste(entry.text) },
@@ -134,12 +157,24 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
             onCancelDeleteAll = { _showDeleteAllDialog.value = false },
             pendingDeleteIds = pendingDeleteIds,
             onUndoDelete = ::undoDelete,
+            onRetry = { pagingItems.retry() },
         )
     }
 
     private fun onPaste(text: String) {
         service.commitText(text)
         if (clipboardReturnAfterPaste) windowManager.attachWindow(KeyboardWindow)
+    }
+
+    /**
+     * 触发分页失效重查。
+     *
+     * Room 的 `PagingSource` 虽自带表变更检测，但软删除（`deleted=1`）与撤销
+     * 会在同一帧内连续改动，显式失效可让列表立即重排，避免已删除条目在分页
+     * 边界处短暂残留。
+     */
+    private fun invalidatePaging() {
+        ClipboardManager.invalidatePagingSource()
     }
 
     /**
@@ -158,6 +193,8 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
     private fun onDeleted(ids: Collection<Int>) {
         if (ids.isEmpty()) return
         _pendingDeleteIds.value = _pendingDeleteIds.value + ids
+        // 立即重排分页，避免软删除条目在分页边界处短暂残留
+        invalidatePaging()
         restartClearUndoJob()
     }
 
@@ -166,7 +203,10 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
         _pendingDeleteIds.value = emptyList()
         clearUndoJob?.cancel()
         if (ids.isEmpty()) return
-        service.lifecycleScope.launch { ClipboardManager.undoDelete(*ids.toIntArray()) }
+        service.lifecycleScope.launch {
+            ClipboardManager.undoDelete(*ids.toIntArray())
+            invalidatePaging()
+        }
     }
 
     /**
@@ -178,10 +218,11 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
     private fun restartClearUndoJob() {
         clearUndoJob?.cancel()
         clearUndoJob = service.lifecycleScope.launch {
-            delay(UNDO_WINDOW_MS)
+            delay(UNDO_WINDOW_MS.milliseconds)
             if (_pendingDeleteIds.value.isNotEmpty()) {
                 _pendingDeleteIds.value = emptyList()
                 ClipboardManager.realDelete()
+                invalidatePaging()
             }
         }
     }
@@ -206,8 +247,10 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
     override fun onCreateBarExtension(): View = deleteAllButton
 
     override fun onAttached() {
-        val isEmpty = ClipboardManager.itemCount == 0
         val isListening = clipboardEnabledPref.getValue()
+        // 空态初始值只能同步取一次（首帧尚无分页结果），随后由 Content() 内的
+        // LaunchedEffect 依据分页加载状态纠正为真实值。
+        val isEmpty = ClipboardManager.itemCount == 0
         val initialState = when {
             !isListening -> EnableListening
             isEmpty -> AddMore
@@ -217,19 +260,13 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
             _uiState.value = it
         }
         _uiState.value = initialState
-
-        submitJob = service.lifecycleScope.launch {
-            ClipboardManager.observeAllEntries().collect { list ->
-                _entries.value = list
-                stateMachine.push(ClipboardDbUpdated, ClipboardDbEmpty to list.isEmpty())
-            }
-        }
+        // 每次挂载都从第一页重查，避免复用 cachedIn 缓存中的过期页
+        invalidatePaging()
         clipboardEnabledPref.registerOnChangeListener(clipboardEnabledListener)
     }
 
     override fun onDetached() {
         clipboardEnabledPref.unregisterOnChangeListener(clipboardEnabledListener)
-        submitJob?.cancel()
         _showDeleteAllDialog.value = false
         // 窗口销毁即撤销窗口结束：已软删除的条目做物理清理
         clearUndoJob?.cancel()

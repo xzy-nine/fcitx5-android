@@ -482,3 +482,37 @@ FcitxInputMethodService
    改为上限 256 的 LRU 并用锁保护跨线程读写。
 7. **文案与收尾**：三处 Compose 文件的硬编码中文改 `stringResource`，新增 16 个字符串键（中英双语）；
    补文件末尾换行。
+
+---
+
+**剪贴板分页恢复（本次）**
+
+复查中发现的数据层取舍：迁移时把剪贴板列表从 Paging 退化为「全量 Room Flow」，条目量大时列表会在
+主线程一次构建全部卡片。现恢复分页，接入方式与删除语义已确认：**数据层复用 Room 的 `PagingSource`**，
+**删除后立即刷新分页**。
+
+1. **数据层**：`ClipboardManager` 新增 `val entriesPager by lazy`，内部构造 `Pager` +
+   `cachedIn(this)`，
+   `pagingSourceFactory = { clbDao.allEntries() }`（Room 生成的 `PagingSource`，页大小 16、预取一页）。
+   该 Flow **必须单例复用**：早期用 `_pagingInvalidation.flatMapLatest { entriesPager() }` 重建的做法会泄漏——
+   `cachedIn` 内部是 `shareIn(Lazily, replay=1)`，旧缓存只在「上游自身发出新 `PagingData`」时才
+   `close()`，
+   `flatMapLatest` 取消外层不会触发，于是每次刷新都在作用域里留下一个永不关闭的 `CachedPageEventFlow`
+   （持有一条 Room 订阅）。
+2. **显式刷新**：改为 `ClipboardManager.invalidatePagingSource()`，即在 `pagingSourceFactory` 中记录当前
+   `PagingSource`（`@Volatile`），刷新时调其 `invalidate()`。`PageFetcher` 注册的失效回调会重新走工厂、
+   复用同一 `cachedIn` 缓存，无泄漏；`invalidate()` 幂等，重复调用安全。
+3. **列表渲染**：`ComposeClipboard` 的 `ClipboardListContent` / `ClipboardEntryList` 形参由
+   `List<ClipboardEntry>` 改为 `LazyPagingItems<ClipboardEntry>`，用
+   `items(count = itemCount, key = peek(index)?.id ?: IndexKey(index))`；条目为 null 时跳过渲染，
+   key 退化为独立类型 `IndexKey`（与 `Int` id、与页脚 `String` key 均不相等，避免 key 冲突）。
+   新增加载中页脚与失败重试页脚（`append` 失败与 `refresh` 失败各一处），传入 `onRetry`。
+4. **空态判定**：
+   `isEmpty = loadState.refresh is NotLoading && loadState.append.endOfPaginationReached && itemCount < 1`。
+   注意 `CombinedLoadStates.refresh.endOfPaginationReached` **恒为 false**，判断「已到底」必须用
+   `append` 的那一位；
+   该判定经 `LaunchedEffect` 推给 `ClipboardStateMachine`（`stateMachine` 为 `lateinit`，用
+   `::stateMachine.isInitialized` 守卫）。
+5. **生命周期配合**：`onAttached()` 移除对已删除的 `observeAllEntries()` 的订阅 job，改为调用一次
+   `invalidatePaging()`（`cachedIn` 的 `replay=1` 会让重开的窗口拿到上次的旧 `PagingData`，须主动失效）；
+   `onDetached()` 保留撤销窗口收尾的物理清理。

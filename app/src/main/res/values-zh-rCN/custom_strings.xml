@@ -168,4 +168,5 @@
     <string name="enable_listening">开启监听</string>
     <string name="clipboard_listening_disabled">剪贴板监听未开启</string>
     <string name="clipboard_empty_hint">复制内容后会自动出现在这里</string>
+    <string name="retry">重试</string>
 </resources>

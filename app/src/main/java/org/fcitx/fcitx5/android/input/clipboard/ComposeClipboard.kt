@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -51,6 +50,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.paging.LoadState
+import androidx.paging.compose.LazyPagingItems
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
@@ -128,11 +129,19 @@ private fun rememberCardData(
 /** 剪切板长按菜单状态：目标条目 + 长按点（Compose 根坐标） */
 private data class ClipboardMenuState(val entry: ClipboardEntry, val anchorOffset: Offset)
 
+/**
+ * 分页占位项的 LazyList key。
+ *
+ * [LazyPagingItems] 允许某位置的条目暂时为 null，此时无法用 `entry.id` 作 key。
+ * 用独立类型包裹下标，保证与真实条目的 `Int` id 永不相撞（`Int` 与 [IndexKey] 不 equals）。
+ */
+private data class IndexKey(val index: Int)
+
 /** 剪贴板主页 Compose 渲染：按 [state] 显示启用提示 / 空提示 / 条目列表。 */
 @Composable
 fun ClipboardListContent(
     state: ClipboardStateMachine.State,
-    entries: List<ClipboardEntry>,
+    entries: LazyPagingItems<ClipboardEntry>,
     maskSensitive: Boolean,
     callbacks: ClipboardCallbacks,
     showDeleteAllDialog: Boolean,
@@ -141,13 +150,19 @@ fun ClipboardListContent(
     onCancelDeleteAll: () -> Unit,
     pendingDeleteIds: List<Int>,
     onUndoDelete: () -> Unit,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
         when (state) {
             ClipboardStateMachine.State.EnableListening -> EnableListeningUi(callbacks.onEnableListening)
             ClipboardStateMachine.State.AddMore -> AddMoreUi()
-            ClipboardStateMachine.State.Normal -> ClipboardEntryList(entries, maskSensitive, callbacks)
+            ClipboardStateMachine.State.Normal -> ClipboardEntryList(
+                entries,
+                maskSensitive,
+                callbacks,
+                onRetry
+            )
         }
         if (showDeleteAllDialog) {
             CenteredOverlay(onDismiss = onCancelDeleteAll) {
@@ -220,9 +235,10 @@ private fun UndoBar(
 
 @Composable
 private fun ClipboardEntryList(
-    entries: List<ClipboardEntry>,
+    entries: LazyPagingItems<ClipboardEntry>,
     maskSensitive: Boolean,
     callbacks: ClipboardCallbacks,
+    onRetry: () -> Unit,
 ) {
     // 当前长按条目 + 长按位置 → 显示锚定操作菜单
     var menuState by remember { mutableStateOf<ClipboardMenuState?>(null) }
@@ -231,7 +247,12 @@ private fun ClipboardEntryList(
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(items = entries, key = { it.id }) { entry ->
+        items(
+            count = entries.itemCount,
+            key = { index -> entries.peek(index)?.id ?: IndexKey(index) }) { index ->
+            // 分页下条目可能因刷新暂时为 null（占位/被移除），跳过以免 NPE。
+            // 此时 key 退化为 IndexKey，与任何真实条目 id（Int）都不会相等。
+            val entry = entries[index] ?: return@items
             ClipboardEntryCard(
                 entry = entry,
                 maskSensitive = maskSensitive,
@@ -240,9 +261,55 @@ private fun ClipboardEntryList(
                 onLongPressAction = { offset -> menuState = ClipboardMenuState(entry, offset) },
             )
         }
+        when (val append = entries.loadState.append) {
+            is LoadState.Loading -> item(key = "paging_loading") { PagingFooterLoading() }
+            is LoadState.Error -> item(key = "paging_error") {
+                PagingFooterError(onRetry = onRetry)
+            }
+            // 首屏（refresh）失败时 append 不会触发，单独提示并提供重试
+            else -> Unit
+        }
+        if (entries.loadState.refresh is LoadState.Error) {
+            item(key = "paging_refresh_error") { PagingFooterError(onRetry = onRetry) }
+        }
     }
     menuState?.let { state ->
         ClipboardActionMenu(state.entry, callbacks, state.anchorOffset) { menuState = null }
+    }
+}
+
+/** 分页加载中页脚（追加下一页时显示） */
+@Composable
+private fun PagingFooterLoading() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = stringResource(R.string.loading),
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            fontSize = 13.sp,
+        )
+    }
+}
+
+/** 分页加载失败页脚：给出重试入口 */
+@Composable
+private fun PagingFooterError(onRetry: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(
+            text = stringResource(R.string.retry),
+            onClick = onRetry,
+            modifier = Modifier.inputFeedback(),
+        )
     }
 }
 
