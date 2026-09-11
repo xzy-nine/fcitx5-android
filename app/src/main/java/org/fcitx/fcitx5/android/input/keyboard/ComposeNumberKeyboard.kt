@@ -24,8 +24,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.viewinterop.AndroidView
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.RecentlyUsed
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
@@ -264,29 +262,8 @@ fun ComposeSymbolSlider(
 }
 
 /**
- * 横屏分体的历史符号面板：现阶段包 View 版 [RecentSymbolsView]。
- *
- * 主题切换不会重染这个 View（`factory` 只跑一次）—— 与「偏好改动需窗口重建」同一口径。
+ * 横屏分体的历史符号面板：纯 Compose 版见 [ComposeRecentSymbolsPanel]（C5）。
  */
-@Composable
-private fun ComposeRecentSymbolsPanel(
-    symbols: List<String>,
-    onSymbolInput: (String) -> Unit,
-    onLayoutSwitch: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    val theme = rememberActiveTheme()
-    AndroidView(
-        modifier = modifier,
-        factory = { ctx -> RecentSymbolsView(ctx, theme) },
-        update = { panel ->
-            panel.onSymbolInput = onSymbolInput
-            panel.onLayoutSwitch = onLayoutSwitch
-            panel.symbols = symbols
-        },
-    )
-}
 
 // ---------------------------------------------------------------------------
 // 子按钮外观（对应 SymbolSliderKeyView.makeSymbolButton / makeEditButton）
