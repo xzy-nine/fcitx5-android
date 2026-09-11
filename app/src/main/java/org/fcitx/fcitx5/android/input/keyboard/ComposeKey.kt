@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -103,6 +105,13 @@ fun ComposeKey(
     insets: KeyInsets? = null,
     /** 键型专属滑行（空格移动光标 / 退格删除选区），由键盘容器传入，见 [ComposeKeySwipeSpec]。 */
     swipeSpec: ComposeKeySwipeSpec? = null,
+    /**
+     * 主文本缩放以适配键宽（对应 `AutoScaleTextView.Mode.Proportional`）。
+     *
+     * 键盘按键是 `Mode.None`（不缩放），**只有 Picker 低密度页（表情/颜文字）打开它** ——
+     * 那里的键面文字较长（颜文字可达十几个字符），View 侧靠 TextView 缩放塞进格子。
+     */
+    autoScale: Boolean = false,
     onSwipeGesture: ComposeKeyGestureListener? = null,
     /**
      * 取消世代（§4.3 的 epoch 自增广播）：容器层区域手势（数字行收起、`spaceSwipeMoveCursor`）
@@ -203,7 +212,7 @@ fun ComposeKey(
                     )
                 },
         )
-        KeyContent(def, visuals, effectiveInsets)
+        KeyContent(def, visuals, effectiveInsets, autoScale)
     }
 }
 
@@ -212,9 +221,16 @@ fun ComposeKey(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun KeyContent(def: KeyDef, visuals: KeyboardVisuals, insets: KeyInsets) {
+private fun KeyContent(
+    def: KeyDef,
+    visuals: KeyboardVisuals,
+    insets: KeyInsets,
+    autoScale: Boolean,
+) {
     val appearance = def.appearance
     val textColor = visuals.textColorFor(appearance.variant)
+    val landscape =
+        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     when (appearance) {
         // 注意顺序：ImageText / AltText 都继承自 Text，必须先判子类
         is KeyDef.Appearance.Image -> Icon(
@@ -224,7 +240,17 @@ private fun KeyContent(def: KeyDef, visuals: KeyboardVisuals, insets: KeyInsets)
         )
 
         is KeyDef.Appearance.ImageText -> Column(
+            modifier = Modifier
+                .fillMaxSize()
+                // View 侧 ImageTextKeyView 除键边距外还有一档额外内缩，避免贴边：
+                // 竖屏 img topMargin = vMargin + 8dp / mainText bottomMargin = vMargin + 4dp；
+                // 横屏为 +4dp / +2dp（此处 vMargin 已由键内 padding 提供，只补差额）
+                .padding(
+                    top = if (landscape) 4.dp else 8.dp,
+                    bottom = if (landscape) 2.dp else 4.dp,
+                ),
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
             // View 侧 ImageTextKeyView 的图标固定 dp(13)（ImageKeyView 则用固有尺寸）
             Icon(
@@ -233,12 +259,14 @@ private fun KeyContent(def: KeyDef, visuals: KeyboardVisuals, insets: KeyInsets)
                 tint = textColor,
                 modifier = Modifier.size(13.dp),
             )
-            KeyText(appearance, appearance.displayText, textColor)
+            KeyText(appearance, appearance.displayText, textColor, autoScale = autoScale)
         }
 
-        is KeyDef.Appearance.AltText -> AltTextKeyContent(appearance, visuals, insets, textColor)
+        is KeyDef.Appearance.AltText ->
+            AltTextKeyContent(appearance, visuals, insets, textColor, autoScale)
 
-        is KeyDef.Appearance.Text -> KeyText(appearance, appearance.displayText, textColor)
+        is KeyDef.Appearance.Text ->
+            KeyText(appearance, appearance.displayText, textColor, autoScale = autoScale)
     }
 }
 
@@ -252,6 +280,7 @@ private fun AltTextKeyContent(
     visuals: KeyboardVisuals,
     insets: KeyInsets,
     textColor: Color,
+    autoScale: Boolean,
 ) {
     val landscape =
         LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -333,13 +362,15 @@ private fun KeyText(
     text: String,
     color: Color,
     modifier: Modifier = Modifier,
+    autoScale: Boolean = false,
 ) {
     val density = LocalDensity.current
+    val fontSize = with(density) { appearance.textSize.dp.toSp() }
     BasicText(
         text = text,
         modifier = modifier,
         style = TextStyle(
-            fontSize = with(density) { appearance.textSize.dp.toSp() },
+            fontSize = fontSize,
             color = color,
             fontWeight = if (appearance.textStyle and Typeface.BOLD != 0) {
                 FontWeight.Bold
@@ -355,6 +386,16 @@ private fun KeyText(
         ),
         maxLines = 1,
         softWrap = false,
+        // Picker 低密度页（表情/颜文字）才开缩放，键盘按键恒为 null
+        autoSize = if (autoScale) {
+            TextAutoSize.StepBased(
+                minFontSize = fontSize * 0.4f,
+                maxFontSize = fontSize,
+                stepSize = 1.sp,
+            )
+        } else {
+            null
+        },
     )
 }
 
