@@ -8,12 +8,13 @@ package org.fcitx.fcitx5.android.input.clipboard
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,7 +27,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -176,6 +176,7 @@ private fun ClipboardEntryList(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ClipboardEntryCard(
     entry: ClipboardEntry,
@@ -221,8 +222,8 @@ private fun ClipboardEntryCard(
                 )
                 if (chips.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(6.dp))
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         chips.forEach { entity ->

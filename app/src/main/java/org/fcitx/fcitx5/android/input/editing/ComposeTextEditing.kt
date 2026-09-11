@@ -5,31 +5,28 @@
 
 package org.fcitx.fcitx5.android.input.editing
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.input.bar.inputFeedback
+import top.yukonga.miuix.kmp.basic.Button
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -53,8 +50,14 @@ data class TextEditingCallbacks(
 /**
  * 文本编辑页 Compose 渲染。
  *
- * 复刻原 constraint 网格：左侧 2 列 3 行的方向键 +
- * 下方 起始/结尾，右侧 30% 高的 全选/剪切(条件)/复制/粘贴/退格 动作列。
+ * 复刻 XML 参考布局的四列网格（权重 1 : 1.2 : 1 : 1.2）：
+ * - 列1：左方向键（垂直撑满高度）
+ * - 列2：上 / 选区 / 下（垂直等分）
+ * - 列3：右方向键（垂直撑满高度）
+ * - 列4：全选 / 复制 / 粘贴（垂直等分）
+ * 底部操作行权重 1.6 : 1.6 : 1.2（|&lt; 与 &gt;| 等宽、⌫ 对齐列4）。
+ * 高度全部按比例分配（主区域 : 底部 ≈ 300 : 56），适配可调键盘高度。
+ * 按钮使用 miuix 的 [IconButton] 与 [Button]，方向键为图标钮、文字动作为文本钮。
  */
 @Composable
 fun TextEditingContent(
@@ -63,83 +66,101 @@ fun TextEditingContent(
     callbacks: TextEditingCallbacks,
     modifier: Modifier = Modifier,
 ) {
-    Row(modifier = modifier.fillMaxSize()) {
-        val dirColor = MiuixTheme.colorScheme.secondaryContainer
-        val actionColor = MiuixTheme.colorScheme.primary
-        Column(
+    val gap = 4.dp
+    val dirColor = MiuixTheme.colorScheme.secondaryContainer
+    Column(modifier = modifier.fillMaxSize().padding(2.dp)) {
+        Row(
             modifier = Modifier
-                .weight(7f)
-                .fillMaxHeight()
-                .padding(2.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+                .weight(1f)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(gap),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                DirButton(Modifier.weight(1f), dirColor, R.drawable.ic_baseline_keyboard_arrow_left_24, callbacks.onLeft)
-                DirButton(Modifier.weight(1f), dirColor, R.drawable.ic_baseline_keyboard_arrow_up_24, callbacks.onUp)
-                DirButton(Modifier.weight(1f), dirColor, R.drawable.ic_baseline_keyboard_arrow_right_24, callbacks.onRight)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                Box(Modifier.weight(1f))
-                SelectButton(
-                    Modifier.weight(1f),
-                    selectActivated,
-                    callbacks.onSelect,
+            // 列1：左方向键
+            DirIconButton(
+                Modifier.weight(1f).fillMaxHeight(),
+                dirColor,
+                R.drawable.ic_baseline_keyboard_arrow_left_24,
+                callbacks.onLeft,
+            )
+            // 列2：上 / 选区 / 下
+            Column(
+                modifier = Modifier.weight(1.2f).fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(gap),
+            ) {
+                DirIconButton(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    dirColor,
+                    R.drawable.ic_baseline_keyboard_arrow_up_24,
+                    callbacks.onUp,
                 )
-                Box(Modifier.weight(1f))
+                SelectButton(Modifier.weight(1f).fillMaxWidth(), selectActivated, callbacks.onSelect)
+                DirIconButton(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    dirColor,
+                    R.drawable.ic_baseline_keyboard_arrow_down_24,
+                    callbacks.onDown,
+                )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                Box(Modifier.weight(1f))
-                DirButton(Modifier.weight(1f), dirColor, R.drawable.ic_baseline_keyboard_arrow_down_24, callbacks.onDown)
-                Box(Modifier.weight(1f))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                DirButton(Modifier.weight(1f), dirColor, R.drawable.ic_baseline_first_page_24, callbacks.onHome)
-                Box(Modifier.weight(1f))
-                DirButton(Modifier.weight(1f), dirColor, R.drawable.ic_baseline_last_page_24, callbacks.onEnd)
+            // 列3：右方向键
+            DirIconButton(
+                Modifier.weight(1f).fillMaxHeight(),
+                dirColor,
+                R.drawable.ic_baseline_keyboard_arrow_right_24,
+                callbacks.onRight,
+            )
+            // 列4：全选 / 复制 / 粘贴
+            Column(
+                modifier = Modifier.weight(1.2f).fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(gap),
+            ) {
+                ActionButton(Modifier.weight(1f).fillMaxWidth(), "全选", callbacks.onSelectAll)
+                ActionButton(Modifier.weight(1f).fillMaxWidth(), "复制", callbacks.onCopy)
+                ActionButton(Modifier.weight(1f).fillMaxWidth(), "粘贴", callbacks.onPaste)
             }
         }
-        Column(
+        Spacer(modifier = Modifier.height(gap))
+        Row(
             modifier = Modifier
-                .weight(3f)
-                .fillMaxHeight()
-                .padding(2.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+                .weight(0.19f)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(gap),
         ) {
-            ActionButton(
-                Modifier.weight(1f),
-                actionColor,
-                if (hasSelection) "剪切" else "全选",
-                onClick = if (hasSelection) callbacks.onCut else callbacks.onSelectAll,
+            // 行首 |< 与行尾 >| 等宽，各占左侧三列一半；退格 ⌫ 对齐列4
+            DirIconButton(
+                Modifier.weight(1.6f).fillMaxHeight(),
+                dirColor,
+                R.drawable.ic_baseline_first_page_24,
+                callbacks.onHome,
             )
-            ActionButton(Modifier.weight(1f), actionColor, "复制", onClick = callbacks.onCopy)
-            ActionButton(Modifier.weight(1f), actionColor, "粘贴", onClick = callbacks.onPaste)
-            ActionButton(Modifier.weight(1f), actionColor, "退格", onClick = callbacks.onBackspace)
+            DirIconButton(
+                Modifier.weight(1.6f).fillMaxHeight(),
+                dirColor,
+                R.drawable.ic_baseline_last_page_24,
+                callbacks.onEnd,
+            )
+            ActionButton(Modifier.weight(1.2f).fillMaxHeight(), "⌫", callbacks.onBackspace)
         }
     }
 }
 
 @Composable
-private fun DirButton(
+private fun DirIconButton(
     modifier: Modifier,
     color: Color,
     iconRes: Int,
     onClick: () -> Unit,
 ) {
-    Box(
-        modifier = modifier
-            .height(48.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(color)
-            .border(1.dp, MiuixTheme.colorScheme.outline, RoundedCornerShape(10.dp))
-            .inputFeedback()
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.inputFeedback(),
+        backgroundColor = color,
+        cornerRadius = 10.dp,
     ) {
         Icon(
             painter = painterResource(iconRes),
             contentDescription = null,
             tint = MiuixTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.size(26.dp),
+            modifier = Modifier.size(28.dp),
         )
     }
 }
@@ -150,55 +171,29 @@ private fun SelectButton(
     activated: Boolean,
     onClick: () -> Unit,
 ) {
-    Box(
-        modifier = modifier
-            .height(48.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                if (activated) MiuixTheme.colorScheme.primary
-                else MiuixTheme.colorScheme.secondaryContainer
-            )
-            .border(
-                1.dp,
-                if (activated) Color.Transparent else MiuixTheme.colorScheme.outline,
-                RoundedCornerShape(10.dp),
-            )
-            .inputFeedback()
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
+    Button(
+        onClick = onClick,
+        modifier = modifier.inputFeedback(),
+        colors = if (activated) ButtonDefaults.buttonColorsPrimary()
+        else ButtonDefaults.buttonColors(),
+        cornerRadius = 10.dp,
     ) {
-        Text(
-            text = "选区",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            color = if (activated) MiuixTheme.colorScheme.onPrimary
-            else MiuixTheme.colorScheme.onSecondaryContainer,
-        )
+        Text(text = "选区", fontSize = 14.sp)
     }
 }
 
 @Composable
 private fun ActionButton(
     modifier: Modifier,
-    color: Color,
     text: String,
     onClick: () -> Unit,
 ) {
-    Box(
-        modifier = modifier
-            .height(48.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(color)
-            .border(1.dp, MiuixTheme.colorScheme.outline, RoundedCornerShape(10.dp))
-            .inputFeedback()
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
+    Button(
+        onClick = onClick,
+        modifier = modifier.inputFeedback(),
+        colors = ButtonDefaults.buttonColorsPrimary(),
+        cornerRadius = 10.dp,
     ) {
-        Text(
-            text = text,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            color = MiuixTheme.colorScheme.onPrimary,
-        )
+        Text(text = text, fontSize = 14.sp)
     }
 }
