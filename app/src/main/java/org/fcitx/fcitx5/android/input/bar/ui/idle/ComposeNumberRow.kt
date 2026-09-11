@@ -4,50 +4,37 @@
  */
 package org.fcitx.fcitx5.android.input.bar.ui.idle
 
-import android.graphics.Rect
-import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import org.fcitx.fcitx5.android.core.KeySym
 import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
-import org.fcitx.fcitx5.android.input.keyboard.KeyAction
+import org.fcitx.fcitx5.android.input.keyboard.ComposeKey
 import org.fcitx.fcitx5.android.input.keyboard.KeyActionListener
-import org.fcitx.fcitx5.android.input.popup.PopupAction
+import org.fcitx.fcitx5.android.input.keyboard.rememberKeyboardVisuals
 import org.fcitx.fcitx5.android.input.popup.PopupActionListener
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * Compose 版数字行，替代 [NumberRow]（View / BaseKeyboard）。
  * 作为工具栏 Idle 态的 NumberRow 子态内容，由 ComposeToolbar 渲染。
+ *
+ * 布局数据仍取自 [NumberRow.Layout]（纯 [org.fcitx.fcitx5.android.input.keyboard.KeyDef] 数据，
+ * 见 `KeyboardComposePlan.md` D15），按键本体走批次 B 的
+ * [ComposeKey] 原语（每键 `pointerInput`），因此长按/滑行/移出取消等语义与主键盘同源。
  */
-private val NUMBER_ROW_DIGITS = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
-
 @Composable
 fun NumberRowContent(
     keyActionListener: KeyActionListener?,
@@ -56,118 +43,63 @@ fun NumberRowContent(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
-    val layoutDirection = LocalLayoutDirection.current
+    // 收起手势要按**系统**布局方向判定，因此必须在下面强制 LTR 之前读取
+    val systemLayoutDirection = LocalLayoutDirection.current
     // 与原 NumberRow 一致：左滑（LTR 下为向右位移）超过工具栏高度即收起
     val thresholdPx = with(density) { ComposeKawaiiBarComponent.HEIGHT.dp.toPx() }
+    val visuals = rememberKeyboardVisuals()
+    val row = NumberRow.Layout.first()
+    // 收起手势生效时递增：通知键取消当前手势，避免「滑收起的同时又上屏一个数字」
+    // （对应 View 侧 onInterceptTouchEvent 抢占后子 View 收到 ACTION_CANCEL）
+    var cancelEpoch by remember { mutableStateOf(0) }
 
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .fillMaxHeight()
-            .pointerInput(thresholdPx, layoutDirection) {
-                // 左滑（LTR 下为向右位移）超过工具栏高度即收起，等价于原 NumberRow 的收起手势
-                var startX = 0f
-                var triggered = false
-                detectDragGestures(
-                    onDragStart = { offset ->
-                        startX = offset.x
-                        triggered = false
-                    },
-                    onDrag = { change, _ ->
-                        val dir = if (layoutDirection == LayoutDirection.Ltr) 1f else -1f
-                        val dx = (change.position.x - startX) * dir
-                        if (!triggered && dx > thresholdPx) {
-                            triggered = true
-                            onCollapse()
-                        }
-                    },
-                    onDragEnd = {},
-                    onDragCancel = {},
-                )
-            },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        BoxWithConstraints(
-            modifier = Modifier
+    // 数字行**恒为 LTR**：View 侧 BaseKeyboard.createKeyRow 用的是绝对 left/right 约束，
+    // 在 RTL 语言下不会镜像；Compose 的 Row 默认跟随 LocalLayoutDirection，必须显式固定，
+    // 否则阿拉伯语/希伯来语下数字顺序会倒过来（0 在最左）。
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Row(
+            modifier = modifier
                 .fillMaxWidth()
-                .fillMaxHeight(),
-        ) {
-            // BoxWithConstraints 是 Box（子项重叠堆叠），必须用 Row 横向排列 10 个键
-            val keyWidth = maxWidth / NUMBER_ROW_DIGITS.size
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                NUMBER_ROW_DIGITS.forEachIndexed { index, digit ->
-                    NumberKey(
-                        digit = digit,
-                        id = index,
-                        keyActionListener = keyActionListener,
-                        popupActionListener = popupActionListener,
-                        modifier = Modifier
-                            .width(keyWidth)
-                            .fillMaxHeight(),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NumberKey(
-    digit: String,
-    id: Int,
-    keyActionListener: KeyActionListener?,
-    popupActionListener: PopupActionListener?,
-    modifier: Modifier = Modifier,
-) {
-    var bounds by remember { mutableStateOf(Rect()) }
-    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-
-    // 按下时弹出预览、松开时消失（对应原 KeyDef.Popup.Preview）
-    LaunchedEffect(pressed) {
-        if (pressed) {
-            popupActionListener?.onPopupAction(PopupAction.PreviewAction(id, digit, bounds))
-        } else {
-            popupActionListener?.onPopupAction(PopupAction.DismissAction(id))
-        }
-    }
-
-    Box(
-        modifier = modifier
-            .background(
-                if (pressed) MiuixTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                else Color.Transparent
-            )
-            .onGloballyPositioned { coordinates: LayoutCoordinates ->
-                val window = coordinates.boundsInWindow()
-                bounds = Rect(
-                    window.left.toInt(),
-                    window.top.toInt(),
-                    window.right.toInt(),
-                    window.bottom.toInt(),
-                )
-            }
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = {
-                    keyActionListener?.onKeyAction(
-                        KeyAction.SymAction(KeySym(digit.codePointAt(0))),
-                        KeyActionListener.Source.Keyboard,
+                .fillMaxHeight()
+                .pointerInput(thresholdPx, systemLayoutDirection) {
+                    // 左滑（LTR 下为向右位移）超过工具栏高度即收起，等价于原 NumberRow 的收起手势
+                    var startX = 0f
+                    var triggered = false
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            startX = offset.x
+                            triggered = false
+                        },
+                        onDrag = { change, _ ->
+                            val dir =
+                                if (systemLayoutDirection == LayoutDirection.Ltr) 1f else -1f
+                            val dx = (change.position.x - startX) * dir
+                            if (!triggered && dx > thresholdPx) {
+                                triggered = true
+                                cancelEpoch++
+                                onCollapse()
+                            }
+                        },
+                        onDragEnd = {},
+                        onDragCancel = {},
                     )
                 },
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = digit,
-            fontSize = 21.sp,
-            color = MiuixTheme.colorScheme.onSurface,
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            row.forEachIndexed { index, def ->
+                ComposeKey(
+                    def = def,
+                    keyId = index,
+                    visuals = visuals,
+                    keyActionListener = keyActionListener,
+                    popupActionListener = popupActionListener,
+                    cancelEpoch = cancelEpoch,
+                    // 原 NumberRow 的 10 个键等宽（percentWidth 均为 0.1f），weight 与之等价
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                )
+            }
+        }
     }
 }

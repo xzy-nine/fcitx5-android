@@ -160,7 +160,7 @@ abstract class BaseKeyboard(
                     // layout timing. This guards against the last row collapsing to 0 height
                     // if a rebuild ever happens during a layout pass.
                     matchConstraintDefaultHeight = LayoutParams.MATCH_CONSTRAINT_PERCENT
-                    matchConstraintPercentHeight = 1f / keyRows.size
+                    matchConstraintPercentHeight = rowHeightPercent(keyRows.size)
                 })
             } else {
                 add(row, lParams {
@@ -185,15 +185,13 @@ abstract class BaseKeyboard(
         } else {
             prefs.keyboard.splitKeyboardBlankRatio.getValue()
         }
-        return (percent / 100f).coerceIn(0f, 0.9f)
+        return gapRatioFromBlankPercent(percent)
     }
 
     protected fun isSplitAllowed(width: Int = this.width, height: Int = this.height): Boolean {
         val w = if (width > 0) width else lastMeasuredWidth
         val h = if (height > 0) height else lastMeasuredHeight
-        if (h <= 0) return false
-        val threshold = prefs.keyboard.splitKeyboardThreshold.getValue()
-        return (w.toFloat() / h.toFloat()) > threshold
+        return isSplitAllowedByRatio(w, h, prefs.keyboard.splitKeyboardThreshold.getValue())
     }
 
     private fun createSplitRowWithGap(
@@ -201,38 +199,21 @@ abstract class BaseKeyboard(
         gapRatio: Float,
         rowScale: Float
     ): ConstraintLayout {
-        val (leftRow, rightRow) = splitRowAtMiddle(row)
-        val leftRaw = splitRowWidthPercent(leftRow)
-        val rightRaw = splitRowWidthPercent(rightRow)
-        val totalRaw = (leftRaw + rightRaw).coerceAtLeast(1e-6f)
-        val scale = (rowScale / totalRaw).coerceAtLeast(0f)
-        val leftWidth = leftRaw * scale
-        val rightWidth = rightRaw * scale
-        val groupTotal = (leftWidth + rightWidth + gapRatio).coerceAtMost(1f)
-        val leftInGroup = if (groupTotal > 0f) leftWidth / groupTotal else 0f
-        val gapInGroup = if (groupTotal > 0f) gapRatio / groupTotal else 0f
-        val rightInGroup = if (groupTotal > 0f) rightWidth / groupTotal else 0f
-        val leftScale = if (leftRaw > 0f) 1f / leftRaw else 1f
-        val rightScale = if (rightRaw > 0f) 1f / rightRaw else 1f
-        // 奇数行在 splitRowAtMiddle 中左右共享中间键（QWERTY 的 G/V 列），
-        // 让这些边界键向中间缝隙各突出半个键，形成分体键盘的阶梯错列。
-        val protrude = row.size % 2 == 1
-        val halfKeyInGroup = if (protrude && groupTotal > 0f) {
-            0.05f * scale / groupTotal
-        } else 0f
+        // 组内宽度分配见 KeyboardLayoutMath.computeSplitRowSpec（与下方布局一一对应）
+        val spec = computeSplitRowSpec(row, gapRatio, rowScale)
         return constraintLayout {
             val group = constraintLayout {
                 val gap = view(::View)
                 val leftLayout = createKeyRow(
-                    leftRow,
+                    spec.leftRow,
                     chainBias = 1f,
-                    widthScale = leftScale,
+                    widthScale = spec.leftScale,
                     allowExpand = false
                 )
                 val rightLayout = createKeyRow(
-                    rightRow,
+                    spec.rightRow,
                     chainBias = 0f,
-                    widthScale = rightScale,
+                    widthScale = spec.rightScale,
                     allowExpand = false
                 )
                 add(leftLayout, lParams(0, matchParent) {
@@ -240,14 +221,14 @@ abstract class BaseKeyboard(
                     topOfParent()
                     bottomOfParent()
                     matchConstraintDefaultWidth = LayoutParams.MATCH_CONSTRAINT_PERCENT
-                    matchConstraintPercentWidth = leftInGroup + halfKeyInGroup
+                    matchConstraintPercentWidth = spec.leftInGroup + spec.halfKeyInGroup
                 })
                 add(gap, lParams(0, matchParent) {
                     startToEndOf(leftLayout)
                     topOfParent()
                     bottomOfParent()
                     matchConstraintDefaultWidth = LayoutParams.MATCH_CONSTRAINT_PERCENT
-                    matchConstraintPercentWidth = gapInGroup - 2f * halfKeyInGroup
+                    matchConstraintPercentWidth = spec.gapInGroup - 2f * spec.halfKeyInGroup
                 })
                 add(rightLayout, lParams(0, matchParent) {
                     startToEndOf(gap)
@@ -255,7 +236,7 @@ abstract class BaseKeyboard(
                     topOfParent()
                     bottomOfParent()
                     matchConstraintDefaultWidth = LayoutParams.MATCH_CONSTRAINT_PERCENT
-                    matchConstraintPercentWidth = rightInGroup + halfKeyInGroup
+                    matchConstraintPercentWidth = spec.rightInGroup + spec.halfKeyInGroup
                 })
             }
             add(group, lParams(0, matchParent) {
@@ -264,7 +245,7 @@ abstract class BaseKeyboard(
                 topOfParent()
                 bottomOfParent()
                 matchConstraintDefaultWidth = LayoutParams.MATCH_CONSTRAINT_PERCENT
-                matchConstraintPercentWidth = groupTotal
+                matchConstraintPercentWidth = spec.groupPercent
             })
         }
     }
@@ -273,47 +254,36 @@ abstract class BaseKeyboard(
         row: List<KeyDef>,
         gapRatio: Float
     ): ConstraintLayout {
-        val spaceIndex = row.indexOfFirst { it is SpaceKey || it is MiniSpaceKey }
-        if (spaceIndex < 0) return createKeyRow(row)
-        val leftRow = row.subList(0, spaceIndex)
-        val spaceDef = row[spaceIndex]
-        val rightRow = row.subList(spaceIndex + 1, row.size)
-        val leftRaw = splitRowWidthPercent(leftRow)
-        val rightRaw = splitRowWidthPercent(rightRow)
-        val ratio = (1f - gapRatio).coerceAtLeast(0f)
-        val leftWidth = (leftRaw * ratio).coerceAtLeast(0f)
-        val rightWidth = (rightRaw * ratio).coerceAtLeast(0f)
-        val spaceWidth = (1f - leftWidth - rightWidth).coerceAtLeast(0f)
-        val leftScale = if (leftRaw > 0f) 1f / leftRaw else 1f
-        val rightScale = if (rightRaw > 0f) 1f / rightRaw else 1f
+        // 宽度分配见 KeyboardLayoutMath.computeSpaceSplitSpec（与下方布局一一对应）
+        val spec = computeSpaceSplitSpec(row, gapRatio) ?: return createKeyRow(row)
         return constraintLayout {
             val group = constraintLayout {
                 val leftLayout = createKeyRow(
-                    leftRow,
+                    spec.leftRow,
                     chainBias = 1f,
-                    widthScale = leftScale,
+                    widthScale = spec.leftScale,
                     allowExpand = false
                 )
                 val rightLayout = createKeyRow(
-                    rightRow,
+                    spec.rightRow,
                     chainBias = 0f,
-                    widthScale = rightScale,
+                    widthScale = spec.rightScale,
                     allowExpand = false
                 )
-                val spaceView = createKeyView(spaceDef)
+                val spaceView = createKeyView(spec.spaceDef)
                 add(leftLayout, lParams(0, matchParent) {
                     startOfParent()
                     topOfParent()
                     bottomOfParent()
                     matchConstraintDefaultWidth = LayoutParams.MATCH_CONSTRAINT_PERCENT
-                    matchConstraintPercentWidth = leftWidth
+                    matchConstraintPercentWidth = spec.leftWidth
                 })
                 add(spaceView, lParams(0, matchParent) {
                     startToEndOf(leftLayout)
                     topOfParent()
                     bottomOfParent()
                     matchConstraintDefaultWidth = LayoutParams.MATCH_CONSTRAINT_PERCENT
-                    matchConstraintPercentWidth = spaceWidth
+                    matchConstraintPercentWidth = spec.spaceWidth
                 })
                 add(rightLayout, lParams(0, matchParent) {
                     startToEndOf(spaceView)
@@ -321,7 +291,7 @@ abstract class BaseKeyboard(
                     topOfParent()
                     bottomOfParent()
                     matchConstraintDefaultWidth = LayoutParams.MATCH_CONSTRAINT_PERCENT
-                    matchConstraintPercentWidth = rightWidth
+                    matchConstraintPercentWidth = spec.rightWidth
                 })
             }
             add(group, lParams(0, matchParent) {
@@ -345,9 +315,16 @@ abstract class BaseKeyboard(
         if (keyViews.isEmpty()) {
             return constraintLayout { }
         }
+        // 宽度与「扩展触摸区」内缩比例见 KeyboardLayoutMath.computeKeyRowSlots
+        val slots = computeKeyRowSlots(
+            row = row,
+            widthScale = widthScale,
+            allowExpand = allowExpand,
+            expandKeypressArea = expandKeypressArea
+        )
         return constraintLayout Row@{
-            var totalWidth = 0f
             keyViews.forEachIndexed { index, view ->
+                val slot = slots[index]
                 add(view, lParams {
                     centerVertically()
                     if (index == 0) {
@@ -366,35 +343,17 @@ abstract class BaseKeyboard(
                     } else {
                         rightToLeftOf(keyViews[index + 1])
                     }
-                    val def = row[index]
-                    val baseWidth = def.appearance.percentWidth
-                    matchConstraintPercentWidth = if (baseWidth == 0f) 0f else baseWidth * widthScale
+                    matchConstraintPercentWidth = slot.percentWidth
                 })
-                val baseWidth = row[index].appearance.percentWidth
-                val scaledWidth = if (baseWidth == 0f) 0f else baseWidth * widthScale
-                scaledWidth.let {
-                    // 0f means fill remaining space, thus does not need expanding
-                    totalWidth += if (it != 0f) it else 1f
-                }
             }
-            if (allowExpand && expandKeypressArea && totalWidth < 1f) {
-                val free = (1f - totalWidth) / 2f
-                val firstBase = row.first().appearance.percentWidth
-                val lastBase = row.last().appearance.percentWidth
-                val firstScaled = if (firstBase == 0f) 0f else firstBase * widthScale
-                val lastScaled = if (lastBase == 0f) 0f else lastBase * widthScale
-                keyViews.first().apply {
-                    updateLayoutParams<LayoutParams> {
-                        matchConstraintPercentWidth += free
-                    }
-                    layoutMarginLeft = free / (firstScaled + free)
-                }
-                keyViews.last().apply {
-                    updateLayoutParams<LayoutParams> {
-                        matchConstraintPercentWidth += free
-                    }
-                    layoutMarginRight = free / (lastScaled + free)
-                }
+            // 触摸区扩展：首尾键把多出来的宽度让给内容内缩（视觉宽度不变、触摸区变宽）
+            val first = slots.first()
+            if (first.marginStart != 0f) {
+                keyViews.first().layoutMarginLeft = first.marginStart
+            }
+            val last = slots.last()
+            if (last.marginEnd != 0f) {
+                keyViews.last().layoutMarginRight = last.marginEnd
             }
         }
     }
