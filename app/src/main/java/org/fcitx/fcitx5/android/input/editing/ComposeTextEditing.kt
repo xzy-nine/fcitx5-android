@@ -5,6 +5,9 @@
 
 package org.fcitx.fcitx5.android.input.editing
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -26,7 +30,6 @@ import androidx.compose.ui.unit.sp
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.input.bar.inputFeedback
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -122,23 +125,22 @@ private fun DirButton(
     iconRes: Int,
     onClick: () -> Unit,
 ) {
-    Surface(
-        onClick = onClick,
+    Box(
         modifier = modifier
             .height(48.dp)
-            .inputFeedback(),
-        shape = RoundedCornerShape(10.dp),
-        color = color,
-        contentColor = MiuixTheme.colorScheme.onSecondaryContainer,
+            .clip(RoundedCornerShape(10.dp))
+            .background(color)
+            .border(1.dp, MiuixTheme.colorScheme.outline, RoundedCornerShape(10.dp))
+            .inputFeedback()
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                tint = MiuixTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.size(26.dp),
-            )
-        }
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            tint = MiuixTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.size(26.dp),
+        )
     }
 }
 
@@ -148,24 +150,30 @@ private fun SelectButton(
     activated: Boolean,
     onClick: () -> Unit,
 ) {
-    Surface(
-        onClick = onClick,
+    Box(
         modifier = modifier
             .height(48.dp)
-            .inputFeedback(),
-        shape = RoundedCornerShape(10.dp),
-        color = if (activated) MiuixTheme.colorScheme.primary
-        else MiuixTheme.colorScheme.secondaryContainer,
-        contentColor = if (activated) MiuixTheme.colorScheme.onPrimary
-        else MiuixTheme.colorScheme.onSecondaryContainer,
-    ) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                text = "选区",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                if (activated) MiuixTheme.colorScheme.primary
+                else MiuixTheme.colorScheme.secondaryContainer
             )
-        }
+            .border(
+                1.dp,
+                if (activated) Color.Transparent else MiuixTheme.colorScheme.outline,
+                RoundedCornerShape(10.dp),
+            )
+            .inputFeedback()
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "选区",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (activated) MiuixTheme.colorScheme.onPrimary
+            else MiuixTheme.colorScheme.onSecondaryContainer,
+        )
     }
 }
 
@@ -176,21 +184,21 @@ private fun ActionButton(
     text: String,
     onClick: () -> Unit,
 ) {
-    Surface(
-        onClick = onClick,
+    Box(
         modifier = modifier
             .height(48.dp)
-            .inputFeedback(),
-        shape = RoundedCornerShape(10.dp),
-        color = color,
-        contentColor = MiuixTheme.colorScheme.onPrimary,
+            .clip(RoundedCornerShape(10.dp))
+            .background(color)
+            .border(1.dp, MiuixTheme.colorScheme.outline, RoundedCornerShape(10.dp))
+            .inputFeedback()
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                text = text,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-            )
-        }
+        Text(
+            text = text,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = MiuixTheme.colorScheme.onPrimary,
+        )
     }
 }

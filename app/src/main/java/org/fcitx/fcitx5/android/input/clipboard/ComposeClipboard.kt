@@ -5,21 +5,22 @@
 
 package org.fcitx.fcitx5.android.input.clipboard
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -36,10 +37,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -64,8 +72,41 @@ data class ClipboardCallbacks(
     val onEnableListening: () -> Unit,
 )
 
-// 实体提取结果缓存（按 entryId），避免滚动重绑时反复分词
-private val chipsCache = mutableMapOf<Int, List<ClipboardTextAnalyzer.Entity>>()
+// 条目渲染数据缓存（按 entryId + mask）：同时缓存摘录正文与实体 chips，
+// 首次异步计算，之后滚动复用，避免主线程反复分词/截断导致的卡顿
+private class CardData(val display: String, val chips: List<ClipboardTextAnalyzer.Entity>)
+private val cardCache = mutableMapOf<Int, MutableMap<Boolean, CardData>>()
+private val EMPTY_CARD_DATA = CardData("", emptyList())
+
+@Composable
+private fun rememberCardData(
+    entry: ClipboardEntry,
+    maskSensitive: Boolean,
+): CardData {
+    return produceState<CardData>(
+        initialValue = cardCache[entry.id]?.get(maskSensitive) ?: EMPTY_CARD_DATA,
+        key1 = entry.id,
+        key2 = maskSensitive,
+    ) {
+        val data = cardCache[entry.id]?.get(maskSensitive)
+        if (data != null) {
+            value = data
+        } else {
+            val masked = entry.sensitive && maskSensitive
+            // 分词/截断在 IO 线程执行，避免主线程卡顿
+            value = withContext(Dispatchers.IO) {
+                CardData(
+                    display = ClipboardAdapter.excerptText(entry.text, mask = masked),
+                    chips = if (masked) emptyList() else ClipboardTextAnalyzer.analyze(entry.text),
+                )
+            }
+            cardCache.getOrPut(entry.id) { mutableMapOf() }[maskSensitive] = value
+        }
+    }.value
+}
+
+/** 剪切板长按菜单状态：目标条目 + 长按点（Compose 根坐标） */
+private data class ClipboardMenuState(val entry: ClipboardEntry, val anchorOffset: Offset)
 
 /** 剪贴板主页 Compose 渲染：按 [state] 显示启用提示 / 空提示 / 条目列表。 */
 @Composable
@@ -113,8 +154,8 @@ private fun ClipboardEntryList(
     maskSensitive: Boolean,
     callbacks: ClipboardCallbacks,
 ) {
-    // 当前长按条目 → 显示操作菜单
-    var menuEntry by remember { mutableStateOf<ClipboardEntry?>(null) }
+    // 当前长按条目 + 长按位置 → 显示锚定操作菜单
+    var menuState by remember { mutableStateOf<ClipboardMenuState?>(null) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
@@ -126,44 +167,46 @@ private fun ClipboardEntryList(
                 maskSensitive = maskSensitive,
                 onPaste = { callbacks.onPaste(entry) },
                 onChipClick = { callbacks.onPasteText(it) },
-                onLongPressAction = { menuEntry = entry },
+                onLongPressAction = { offset -> menuState = ClipboardMenuState(entry, offset) },
             )
         }
     }
-    menuEntry?.let { entry ->
-        ClipboardActionMenu(entry, callbacks) { menuEntry = null }
+    menuState?.let { state ->
+        ClipboardActionMenu(state.entry, callbacks, state.anchorOffset) { menuState = null }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ClipboardEntryCard(
     entry: ClipboardEntry,
     maskSensitive: Boolean,
     onPaste: () -> Unit,
     onChipClick: (String) -> Unit,
-    onLongPressAction: () -> Unit,
+    onLongPressAction: (Offset) -> Unit,
 ) {
-    val chips = rememberChips(entry, maskSensitive)
-    val display = remember(entry, maskSensitive) {
-        ClipboardAdapter.excerptText(
-            entry.text,
-            mask = entry.sensitive && maskSensitive,
-        )
-    }
-    val interactionSource = remember { MutableInteractionSource() }
+    val cardData = rememberCardData(entry, maskSensitive)
+    val display = cardData.display
+    val chips = cardData.chips
+    val containerCoords = remember { mutableStateOf<LayoutCoordinates?>(null) }
+    // 触摸锚点：用于长按菜单跟随点击位置浮现
+    val tapHandler = Modifier
+        .onGloballyPositioned { containerCoords.value = it }
+        .pointerInput(entry.id) {
+            detectTapGestures(
+                onTap = { onPaste() },
+                onLongPress = { offset ->
+                    val rootOffset = containerCoords.value?.localToRoot(offset) ?: offset
+                    onLongPressAction(rootOffset)
+                },
+            )
+        }
     Box(modifier = Modifier.fillMaxWidth()) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
                 .inputFeedback()
-                .combinedClickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = onPaste,
-                    onLongClick = onLongPressAction,
-                ),
+                .then(tapHandler),
             shape = RoundedCornerShape(12.dp),
             color = MiuixTheme.colorScheme.surfaceVariant,
         ) {
@@ -219,21 +262,6 @@ private fun ClipboardEntryCard(
             )
         }
     }
-}
-
-@Composable
-private fun rememberChips(
-    entry: ClipboardEntry,
-    maskSensitive: Boolean,
-): List<ClipboardTextAnalyzer.Entity> {
-    return produceState(initialValue = chipsCache[entry.id] ?: emptyList(), key1 = entry.id) {
-        if (value.isEmpty() && !(entry.sensitive && maskSensitive)) {
-            value = withContext(Dispatchers.IO) {
-                runCatching { ClipboardTextAnalyzer.analyze(entry.text) }
-                    .getOrDefault(emptyList())
-            }.also { chipsCache[entry.id] = it }
-        }
-    }.value
 }
 
 @Composable
@@ -294,9 +322,10 @@ private fun AddMoreUi() {
 private fun ClipboardActionMenu(
     entry: ClipboardEntry,
     callbacks: ClipboardCallbacks,
+    anchorOffset: Offset,
     onDismiss: () -> Unit,
 ) {
-    CenteredOverlay(onDismiss = onDismiss) {
+    AnchoredMenu(anchorOffset, onDismiss) {
         val pinned = entry.pinned
         MenuOptionRow(R.drawable.ic_baseline_push_pin_24, if (pinned) "取消置顶" else "置顶") {
             if (pinned) callbacks.onUnpin(entry.id) else callbacks.onPin(entry.id)
@@ -339,6 +368,53 @@ private fun CenteredOverlay(
 }
 
 @Composable
+private fun AnchoredMenu(
+    anchorOffset: Offset,
+    onDismiss: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    var menuSize by remember { mutableStateOf<IntSize>(IntSize.Zero) }
+    var containerSize by remember { mutableStateOf<IntSize>(IntSize.Zero) }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .onSizeChanged { containerSize = it }
+            .background(MiuixTheme.colorScheme.windowDimming)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onDismiss,
+            ),
+        contentAlignment = Alignment.TopStart,
+    ) {
+        Surface(
+            modifier = Modifier
+                .offset {
+                    // 期望以长按点为左上角，偏移 8dp；越界则收回窗口内
+                    val targetX = anchorOffset.x + 8.dp.toPx()
+                    val targetY = anchorOffset.y + 8.dp.toPx()
+                    val maxX = (containerSize.width - menuSize.width).coerceAtLeast(0)
+                    val maxY = (containerSize.height - menuSize.height).coerceAtLeast(0)
+                    IntOffset(
+                        targetX.toInt().coerceIn(0, maxX),
+                        targetY.toInt().coerceIn(0, maxY),
+                    )
+                }
+                .onSizeChanged { menuSize = it }
+                .widthIn(min = 160.dp)
+                .clip(RoundedCornerShape(16.dp)),
+            shape = RoundedCornerShape(16.dp),
+            color = MiuixTheme.colorScheme.surface,
+            shadowElevation = 8.dp,
+        ) {
+            Column(modifier = Modifier.padding(vertical = 6.dp)) {
+                content()
+            }
+        }
+    }
+}
+
+@Composable
 private fun MenuOptionRow(
     iconResId: Int,
     text: String,
@@ -346,7 +422,7 @@ private fun MenuOptionRow(
 ) {
     Row(
         modifier = Modifier
-            .fillMaxWidth()
+            .widthIn(min = 132.dp)
             .inputFeedback()
             .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 12.dp),
