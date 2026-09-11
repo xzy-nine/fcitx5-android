@@ -13,12 +13,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.compose.collectAsLazyPagingItems
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.core.CandidateAction
@@ -54,7 +56,8 @@ import org.mechdancer.dependency.manager.must
  * `FlexboxExpandedCandidateWindow` / `GridExpandedCandidateWindow` 与 `ExpandedCandidateLayout`）。
  *
  * **形态只有一种**：表格（网格）。原「流式（Flexbox）」形态与 `expandedCandidateStyle` 偏好已移除；
- * 列数由 [computeGridSpanCount] 按可用宽度与列表**前段候选的实测宽度**动态决定，
+ * 列数由 [computeGridSpanCount] 按列表**前段候选的实测宽度**（em）与列数上限反推
+ * （与 View 侧 `SpanHelper` 同口径，避免一行词数过多导致滚动掉帧），
  * `expandedCandidateGridSpanCount` 偏好降级为列数上限。
  *
  * 职责分配（对标 View 侧 `BaseExpandedCandidateWindow`）：
@@ -131,6 +134,13 @@ class ComposeExpandedCandidateWindow :
 
     private var offsetJob: Job? = null
 
+    /**
+     * 由 `Content()` 通过 [rememberCoroutineScope] 捕获的 Compose 协程作用域。
+     * 翻页动画（`animateScrollToItem`）必须在带 `MonotonicFrameClock` 的 Compose 作用域里执行，
+     * 而 `lifecycleScope` 没有这个时钟，直接调会抛 `IllegalStateException` 崩溃。
+     */
+    private var composeScope: CoroutineScope? = null
+
     private val pager by lazy {
         Pager(
             config = PagingConfig(pageSize = PageSize, enablePlaceholders = false),
@@ -169,6 +179,8 @@ class ComposeExpandedCandidateWindow :
 
     @Composable
     override fun Content() {
+        // 捕获带 MonotonicFrameClock 的 Compose 作用域，供翻页动画使用（见 scrollPage）。
+        composeScope = rememberCoroutineScope()
         val items = pager.flow.collectAsLazyPagingItems()
         val maxSpanCount = maxSpanCountPref.preferenceState()
         val itemCount = items.itemCount
@@ -207,37 +219,55 @@ class ComposeExpandedCandidateWindow :
     }
 
     // ------------------------------------------------------------------
-    // 翻页：对齐 View 侧 `GridExpandedCandidateWindow` 的语义
-    // —— 下翻把「最后一个完全可见项」之后一项滚到视口顶部（SNAP_TO_START），
-    //    上翻把「第一个完全可见项」之前一项滚到视口下沿（SNAP_TO_END）。
+    // 翻页：两方向都是「一整屏行数」的位移，目标行首项贴到视口顶部（SNAP_TO_START）。
+    // —— 下翻：最后一个完全可见行的下一行；
+    //    上翻：第一个完全可见行往前「一屏完全可见行数」行。
     // ------------------------------------------------------------------
 
     private fun prevPage() = scrollPage(forward = false)
 
     private fun nextPage() = scrollPage(forward = true)
 
+    /**
+     * 翻页：把目标行的首项滚到视口顶部（SNAP_TO_START），位移为**一整屏行数**。
+     *
+     * 目标下标由纯函数 [computePageTargetIndex] 算出（含「上翻是一整页而不是一行」的语义，
+     * 见其 KDoc 与 `ExpandedCandidatePageTargetTest`）。
+     *
+     * 动画滚动必须在 Compose 协程作用域里跑：`animateScrollToItem` 依赖 `MonotonicFrameClock`，
+     * 而 `lifecycleScope` 不带该时钟会直接抛 `IllegalStateException` 崩溃（见下方 scope 选择）。
+     */
     private fun scrollPage(forward: Boolean) {
         val info = gridState.layoutInfo
-        val viewportHeight = info.viewportEndOffset - info.viewportStartOffset
         val visible = info.visibleItemsInfo
-        if (visible.isEmpty() || info.totalItemsCount == 0 || viewportHeight <= 0) return
+        if (visible.isEmpty() || info.totalItemsCount <= 0) return
+        val viewportStart = info.viewportStartOffset
+        val viewportEnd = info.viewportEndOffset
+        // 完全可见：顶部 >= 视口顶 且 底部 <= 视口底；没有完全可见项时退回首/末可见项。
         val completelyVisible = visible.filter {
-            it.offset.y >= 0 && it.offset.y + it.size.height <= viewportHeight
-        }.ifEmpty { visible }
-        val target = if (forward) {
-            (completelyVisible.last().index + 1).coerceAtMost(info.totalItemsCount - 1)
-        } else {
-            (completelyVisible.first().index - 1).coerceAtLeast(0)
+            it.offset.y >= viewportStart && it.offset.y + it.size.height <= viewportEnd
         }
-        // 行高在网格里是统一的（自动缩放字号也只影响文字），用锚点行的实测高度推算贴底位置
-        val rowHeight = completelyVisible.first().size.height
-        val scrollOffset = if (forward) 0 else rowHeight - viewportHeight
-        service.lifecycleScope.launch {
+        val target = computePageTargetIndex(
+            firstVisibleIndex = (completelyVisible.firstOrNull() ?: visible.first()).index,
+            lastVisibleIndex = (completelyVisible.lastOrNull() ?: visible.last()).index,
+            columns = info.maxSpan,
+            totalItemsCount = info.totalItemsCount,
+            forward = forward,
+        )
+        // 动画滚动必须在 Compose 协程作用域里跑（需要 MonotonicFrameClock）；
+        // 若作用域尚未就绪则退回无动画滚动，避免 IllegalStateException 崩溃。
+        val scope = composeScope
+        val block: suspend CoroutineScope.() -> Unit = {
             if (disableAnimation.getValue()) {
-                gridState.scrollToItem(target, scrollOffset)
+                gridState.scrollToItem(target)
             } else {
-                gridState.animateScrollToItem(target, scrollOffset)
+                gridState.animateScrollToItem(target)
             }
+        }
+        if (scope != null) {
+            scope.launch(block = block)
+        } else {
+            service.lifecycleScope.launch { gridState.scrollToItem(target) }
         }
     }
 

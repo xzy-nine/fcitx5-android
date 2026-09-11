@@ -9,69 +9,71 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * [computeGridSpanCount] 的边界语义：长候选在前要收敛列数，短词多则被上限钳制，
- * 非法输入（NaN / 负值 / 空列表）必须返回可用的列数而不是 0 或崩溃。
+ * [computeGridSpanCount] 的语义：与 View 侧 `SpanHelper` 同口径——按最宽候选的「列单位需求」
+ * `ceil(em / 1.5)` 反推整表列数，一行词数不被短词顶满；非法输入必须返回可用的列数而不是 0 或崩溃。
  */
 class ExpandedCandidateGridSpanTest {
 
-    private val padding = 40f
+    @Test
+    fun twoCharCandidatesMatchViewSpanCount() {
+        // 2 个汉字 ≈ 2em -> 需要 2 个列单位；上限 6 / 2 = 3 列（View 侧同为一行 3 个）
+        assertEquals(3, computeGridSpanCount(listOf(1.9f, 2.0f, 2.0f), maxSpan = 6))
+    }
+
+    @Test
+    fun singleCharCandidatesYieldMaxSpan() {
+        // 1 个汉字 ≈ 1em -> 1 个列单位，短词可以铺满上限
+        assertEquals(6, computeGridSpanCount(listOf(1.0f, 0.9f, 1.0f), maxSpan = 6))
+        assertEquals(12, computeGridSpanCount(listOf(0.5f, 0.6f), maxSpan = 12))
+    }
 
     @Test
     fun wideLeadingCandidateYieldsFewerColumns() {
-        // 1080 / (300 + 40) = 3.17 -> 3 列，保证最宽那条长候选整条放得下
-        assertEquals(3, computeGridSpanCount(1080f, listOf(120f, 300f, 90f), padding))
+        // 4 个汉字 ≈ 4em -> ceil(4 / 1.5) = 3 个列单位；6 / 3 = 2 列
+        assertEquals(2, computeGridSpanCount(listOf(2.0f, 4.0f, 1.0f), maxSpan = 6))
     }
 
     @Test
-    fun shortCandidatesYieldMoreColumns() {
-        // 1080 / (80 + 40) = 9 列
-        assertEquals(9, computeGridSpanCount(1080f, listOf(60f, 80f, 70f), padding))
+    fun widestBeyondMaxSpanFallsBackToMinSpan() {
+        // 长句需要远多于上限的列单位 -> 整表 1 列，被下限兜到 2（长句仍靠缩字号放下）
+        assertEquals(2, computeGridSpanCount(listOf(100f), maxSpan = 6))
+        assertEquals(3, computeGridSpanCount(listOf(100f), maxSpan = 6, minSpan = 3))
     }
 
     @Test
-    fun columnsAreClampedToMaxSpan() {
-        // 理论 27 列，被 maxSpan 钳到 12
-        assertEquals(12, computeGridSpanCount(1080f, listOf(10f), padding, maxSpan = 12))
-        assertEquals(6, computeGridSpanCount(1080f, listOf(10f), padding, maxSpan = 6))
-    }
-
-    @Test
-    fun tooNarrowAvailableWidthFallsBackToMinSpan() {
-        // 最宽候选比可用宽度还宽：0 列 -> 取下限，而不是 0 或 1
-        assertEquals(2, computeGridSpanCount(100f, listOf(300f), padding))
-        assertEquals(3, computeGridSpanCount(100f, listOf(300f), padding, minSpan = 3))
+    fun columnsNeverExceedMaxSpan() {
+        assertEquals(6, computeGridSpanCount(listOf(1f), maxSpan = 6))
+        assertEquals(12, computeGridSpanCount(listOf(1f), maxSpan = 12))
     }
 
     @Test
     fun emptyLeadingWidthsFallBackToMaxSpan() {
         // 首屏文本还没测量出来：先按上限铺满，等文本到达后收敛（此时还没有 item，不会看到跳变）
-        assertEquals(12, computeGridSpanCount(1080f, emptyList(), padding))
-        assertEquals(5, computeGridSpanCount(1080f, emptyList(), padding, maxSpan = 5))
+        assertEquals(12, computeGridSpanCount(emptyList(), maxSpan = 12))
+        assertEquals(5, computeGridSpanCount(emptyList(), maxSpan = 5))
     }
 
     @Test
     fun invalidWidthsAreIgnored() {
-        val widths = listOf(-10f, Float.NaN, Float.POSITIVE_INFINITY, 0f, 80f)
-        assertEquals(9, computeGridSpanCount(1080f, widths, padding))
+        // -10 / NaN / +Inf / 0 全被过滤，只剩 1.0em -> 1 个列单位
+        val widths = listOf(-10f, Float.NaN, Float.POSITIVE_INFINITY, 0f, 1f)
+        assertEquals(6, computeGridSpanCount(widths, maxSpan = 6))
     }
 
     @Test
-    fun invalidAvailableWidthFallsBackToMinSpan() {
-        assertEquals(2, computeGridSpanCount(0f, listOf(80f), padding))
-        assertEquals(2, computeGridSpanCount(-5f, listOf(80f), padding))
-        assertEquals(2, computeGridSpanCount(Float.NaN, listOf(80f), padding))
-        assertEquals(4, computeGridSpanCount(0f, listOf(80f), padding, minSpan = 4))
-    }
-
-    @Test
-    fun negativePaddingIsTreatedAsZero() {
-        // padding 异常时按 0 处理：1080 / 80 = 13 -> 钳到 12
-        assertEquals(12, computeGridSpanCount(1080f, listOf(80f), -100f))
+    fun allInvalidWidthsFallBackToMaxSpan() {
+        assertEquals(4, computeGridSpanCount(listOf(0f, Float.NaN), maxSpan = 4))
     }
 
     @Test
     fun maxSpanBelowMinSpanDegradesToMinSpan() {
-        assertEquals(3, computeGridSpanCount(1080f, listOf(300f), padding, minSpan = 3, maxSpan = 1))
+        // 偏好异常（上限 < 下限）时不崩、不返回 0
+        assertEquals(3, computeGridSpanCount(listOf(4.0f), maxSpan = 1, minSpan = 3))
+    }
+
+    @Test
+    fun nonPositiveMaxSpanDegradesToMinSpan() {
+        assertEquals(2, computeGridSpanCount(listOf(1f), maxSpan = 0))
     }
 
     @Test
