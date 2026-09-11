@@ -62,6 +62,7 @@ import org.fcitx.fcitx5.android.input.keyboard.rememberActiveTheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
+import org.fcitx.fcitx5.android.input.candidates.horizontal.CandidateBarState
 import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
@@ -491,11 +492,23 @@ class ComposeKawaiiBarComponent :
         val splitKeyboardEnabled by _splitKeyboardEnabled.collectAsState()
         val menuRotation by _menuRotation.collectAsState()
 
+        // 候选栏可见性由「候选内容就绪」驱动（composeCandidate.barState 是唯一事实源）：
+        // barState 与候选内容是两个独立 StateFlow 异步收集，若仅按 barState 显示候选栏，
+        // 可能在候选内容尚未到达的帧显示空行 → 闪烁。内容未就绪时保持 Idle 展示。
+        val candidateState by composeCandidate.barState.collectAsState()
+        val candidateActive = candidateState is CandidateBarState.Active
+        val effectiveBarState =
+            if (barState == KawaiiBarStateMachine.State.Candidate && !candidateActive) {
+                KawaiiBarStateMachine.State.Idle
+            } else barState
+        // 候选栏仅当「内容就绪且处于候选态」时可见（Title 态不显示，避免透出候选词与标题重叠）
+        val candidateVisible = effectiveBarState == KawaiiBarStateMachine.State.Candidate
+
         val callbacks = remember { createCallbacks() }
         val visuals = getVisuals()
 
         ComposeToolbar(
-            barState = barState,
+            barState = effectiveBarState,
             idleSubState = idleSubState,
             titleData = titleData,
             callbacks = callbacks,
@@ -504,6 +517,7 @@ class ComposeKawaiiBarComponent :
             splitKeyboardEnabled = splitKeyboardEnabled,
             menuRotation = menuRotation,
             modifier = modifier,
+            candidateVisible = candidateVisible,
             candidateContent = {
                 // 候选栏内容由 ComposeCandidateComponent 提供，直接作为 Composable 接入（去除嵌套 ComposeView）
                 composeCandidate.CandidateBarContent()

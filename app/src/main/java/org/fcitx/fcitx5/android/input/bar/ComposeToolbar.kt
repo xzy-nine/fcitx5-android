@@ -57,6 +57,8 @@ fun ComposeToolbar(
     splitKeyboardEnabled: Boolean = false,
     menuRotation: Float = 0f,
     modifier: Modifier = Modifier,
+    // 候选栏可见性：由调用方按「候选内容就绪」驱动（默认按 barState，调用方覆盖以消除闪烁）
+    candidateVisible: Boolean = barState == KawaiiBarStateMachine.State.Candidate,
     // 候选栏内容由外部传入
     candidateContent: @Composable () -> Unit = {},
     // NumberRow 需要 AndroidView 包装
@@ -82,7 +84,7 @@ fun ComposeToolbar(
         // 候选栏始终留在组合树中（底层），避免 AndroidView 反复 attach/detach 导致渲染不同步
         CandidateContent(
             candidateContent = candidateContent,
-            visible = barState == KawaiiBarStateMachine.State.Candidate,
+            visible = candidateVisible,
         )
         when (barState) {
             KawaiiBarStateMachine.State.Idle -> {

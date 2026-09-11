@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -83,6 +84,13 @@ class ComposeCandidateComponent :
     )
     // 展开窗口是否已显示
     private val _isExpandedWindowShown = MutableStateFlow(false)
+
+    /**
+     * 候选栏内容状态（唯一事实源）。
+     * 工具栏据此驱动候选栏可见性：**内容就绪（Active）才显示**，避免与 barState 跨帧
+     * 不同步导致候选栏显示但内容为空的闪烁。
+     */
+    val barState: StateFlow<CandidateBarState> = _state.asStateFlow()
 
     val expandedCandidateOffset = _expandedCandidateOffset.asSharedFlow()
     val isExpandedWindowShown = _isExpandedWindowShown.asStateFlow()

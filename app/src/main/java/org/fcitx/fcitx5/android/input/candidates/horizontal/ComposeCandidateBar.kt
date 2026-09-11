@@ -150,39 +150,35 @@ fun ComposeCandidateBar(
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        when (state) {
-            is CandidateBarState.Idle -> {
-                // 空闲状态：不显示按钮（由工具栏处理）
-            }
-            is CandidateBarState.Active -> {
-                // 候选词列表
-                CandidateRow(
-                    candidates = state.candidates,
-                    fillMode = fillMode,
-                    maxSpanCount = maxSpanCount,
-                    listState = listState,
-                    userScrollEnabled = userScrollEnabled,
-                    textColor = visuals.textColor,
-                    commentColor = visuals.commentColor,
-                    pressHighlightColor = visuals.pressHighlightColor,
-                    dividerColor = visuals.dividerColor,
-                    showDivider = showDivider,
-                    onCandidateSelect = callbacks.onCandidateSelect,
-                    onCandidateLongClick = callbacks.onCandidateLongClick,
-                    endPadding = if (callbacks.onExpandClick != null) 40.dp else 0.dp,
-                    modifier = Modifier.weight(1f),
-                )
+        // LazyRow 始终留在组合中（空态 items=0）：候选栏 Idle→Active 时不重新创建 LazyRow，
+        // 避免首次进入组合的测量/布局延迟导致显示时整行闪烁
+        CandidateRow(
+            candidates = if (state is CandidateBarState.Active) state.candidates else emptyArray(),
+            fillMode = fillMode,
+            maxSpanCount = maxSpanCount,
+            listState = listState,
+            userScrollEnabled = userScrollEnabled,
+            textColor = visuals.textColor,
+            commentColor = visuals.commentColor,
+            pressHighlightColor = visuals.pressHighlightColor,
+            dividerColor = visuals.dividerColor,
+            showDivider = showDivider,
+            onCandidateSelect = callbacks.onCandidateSelect,
+            onCandidateLongClick = callbacks.onCandidateLongClick,
+            endPadding = if (callbacks.onExpandClick != null) 40.dp else 0.dp,
+            modifier = Modifier.weight(1f),
+        )
 
-                // 内侧：展开/收起按钮
-                val expandClick = callbacks.onExpandClick
-                if (expandClick != null) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    ExpandButton(
-                        onClick = expandClick,
-                        isExpanded = isExpandMode,
-                        tint = visuals.textColor,
-                    )
-                }
+        // 展开/收起按钮仅在有候选时显示
+        if (state is CandidateBarState.Active) {
+            val expandClick = callbacks.onExpandClick
+            if (expandClick != null) {
+                Spacer(modifier = Modifier.width(8.dp))
+                ExpandButton(
+                    onClick = expandClick,
+                    isExpanded = isExpandMode,
+                    tint = visuals.textColor,
+                )
             }
         }
     }
