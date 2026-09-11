@@ -17,7 +17,7 @@ import top.yukonga.miuix.kmp.theme.ThemeController
 /**
  * 为 [ComposeWindow] 创建统一的 View 宿主（ComposeView + MiuixTheme）。
  *
- * 与 `composeTopView` / `popup.root` 的 Composition 风格保持一致；
+ * 与 `composeTopView` / 根组合覆盖层（`PopupOverlayContent`）的 Composition 风格保持一致；
  * 强制 LTR 布局方向，保证内部绝对定位（如子菜单锚定）不受 RTL 反转影响。
  */
 fun createComposeWindowView(

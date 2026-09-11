@@ -27,7 +27,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,7 +44,6 @@ import org.fcitx.fcitx5.android.data.InputFeedbacks
 import org.fcitx.fcitx5.android.input.bar.inputFeedback
 import org.fcitx.fcitx5.android.input.dependency.fcitx
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
-import org.fcitx.fcitx5.android.input.wm.createComposeWindowView
 import org.mechdancer.dependency.Dependent
 import org.mechdancer.dependency.UniqueComponent
 import org.mechdancer.dependency.manager.ManagedHandler
@@ -66,8 +64,8 @@ data class CandidateActionMenuState(
 /**
  * 候选操作菜单 Compose 覆盖层。
  *
- * 挂在 `InputView` 最顶层（`popup.root` 同级，填满 InputView），由统一的 ComposeView 宿主
- * （[createComposeWindowView]）承载，替代原先在 IME 内用系统 `PopupMenu` 的实现。
+ * 由根组合（`FcitxInputMethodService.createComposeInputView`）在 `AndroidView(InputView)` 之上
+ * 渲染，填满 IME 窗口（透明蒙层 + 菜单），替代原先在 IME 内用系统 `PopupMenu` 的实现。
  *
  * 定位：候选调用方提供「窗口绝对坐标 [Rect]」作为锚点，菜单优先显示在锚点下方，
  * 空间不足时显示其上，并按覆盖层尺寸做边缘钳制。
@@ -90,17 +88,25 @@ class ComposeCandidateActionMenu :
     // 防止旧请求回来时重新弹出菜单，或覆盖掉更新的菜单。
     private var requestVersion = 0L
 
-    val root: ComposeView by lazy {
-        createComposeWindowView(service) {
-            CandidateActionMenuOverlay(
-                state = _state.collectAsState().value,
-                onActionClick = { action ->
-                    triggerAction(action)
-                    dismiss()
-                },
-                onDismiss = ::dismiss,
-            )
-        }
+    /**
+     * 候选操作菜单 Compose 覆盖层内容。
+     *
+     * 由根组合（`FcitxInputMethodService.createComposeInputView`）在 `AndroidView(InputView)` 之上
+     * 调用，与键盘内容同处单一 Composition，替代原先独立的 `root` ComposeView 宿主。
+     * `state == null` 时渲染为空（不拦截触摸）；显示时全屏透明蒙层点击 dismiss。
+     */
+    @Composable
+    fun OverlayContent(modifier: Modifier = Modifier) {
+        val state by _state.collectAsState()
+        CandidateActionMenuOverlay(
+            state = state,
+            onActionClick = { action ->
+                triggerAction(action)
+                dismiss()
+            },
+            onDismiss = ::dismiss,
+            modifier = modifier,
+        )
     }
 
     fun show(idx: Int, text: String, anchor: Rect) {
@@ -111,8 +117,9 @@ class ComposeCandidateActionMenu :
             if (actions.isEmpty()) return@launch
             if (_state.value?.idx == idx) return@launch
             _state.value = CandidateActionMenuState(idx, text, actions.toList(), anchor)
-            if (root.isAttachedToWindow) {
-                InputFeedbacks.hapticFeedback(root, longPress = true)
+            val decorView = service.window.window?.decorView
+            if (decorView != null && decorView.isAttachedToWindow) {
+                InputFeedbacks.hapticFeedback(decorView, longPress = true)
             }
         }
     }
@@ -133,13 +140,14 @@ private fun CandidateActionMenuOverlay(
     state: CandidateActionMenuState?,
     onActionClick: (CandidateAction) -> Unit,
     onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     if (state == null) return
     val density = LocalDensity.current
     val radius = 12.dp
     val margin = 8.dp
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val overlayW = with(density) { maxWidth.toPx() }
         val overlayH = with(density) { maxHeight.toPx() }
         val marginPx = with(density) { margin.toPx() }
