@@ -28,10 +28,7 @@ import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.BooleanKey.ExpandedCandidatesEmpty
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.TransitionEvent.ExpandedCandidatesUpdated
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
-import org.fcitx.fcitx5.android.input.candidates.expanded.ExpandedCandidateStyle
-import org.fcitx.fcitx5.android.input.candidates.expanded.window.BaseExpandedCandidateWindow
-import org.fcitx.fcitx5.android.input.candidates.expanded.window.FlexboxExpandedCandidateWindow
-import org.fcitx.fcitx5.android.input.candidates.expanded.window.GridExpandedCandidateWindow
+import org.fcitx.fcitx5.android.input.candidates.expanded.ComposeExpandedCandidateWindow
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.fcitx
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
@@ -67,7 +64,8 @@ class ComposeCandidateComponent :
     private val fillStyle by keyboardPrefs.horizontalCandidateStyle
     private val swipeEnabledPref = keyboardPrefs.horizontalCandidateSwipe
     private val candidateDividerPref = keyboardPrefs.candidateDivider
-    private val expandedCandidateStyle by keyboardPrefs.expandedCandidateStyle
+    // expandedCandidateStyle 偏好已随展开候选 Compose 化移除（只保留表格一种形态）；列数改为动态计算。
+    // maxSpanCountPref（下方 lazy）保留：既被本组件的填宽逻辑复用（loadMoreBatch），也是展开候选列数上限来源。
     private val maxSpanCountPref by lazy {
         keyboardPrefs.run {
             if (context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT)
@@ -252,7 +250,7 @@ class ComposeCandidateComponent :
     }
 
     override fun onWindowDetached(window: InputWindow) {
-        if (window is BaseExpandedCandidateWindow<*>) {
+        if (window is ComposeExpandedCandidateWindow) {
             _isExpandedWindowShown.value = false
         }
     }
@@ -360,12 +358,7 @@ class ComposeCandidateComponent :
                         windowManager.attachWindow(KeyboardWindow)
                         _isExpandedWindowShown.value = false
                     } else {
-                        windowManager.attachWindow(
-                            when (expandedCandidateStyle) {
-                                ExpandedCandidateStyle.Grid -> GridExpandedCandidateWindow()
-                                ExpandedCandidateStyle.Flexbox -> FlexboxExpandedCandidateWindow()
-                            }
-                        )
+                        windowManager.attachWindow(ComposeExpandedCandidateWindow())
                         _isExpandedWindowShown.value = true
                     }
                 },
