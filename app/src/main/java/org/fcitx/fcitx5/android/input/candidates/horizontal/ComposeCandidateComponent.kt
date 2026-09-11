@@ -6,6 +6,7 @@
 package org.fcitx.fcitx5.android.input.candidates.horizontal
 
 import android.content.res.Configuration
+import android.graphics.Rect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -341,10 +342,17 @@ class ComposeCandidateComponent :
                     fcitx.launchOnReady { it.select(index) }
                 },
                 onCandidateLongClick = { index, candidate ->
+                    val location = IntArray(2)
+                    view.getLocationInWindow(location)
                     inputView.showCandidateActionMenu(
                         index,
                         candidate.text,
-                        view
+                        Rect(
+                            location[0],
+                            location[1],
+                            location[0] + view.width,
+                            location[1] + view.height,
+                        )
                     )
                 },
                 onExpandClick = {
