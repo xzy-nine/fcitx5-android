@@ -40,6 +40,7 @@ import org.fcitx.fcitx5.android.input.broadcast.InputBroadcaster
 import org.fcitx.fcitx5.android.input.broadcast.PreeditEmptyStateComponent
 import org.fcitx.fcitx5.android.input.broadcast.PunctuationComponent
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
+import org.fcitx.fcitx5.android.input.candidates.ComposeCandidateActionMenu
 import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardHeightPercentBase.DisplayMetrics
@@ -121,6 +122,8 @@ class InputView(
     // Compose 实现的候选栏组件
     // 旧 View 实现：HorizontalCandidateComponent（已断开接线，保留供对比）
     private val composeCandidate = ComposeCandidateComponent()
+    // 候选操作菜单覆盖层（Compose 调用方长按候选词时在 IME 内弹出的悬浮菜单）
+    private val candidateActionMenu = ComposeCandidateActionMenu()
     private val keyboardWindow = KeyboardWindow()
     private val symbolPicker = symbolPicker()
     private val emojiPicker = emojiPicker()
@@ -166,6 +169,7 @@ class InputView(
         scope += composeKawaiiBar
         // 旧 View 实现：scope += horizontalCandidate（已断开接线）
         scope += composeCandidate
+        scope += candidateActionMenu
         broadcaster.onScopeSetupFinished(scope)
     }
 
@@ -350,6 +354,11 @@ class InputView(
             centerVertically()
             centerHorizontally()
         })
+        // 候选操作菜单覆盖层：填满 InputView（透明蒙层 + 菜单），位于弹窗层之上
+        add(candidateActionMenu.root, lParams(matchParent, matchParent) {
+            centerVertically()
+            centerHorizontally()
+        })
 
         keyboardPrefs.registerOnChangeListener(onKeyboardSizeChangeListener)
         advancedPrefs.registerOnChangeListener(onKeyboardSizeChangeListener)
@@ -442,6 +451,14 @@ class InputView(
             if (pct > 0) keyboardHeightPx * 100 / pct else resources.displayMetrics.heightPixels
         }
     )
+
+    /**
+     * 候选操作菜单（Compose 覆盖层）：Compose 侧调用方经此路由到 `ComposeCandidateActionMenu`
+     * （anchor 为窗口绝对坐标 [Rect]，与弹窗层同款坐标抽象）。
+     */
+    override fun showCandidateActionMenu(idx: Int, text: String, anchor: Rect) {
+        candidateActionMenu.show(idx, text, anchor)
+    }
 
     override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
         bottomPaddingSpace.updateLayoutParams<LayoutParams> {

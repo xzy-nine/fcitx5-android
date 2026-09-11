@@ -5,6 +5,7 @@
 
 package org.fcitx.fcitx5.android.input
 
+import android.graphics.Rect
 import android.view.View
 import android.view.WindowInsets
 import android.widget.PopupMenu
@@ -108,6 +109,15 @@ abstract class BaseInputView(
                 show()
             }
         }
+    }
+
+    /**
+     * 候选操作菜单（Compose 覆盖层入口）。
+     * [anchor] 为窗口绝对坐标 [Rect]。基类默认不处理，由 `InputView` override 路由到
+     * `ComposeCandidateActionMenu` 覆盖层；View 侧调用方（[CandidatesView]）仍走原 PopupMenu。
+     */
+    open fun showCandidateActionMenu(idx: Int, text: String, anchor: Rect) {
+        // no-op：Compose 实现见 InputView.showCandidateActionMenu
     }
 
     private val navbarBackground by ThemeManager.prefs.navbarBackground

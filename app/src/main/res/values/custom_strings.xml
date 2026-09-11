@@ -154,4 +154,24 @@
     <string name="physical_keyboard">Physical Keyboard</string>
     <!-- Custom: physical hotkeys settings page -->
     <string name="hotkey">Hotkey</string>
+
+    <!-- Custom: text editing / clipboard compose UI -->
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <string name="select_all">Select all</string>
+    <string name="invert_selection">Invert selection</string>
+    <string name="cut">Cut</string>
+    <string name="copy">Copy</string>
+    <string name="paste">Paste</string>
+    <string name="selection">Selection</string>
+    <string name="text_mode">Text mode</string>
+    <string name="segment_mode">Segment mode</string>
+    <string name="insert_space">Insert space</string>
+    <string name="on">On</string>
+    <string name="off">Off</string>
+    <string name="enable_listening">Enable listening</string>
+    <string name="clipboard_listening_disabled">Clipboard listening is disabled</string>
+    <string name="clipboard_empty_hint">Copied content will show up here</string>
+    <string name="retry">Retry</string>
+    <string name="more_options">More options</string>
 </resources>

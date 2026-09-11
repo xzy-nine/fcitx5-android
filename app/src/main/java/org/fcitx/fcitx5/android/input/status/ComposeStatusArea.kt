@@ -28,8 +28,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -46,8 +44,10 @@ import androidx.compose.ui.semantics.semantics
 import org.fcitx.fcitx5.android.core.Action
 import org.fcitx.fcitx5.android.input.bar.inputFeedback
 import top.yukonga.miuix.kmp.basic.DropdownImpl
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.roundToInt
@@ -203,7 +203,7 @@ private fun StatusAreaMenu(
                 .fillMaxSize()
                 .clickable(onClick = onDismiss)
         )
-        Box(
+        Surface(
             modifier = Modifier
                 .offset {
                     val menuHeight = menuSize.height.coerceAtLeast(0).toFloat()
@@ -219,20 +219,16 @@ private fun StatusAreaMenu(
                     IntOffset(x.roundToInt(), y.roundToInt())
                 }
                 .onSizeChanged { menuSize = it }
-                .shadow(8.dp, RoundedCornerShape(12.dp))
-                .clip(RoundedCornerShape(12.dp))
-                .background(MiuixTheme.colorScheme.surfaceContainer)
                 .widthIn(min = 160.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = MiuixTheme.colorScheme.surfaceContainer,
+            shadowElevation = 8.dp,
         ) {
             Column {
                 menu.forEachIndexed { index, action ->
                     if (action.isSeparator) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .padding(horizontal = 16.dp)
-                                .background(MiuixTheme.colorScheme.dividerLine)
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
                         )
                     } else {
                         Box(modifier = Modifier.inputFeedback()) {

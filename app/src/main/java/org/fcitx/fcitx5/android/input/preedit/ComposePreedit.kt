@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,7 +37,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.collectLatest
@@ -163,9 +161,10 @@ private fun PreeditLine(
         // 用 Row 承载文本 + 尾部占位，使可滚动内容宽度 = 文本宽 + 光标宽。
         // 否则光标仅靠 offset 定位、不计入测量宽度，末尾光标在滚到最大位置时被裁掉。
         Row {
-            BasicText(
+            Text(
                 text = text,
-                style = TextStyle(color = textColor, fontSize = PreeditTextSize),
+                color = textColor,
+                fontSize = PreeditTextSize,
                 softWrap = false,
                 maxLines = 1,
                 onTextLayout = onTextLayout,

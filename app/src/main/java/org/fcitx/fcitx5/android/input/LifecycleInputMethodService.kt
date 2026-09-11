@@ -14,6 +14,9 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.navigationevent.NavigationEventDispatcher
+import androidx.navigationevent.NavigationEventDispatcherOwner
+import androidx.navigationevent.setViewTreeNavigationEventDispatcherOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
@@ -38,11 +41,31 @@ open class LifecycleInputMethodService :
     InputMethodService(),
     LifecycleOwner,
     SavedStateRegistryOwner,
-    ViewModelStoreOwner {
+    ViewModelStoreOwner,
+    NavigationEventDispatcherOwner {
 
     private val lifecycleRegistry by lazy { LifecycleRegistry(this) }
     private val savedStateRegistryController by lazy { SavedStateRegistryController.create(this) }
     override val viewModelStore by lazy { ViewModelStore() }
+
+    /**
+     * `androidx.navigationevent` 的宿主（miuix `Overlay*` / `Dialog*` 弹层内部用
+     * `NavigationBackHandler` 做返回手势，依赖它）。
+     *
+     * 该库通过 `ViewTreeHostDefaultKey`（tag = `R.id.view_tree_navigation_event_dispatcher_owner`）
+     * 从 `LocalView` 起沿视图树向上查找 owner。Activity 场景由 `ComponentActivity` +
+     * `activity-compose` 的 `setContent` 自动提供；**IME 场景没有任何人提供**，于是
+     * `NavigationBackHandler` 里的 `checkNotNull(...)` 会在 composition 阶段直接抛
+     * `IllegalStateException` —— 这类异常无法被业务代码捕获，最终升级为 FATAL EXCEPTION 崩进程。
+     * 这里与 Lifecycle / SavedState / ViewModelStore 三个 owner 一起挂到 `decorView` 上补全。
+     *
+     * 注意语义：这是一个「根 dispatcher」，既没有输入源（IME 窗口不可聚焦、收不到返回手势），
+     * 也没有 fallback，因此注册进来的 handler 只是**不生效**，不会误触发任何行为。
+     */
+    private val _navigationEventDispatcher by lazy { NavigationEventDispatcher() }
+
+    override val navigationEventDispatcher: NavigationEventDispatcher
+        get() = _navigationEventDispatcher
 
     override val lifecycle: Lifecycle
         get() = lifecycleRegistry
@@ -58,6 +81,7 @@ open class LifecycleInputMethodService :
         decorView.setViewTreeLifecycleOwner(this)
         decorView.setViewTreeSavedStateRegistryOwner(this)
         decorView.setViewTreeViewModelStoreOwner(this)
+        decorView.setViewTreeNavigationEventDispatcherOwner(this)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
     }
@@ -90,5 +114,9 @@ open class LifecycleInputMethodService :
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         viewModelStore.clear()
+        // 与 ComponentActivity 一致：销毁时释放导航事件 dispatcher。
+        // 此刻所有 ComposeView 的 composition 均已 dispose（handler 由各自的
+        // DisposableEffect 摘除，removeHandler 不受 disposed 状态约束），故安全。
+        _navigationEventDispatcher.dispose()
     }
 }

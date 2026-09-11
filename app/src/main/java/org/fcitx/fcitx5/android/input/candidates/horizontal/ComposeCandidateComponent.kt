@@ -6,6 +6,7 @@
 package org.fcitx.fcitx5.android.input.candidates.horizontal
 
 import android.content.res.Configuration
+import android.graphics.Rect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -13,7 +14,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -288,7 +288,6 @@ class ComposeCandidateComponent :
      */
     @Composable
     fun CandidateBarContent(modifier: Modifier = Modifier) {
-        val view = LocalView.current
         val state by _state.collectAsState()
         val isExpandedWindowShown by _isExpandedWindowShown.collectAsState()
 
@@ -340,11 +339,20 @@ class ComposeCandidateComponent :
                 onCandidateSelect = { index ->
                     fcitx.launchOnReady { it.select(index) }
                 },
-                onCandidateLongClick = { index, candidate ->
+                onCandidateLongClick = { index, candidate, windowOffset ->
+                    // windowOffset 已是「窗口绝对坐标」（由 CandidateItem 用自身
+                    // positionInWindow() + 长按点换算），可直接作为菜单锚点。
+                    // 候选词所在的 ComposeView 与 InputView 同处一棵 View 树
+                    // （window == decorView），故与 showCandidateActionMenu 的坐标约定一致。
                     inputView.showCandidateActionMenu(
                         index,
                         candidate.text,
-                        view
+                        Rect(
+                            windowOffset.x.toInt(),
+                            windowOffset.y.toInt(),
+                            windowOffset.x.toInt(),
+                            windowOffset.y.toInt(),
+                        )
                     )
                 },
                 onExpandClick = {
