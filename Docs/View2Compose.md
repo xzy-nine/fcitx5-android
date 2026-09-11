@@ -137,8 +137,12 @@ FcitxInputMethodService
 触发重组。左右边距由 `updateKeyboardSize()` 对 `composeTopView` 与 `composePreedit.view` 分别
 `setPadding(sidePadding, 0, sidePadding, 0)`。
 
-**顶部圆角**：`keyboardView.applyTopRoundedCornerClip(dp(16))`（`ViewOutlineExt`，圆角落在工具栏顶部，
-预编辑栏在键盘体外不受影响）。
+**圆角**：
+- **IME 体上缘**：`keyboardView.applyTopRoundedCornerClip(dp(16))`（`ViewOutlineExt`，圆角落在工具栏顶部，
+  预编辑栏在键盘体外不受影响）。
+- **工具栏自身**：`ComposeToolbar` 的 `clip(RoundedCornerShape(16.dp))`。起分隔作用的是**下两角**
+  （工具栏与键盘区的分界）—— 工具栏下缘不在屏幕边缘，必须自己裁；**IME 的下缘由屏幕自身的圆角代劳**，
+  所以 `keyboardView` 不裁下缘。上两角与父级 outline 重合，一并写上是为了不依赖父级裁剪。
 
 旧文件（断开接线，保留供对比）：
 
