@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.keyboard.KeyDef.Appearance.Border
@@ -102,6 +103,57 @@ data class KeyboardVisuals(
 
     /** 见 [hMarginFor]。 */
     fun vMarginFor(margin: Boolean): Dp = if (margin) vMargin else 0.dp
+
+    /** 键的默认视觉内缩（对称），对应 `KeyView` 里 `hMargin/vMargin` 的 drawable inset。 */
+    fun defaultInsets(margin: Boolean): KeyInsets =
+        KeyInsets.symmetric(hMarginFor(margin), vMarginFor(margin))
+
+    /**
+     * 是否为「特殊形状键」（空格条 / 回车键）。
+     *
+     * `KeyView.onSizeChanged` 一开头就是 `if (bordered) return` —— 也就是说这两个键的特殊底
+     * **只在 `keyBorder` 关闭时**生效；开启时它们退回普通键底。这条容易漏，务必按此判。
+     */
+    fun usesSpecialKeyShape(def: KeyDef): Boolean =
+        !bordered && (def.appearance.viewId == R.id.button_space ||
+                def.appearance.viewId == R.id.button_return)
+
+    /** 空格条 / 回车键的形态参数（对应 `KeyView.onSizeChanged` 的偏移算式）。 */
+    companion object {
+        /** 空格条圆角（`KeyView.onSizeChanged` 里固定 `dp(3f)`）。 */
+        val SpaceBarCornerRadius = 3.dp
+        /** 空格条横向内缩固定 `dp(10)`。 */
+        val SpaceBarHorizontalInset = 10.dp
+        /** 空格条最小高度 `dp(26)`：低于它不再纵向内缩。 */
+        val SpaceBarMinHeight = 26.dp
+        /** 空格条纵向内缩上限 `dp(16)`。 */
+        val SpaceBarMaxVerticalInset = 16.dp
+        /** 回车键圆形直径上限 `dp(35)`。 */
+        val ReturnKeyMaxDiameter = 35.dp
+    }
+}
+
+/**
+ * 键的视觉内缩（对应 `KeyView` 里以 drawable inset 实现的边距）。
+ *
+ * [start] / [end] 是**非对称**的：`expandKeypressArea` 让首尾键的触摸区变宽、内容只往一
+ * 侧内缩（View 侧 `layoutMarginLeft/Right`）。
+ */
+@Immutable
+data class KeyInsets(
+    val start: Dp = 0.dp,
+    val end: Dp = 0.dp,
+    val top: Dp = 0.dp,
+    val bottom: Dp = 0.dp,
+) {
+    fun plusStart(extra: Dp) = copy(start = start + extra)
+    fun plusEnd(extra: Dp) = copy(end = end + extra)
+
+    companion object {
+        val Zero = KeyInsets()
+        fun symmetric(horizontal: Dp, vertical: Dp) =
+            KeyInsets(horizontal, horizontal, vertical, vertical)
+    }
 }
 
 /**

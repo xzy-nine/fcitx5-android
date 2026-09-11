@@ -4,13 +4,16 @@
  */
 package org.fcitx.fcitx5.android.input.keyboard
 
+import android.content.res.Configuration
 import android.graphics.Rect
+import android.graphics.Typeface
 import android.os.SystemClock
 import android.view.View
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,9 +28,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -36,24 +41,33 @@ import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.InputFeedbacks
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.data.theme.ThemeManager
+import org.fcitx.fcitx5.android.data.theme.ThemePrefs.PunctuationPosition
 import org.fcitx.fcitx5.android.input.keyboard.KeyDef.Appearance.Border
 import org.fcitx.fcitx5.android.input.keyboard.KeyDef.Appearance.Variant
 import org.fcitx.fcitx5.android.input.popup.PopupAction
 import org.fcitx.fcitx5.android.input.popup.PopupActionListener
+import org.fcitx.fcitx5.android.utils.styledFloat
 import top.yukonga.miuix.kmp.basic.Icon
 
 /**
@@ -67,10 +81,10 @@ import top.yukonga.miuix.kmp.basic.Icon
  * `setOnClickListener / setOnLongClickListener / onRepeatListener / onGestureListener /
  * onDoubleTapListener` 拟合（D5/D6/D8）。
  *
- * 本文件**不参与**（留后续批次）的项，已在 `KeyboardComposePlan.md` 的进度表登记：
- * - `Border.Special`（空格条 / 回车键的圆底 / 椭圆底）与 `KeyView.onSizeChanged` 的补画；
- * - `AltText` 键的右上/底部副文本排版（`AltTextKeyView.applyLayout`）；
- * - `AutoScaleTextView` 的自动缩放（§4.5-⑦ 的字号按键高缩放）。
+ * **字号**：按 View 侧口径复刻 —— `KeyView` 用的是 `COMPLEX_UNIT_DIP`，即**不随系统字号缩放**，
+ * 且键盘按键的 `AutoScaleTextView.scaleMode` 是默认的 `Mode.None`（**不自动缩放、溢出裁切**，
+ * 只有 Picker / 气泡小键盘 / 候选才用 `Proportional`）。故此处用 `dp.toSp()` 抵消 fontScale，
+ * 也不做 shrink-to-fit。
  */
 @Composable
 fun ComposeKey(
@@ -82,6 +96,11 @@ fun ComposeKey(
     keyActionListener: KeyActionListener? = null,
     popupActionListener: PopupActionListener? = null,
     enabled: Boolean = true,
+    /**
+     * 视觉内缩。[KeyboardVisuals.defaultInsets] 是默认值；
+     * `expandKeypressArea` 让首尾键触摸区变宽时，由 [ComposeKeyRow] 额外叠加单侧内缩。
+     */
+    insets: KeyInsets? = null,
     /** 键型专属滑行（空格移动光标 / 退格删除选区），由键盘容器传入，见 [ComposeKeySwipeSpec]。 */
     swipeSpec: ComposeKeySwipeSpec? = null,
     onSwipeGesture: ComposeKeyGestureListener? = null,
@@ -119,6 +138,9 @@ fun ComposeKey(
 
     val spec = remember(def, swipeSpec) { buildKeyGestureSpec(def, swipeSpec) }
     val appearance = def.appearance
+    // View: KeyView.setEnabled(false) → appearanceView.alpha = styledFloat(disabledAlpha)
+    val context = LocalContext.current
+    val disabledAlpha = remember(context) { context.styledFloat(android.R.attr.disabledAlpha) }
 
     Box(
         modifier = modifier
@@ -154,22 +176,35 @@ fun ComposeKey(
                 windowBounds.rect = Rect(
                     r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt()
                 )
-            },
+            }
+            .alpha(if (enabled) 1f else disabledAlpha),
         contentAlignment = Alignment.Center,
     ) {
         // 视觉层：手感区 = 整格（pointerInput 在 padding 之前），视觉区 = 内缩后（§4.5-①）
+        val specialShape = visuals.usesSpecialKeyShape(def)
+        val effectiveInsets = insets
+            ?: if (specialShape) KeyInsets.Zero else visuals.defaultInsets(appearance.margin)
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(
-                    horizontal = visuals.hMarginFor(appearance.margin),
-                    vertical = visuals.vMarginFor(appearance.margin),
+                    start = effectiveInsets.start,
+                    end = effectiveInsets.end,
+                    top = effectiveInsets.top,
+                    bottom = effectiveInsets.bottom,
                 )
                 .drawBehind {
-                    drawKeySkin(visuals, appearance.variant, appearance.border, pressed.value)
+                    drawKeySkin(
+                        visuals = visuals,
+                        variant = appearance.variant,
+                        border = appearance.border,
+                        viewId = appearance.viewId,
+                        specialShape = specialShape,
+                        pressed = pressed.value,
+                    )
                 },
         )
-        KeyContent(def, visuals)
+        KeyContent(def, visuals, effectiveInsets)
     }
 }
 
@@ -178,7 +213,7 @@ fun ComposeKey(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun KeyContent(def: KeyDef, visuals: KeyboardVisuals) {
+private fun KeyContent(def: KeyDef, visuals: KeyboardVisuals, insets: KeyInsets) {
     val appearance = def.appearance
     val textColor = visuals.textColorFor(appearance.variant)
     when (appearance) {
@@ -199,20 +234,124 @@ private fun KeyContent(def: KeyDef, visuals: KeyboardVisuals) {
                 tint = textColor,
                 modifier = Modifier.size(13.dp),
             )
-            KeyText(appearance.displayText, appearance.textSize, textColor)
+            KeyText(appearance, appearance.displayText, textColor)
         }
-        // AltText 的副文本排版（右上/底部）留批次 C，本批只画主文本
-        is KeyDef.Appearance.Text -> KeyText(appearance.displayText, appearance.textSize, textColor)
+
+        is KeyDef.Appearance.AltText -> AltTextKeyContent(appearance, visuals, insets, textColor)
+
+        is KeyDef.Appearance.Text -> KeyText(appearance, appearance.displayText, textColor)
     }
 }
 
+/**
+ * `AltTextKeyView.applyLayout` 的 Compose 复刻：副文本按 `punctuationPosition` 偏好 +
+ * 屏幕方向决定放右上还是底部；`punctuationPosition == None` 时副文本不显示。
+ */
 @Composable
-private fun KeyText(text: String, textSize: Float, textColor: Color) {
+private fun AltTextKeyContent(
+    appearance: KeyDef.Appearance.AltText,
+    visuals: KeyboardVisuals,
+    insets: KeyInsets,
+    textColor: Color,
+) {
+    val landscape =
+        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val punctuationPosition = remember { ThemeManager.prefs.punctuationPosition.getValue() }
+    val topRight = when (punctuationPosition) {
+        PunctuationPosition.TopRight -> true
+        PunctuationPosition.None -> false
+        // Bottom：竖屏放底部，横屏放右上（View 侧同一分支）
+        PunctuationPosition.Bottom -> landscape
+    }
+    val showAlt = punctuationPosition != PunctuationPosition.None
+    val altTextColor = when (appearance.variant) {
+        Variant.Normal, Variant.AltForeground, Variant.Alternative -> visuals.altKeyTextColor
+        Variant.Accent -> visuals.accentKeyTextColor
+    }
+
+    when {
+        !showAlt -> KeyText(appearance, appearance.displayText, textColor)
+
+        topRight -> Box(modifier = Modifier.fillMaxSize()) {
+            KeyText(
+                appearance, appearance.displayText, textColor,
+                modifier = Modifier.align(Alignment.Center),
+            )
+            AltText(
+                text = appearance.altText,
+                color = altTextColor,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    // View: topMargin = vMargin, rightMargin = hMargin + dp(4)
+                    .padding(top = insets.top, end = insets.end + 4.dp),
+            )
+        }
+
+        else -> Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            KeyText(appearance, appearance.displayText, textColor)
+            // View: altText 贴底、bottomMargin = vMargin + dp(2)
+            AltText(
+                text = appearance.altText,
+                color = altTextColor,
+                modifier = Modifier.padding(top = 2.dp, bottom = insets.bottom + 2.dp),
+            )
+        }
+    }
+}
+
+/** 副文本样式（View 侧 `AltTextKeyView`：固定 dp(10.666667) + BOLD）。 */
+@Composable
+private fun AltText(text: String, color: Color, modifier: Modifier = Modifier) {
+    val density = LocalDensity.current
     BasicText(
         text = text,
+        modifier = modifier,
         style = TextStyle(
-            fontSize = textSize.sp,
-            color = textColor,
+            fontSize = with(density) { 10.666667.dp.toSp() },
+            color = color,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        ),
+        maxLines = 1,
+        softWrap = false,
+    )
+}
+
+/**
+ * 键面主文本。
+ *
+ * 字号用 `dp.toSp()`：View 侧是 `COMPLEX_UNIT_DIP`，不随系统字号缩放；`scaleMode = None`
+ * 表示不缩放、放不下就裁切，所以这里也不加 shrink-to-fit。
+ * `textStyle` 的 BOLD/ITALIC 位直接映射到 [FontWeight]/[FontStyle]。
+ */
+@Composable
+private fun KeyText(
+    appearance: KeyDef.Appearance.Text,
+    text: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    BasicText(
+        text = text,
+        modifier = modifier,
+        style = TextStyle(
+            fontSize = with(density) { appearance.textSize.dp.toSp() },
+            color = color,
+            fontWeight = if (appearance.textStyle and Typeface.BOLD != 0) {
+                FontWeight.Bold
+            } else {
+                FontWeight.Normal
+            },
+            fontStyle = if (appearance.textStyle and Typeface.ITALIC != 0) {
+                FontStyle.Italic
+            } else {
+                FontStyle.Normal
+            },
             textAlign = TextAlign.Center,
         ),
         maxLines = 1,
@@ -228,11 +367,78 @@ private fun DrawScope.drawKeySkin(
     visuals: KeyboardVisuals,
     variant: Variant,
     border: Border,
+    viewId: Int,
+    specialShape: Boolean,
     pressed: Boolean,
 ) {
     val radius = CornerRadius(visuals.cornerRadius.toPx())
     val strokeWidth = 1.dp.toPx()
     val hasBorder = visuals.hasBorder(border)
+
+    // Border.Special 且 keyBorder 关闭：空格条 / 回车键走专用形状（KeyView.onSizeChanged）
+    if (specialShape) {
+        when (viewId) {
+            R.id.button_space -> {
+                val hInset = KeyboardVisuals.SpaceBarHorizontalInset.toPx()
+                val minHeight = KeyboardVisuals.SpaceBarMinHeight.toPx()
+                val maxVInset = KeyboardVisuals.SpaceBarMaxVerticalInset.toPx()
+                val vInset = if (size.height < minHeight) {
+                    0f
+                } else {
+                    min((size.height - minHeight) / 2f, maxVInset)
+                }
+                drawRoundRect(
+                    color = visuals.spaceBarColor,
+                    topLeft = Offset(hInset, vInset),
+                    size = Size(
+                        width = (size.width - 2f * hInset).coerceAtLeast(0f),
+                        height = (size.height - 2f * vInset).coerceAtLeast(0f),
+                    ),
+                    cornerRadius = CornerRadius(KeyboardVisuals.SpaceBarCornerRadius.toPx()),
+                )
+                if (pressed) {
+                    // KeyView.setupPressHighlight(mask)：与底色同形状的高亮
+                    // （ripple 模式 mask 取白色只定形状、颜色由 ripple 提供，二者最终都是
+                    // keyPressHighlightColor，故这里直接用该色）
+                    drawRoundRect(
+                        color = visuals.keyPressHighlightColor,
+                        topLeft = Offset(hInset, vInset),
+                        size = Size(
+                            width = (size.width - 2f * hInset).coerceAtLeast(0f),
+                            height = (size.height - 2f * vInset).coerceAtLeast(0f),
+                        ),
+                        cornerRadius = CornerRadius(
+                            KeyboardVisuals.SpaceBarCornerRadius.toPx()
+                        ),
+                    )
+                }
+            }
+
+            R.id.button_return -> {
+                val diameter = min(
+                    min(size.width, size.height),
+                    KeyboardVisuals.ReturnKeyMaxDiameter.toPx()
+                )
+                val topLeft = Offset(
+                    x = (size.width - diameter) / 2f,
+                    y = (size.height - diameter) / 2f,
+                )
+                val ovalSize = Size(diameter, diameter)
+                drawOval(color = visuals.accentKeyBackgroundColor, topLeft = topLeft, size = ovalSize)
+                if (pressed) {
+                    drawOval(
+                        color = visuals.keyPressHighlightColor,
+                        topLeft = topLeft,
+                        size = ovalSize,
+                    )
+                }
+            }
+
+            else -> Unit
+        }
+        return
+    }
+
     if (hasBorder) {
         if (visuals.borderStroke) {
             // borderedKeyBackgroundDrawable：底色 + 1dp 描边
