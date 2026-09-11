@@ -516,3 +516,285 @@ FcitxInputMethodService
 5. **生命周期配合**：`onAttached()` 移除对已删除的 `observeAllEntries()` 的订阅 job，改为调用一次
    `invalidatePaging()`（`cachedIn` 的 `replay=1` 会让重开的窗口拿到上次的旧 `PagingData`，须主动失效）；
    `onDetached()` 保留撤销窗口收尾的物理清理。
+
+---
+
+**miuix 组件对齐（本次，无视图层级变化）**
+
+按「Compose 层统一 miuix」的收尾项，把迁移过程中手写 foundation 的地方换成 miuix 官方组件。
+约定：miuix 的 `Window*` 系列是**系统 Dialog** 实现，IME 内不使用，**不计入**本次范围；
+`Overlay*` 系列不依赖系统 Dialog（见下「第三轮」），可用。
+
+| 文件 | 原实现 | 现实现 |
+|---|---|---|
+| `preedit/ComposePreedit.kt` | foundation `BasicText(style = TextStyle(...))` | miuix `Text(color, fontSize, softWrap = false, maxLines = 1, onTextLayout)` |
+| `clipboard/ComposeClipboardEdit.kt` | `androidx.compose.foundation.text.BasicTextField` | miuix `TextField(cornerRadius = 12.dp)` |
+| `bar/ComposeToolbar.kt` `MenuButton` / `HideKeyboardButton` / `ToolbarIconButton` | `Box + clip(CircleShape) + collectIsPressedAsState + clickable(indication = null)` | miuix `IconButton(cornerRadius = HEIGHT/2, minWidth/minHeight = HEIGHT)` |
+| `candidates/ComposeCandidateActionMenu.kt` / `status/ComposeStatusArea.kt` | `Box.height(1.dp).background(dividerLine)` | miuix `HorizontalDivider()` |
+| `candidates/horizontal/ComposeCandidateBar.kt` | `Box.width(1.dp).height(24.dp).background(...)` | miuix `VerticalDivider(color = dividerColor.copy(alpha = 0.3f))` |
+| `clipboard/ComposeClipboard.kt` `PagingFooterLoading` | 单行「加载中」文字 | miuix `CircularProgressIndicator(progress = null, size = 24.dp)` |
+| `clipboard/ComposeClipboard.kt` `ClipboardEntryCard` | `Surface(shape = RoundedCornerShape(12.dp)) + 手动 clip` | miuix `Card(cornerRadius = 12.dp, insideMargin = PaddingValues(14, 10, 14, 10))` |
+
+要点：
+
+1. **miuix `Text` 就是 `BasicText` 的包装**（内部 `style.merge(...)` 后转交 `BasicText`），
+   因此 `onTextLayout` 拿到的 `TextLayoutResult` 语义与原先完全一致 —— 预编辑栏的光标定位算式
+   （`getHorizontalPosition` / `getLineTop` / `getLineBottom`）**零改动**。
+2. **`IconButton` 的按下高亮不手写**：`MiuixTheme` 通过 `LocalIndication provides MiuixIndication`
+   注入主题色（`onBackground`，alpha 0.10），`IconButton` 内部 `clickable` 未传 `indication` 时自动取用，
+   与原 `iconColor.copy(alpha = 0.1f)` 观感一致。`inputFeedback()`（触觉/音效）与
+   `HideKeyboardButton` 的 `detectDragGestures` 顺序保持原样（modifier → inputFeedback → pointerInput）。
+   圆角/最小尺寸显式传 `HEIGHT.dp`，因为 `IconButtonDefaults` 默认 40dp，工具栏高度可配置时会错位。
+3. **`Card` 未启用交互态**：长按菜单需要**按下点偏移**做锚定，而 `Card` 的 `onLongPress` 不提供坐标，
+   故仍保留 `pointerInput { detectTapGestures }` 作为唯一手势入口；`showIndication` 单独传无效
+   （它依赖 `onClick != null` 才挂 `combinedClickable`）。`Card` 的 content 即 `ColumnScope`，
+   原先手写的 `Column(padding(...))` 由 `insideMargin` 取代。
+4. **性能取舍**：`IconButton` / `Card` 的圆角走 `squircleSurface`，尺寸 ≤ 2048px 时会用
+   `CompositingStrategy.Offscreen` 的 graphics layer 做 shader 蒙版（工具栏 9 个按钮 = 9 个离屏层）。
+   状态区早已使用 `IconButton`，此处保持一致；运行时 shader 不可用或 `LocalSquircleEnabled = false`
+   时自动回退为 `clip(RoundedCornerShape) + background`，零成本。
+5. **未做**：`ComposeClipboard.UndoBar` 仍为自绘悬浮条（miuix `Snackbar` 需先确认能否脱离
+   `Scaffold` 在 IME 浮窗内挂载）；`ComposeStatusArea` 的 `DropdownImpl` 名字带 `Impl`，
+   疑似内部件，待确认 API 稳定性。
+
+**补充：第二轮扫描（首轮按「导入」筛漏的部分）**
+
+首轮只看了 `import`，漏掉「组件已是 miuix、但没用它的交互重载」这一类。第二轮按模式全量扫描后补修：
+
+| 文件 | 原实现 | 现实现 |
+|---|---|---|
+| `candidates/horizontal/ComposeCandidateBar.kt` `ExpandButton` | `Box.size(32.dp).clip(RoundedCornerShape(16.dp)).inputFeedback().combinedClickable(indication = null)` + 手动图标变暗 | miuix `IconButton(cornerRadius = 16.dp, minWidth/minHeight = 32.dp)` |
+| `clipboard/ComposeClipboard.kt` 实体芯片 | `Surface(modifier.clip(...).inputFeedback().clickable{...})` | `Surface(onClick = {...}, modifier = Modifier.inputFeedback())` |
+| `clipboard/ComposeClipboard.kt` `EnableListeningUi` 启用按钮 | `Surface(color = primary) + clickable + 手写内边距` | miuix `Button(colors = ButtonDefaults.buttonColorsPrimary())` |
+| `clipboard/ComposeClipboard.kt` `UndoBar` / `CenteredOverlay` / `AnchoredMenu` | `Surface` 的 `modifier` 上多一次 `.clip(RoundedCornerShape(...))` | 删除（miuix `Surface` 内部已有 `.clip(shape).background(color)`，重复裁剪纯冗余） |
+
+**保留手写、不换 miuix 的位置及理由**（第二轮结论，避免后续重复排查）：
+
+- `ComposeNumberRow.NumberKey`、`ComposePopupLayer` 键格/菜单格：键盘按键，miuix 无按键组件；
+  且属多点触控热路径，`Box + combinedClickable + 手写按下高亮` 是刻意选择。
+- `ComposeCandidateBar.CandidateItem`、`ComposeClipboardEdit` 分词芯片：都需要
+  **`onClick` + `onLongClick` + 自定义选中态 border** 的组合。miuix `Surface` 有 `border` 但只有
+  `onClick`（无 `onLongPress`），`Card` 有 `onClick`/`onLongPress` 但无 `border` 参数 —— 两者都不完整，
+  强行替换会丢功能。
+- 各 overlay 的蒙层/定位（`CenteredOverlay` / `AnchoredMenu` / `CandidateActionMenuOverlay` /
+  `StatusAreaMenu`）：按「`Overlay*` / `Window*` 是弹层不参与」的约定不引入 miuix 弹层；
+  其**内容容器**已统一为 miuix `Surface`。
+- `Box`/`Row`/`Column`/`LazyRow`/`LazyColumn`/`FlowRow`/`Modifier.offset`：miuix 无对应基础件，正确。
+- 各处窗口/工具栏/预编辑栏底色、光标条、弹窗蒙层：只是纯色填充，不是「卡片/容器」语义。
+
+**状态区子菜单容器也统一为 `Surface`**：`ComposeStatusArea.StatusAreaMenu` 原先手写
+`Modifier.shadow(8.dp, RoundedCornerShape(12.dp)).clip(...).background(surfaceContainer)`，
+与同族的 `ComposeCandidateActionMenu` 不一致，现改为
+`Surface(shape = RoundedCornerShape(12.dp), color = surfaceContainer, shadowElevation = 8.dp)`，
+删除 `draw.shadow` / `draw.clip` 导入。
+
+**`UndoBar` → miuix `Snackbar`：可行性结论 = 不采用**
+
+查 miuix 0.9.4-rc01 源码确认：
+
+- **技术上可行**：`SnackbarHost` 只是一个 `Box(contentAlignment = BottomCenter) + LazyColumn`，
+  **不依赖 `Scaffold`**，可以直接放在 IME 浮窗的 Compose 树里。`SnackbarDuration.Short` 恰为 4000ms，
+  与 4s 撤销窗口一致。
+- **语义上不匹配**：`SnackbarHostState.showSnackbar(...)` 是 **suspend + 一次性** API，
+  `SnackbarHostState` **没有**公开的「从外部 dismiss」入口（只有 `SnackbarData.dismiss()`，
+  而 `data` 只在自定义 `content` lambda 里拿得到）。而撤销条是**状态驱动**的：
+  `pendingDeleteIds` 每新增一条删除都要**重置 4s 窗口并刷新计数**。
+  若按计数作 `LaunchedEffect` key 重启协程，旧协程会在 `result.await()` 处被取消，
+  而 `entries` 里那条 `SnackbarEntry(visible = true)` 无人置灰 → **永久残留**（列表里卡住一条看不见的
+  Snackbar，且 `LazyColumn` 仍持有它）。按布尔 key 则计数不刷新，属功能回归。
+- **结论**：保留自绘 `UndoBar`（它已是 miuix 主题：`Surface(color = surface, shadowElevation = 8.dp)`
+  + `TextButton`），不引入 `Snackbar`。
+
+---
+
+**第三轮：剪贴板长按菜单改用 miuix `Overlay*` 系列 + 条目按压态**
+
+### 1. 推翻旧约定：`Overlay*` 不依赖系统 Dialog，可在 IME 浮窗内使用
+
+源码证据（miuix 0.9.4-rc01）：
+
+| 结论 | 依据 |
+|---|---|
+| `MiuixPopupHost` 不依赖系统 Dialog | `MiuixPopupUtils.kt` 的 `MiuixPopupHost()` / `PopupEntry` / `DialogEntry` 只组合 `AnimatedVisibility + Box + zIndex` |
+| `Overlay*` 不依赖系统 Dialog | `OverlayListPopup.kt` → `ListPopupLayout` + `PopupLayout`（同上） |
+| `Window*` 依赖系统 Dialog | `WindowDialog.kt` / `WindowListPopup.kt` 内部 `import androidx.compose.ui.window.Dialog` |
+| `Scaffold` 提供弹层宿主 | `Scaffold` → `CompositionLocalProvider(LocalPopupStates/LocalRootPopupStates)` → `ScaffoldLayout` 的 `popupHost` slot，**最后 `place(0, 0)` = z 序最高**，覆盖整个窗口 |
+
+因此 `AGENTS.md` 里「IME 内不使用任何 miuix `Window*` 弹层」的规则收窄为：**只禁 `Window*`，`Overlay*` 可用**。
+
+### 2. 剪贴板窗口根部包一层 `Scaffold`
+
+`ClipboardWindow.Content()` 的根：
+
+```kotlin
+Scaffold(
+    containerColor = Color.Transparent,
+    contentWindowInsets = WindowInsets(0),
+) { ClipboardContent() }
+```
+
+- **必须**：`OverlayListPopup` 只是把内容注册进 `LocalRootPopupStates`，真正渲染它的
+  `MiuixPopupHost` 由 `Scaffold` 的 `popupHost` slot 提供；没有 Scaffold 弹层无处渲染。
+- `containerColor = Color.Transparent`：剪贴板页原本没有底色，透出的是 `InputView` 的主题底图
+  （`customBackground`），给 `surface` 会平白盖一层。
+- `contentWindowInsets = WindowInsets(0)`：IME 窗口的 insets 已由 `InputView.onApplyWindowInsets`
+  交给 `bottomPaddingSpace` 处理；若用 `Scaffold` 默认的 `systemBars ∪ displayCutout`，
+  内容会被导航栏 inset 二次顶开。
+
+### 3. 条目长按反馈改用 miuix 自带按压态
+
+`ClipboardEntryCard` 的 `Card` 换成**交互重载**并显式传 `pressFeedbackType = PressFeedbackType.Sink`
+（miuix 按下时把整卡缩到 0.94，`SinkFeedback`），不再手写压暗。
+
+关键细节：**不传 `onClick` / `onLongPress`**。原因是 miuix `Card` 的 `clickableModifier` 是挂在
+**内层 `Column`** 上的 `combinedClickable`，而 `combinedClickable` 会在 `down` 时 `consume()`，
+会把外层我们自己的 `pointerInput { detectTapGestures }` 挡掉（`awaitFirstDown(requireUnconsumed = true)`）。
+不传点击回调时 `isClickable = false`，`combinedClickable` 不挂载，而
+`Modifier.pressable(...)`（承载 `SinkFeedback`）走 `awaitFirstDown(requireUnconsumed = false)`
+且**从不 consume**，两者可以共存 —— 于是「miuix 按压态」与「长按点坐标」同时拿到。
+
+（附带结论：`showIndication` 只在 `onClick != null` 时才有意义，本场景不可用。）
+
+### 4. 长按菜单：`AnchoredMenu` → `OverlayListPopup`
+
+删除自绘的 `AnchoredMenu`（`fillMaxSize + windowDimming + clickable + Surface + offset` 定位）与
+`MenuOptionRow` 的菜单用途，改为：
+
+```kotlin
+OverlayListPopup(
+    show = show,
+    popupPositionProvider = positionProvider,   // 自定义：长按点锚定
+    alignment = PopupPositionProvider.Align.TopStart,
+    onDismissRequest = onDismissRequest,
+    onDismissFinished = onDismissFinished,
+) {
+    ListPopupColumn {
+        ActionMenuItem(iconResId, text, optionSize, index) { ... }   // 内部 = DropdownImpl
+        ...
+    }
+}
+```
+
+免费得到的 miuix 能力：窗口外点击关闭、返回手势关闭、`windowDimming` 压暗层、
+`ListPopupContent` 自带 `surfaceContainer` 背景 + 16dp 圆角 + clip-reveal 入场动画、
+行按压高亮（`DropdownImpl` 内部 `selectable` + `LocalIndication`）、点击震动（`Confirm`）。
+
+两处必须自己处理的坐标/时序问题：
+
+1. **坐标系换算**：`anchorOffset` 是 Compose 根坐标，而 `PopupPositionProvider.calculatePosition`
+   要求**窗口坐标**。弹层的父级是铺满整个窗口的容器，因此 `anchorBounds.left/top`
+   就是「根原点在窗口中的位置」，一次加法即完成换算（不必去摸 View 层级）。
+   定位语义保持旧行为：长按点为菜单左上角，外扩 8dp（`getMargins()`），越界 `coerceIn` 收回窗口内。
+
+   为什么 `windowBounds` 可以直接拿来夹取：`LocalWindowInfo.containerSize` 的实现是
+   `WindowMetricsCalculator.computeCurrentWindowMetrics(...)`（`AndroidWindowInfo.android.kt`
+   的 `calculateWindowSize`，其 `tryUnwrapContext` **显式支持 `InputMethodService`**），
+   拿到的是 **IME 窗口**尺寸而非 ComposeView 尺寸，所以 `windowBounds` 与 `positionInWindow()`
+   系同一套窗口坐标，不需要再换算。
+2. **退出动画**：`show` 必须与「菜单是否挂载」分开持有 —— 关闭时先把 `show = false` 让弹层播完
+   退场动画，`onDismissFinished` 里才把 `menuState` 置空卸载内容；否则弹层会被直接抽走，没有动画。
+
+`UndoBar` / `CenteredOverlay`（删除全部确认层）本轮未动，仍为自绘；`CenteredOverlay` 是
+`OverlayDialog` 的天然候选，留待确认。
+
+## 第四轮：`OverlayListPopup` 触发 `NavigationEventDispatcherOwner` 缺失崩溃与修复
+
+上一轮把长按菜单换成 `OverlayListPopup` 后，**长按任意剪贴板条目必崩**（`FATAL EXCEPTION`，
+IME 进程被杀后重启）。本轮定位并修复。
+
+### 1. 崩溃表现与触发条件
+
+- 表现：`ComposeInternal E Error was captured in composition.` →
+  `java.lang.IllegalStateException: No NavigationEventDispatcher was provided via
+  LocalNavigationEventDispatcherOwner` → `AndroidRuntime E FATAL EXCEPTION: main` →
+  `Process is going to kill itself!` / `SIG: 9`，随后 `PROCESS STARTED`（Zygote 重启 IME）。
+  从 `ACTION_DOWN` 到异常约 0.4s。
+- 触发条件：进入剪贴板窗口后**长按任意条目**（`menuVisible` 由 false→true，
+  `OverlayListPopup` 首次把内容注册进 `LocalPopupStates`，`MiuixPopupHost` 中**第一次**
+  生成 `PopupEntry`）。不开菜单则完全不触发。
+
+### 2. 根因
+
+miuix `MiuixPopupUtils.kt` 的 `PopupEntry` 在 `AnimatedVisibility` 之前**无条件**调用：
+
+```kotlin
+val navigationEventState = rememberNavigationEventState(currentInfo = NavigationEventInfo.None)
+NavigationBackHandler(
+    state = navigationEventState,
+    isBackEnabled = popupState.enableBackHandler && (visibleState.currentState || visibleState.targetState),
+    onBackCompleted = { popupState.showState.value = false },
+)
+```
+
+`NavigationBackHandler` → `NavigationEventHandler` 里：
+
+```kotlin
+val dispatcher = checkNotNull(LocalNavigationEventDispatcherOwner.current) {
+    "No NavigationEventDispatcher was provided via LocalNavigationEventDispatcherOwner"
+}.navigationEventDispatcher
+```
+
+`LocalNavigationEventDispatcherOwner` 是 `compositionLocalWithHostDefaultOf`，取值链路：
+
+`LocalHostDefaultProvider.currentValue.getHostDefault(key)` → compose-ui 的
+`ViewTreeHostDefaultProvider(owner.view)`（在 `ProvideCompositionLocals` 里提供，挂在
+`AndroidComposeView` 上）→ 从 `LocalView` 起沿 `View.getParentOrViewTreeDisjointParent()`
+逐级 `getTag(R.id.view_tree_navigation_event_dispatcher_owner)`。
+
+- **Activity 场景**：`ComponentActivity` 实现 `NavigationEventDispatcherOwner`，
+  `activity-compose` 的 `setContent` 把它挂到 decorView → 找得到。
+- **IME 场景**：框架不提供。`LifecycleInputMethodService` 原本只挂了 Lifecycle /
+  SavedStateRegistry / ViewModelStore 三个 owner，第四个缺失 → `getHostDefault` 返回 null →
+  `checkNotNull` 抛异常。
+
+异常发生在 composition 阶段，无法被业务代码捕获，于是升级为进程级崩溃。
+
+### 3. 修复（一处生效）
+
+只改 `input/LifecycleInputMethodService.kt`：
+
+```kotlin
+open class LifecycleInputMethodService :
+    InputMethodService(),
+    LifecycleOwner,
+    SavedStateRegistryOwner,
+    ViewModelStoreOwner,
+    NavigationEventDispatcherOwner {          // ← 新增
+
+    private val _navigationEventDispatcher by lazy { NavigationEventDispatcher() }
+    override val navigationEventDispatcher: NavigationEventDispatcher
+        get() = _navigationEventDispatcher
+
+    override fun onCreate() {
+        ...
+        decorView.setViewTreeNavigationEventDispatcherOwner(this)   // ← 新增
+        ...
+    }
+
+    override fun onDestroy() {
+        ...
+        _navigationEventDispatcher.dispose()                        // ← 新增
+    }
+}
+```
+
+要点：
+
+- 这是**框架级**修复，`ClipboardWindow` / `ComposeCandidateActionMenu` / `ComposeStatusArea`
+  等将来任何用 `Overlay*` 的窗口一并受益，不需要每个窗口自己挂。
+- 语义安全：`NavigationEventDispatcher()` 是**根 dispatcher**，IME 场景下没有任何
+  `NavigationEventInput` 注册（IME 窗口不可聚焦、收不到返回手势），所以 miuix 注册进来的
+  handler 只是**永不触发**，不会误吞/误触返回键。
+- `dispose()` 时机安全：`onDestroy()` 时所有 `ComposeView` 的 composition 均已 dispose，
+  handler 由各自的 `DisposableEffect` 摘除，而 `removeHandler` 是 `internal` 且**不**做
+  `checkInvariants`，因此不会出现「disposed 后再 addHandler」的崩溃。
+
+### 4. 验证
+
+- `./gradlew :app:compileDebugKotlin --console=plain` → `BUILD SUCCESSFUL`。
+- 设备侧：重装后打开剪贴板 → 长按任意条目 → 菜单正常弹出，`logcat` 无
+  `No NavigationEventDispatcher was provided` / `FATAL EXCEPTION`。
+
+
+
+

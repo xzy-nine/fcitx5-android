@@ -12,7 +12,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -35,19 +33,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.paging.LoadState
@@ -57,11 +57,22 @@ import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
 import org.fcitx.fcitx5.android.input.bar.inputFeedback
+import top.yukonga.miuix.kmp.basic.Button
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
+import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
+import top.yukonga.miuix.kmp.basic.DropdownImpl
+import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.ListPopupColumn
+import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.PressFeedbackType
 
 /** 剪贴板条目长按操作/确认等交互回调 */
 data class ClipboardCallbacks(
@@ -207,9 +218,7 @@ private fun UndoBar(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .inputFeedback(),
+        modifier = modifier.inputFeedback(),
         shape = RoundedCornerShape(12.dp),
         color = MiuixTheme.colorScheme.surface,
         shadowElevation = 8.dp,
@@ -242,6 +251,8 @@ private fun ClipboardEntryList(
 ) {
     // 当前长按条目 + 长按位置 → 显示锚定操作菜单
     var menuState by remember { mutableStateOf<ClipboardMenuState?>(null) }
+    // 菜单可见性单独持有：关闭时先让 miuix 弹层播完退出动画，再卸载菜单内容
+    var menuVisible by remember { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
@@ -258,7 +269,10 @@ private fun ClipboardEntryList(
                 maskSensitive = maskSensitive,
                 onPaste = { callbacks.onPaste(entry) },
                 onChipClick = { callbacks.onPasteText(it) },
-                onLongPressAction = { offset -> menuState = ClipboardMenuState(entry, offset) },
+                onLongPressAction = { offset ->
+                    menuState = ClipboardMenuState(entry, offset)
+                    menuVisible = true
+                },
             )
         }
         when (val append = entries.loadState.append) {
@@ -274,7 +288,14 @@ private fun ClipboardEntryList(
         }
     }
     menuState?.let { state ->
-        ClipboardActionMenu(state.entry, callbacks, state.anchorOffset) { menuState = null }
+        ClipboardActionMenu(
+            entry = state.entry,
+            callbacks = callbacks,
+            anchorOffset = state.anchorOffset,
+            show = menuVisible,
+            onDismissRequest = { menuVisible = false },
+            onDismissFinished = { menuState = null },
+        )
     }
 }
 
@@ -287,10 +308,10 @@ private fun PagingFooterLoading() {
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = stringResource(R.string.loading),
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            fontSize = 13.sp,
+        CircularProgressIndicator(
+            progress = null,
+            size = 24.dp,
+            strokeWidth = 3.dp,
         )
     }
 }
@@ -339,49 +360,49 @@ private fun ClipboardEntryCard(
             )
         }
     Box(modifier = Modifier.fillMaxWidth()) {
-        Surface(
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
                 .inputFeedback()
                 .then(tapHandler),
-            shape = RoundedCornerShape(12.dp),
-            color = MiuixTheme.colorScheme.surfaceVariant,
+            cornerRadius = 12.dp,
+            insideMargin = PaddingValues(start = 14.dp, top = 10.dp, end = 14.dp, bottom = 10.dp),
+            colors = CardDefaults.defaultColors(color = MiuixTheme.colorScheme.surfaceVariant),
+            // 按压反馈交给 miuix 组件自带的 Sink（按下轻微缩小），不再手写压暗。
+            // 不传 onClick/onLongPress，避免 miuix 内部的 combinedClickable 抢占手势，
+            // 从而保留 tapHandler 提供的「长按点坐标」用于菜单锚定。
+            pressFeedbackType = PressFeedbackType.Sink,
         ) {
-            Column(modifier = Modifier.padding(14.dp, 10.dp, 14.dp, 10.dp)) {
-                Text(
-                    text = display,
-                    color = MiuixTheme.colorScheme.onSurface,
-                    fontSize = 14.sp,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis,
+            Text(
+                text = display,
+                color = MiuixTheme.colorScheme.onSurface,
+                fontSize = 14.sp,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (chips.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                )
-                if (chips.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        chips.forEach { entity ->
-                            val show =
-                                entity.value.take(12) + if (entity.value.length > 12) "…" else ""
-                            Surface(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .inputFeedback()
-                                    .clickable { onChipClick(entity.value) },
-                                shape = RoundedCornerShape(10.dp),
-                                color = MiuixTheme.colorScheme.secondaryContainer,
-                            ) {
-                                Text(
-                                    text = show,
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                    fontSize = 12.sp,
-                                    maxLines = 1,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                )
-                            }
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    chips.forEach { entity ->
+                        val show =
+                            entity.value.take(12) + if (entity.value.length > 12) "…" else ""
+                        Surface(
+                            onClick = { onChipClick(entity.value) },
+                            modifier = Modifier.inputFeedback(),
+                            shape = RoundedCornerShape(10.dp),
+                            color = MiuixTheme.colorScheme.secondaryContainer,
+                        ) {
+                            Text(
+                                text = show,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            )
                         }
                     }
                 }
@@ -415,19 +436,16 @@ private fun EnableListeningUi(onEnable: () -> Unit) {
             fontSize = 14.sp,
             modifier = Modifier.padding(12.dp, 8.dp),
         )
-        Surface(
+        Button(
+            onClick = onEnable,
             modifier = Modifier
                 .align(Alignment.End)
-                .inputFeedback()
-                .clickable(onClick = onEnable),
-            shape = RoundedCornerShape(8.dp),
-            color = MiuixTheme.colorScheme.primary,
+                .inputFeedback(),
+            colors = ButtonDefaults.buttonColorsPrimary(),
         ) {
             Text(
                 text = stringResource(R.string.enable_listening),
-                color = MiuixTheme.colorScheme.onPrimary,
                 fontSize = 14.sp,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
     }
@@ -456,22 +474,130 @@ private fun AddMoreUi() {
     }
 }
 
+/**
+ * 长按操作菜单：miuix Overlay 系列弹层（`OverlayListPopup`）。
+ *
+ * 该弹层不依赖系统 Dialog（内部只用 `AnimatedVisibility` + `Box` + `zIndex`），
+ * 因此可在 IME 浮窗内使用；但它的宿主 `MiuixPopupHost` 必须由窗口根部的 miuix
+ * `Scaffold` 提供（见 `ClipboardWindow.Content`）。
+ *
+ * 自带能力：窗口外点击 / 返回手势关闭、`windowDimming` 压暗层、
+ * `ListPopupContent` 的 `surfaceContainer` 背景 + 16dp 圆角 + clip-reveal 入场动画。
+ *
+ * 定位沿用旧行为：以长按点为菜单左上角（外扩 8dp），越界则收回窗口内。
+ */
 @Composable
 private fun ClipboardActionMenu(
     entry: ClipboardEntry,
     callbacks: ClipboardCallbacks,
     anchorOffset: Offset,
-    onDismiss: () -> Unit,
+    show: Boolean,
+    onDismissRequest: () -> Unit,
+    onDismissFinished: () -> Unit,
 ) {
-    AnchoredMenu(anchorOffset, onDismiss) {
-        val pinned = entry.pinned
-        MenuOptionRow(R.drawable.ic_baseline_push_pin_24, if (pinned) stringResource(R.string.unpin) else stringResource(R.string.pin)) {
-            if (pinned) callbacks.onUnpin(entry.id) else callbacks.onPin(entry.id)
+    val pinned = entry.pinned
+    // anchorOffset 是 Compose 根坐标，而 PopupPositionProvider 要求窗口坐标。
+    // 弹层的父级是铺满整个窗口的容器，其 anchorBounds 左上角即「根原点在窗口中的位置」，
+    // 用它做一次换算即可，无需额外依赖 View 层级。
+    val positionProvider = remember(anchorOffset) {
+        object : PopupPositionProvider {
+            override fun calculatePosition(
+                anchorBounds: IntRect,
+                windowBounds: IntRect,
+                layoutDirection: LayoutDirection,
+                popupContentSize: IntSize,
+                popupMargin: IntRect,
+                alignment: PopupPositionProvider.Align,
+            ): IntOffset {
+                val maxX = (windowBounds.right - popupContentSize.width - popupMargin.right)
+                    .coerceAtLeast(windowBounds.left)
+                val maxY = (windowBounds.bottom - popupContentSize.height - popupMargin.bottom)
+                    .coerceAtLeast(windowBounds.top)
+                return IntOffset(
+                    x = (anchorBounds.left + anchorOffset.x.toInt() + popupMargin.left)
+                        .coerceIn(windowBounds.left, maxX),
+                    y = (anchorBounds.top + anchorOffset.y.toInt() + popupMargin.top)
+                        .coerceIn(windowBounds.top, maxY),
+                )
+            }
+
+            override fun getMargins(): PaddingValues = PaddingValues(8.dp)
         }
-        MenuOptionRow(R.drawable.ic_baseline_edit_24, stringResource(R.string.edit)) { callbacks.onEdit(entry.id) }
-        MenuOptionRow(R.drawable.ic_baseline_share_24, stringResource(R.string.share)) { callbacks.onShare(entry) }
-        MenuOptionRow(R.drawable.ic_baseline_delete_24, stringResource(R.string.delete)) { callbacks.onDelete(entry.id) }
     }
+    val optionSize = 4
+    OverlayListPopup(
+        show = show,
+        popupPositionProvider = positionProvider,
+        alignment = PopupPositionProvider.Align.TopStart,
+        onDismissRequest = onDismissRequest,
+        onDismissFinished = onDismissFinished,
+    ) {
+        ListPopupColumn {
+            ActionMenuItem(
+                iconResId = R.drawable.ic_baseline_push_pin_24,
+                text = if (pinned) stringResource(R.string.unpin) else stringResource(R.string.pin),
+                optionSize = optionSize,
+                index = 0,
+            ) {
+                if (pinned) callbacks.onUnpin(entry.id) else callbacks.onPin(entry.id)
+            }
+            ActionMenuItem(
+                iconResId = R.drawable.ic_baseline_edit_24,
+                text = stringResource(R.string.edit),
+                optionSize = optionSize,
+                index = 1,
+            ) { callbacks.onEdit(entry.id) }
+            ActionMenuItem(
+                iconResId = R.drawable.ic_baseline_share_24,
+                text = stringResource(R.string.share),
+                optionSize = optionSize,
+                index = 2,
+            ) { callbacks.onShare(entry) }
+            ActionMenuItem(
+                iconResId = R.drawable.ic_baseline_delete_24,
+                text = stringResource(R.string.delete),
+                optionSize = optionSize,
+                index = 3,
+            ) { callbacks.onDelete(entry.id) }
+        }
+    }
+}
+
+/**
+ * 弹层菜单中的一行，复用 miuix [DropdownImpl]：
+ * 自带 `selectable` + `LocalIndication` 按压高亮、图标格与行内边距规范。
+ */
+@Composable
+private fun ActionMenuItem(
+    iconResId: Int,
+    text: String,
+    optionSize: Int,
+    index: Int,
+    onClick: () -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+    val iconTint = MiuixTheme.colorScheme.onSurfaceVariantSummary
+    val item = DropdownItem(
+        text = text,
+        icon = { modifier ->
+            Icon(
+                painter = painterResource(iconResId),
+                contentDescription = null,
+                tint = iconTint,
+                modifier = modifier.size(20.dp),
+            )
+        },
+    )
+    DropdownImpl(
+        item = item,
+        optionSize = optionSize,
+        isSelected = false,
+        index = index,
+        onSelectedIndexChange = {
+            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+            onClick()
+        },
+    )
 }
 
 @Composable
@@ -492,55 +618,7 @@ private fun CenteredOverlay(
     ) {
         Surface(
             modifier = Modifier
-                .widthIn(min = 200.dp)
-                .clip(RoundedCornerShape(16.dp)),
-            shape = RoundedCornerShape(16.dp),
-            color = MiuixTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
-        ) {
-            Column(modifier = Modifier.padding(vertical = 6.dp)) {
-                content()
-            }
-        }
-    }
-}
-
-@Composable
-private fun AnchoredMenu(
-    anchorOffset: Offset,
-    onDismiss: () -> Unit,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    var menuSize by remember { mutableStateOf<IntSize>(IntSize.Zero) }
-    var containerSize by remember { mutableStateOf<IntSize>(IntSize.Zero) }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .onSizeChanged { containerSize = it }
-            .background(MiuixTheme.colorScheme.windowDimming)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onDismiss,
-            ),
-        contentAlignment = Alignment.TopStart,
-    ) {
-        Surface(
-            modifier = Modifier
-                .offset {
-                    // 期望以长按点为左上角，偏移 8dp；越界则收回窗口内
-                    val targetX = anchorOffset.x + 8.dp.toPx()
-                    val targetY = anchorOffset.y + 8.dp.toPx()
-                    val maxX = (containerSize.width - menuSize.width).coerceAtLeast(0)
-                    val maxY = (containerSize.height - menuSize.height).coerceAtLeast(0)
-                    IntOffset(
-                        targetX.toInt().coerceIn(0, maxX),
-                        targetY.toInt().coerceIn(0, maxY),
-                    )
-                }
-                .onSizeChanged { menuSize = it }
-                .widthIn(min = 160.dp)
-                .clip(RoundedCornerShape(16.dp)),
+                .widthIn(min = 200.dp),
             shape = RoundedCornerShape(16.dp),
             color = MiuixTheme.colorScheme.surface,
             shadowElevation = 8.dp,

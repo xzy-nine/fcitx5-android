@@ -45,6 +45,7 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** 剪切板编辑页回调：上屏/复制/退出/插入空格变更 */
@@ -146,13 +147,10 @@ fun ClipboardEditContent(
                     )
                 }
             } else {
-                androidx.compose.foundation.text.BasicTextField(
+                TextField(
                     value = textInput,
                     onValueChange = { textInput = it },
-                    textStyle = androidx.compose.ui.text.TextStyle(
-                        color = MiuixTheme.colorScheme.onSurface,
-                        fontSize = 16.sp,
-                    ),
+                    cornerRadius = 12.dp,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

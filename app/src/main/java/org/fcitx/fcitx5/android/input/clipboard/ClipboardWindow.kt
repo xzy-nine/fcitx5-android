@@ -8,10 +8,12 @@ package org.fcitx.fcitx5.android.input.clipboard
 import android.content.Intent
 import android.view.View
 import androidx.annotation.Keep
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.lifecycleScope
 import androidx.paging.LoadState
 import androidx.paging.PagingData
@@ -44,6 +46,7 @@ import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.input.wm.createComposeWindowView
 import org.fcitx.fcitx5.android.utils.EventStateMachine
 import org.mechdancer.dependency.manager.must
+import top.yukonga.miuix.kmp.basic.Scaffold
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -99,8 +102,29 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
 
     override fun onCreateView(): View = createComposeWindowView(context) { Content() }
 
+    /**
+     * 窗口根：miuix [Scaffold]。
+     *
+     * 长按操作菜单改用 miuix Overlay 系列弹层（`OverlayListPopup`）。该弹层本身不依赖系统
+     * Dialog，但其宿主 `MiuixPopupHost` 必须由根 Scaffold 提供（Popup slot 最后 place，
+     * z 序最高且覆盖整个窗口），因此这里必须包一层 Scaffold，否则弹层无处渲染。
+     *
+     * 背景保持透明以沿用键盘主题底图（`InputView.customBackground`）；
+     * IME 窗口的 insets 已由 `InputView` 自行处理，故 `contentWindowInsets` 清零，
+     * 避免内容被系统栏 inset 二次顶开。
+     */
     @Composable
     override fun Content() {
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0),
+        ) {
+            ClipboardContent()
+        }
+    }
+
+    @Composable
+    private fun ClipboardContent() {
         val uiState by _uiState.collectAsState()
         val showDeleteAllDialog by _showDeleteAllDialog.collectAsState()
         val deleteAllLabel by _deleteAllLabel.collectAsState()

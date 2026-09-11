@@ -15,7 +15,6 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import org.fcitx.fcitx5.android.input.bar.inputFeedback
 import org.fcitx.fcitx5.android.data.InputFeedbacks
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -53,7 +52,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.fcitx.fcitx5.android.R
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.VerticalDivider
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
@@ -263,11 +264,9 @@ private fun CandidateRow(
                     )
                     // 分割线
                     if (showDivider && index < candidates.lastIndex) {
-                        Box(
-                            modifier = Modifier
-                                .width(1.dp)
-                                .height(24.dp)
-                                .background(dividerColor.copy(alpha = 0.3f))
+                        VerticalDivider(
+                            modifier = Modifier.height(24.dp),
+                            color = dividerColor.copy(alpha = 0.3f),
                         )
                     }
                 }
@@ -359,27 +358,21 @@ private fun ExpandButton(
     tint: Color,
     modifier: Modifier = Modifier,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-
-    Box(
+    IconButton(
+        onClick = onClick,
         modifier = modifier
             .size(32.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .inputFeedback()
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
+            .inputFeedback(),
+        cornerRadius = 16.dp,
+        minWidth = 32.dp,
+        minHeight = 32.dp,
     ) {
         Icon(
             if (isExpanded) MiuixIcons.ExpandLess else MiuixIcons.ExpandMore,
             contentDescription = stringResource(
                 if (isExpanded) R.string.candidate_collapse else R.string.candidate_expand
             ),
-            tint = if (isPressed) tint.copy(alpha = 0.6f) else tint,
+            tint = tint,
             modifier = Modifier.size(22.dp),
         )
     }
