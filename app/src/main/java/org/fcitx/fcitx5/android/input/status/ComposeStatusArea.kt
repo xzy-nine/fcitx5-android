@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import org.fcitx.fcitx5.android.core.Action
 import org.fcitx.fcitx5.android.input.bar.inputFeedback
 import top.yukonga.miuix.kmp.basic.DropdownImpl
@@ -149,20 +151,22 @@ private fun StatusAreaCell(
             minWidth = 48.dp,
             minHeight = 48.dp,
         ) {
-            if (entry.icon != 0) {
-                Icon(
-                    painter = painterResource(entry.icon),
-                    contentDescription = null,
-                    tint = contentColor,
-                    modifier = Modifier.size(24.dp),
-                )
-            } else {
-                Text(
-                    text = firstCharacter(entry.label),
-                    color = contentColor,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
+            Box(Modifier.semantics { contentDescription = entry.label }) {
+                if (entry.icon != 0) {
+                    Icon(
+                        painter = painterResource(entry.icon),
+                        contentDescription = null,
+                        tint = contentColor,
+                        modifier = Modifier.size(24.dp),
+                    )
+                } else {
+                    Text(
+                        text = firstCharacter(entry.label),
+                        color = contentColor,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
         }
         Spacer(modifier = Modifier.height(6.dp))
