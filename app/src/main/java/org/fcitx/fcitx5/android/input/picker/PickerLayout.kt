@@ -27,35 +27,10 @@ import splitties.views.imageResource
 class PickerLayout(context: Context, theme: Theme, switchKey: KeyDef) :
     ConstraintLayout(context) {
 
+    // 行数据见 PickerKeyboardRows（纯 KeyDef，Compose 侧共用同一份）
     class Keyboard(context: Context, theme: Theme, switchKey: KeyDef) : BaseKeyboard(
-        context, theme, listOf(
-            listOf(
-                ImageLayoutSwitchKey(
-                    R.drawable.ic_baseline_arrow_back_24,
-                    TextKeyboard.Name,
-                    percentWidth = 0.15f,
-                    variant = KeyDef.Appearance.Variant.Accent
-                ),
-                PunctuationKey(","),
-                switchKey,
-                SpaceKey(),
-                PunctuationKey("."),
-                ReturnKey()
-            )
-        )
+        context, theme, listOf(pickerKeyboardRow(switchKey))
     ) {
-
-        class PunctuationKey(val symbol: String) : KeyDef(
-            Appearance.Text(
-                displayText = symbol,
-                textSize = 23f,
-                percentWidth = 0.1f,
-                variant = Appearance.Variant.Alternative
-            ),
-            setOf(
-                Behavior.Press(KeyAction.FcitxKeyAction(symbol))
-            )
-        )
 
         val `return`: ImageKeyView by lazy { findViewById(R.id.button_return) }
 
