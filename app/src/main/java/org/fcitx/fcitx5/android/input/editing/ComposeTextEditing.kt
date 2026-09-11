@@ -56,7 +56,8 @@ data class TextEditingCallbacks(
  * - 列3：右方向键（垂直撑满高度）
  * - 列4：全选 / 复制 / 粘贴（垂直等分）
  * 底部操作行权重 1.6 : 1.6 : 1.2（|&lt; 与 &gt;| 等宽、⌫ 对齐列4）。
- * 高度全部按比例分配（主区域 : 底部 ≈ 300 : 56），适配可调键盘高度。
+ * 主区域 : 底部 = 3 : 1（对齐原视图 4 等分行：上/选区/下/底部各占 1/4），
+ * 高度全部按比例分配，适配可调键盘高度。
  * 按钮使用 miuix 的 [IconButton] 与 [Button]，方向键为图标钮、文字动作为文本钮。
  */
 @Composable
@@ -67,35 +68,48 @@ fun TextEditingContent(
     modifier: Modifier = Modifier,
 ) {
     val gap = 4.dp
-    val dirColor = MiuixTheme.colorScheme.secondaryContainer
-    Column(modifier = modifier.fillMaxSize().padding(2.dp)) {
+    // 方向键按钮用高对比容器色，避免与页面背景（background）色差过小
+    val dirColor = MiuixTheme.colorScheme.surfaceContainerHighest
+    Column(modifier = modifier
+        .fillMaxSize()
+        .padding(2.dp)) {
         Row(
             modifier = Modifier
-                .weight(1f)
+                .weight(3f)
                 .fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(gap),
         ) {
             // 列1：左方向键
             DirIconButton(
-                Modifier.weight(1f).fillMaxHeight(),
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
                 dirColor,
                 R.drawable.ic_baseline_keyboard_arrow_left_24,
                 callbacks.onLeft,
             )
             // 列2：上 / 选区 / 下
             Column(
-                modifier = Modifier.weight(1.2f).fillMaxHeight(),
+                modifier = Modifier
+                    .weight(1.2f)
+                    .fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(gap),
             ) {
                 DirIconButton(
-                    Modifier.weight(1f).fillMaxWidth(),
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
                     dirColor,
                     R.drawable.ic_baseline_keyboard_arrow_up_24,
                     callbacks.onUp,
                 )
-                SelectButton(Modifier.weight(1f).fillMaxWidth(), selectActivated, callbacks.onSelect)
+                SelectButton(Modifier
+                    .weight(1f)
+                    .fillMaxWidth(), selectActivated, callbacks.onSelect)
                 DirIconButton(
-                    Modifier.weight(1f).fillMaxWidth(),
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
                     dirColor,
                     R.drawable.ic_baseline_keyboard_arrow_down_24,
                     callbacks.onDown,
@@ -103,42 +117,58 @@ fun TextEditingContent(
             }
             // 列3：右方向键
             DirIconButton(
-                Modifier.weight(1f).fillMaxHeight(),
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
                 dirColor,
                 R.drawable.ic_baseline_keyboard_arrow_right_24,
                 callbacks.onRight,
             )
             // 列4：全选 / 复制 / 粘贴
             Column(
-                modifier = Modifier.weight(1.2f).fillMaxHeight(),
+                modifier = Modifier
+                    .weight(1.2f)
+                    .fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(gap),
             ) {
-                ActionButton(Modifier.weight(1f).fillMaxWidth(), "全选", callbacks.onSelectAll)
-                ActionButton(Modifier.weight(1f).fillMaxWidth(), "复制", callbacks.onCopy)
-                ActionButton(Modifier.weight(1f).fillMaxWidth(), "粘贴", callbacks.onPaste)
+                ActionButton(Modifier
+                    .weight(1f)
+                    .fillMaxWidth(), "全选", callbacks.onSelectAll)
+                ActionButton(Modifier
+                    .weight(1f)
+                    .fillMaxWidth(), "复制", callbacks.onCopy)
+                ActionButton(Modifier
+                    .weight(1f)
+                    .fillMaxWidth(), "粘贴", callbacks.onPaste)
             }
         }
         Spacer(modifier = Modifier.height(gap))
         Row(
             modifier = Modifier
-                .weight(0.19f)
+                .weight(1f)
                 .fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(gap),
         ) {
             // 行首 |< 与行尾 >| 等宽，各占左侧三列一半；退格 ⌫ 对齐列4
             DirIconButton(
-                Modifier.weight(1.6f).fillMaxHeight(),
+                Modifier
+                    .weight(1.6f)
+                    .fillMaxHeight(),
                 dirColor,
                 R.drawable.ic_baseline_first_page_24,
                 callbacks.onHome,
             )
             DirIconButton(
-                Modifier.weight(1.6f).fillMaxHeight(),
+                Modifier
+                    .weight(1.6f)
+                    .fillMaxHeight(),
                 dirColor,
                 R.drawable.ic_baseline_last_page_24,
                 callbacks.onEnd,
             )
-            ActionButton(Modifier.weight(1.2f).fillMaxHeight(), "⌫", callbacks.onBackspace)
+            ActionButton(Modifier
+                .weight(1.2f)
+                .fillMaxHeight(), "⌫", callbacks.onBackspace)
         }
     }
 }
@@ -159,7 +189,7 @@ private fun DirIconButton(
         Icon(
             painter = painterResource(iconRes),
             contentDescription = null,
-            tint = MiuixTheme.colorScheme.onSecondaryContainer,
+            tint = MiuixTheme.colorScheme.onSurface,
             modifier = Modifier.size(28.dp),
         )
     }
