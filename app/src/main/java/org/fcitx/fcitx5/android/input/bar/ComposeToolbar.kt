@@ -12,6 +12,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -66,7 +68,17 @@ fun ComposeToolbar(
     // 标题扩展内容
     titleExtensionContent: @Composable (() -> Unit)? = null,
 ) {
-    Box(modifier = modifier.fillMaxWidth().background(visuals.barColor)) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            // 四角裁圆：
+            //  · 上两角与父级 keyboardView 的 outline 圆角重合（ViewOutlineExt.applyTopRoundedCornerClip），
+            //    这里一并写上是为了不依赖父级裁剪，将来父级不再裁也不塌；
+            //  · **下两角是工具栏与键盘区的分界**，必须自己裁 —— IME 的下缘在屏幕边缘，
+            //    由屏幕自身的圆角代劳，所以 IME 不裁下缘，但工具栏下缘不在屏幕边缘。
+            .clip(RoundedCornerShape(16.dp))
+            .background(visuals.barColor)
+    ) {
         // 候选栏始终留在组合树中（底层），避免 AndroidView 反复 attach/detach 导致渲染不同步
         CandidateContent(
             candidateContent = candidateContent,

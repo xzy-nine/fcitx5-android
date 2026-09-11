@@ -58,6 +58,9 @@ import org.fcitx.fcitx5.android.input.bar.KawaiiBarStateMachine.TransitionEvent.
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarStateMachine.TransitionEvent.WindowDetached
 import org.fcitx.fcitx5.android.input.bar.ui.idle.InlineSuggestionsUi
 import org.fcitx.fcitx5.android.input.bar.ui.idle.NumberRowContent
+import org.fcitx.fcitx5.android.input.keyboard.rememberActiveTheme
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
 import org.fcitx.fcitx5.android.input.dependency.context
@@ -222,12 +225,27 @@ class ComposeKawaiiBarComponent :
     }
 
     /**
-     * 工具栏视觉配置，全部取自 miuix 主题（不再读 fcitx View 主题）。
+     * 工具栏视觉配置。
+     *
+     * **背景是刻意的「反差薄层」**：工具栏与键盘背景要分开，做法是在键盘底色上叠一层
+     * **反色**的极低透明度 scrim（键盘深 → 叠白、键盘浅 → 叠黑，`alpha < 10%`），
+     * 再配圆角（见 `ComposeToolbar`）把它和键盘区在视觉上切开 —— 起分隔作用的是**下**两角
+     * （工具栏与键盘区的分界；IME 的下缘由屏幕自身圆角代劳，不在此列）。
+     *
+     * 深浅判断用**键盘背景色本身的明度**（`theme.keyboardColor`），而不是主题自报的
+     * `isDark` —— 用户名下的自定义主题常常与 `isDark` 不一致。背景图主题下该色不代表实际
+     * 画面明度，此时仍以此色为准（后续若要更准，可对背景图取平均亮度）。
+     *
+     * 图标/文字色仍取 miuix（工具栏是纯 Compose 区，不参与 fcitx 主题的键面配色）。
      */
     @Composable
     private fun getVisuals(): ToolbarVisuals {
+        val theme = rememberActiveTheme()
+        val keyboardIsLight = Color(theme.keyboardColor).luminance() > 0.5f
+        val scrim = if (keyboardIsLight) Color.Black else Color.White
         return ToolbarVisuals(
-            barColor = MiuixTheme.colorScheme.background,
+            // < 10%：只做「与键盘区分」的暗示，不遮挡背后的主题/背景图
+            barColor = scrim.copy(alpha = 0.08f),
             iconColor = MiuixTheme.colorScheme.onSurface,
             textColor = MiuixTheme.colorScheme.onSurface,
         )

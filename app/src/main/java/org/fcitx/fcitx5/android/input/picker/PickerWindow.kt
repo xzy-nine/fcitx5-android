@@ -96,8 +96,14 @@ class PickerWindow(
 
     private val tabsUi by lazy { PickerTabsUi(context, theme) }
 
-    /** 内嵌键盘的回车图标（`onReturnDrawableUpdate` 更新）。 */
-    private var returnDrawable by mutableStateOf(returnKeyDrawable.resourceId)
+    /**
+     * 内嵌键盘的回车图标，由 `onAttached()` 从 [returnKeyDrawable] 取初值。
+     *
+     * **不能在属性初始化器里读依赖**：Picker 窗口是在 `InputView.<init>` 里构造的，
+     * 那时依赖作用域尚未装配，`by manager.must()` 会抛 `ComponentNotExistException`
+     * （View 原实现同样只在 `onAttached()` 里访问它）。
+     */
+    private var returnDrawable by mutableStateOf(0)
 
     /** 弹层小键盘显示时禁用 pager 滑动（对应 View 的 `isUserInputEnabled`）。 */
     private var pagerScrollEnabled by mutableStateOf(true)
