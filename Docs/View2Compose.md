@@ -548,6 +548,38 @@ windowManager.view
 
 ---
 
+## 13. EditorInfo 窗口 Compose 化（补窗口迁移漏网者）
+
+此前 `EditorInfoWindow` 是窗口迁移的漏网者（仍 View），本轮补上。
+
+```
+windowManager.view
+└── EditorInfoWindow (ComposeWindow - 非 essential，每次 attach 新建、detach dispose)
+    └── createComposeWindowView → EditorInfoWindow.Content()
+        └── ComposeEditorInfoContent (纵向滚动 键→值 两列表格，MiuixTheme 取色)
+```
+
+接线链路：
+
+1. `EditorInfoWindow` 实现 `ComposeWindow`；`onCreateView()` 改 `createComposeWindowView { Content() }`
+   （同样被 `InputWindowManager.createWindowView` 的 Compose 分流承载）。
+2. 数据驱动：`propertyMap` 改 `MutableStateFlow<Map<String,String>>`；`onAttached()` 写入
+   `EditorInfoParser.parse(service.currentInputEditorInfo)`，`Content()` 内 `collectAsState` 渲染。
+3. `buildMarkdownString()` 改读 `_propertyMap.value`；标题 `title` 与复制按钮 `onCreateBarExtension()`
+   （copy `ToolButton`，仍 View，与 `ClipboardWindow` / `TextEditingWindow` 一致）不变。
+4. `ComposeEditorInfo.kt`（新增）：渲染层，`Column + verticalScroll`，两列（加粗键名 + 可换行取值），
+   列间/行间用 miuix `Text` / `HorizontalDivider`，颜色取 `MiuixTheme.colorScheme`
+   （`background` / `onSurface` / `dividerLine`）。
+
+旧文件（断开接线，保留供审查）：
+
+| 旧文件 | 状态 |
+|---|---|
+| `EditorInfoUi.kt` | 断线（原 TableLayout 表格，被 `ComposeEditorInfoContent` 取代） |
+| `EditorInfoWindow.kt`（原 onCreateView 内 `ui` 惰性实例） | 已删除（window 仍保留，仅去掉 View 渲染） |
+
+---
+
 ## 附录 A：断线文件清单
 
 > 「断线」= 已不再被活跃代码引用，仅被同类断线文件互引或保留别名 / 委托。上游文件按 fork 约定保留不动、不删除；custom 私有文件可择机清理。
@@ -606,7 +638,6 @@ windowManager.view
 | 文件 | 说明 |
 |---|---|
 | `input/CandidatesView.kt` | 浮动候选（物理键盘模式），仍被 `FcitxInputMethodService` 挂载；用 `PreeditUi` / `PagedCandidatesUi` / `LabeledCandidateItemUi` |
-| `input/editorinfo/EditorInfoWindow.kt` + `EditorInfoUi.kt` | 仍是 View 窗口（`onCreateView()`），窗口迁移的漏网者 |
 | `input/keyboard/KeyboardTuneOverlay.kt` | custom 调校浮层，仍 View，挂 `keyboardView` 内 |
 | `ui/main/settings/theme/KeyboardPreviewUi.kt` | 设置页主题预览，实例化 `TextKeyboard`（View 键盘） |
 | `input/bar/ui/ToolButton.kt` | 仍活跃（多个窗口 `onCreateBarExtension` 返回的 View 按钮） |
@@ -621,3 +652,9 @@ windowManager.view
 | `picker/PickerDensity.kt` | Picker 密度枚举 |
 | `clipboard/ClipboardTextUtils.kt` | `excerptClipboardText` 顶层函数 |
 | `keyboard/KeyboardLayoutNames.kt` | 布局名常量对象 |
+
+### A.8 EditorInfo
+
+| 文件 | 状态 |
+|---|---|
+| `editorinfo/EditorInfoUi.kt` | 断线（被 `ComposeEditorInfoContent` 取代） |
