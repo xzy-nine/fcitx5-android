@@ -52,7 +52,7 @@ import kotlin.math.min
 @Composable
 fun ComposePickerPage(
     items: List<String>,
-    density: PickerPageUi.Density,
+    density: PickerDensity,
     bordered: Boolean,
     keyActionListener: KeyActionListener?,
     popupActionListener: PopupActionListener?,
@@ -144,7 +144,7 @@ private fun PickerCells(
     firstIndex: Int,
     lastIndex: Int,
     items: List<String>,
-    density: PickerPageUi.Density,
+    density: PickerDensity,
     border: Border,
     policy: PickerPolicy?,
     withPopups: Boolean,
@@ -188,7 +188,7 @@ private fun PickerCells(
 private fun cellDef(
     display: String?,
     raw: String?,
-    density: PickerPageUi.Density,
+    density: PickerDensity,
     border: Border,
     popupKeyboard: KeyDef.Popup.Keyboard?,
 ): KeyDef {

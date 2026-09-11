@@ -28,7 +28,7 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.RecentlyUsed
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.keyboard.KeyDef.Appearance.Variant
-import org.fcitx.fcitx5.android.input.picker.PickerPageUi
+import org.fcitx.fcitx5.android.input.picker.PickerDensity
 import org.fcitx.fcitx5.android.input.picker.PickerWindow
 import org.fcitx.fcitx5.android.input.popup.PopupActionListener
 
@@ -52,7 +52,7 @@ class NumberKeyboardState {
         private set
 
     private val recentlyUsed: RecentlyUsed by lazy {
-        RecentlyUsed(PickerWindow.Key.Symbol.name, PickerPageUi.Density.High.pageSize)
+        RecentlyUsed(PickerWindow.Key.Symbol.name, PickerDensity.High.pageSize)
     }
 
     /** 外显的滑块子按钮数量（`symbols.symbolSliderVisibleCount`，View 侧每次重建都即时读取）。 */

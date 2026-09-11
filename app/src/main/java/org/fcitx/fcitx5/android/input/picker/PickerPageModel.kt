@@ -14,12 +14,12 @@ import org.fcitx.fcitx5.android.data.RecentlyUsed
  *
  * 约定（与原实现一致）：
  * - 第 0 页恒为「最近使用」，内容取 [recentlyUsed]；
- * - 其余分类按 [PickerPageUi.Density.pageSize] 分块成页，`policy.filter` 先过滤；
+ * - 其余分类按 [PickerDensity.pageSize] 分块成页，`policy.filter` 先过滤；
  * - [insertRecent] 忽略单个数字字符（半角/全角）。
  */
 class PickerPageModel(
     private val rawData: List<Pair<PickerData.Category, Array<String>>>,
-    private val density: PickerPageUi.Density,
+    private val density: PickerDensity,
     recentlyUsedFileName: String,
     private val policy: PickerPolicy,
 ) {

@@ -69,7 +69,7 @@ import org.mechdancer.dependency.manager.must
 class PickerWindow(
     override val key: Key,
     private val data: List<Pair<PickerData.Category, Array<String>>>,
-    private val density: PickerPageUi.Density,
+    private val density: PickerDensity,
     private val switchKey: KeyDef,
     private val popupPreview: Boolean = true,
     private val followKeyBorder: Boolean = true,

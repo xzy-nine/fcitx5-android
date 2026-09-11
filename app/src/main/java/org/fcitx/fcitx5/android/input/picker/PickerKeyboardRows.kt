@@ -10,7 +10,7 @@ import org.fcitx.fcitx5.android.input.keyboard.KeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyDef
 import org.fcitx.fcitx5.android.input.keyboard.ReturnKey
 import org.fcitx.fcitx5.android.input.keyboard.SpaceKey
-import org.fcitx.fcitx5.android.input.keyboard.TextKeyboard
+import org.fcitx.fcitx5.android.input.keyboard.KeyboardLayoutNames
 
 /**
  * Picker 底部内嵌键盘的行数据（纯 [KeyDef]，无 View 依赖）。
@@ -23,7 +23,7 @@ import org.fcitx.fcitx5.android.input.keyboard.TextKeyboard
 internal fun pickerKeyboardRow(switchKey: KeyDef): List<KeyDef> = listOf(
     ImageLayoutSwitchKey(
         R.drawable.ic_baseline_arrow_back_24,
-        TextKeyboard.Name,
+        KeyboardLayoutNames.Text,
         percentWidth = 0.15f,
         variant = KeyDef.Appearance.Variant.Accent
     ),

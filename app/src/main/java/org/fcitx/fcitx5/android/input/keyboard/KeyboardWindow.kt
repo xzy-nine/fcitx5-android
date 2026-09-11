@@ -72,8 +72,8 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     override val key: EssentialWindow.Key
         get() = KeyboardWindow
 
-    /** 当前布局（Compose 状态）：[TextKeyboard.Name] 或 [NumberKeyboard.Name]。 */
-    private val currentLayout = mutableStateOf(TextKeyboard.Name)
+    /** 当前布局（Compose 状态）：[KeyboardLayoutNames.Text] 或 [KeyboardLayoutNames.Number]。 */
+    private val currentLayout = mutableStateOf(KeyboardLayoutNames.Text)
 
     /** 文本键盘状态层（跨布局切换与重组存活）。 */
     private val textKeyboardState by lazy { TextKeyboardState(returnKeyDrawable.resourceId) }
@@ -143,7 +143,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
                     isSplitAllowedByRatio(widthPx, heightPx, splitThreshold)
 
             when (layout) {
-                NumberKeyboard.Name -> ComposeNumberKeyboard(
+                KeyboardLayoutNames.Number -> ComposeNumberKeyboard(
                     state = numberKeyboardState,
                     keyActionListener = keyActionListener,
                     popupActionListener = popupActionListener,
@@ -170,7 +170,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
 
     fun switchLayout(to: String) {
         ContextCompat.getMainExecutor(service).execute {
-            if (to == TextKeyboard.Name || to == NumberKeyboard.Name) {
+            if (to == KeyboardLayoutNames.Text || to == KeyboardLayoutNames.Number) {
                 if (to == currentLayout.value) return@execute
                 currentLayout.value = to
                 if (windowManager.isAttached(this)) {
@@ -184,9 +184,9 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
 
     override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {
         val targetLayout = when (info.inputType and InputType.TYPE_MASK_CLASS) {
-            InputType.TYPE_CLASS_NUMBER -> NumberKeyboard.Name
-            InputType.TYPE_CLASS_PHONE -> NumberKeyboard.Name
-            else -> TextKeyboard.Name
+            InputType.TYPE_CLASS_NUMBER -> KeyboardLayoutNames.Number
+            InputType.TYPE_CLASS_PHONE -> KeyboardLayoutNames.Number
+            else -> KeyboardLayoutNames.Text
         }
         switchLayout(targetLayout)
     }
@@ -230,7 +230,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     // 1) the keyboard window was newly attached
     // 2) currently keyboard window is attached and switchLayout was used
     private fun notifyBarLayoutChanged() {
-        bar.onKeyboardLayoutSwitched(currentLayout.value == NumberKeyboard.Name)
+        bar.onKeyboardLayoutSwitched(currentLayout.value == KeyboardLayoutNames.Number)
     }
 
     /** 启动滑块符号编辑弹窗（顶部 Activity，内含输入框），结果经 [SymbolSliderEditStore] 回传。 */

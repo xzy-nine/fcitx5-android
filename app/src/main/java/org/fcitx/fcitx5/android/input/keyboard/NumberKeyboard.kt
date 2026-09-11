@@ -36,7 +36,7 @@ class NumberKeyboard(
     override val supportsSplitLayout: Boolean = true
 
     companion object {
-        const val Name = "Number"
+        const val Name = KeyboardLayoutNames.Number
 
         // 仅供 super 构造使用；实际布局由 rebuildKeyboardRows 自定义生成
         val Layout: List<List<KeyDef>> = emptyList()

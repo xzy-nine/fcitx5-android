@@ -43,7 +43,7 @@ internal object NumberKeyboardRows {
     fun row4(): List<KeyDef> = listOf(
         ImageLayoutSwitchKey(
             R.drawable.ic_baseline_arrow_back_24,
-            TextKeyboard.Name,
+            KeyboardLayoutNames.Text,
             percentWidth = 0.15f,
             variant = Variant.Accent
         ),
@@ -58,7 +58,7 @@ internal object NumberKeyboardRows {
     fun row4Split(): List<KeyDef> = listOf(
         ImageLayoutSwitchKey(
             R.drawable.ic_baseline_arrow_back_24,
-            TextKeyboard.Name,
+            KeyboardLayoutNames.Text,
             percentWidth = 0.15f,
             variant = Variant.Accent
         ),

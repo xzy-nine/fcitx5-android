@@ -52,7 +52,6 @@ import org.fcitx.fcitx5.android.input.picker.emoticonPicker
 import org.fcitx.fcitx5.android.input.picker.symbolPicker
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
 import org.fcitx.fcitx5.android.input.preedit.ComposePreeditComponent
-import org.fcitx.fcitx5.android.input.preedit.PreeditComponent
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.unset
 import org.fcitx.fcitx5.android.utils.windowManager
@@ -114,7 +113,6 @@ class InputView(
     private val punctuation = PunctuationComponent()
     private val returnKeyDrawable = ReturnKeyDrawableComponent()
     private val preeditEmptyState = PreeditEmptyStateComponent()
-    private val preedit = PreeditComponent()
     private val composePreedit = ComposePreeditComponent()
     private val commonKeyActionListener = CommonKeyActionListener()
     private val windowManager = InputWindowManager()
@@ -161,7 +159,6 @@ class InputView(
         scope += punctuation
         scope += returnKeyDrawable
         scope += preeditEmptyState
-        // 旧 View 实现：scope += preedit（已断开接线，保留供对比）
         scope += composePreedit
         scope += commonKeyActionListener
         scope += windowManager

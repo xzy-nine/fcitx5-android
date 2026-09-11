@@ -31,8 +31,8 @@ import org.fcitx.fcitx5.android.input.popup.PopupActionListener
  * Compose 版数字行，替代 [NumberRow]（View / BaseKeyboard）。
  * 作为工具栏 Idle 态的 NumberRow 子态内容，由 ComposeToolbar 渲染。
  *
- * 布局数据仍取自 [NumberRow.Layout]（纯 [org.fcitx.fcitx5.android.input.keyboard.KeyDef] 数据，
- * 见 `KeyboardComposePlan.md` D15），按键本体走批次 B 的
+ * 布局数据取自 [NumberRowLayout]（纯 [org.fcitx.fcitx5.android.input.keyboard.KeyDef] 数据，
+ * 已从 View 类 NumberRow 抽离），按键本体走批次 B 的
  * [ComposeKey] 原语（每键 `pointerInput`），因此长按/滑行/移出取消等语义与主键盘同源。
  */
 @Composable
@@ -48,7 +48,7 @@ fun NumberRowContent(
     // 与原 NumberRow 一致：左滑（LTR 下为向右位移）超过工具栏高度即收起
     val thresholdPx = with(density) { ComposeKawaiiBarComponent.HEIGHT.dp.toPx() }
     val visuals = rememberKeyboardVisuals()
-    val row = NumberRow.Layout.first()
+    val row = NumberRowLayout.first()
     // 收起手势生效时递增：通知键取消当前手势，避免「滑收起的同时又上屏一个数字」
     // （对应 View 侧 onInterceptTouchEvent 抢占后子 View 收到 ACTION_CANCEL）
     var cancelEpoch by remember { mutableStateOf(0) }
