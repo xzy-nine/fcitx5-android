@@ -148,7 +148,8 @@ data class SpaceSplitSpec(
 
 /** 该行没有空格键时返回 null（调用方回退到 [computeKeyRowSlots]）。 */
 fun computeSpaceSplitSpec(row: List<KeyDef>, gapRatio: Float): SpaceSplitSpec? {
-    val spaceIndex = row.indexOfFirst { it is SpaceKey || it is MiniSpaceKey }
+    // 按 viewId 判空格键（键面变换会重建 KeyDef、丢掉子类类型），见 isSpaceKeyDef
+    val spaceIndex = row.indexOfFirst { isSpaceKeyDef(it) }
     if (spaceIndex < 0) return null
     val leftRow = row.subList(0, spaceIndex)
     val rightRow = row.subList(spaceIndex + 1, row.size)

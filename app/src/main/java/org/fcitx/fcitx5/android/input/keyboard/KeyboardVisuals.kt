@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.keyboard.KeyDef.Appearance.Border
@@ -156,6 +157,23 @@ data class KeyInsets(
         fun symmetric(horizontal: Dp, vertical: Dp) =
             KeyInsets(horizontal, horizontal, vertical, vertical)
     }
+}
+
+/**
+ * 把 [ManagedPreference] 包成 Compose 状态：注册 `OnChangeListener`，偏好变化即重组。
+ *
+ * 只给「View 侧原本就注册监听、不重建即时生效」的那几项用；其余偏好仍是「构造期读一次、
+ * 改偏好靠窗口重建」的口径（与 `LongPressDelayProvider` 一致）。
+ */
+@Composable
+fun <T : Any> ManagedPreference<T>.preferenceState(): T {
+    var value by remember(this) { mutableStateOf(getValue()) }
+    DisposableEffect(this) {
+        val listener = ManagedPreference.OnChangeListener<T> { _, newValue -> value = newValue }
+        registerOnChangeListener(listener)
+        onDispose { unregisterOnChangeListener(listener) }
+    }
+    return value
 }
 
 /**

@@ -378,7 +378,9 @@ fun ComposeTextKeyboard(
     cancelEpoch: Int = 0,
 ) {
     val prefs = remember { AppPrefs.getInstance().keyboard }
-    val hapticOnRepeat = prefs.hapticOnRepeat.getValue()
+    // 这两项 View 侧是靠监听即时生效的（不重建），故做成响应式
+    val hapticOnRepeat = prefs.hapticOnRepeat.preferenceState()
+    val spaceSwipeMoveCursor = prefs.spaceSwipeMoveCursor.preferenceState()
     val view = LocalView.current
 
     // View: TextKeyboard.onAction / onPopupAction 的变换挂在按键动作前后
@@ -397,7 +399,7 @@ fun ComposeTextKeyboard(
         split = split,
         gapRatio = gapRatio,
     ) { keyId, def, insets, keyModifier ->
-        val swipeSpec = def.spaceAndBackspaceSwipeSpec()
+        val swipeSpec = def.spaceAndBackspaceSwipeSpec(spaceSwipeMoveCursor)
         val gestureListener = remember(def, hapticOnRepeat) {
             def.spaceAndBackspaceGestureListener(
                 view = view,
@@ -429,8 +431,11 @@ fun ComposeTextKeyboard(
  *
  * 空格的启用条件还额外受 `spaceSwipeMoveCursor` 偏好控制。
  */
-internal fun KeyDef.spaceAndBackspaceSwipeSpec(): ComposeKeySwipeSpec? = when (this) {
-    is SpaceKey -> if (AppPrefs.getInstance().keyboard.spaceSwipeMoveCursor.getValue()) {
+internal fun KeyDef.spaceAndBackspaceSwipeSpec(
+    spaceSwipeMoveCursor: Boolean,
+): ComposeKeySwipeSpec? = when (appearance.viewId) {
+    // 按 viewId 判（键面变换会重建 KeyDef、丢掉子类类型）；MiniSpaceKey 不参与滑行
+    R.id.button_space -> if (spaceSwipeMoveCursor) {
         ComposeKeySwipeSpec(
             thresholdX = KeySwipeThresholds.Selection,
             thresholdY = KeySwipeThresholds.Disabled,
@@ -440,7 +445,7 @@ internal fun KeyDef.spaceAndBackspaceSwipeSpec(): ComposeKeySwipeSpec? = when (t
         null
     }
 
-    is BackspaceKey -> ComposeKeySwipeSpec(
+    R.id.button_backspace -> ComposeKeySwipeSpec(
         thresholdX = KeySwipeThresholds.Selection,
         thresholdY = KeySwipeThresholds.Disabled,
         repeatEnabled = true,
@@ -461,8 +466,8 @@ internal fun KeyDef.spaceAndBackspaceGestureListener(
     view: View,
     onAction: (KeyAction) -> Unit,
     hapticOnRepeat: Boolean,
-): ComposeKeyGestureListener? = when (this) {
-    is SpaceKey -> ComposeKeyGestureListener { event ->
+): ComposeKeyGestureListener? = when (appearance.viewId) {
+    R.id.button_space -> ComposeKeyGestureListener { event ->
         when (event.type) {
             ComposeKeyGestureEvent.Type.Move -> {
                 val count = event.countX
@@ -487,7 +492,7 @@ internal fun KeyDef.spaceAndBackspaceGestureListener(
         }
     }
 
-    is BackspaceKey -> ComposeKeyGestureListener { event ->
+    R.id.button_backspace -> ComposeKeyGestureListener { event ->
         when (event.type) {
             ComposeKeyGestureEvent.Type.Move -> {
                 val count = event.countX

@@ -73,8 +73,20 @@ class InputWindowManager : UniqueViewComponent<InputWindowManager, FrameLayout>(
                 throw IllegalStateException("${window.key} is already occupied")
         }
         scope += window
-        val view = if (createView) window.onCreateView() else null
+        val view = if (createView) createWindowView(window) else null
         essentialWindows[window.key] = window to view
+    }
+
+    /**
+     * 创建窗口的 View：Compose 窗口走统一的 ComposeView 宿主，其余维持 `onCreateView()` 兜底。
+     *
+     * essential 与非 essential 两条路径共用（D1）：KeyboardWindow 这类 essential 窗口也需要
+     * Compose 宿主，且它的 View 会被缓存复用、不 `disposeComposition()`。
+     */
+    private fun createWindowView(window: InputWindow): View = if (window is ComposeWindow) {
+        createComposeWindowView(context) { window.Content() }
+    } else {
+        window.onCreateView()
     }
 
     fun getEssentialWindow(windowKey: EssentialWindow.Key) =
@@ -117,17 +129,12 @@ class InputWindowManager : UniqueViewComponent<InputWindowManager, FrameLayout>(
             Timber.d("Skip attaching $window")
         val newView = if (window is EssentialWindow) {
             // keep the view for essential windows
-            essentialWindows[window.key]?.second ?: window.onCreateView()
+            essentialWindows[window.key]?.second ?: createWindowView(window)
                 .also { essentialWindows[window.key] = window to it }
         } else {
             // add the new window to scope, except essential windows (they are always in scope)
             scope += window
-            // Compose 化窗口由统一 ComposeView 宿主承载，其余窗口维持 onCreateView() 兜底
-            if (window is ComposeWindow) {
-                createComposeWindowView(context) { window.Content() }
-            } else {
-                window.onCreateView()
-            }
+            createWindowView(window)
         }
         if (currentWindow != null) {
             val oldWindow = currentWindow!!

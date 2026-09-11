@@ -112,7 +112,8 @@ fun ComposeNumberKeyboard(
     split: Boolean = false,
 ) {
     val prefs = remember { AppPrefs.getInstance().keyboard }
-    val hapticOnRepeat = prefs.hapticOnRepeat.getValue()
+    val hapticOnRepeat = prefs.hapticOnRepeat.preferenceState()
+    val spaceSwipeMoveCursor = prefs.spaceSwipeMoveCursor.preferenceState()
     val view = androidx.compose.ui.platform.LocalView.current
 
     // 空格（MiniSpace 不算）/ 退格的键型滑行，与文本键盘同源
@@ -124,7 +125,7 @@ fun ComposeNumberKeyboard(
             insets = insets,
             keyActionListener = keyActionListener,
             popupActionListener = popupActionListener,
-            swipeSpec = def.spaceAndBackspaceSwipeSpec(),
+            swipeSpec = def.spaceAndBackspaceSwipeSpec(spaceSwipeMoveCursor),
             onSwipeGesture = remember(def, hapticOnRepeat) {
                 def.spaceAndBackspaceGestureListener(
                     view = view,
@@ -156,33 +157,35 @@ fun ComposeNumberKeyboard(
     LaunchedEffect(Unit) { state.refreshRecent() }
 
     if (split) {
-        Column(modifier = modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().weight(3f)) {
-                ComposeRecentSymbolsPanel(
-                    symbols = state.recentSymbols,
-                    onSymbolInput = onRecentSymbolInput,
-                    onLayoutSwitch = onLayoutSwitch,
-                    modifier = Modifier.weight(0.45f).fillMaxHeight(),
-                )
-                Spacer(Modifier.weight(0.10f))
-                ComposeSymbolSlider(
-                    symbols = state.sliderSymbols,
-                    visibleCount = state.symbolSliderVisibleCount,
-                    onSymbolInput = onSymbolInput,
-                    onEditClick = onSymbolSliderEdit,
-                    modifier = Modifier.weight(0.0675f).fillMaxHeight(),
-                )
-                Column(Modifier.weight(0.3825f).fillMaxHeight()) {
-                    ComposeKeyRow(NumberKeyboardRows.row1(), Modifier.fillMaxWidth().weight(1f), keyIdBase = 0, key = keySlot)
-                    ComposeKeyRow(NumberKeyboardRows.row2(), Modifier.fillMaxWidth().weight(1f), keyIdBase = 100, key = keySlot)
-                    ComposeKeyRow(NumberKeyboardRows.row3(), Modifier.fillMaxWidth().weight(1f), keyIdBase = 200, key = keySlot)
+        // 与 View 的 buildSplitLayout 一一对应：
+        //   左 45% 历史符号面板（**通栏**）+ 10% 空白 + 右 45%（上 75%：6.75% 滑块 + 38.25% 三行；
+        //   下 25%：第 4 行通占右侧 45%）。
+        Row(modifier = modifier.fillMaxSize()) {
+            ComposeRecentSymbolsPanel(
+                symbols = state.recentSymbols,
+                onSymbolInput = onRecentSymbolInput,
+                onLayoutSwitch = onLayoutSwitch,
+                modifier = Modifier.weight(0.45f).fillMaxHeight(),
+            )
+            Spacer(Modifier.weight(0.10f))
+            Column(Modifier.weight(0.45f).fillMaxHeight()) {
+                Row(Modifier.fillMaxWidth().weight(3f)) {
+                    ComposeSymbolSlider(
+                        symbols = state.sliderSymbols,
+                        visibleCount = state.symbolSliderVisibleCount,
+                        onSymbolInput = onSymbolInput,
+                        onEditClick = onSymbolSliderEdit,
+                        modifier = Modifier.weight(0.15f).fillMaxHeight(),
+                    )
+                    Column(Modifier.weight(0.85f).fillMaxHeight()) {
+                        ComposeKeyRow(NumberKeyboardRows.row1(), Modifier.fillMaxWidth().weight(1f), keyIdBase = 0, key = keySlot)
+                        ComposeKeyRow(NumberKeyboardRows.row2(), Modifier.fillMaxWidth().weight(1f), keyIdBase = 100, key = keySlot)
+                        ComposeKeyRow(NumberKeyboardRows.row3(), Modifier.fillMaxWidth().weight(1f), keyIdBase = 200, key = keySlot)
+                    }
                 }
-            }
-            Row(Modifier.fillMaxWidth().weight(1f)) {
-                Spacer(Modifier.weight(0.55f))
                 ComposeKeyRow(
                     row = NumberKeyboardRows.row4Split(),
-                    modifier = Modifier.weight(0.45f).fillMaxHeight(),
+                    modifier = Modifier.fillMaxWidth().weight(1f),
                     keyIdBase = 300,
                     key = keySlot,
                 )

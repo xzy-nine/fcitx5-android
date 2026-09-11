@@ -128,15 +128,17 @@ fun ComposeKey(
     val swipeGestureState = rememberUpdatedState(onSwipeGesture)
     val enabledState = rememberUpdatedState(enabled)
 
-    // 偏好读取不是响应式的（与 LongPressDelayProvider / repeatableClick 同口径），
-    // 与 View 侧 KeyView 在构造期读一次一致：改偏好需窗口重建才生效。
+    // 偏好读取：View 侧是在**手势时刻**读（`if (popupOnKeyPress)` / `delay(longPressDelay)` /
+    // `swipeSymbolDirection.checkY(...)` / repeat 里读 hapticOnRepeat），改偏好下一次手势即生效。
+    // 这里保持同一口径 —— 传 lambda 而不是取值快照，手势协程里才读。
     val prefs = remember { AppPrefs.getInstance().keyboard }
-    val popupOnKeyPress = prefs.popupOnKeyPress.getValue()
-    val swipeSymbolDirection = prefs.swipeSymbolDirection.getValue()
-    val longPressDelay = prefs.longPressDelay.getValue()
-    val hapticOnRepeat = prefs.hapticOnRepeat.getValue()
 
-    val spec = remember(def, swipeSpec) { buildKeyGestureSpec(def, swipeSpec) }
+    // 键面变换（caps/标点/图标）会产出**新的 KeyDef 实例**，但 behaviors/popup 是复用同一份。
+    // 这里只按这两者做 key，避免「只是换了个键面」也把 pointerInput 手势节点重启
+    // （重启会取消进行中的手势）——id 与尺寸稳定时手势节点必须常驻。
+    val spec = remember(def.behaviors, def.popup, swipeSpec) {
+        buildKeyGestureSpec(def, swipeSpec)
+    }
     val appearance = def.appearance
     // View: KeyView.setEnabled(false) → appearanceView.alpha = styledFloat(disabledAlpha)
     val context = LocalContext.current
@@ -144,10 +146,7 @@ fun ComposeKey(
 
     Box(
         modifier = modifier
-            .pointerInput(
-                spec, enabled, cancelEpoch,
-                swipeSymbolDirection, popupOnKeyPress, longPressDelay
-            ) {
+            .pointerInput(spec, enabled, cancelEpoch) {
                 if (!enabledState.value) return@pointerInput
                 val env = KeyGestureEnv(
                     keyId = keyId,
@@ -158,10 +157,10 @@ fun ComposeKey(
                     pressed = pressed,
                     windowBounds = windowBounds,
                     doubleTapState = doubleTapState,
-                    popupOnKeyPress = popupOnKeyPress,
-                    swipeSymbolDirection = swipeSymbolDirection,
-                    longPressDelay = longPressDelay,
-                    hapticOnRepeat = hapticOnRepeat,
+                    popupOnKeyPress = { prefs.popupOnKeyPress.getValue() },
+                    swipeSymbolDirection = { prefs.swipeSymbolDirection.getValue() },
+                    longPressDelay = { prefs.longPressDelay.getValue() },
+                    hapticOnRepeat = { prefs.hapticOnRepeat.getValue() },
                     sendAction = { action, source ->
                         keyActionListenerState.value?.onKeyAction(action, source)
                     },
@@ -570,10 +569,10 @@ private class KeyGestureEnv(
     val pressed: MutableState<Boolean>,
     val windowBounds: BoundsHolder,
     val doubleTapState: DoubleTapState,
-    val popupOnKeyPress: Boolean,
-    val swipeSymbolDirection: SwipeSymbolDirection,
-    val longPressDelay: Int,
-    val hapticOnRepeat: Boolean,
+    val popupOnKeyPress: () -> Boolean,
+    val swipeSymbolDirection: () -> SwipeSymbolDirection,
+    val longPressDelay: () -> Int,
+    val hapticOnRepeat: () -> Boolean,
     val sendAction: (KeyAction, KeyActionListener.Source) -> Unit,
     val sendPopup: (PopupAction) -> Unit,
     val onSwipeGesture: (ComposeKeyGestureEvent) -> Boolean,
@@ -584,15 +583,15 @@ private class KeyGestureEnv(
     /** View: `GestureType.Down` 时 `PopupAction.PreviewAction`。 */
     fun showPreview() {
         val preview = spec.previewPopup ?: return
-        if (!popupOnKeyPress) return
+        if (!popupOnKeyPress()) return
         sendPopup(PopupAction.PreviewAction(keyId, preview.content, windowBounds.rect))
     }
 
     /** View: `AltPreview` 的 `GestureType.Move` → `PreviewUpdateAction`。 */
     fun updatePreview(totalY: Int) {
         val alt = spec.altPreviewPopup ?: return
-        if (!popupOnKeyPress) return
-        val triggered = swipeSymbolDirection.checkY(totalY)
+        if (!popupOnKeyPress()) return
+        val triggered = swipeSymbolDirection().checkY(totalY)
         sendPopup(
             PopupAction.PreviewUpdateAction(keyId, if (triggered) alt.alternative else alt.content)
         )
@@ -600,7 +599,7 @@ private class KeyGestureEnv(
 
     /** View: 预览弹层在 `GestureType.Up` 时消失。 */
     fun dismissPreview() {
-        if (spec.previewPopup == null || !popupOnKeyPress) return
+        if (spec.previewPopup == null || !popupOnKeyPress()) return
         sendPopup(PopupAction.DismissAction(keyId))
     }
 
@@ -670,7 +669,7 @@ private suspend fun AwaitPointerEventScope.runKeyGesture(env: KeyGestureEnv) {
     var repeatJob: Job? = null
     if (env.spec.longPressPopup != null) {
         longPressJob = env.scope.launch {
-            delay(env.longPressDelay.toLong())
+            delay(env.longPressDelay().toLong())
             InputFeedbacks.hapticFeedback(env.view, longPress = true)
             // 不置 longPressTriggered：View 侧弹层的 long click listener 返回 false
             // （performLongClick() == false），不抑制松手时的 Press。
@@ -679,7 +678,7 @@ private suspend fun AwaitPointerEventScope.runKeyGesture(env: KeyGestureEnv) {
     } else if (env.spec.longPressAction != null) {
         val longPressAction = env.spec.longPressAction
         longPressJob = env.scope.launch {
-            delay(env.longPressDelay.toLong())
+            delay(env.longPressDelay().toLong())
             InputFeedbacks.hapticFeedback(env.view, longPress = true)
             longPressTriggered = true
             env.action(longPressAction)
@@ -687,12 +686,12 @@ private suspend fun AwaitPointerEventScope.runKeyGesture(env: KeyGestureEnv) {
     }
     env.spec.repeatAction?.let { repeatAction ->
         repeatJob = env.scope.launch {
-            delay(env.longPressDelay.toLong())
+            delay(env.longPressDelay().toLong())
             repeatStarted = true
             while (isActive) {
                 val startedAt = SystemClock.uptimeMillis()
                 env.action(repeatAction)
-                if (env.hapticOnRepeat) InputFeedbacks.hapticFeedback(env.view)
+                if (env.hapticOnRepeat()) InputFeedbacks.hapticFeedback(env.view)
                 val wait = RepeatInterval - (SystemClock.uptimeMillis() - startedAt)
                 if (wait > 0) delay(wait)
             }
@@ -710,7 +709,9 @@ private suspend fun AwaitPointerEventScope.runKeyGesture(env: KeyGestureEnv) {
                 // ---- UP：与 CustomGestureView.ACTION_UP 同序 ----
                 change.consume()
                 InputFeedbacks.hapticFeedback(env.view, longPress = true, keyUp = true)
-                env.dismissPreview()
+                // 注意顺序：View 侧弹层的监听器是「后注册者在外层 → 先执行」，弹层（Menu/Keyboard）
+                // 的 onPopupTrigger 先于 Preview 的 DismissAction。若先 Dismiss 会 removeContainer，
+                // 随后的 TriggerAction 拿不到待触发动作 → 只会上屏默认值或什么都不上屏。
                 if (dispatchKeyGesture(
                         env, ComposeKeyGestureEvent.Type.Up,
                         position.x, position.y, 0, 0,
@@ -810,8 +811,10 @@ private fun dispatchKeyGesture(
             // gestureConsumed 置真，也不会影响紧跟其后的滑行判定，故这里用入参快照。
             val consumedBeforeDispatch = alreadyConsumed
             if (env.triggerLongPressPopup()) consumed = true
+            // 弹层触发之后再关预览气泡（View 的监听器链顺序），否则容器先被移除
+            env.dismissPreview()
             if (!consumedBeforeDispatch && env.spec.swipeAction != null &&
-                env.swipeSymbolDirection.checkY(totalY)
+                env.swipeSymbolDirection().checkY(totalY)
             ) {
                 env.action(env.spec.swipeAction)
                 consumed = true
@@ -832,7 +835,7 @@ private fun performClickOrDoubleTap(env: KeyGestureEnv) {
     }
     val state = env.doubleTapState
     val now = System.currentTimeMillis()
-    if (state.maybeDoubleTap && now - state.lastClickTime <= env.longPressDelay) {
+    if (state.maybeDoubleTap && now - state.lastClickTime <= env.longPressDelay()) {
         state.maybeDoubleTap = false
         env.action(doubleTapAction)
     } else {
