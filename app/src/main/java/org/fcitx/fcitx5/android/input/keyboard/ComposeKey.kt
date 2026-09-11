@@ -749,7 +749,9 @@ private suspend fun AwaitPointerEventScope.runKeyGesture(env: KeyGestureEnv) {
             if (!change.pressed) {
                 // ---- UP：与 CustomGestureView.ACTION_UP 同序 ----
                 change.consume()
-                InputFeedbacks.hapticFeedback(env.view, longPress = true, keyUp = true)
+                // 松手反馈走 KEYBOARD_RELEASE 分支（keyUp = true 时 hapticFeedback 的非长按分支），
+                // 用按压振动时长/幅度 + KEYBOARD_RELEASE 常量；长按分支会让 keyUp 参数形同虚设
+                InputFeedbacks.hapticFeedback(env.view, longPress = false, keyUp = true)
                 // 注意顺序：View 侧弹层的监听器是「后注册者在外层 → 先执行」，弹层（Menu/Keyboard）
                 // 的 onPopupTrigger 先于 Preview 的 DismissAction。若先 Dismiss 会 removeContainer，
                 // 随后的 TriggerAction 拿不到待触发动作 → 只会上屏默认值或什么都不上屏。

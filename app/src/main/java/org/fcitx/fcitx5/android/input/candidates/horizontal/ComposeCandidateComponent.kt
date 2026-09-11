@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.channels.BufferOverflow
@@ -120,7 +121,11 @@ class ComposeCandidateComponent :
     private var loadingMore = false
     @Volatile
     private var noMoreData = false
-    private var candidateGeneration = 0
+
+    /** 候选列表代数：每次 [applyCandidates] 递增，供展开候选窗口作分页刷新键。 */
+    private var _candidateGeneration by mutableIntStateOf(0)
+    val candidateGeneration: Int get() = _candidateGeneration
+
     private var lastCandidateData = FcitxEvent.CandidateListEvent.Data()
 
     private val loadMoreBatch by lazy {
@@ -183,13 +188,13 @@ class ComposeCandidateComponent :
         if (currentState.total >= 0 && currentState.candidates.size >= currentState.total) return
 
         loadingMore = true
-        val generation = candidateGeneration
+        val generation = _candidateGeneration
         val currentOffset = currentState.candidates.size
 
         fcitx.launchOnReady {
             try {
                 val more = it.getCandidates(currentOffset, loadMoreBatch)
-                if (generation == candidateGeneration) {
+                if (generation == _candidateGeneration) {
                     if (more.isNotEmpty()) {
                         _state.update { state ->
                             when (state) {
@@ -206,7 +211,7 @@ class ComposeCandidateComponent :
                     }
                 }
             } finally {
-                if (generation == candidateGeneration) {
+                if (generation == _candidateGeneration) {
                     loadingMore = false
                 }
             }
@@ -242,7 +247,7 @@ class ComposeCandidateComponent :
 
         loadingMore = false
         noMoreData = false
-        candidateGeneration++
+        _candidateGeneration++
         lastExpandedOffset = -1
 
         refreshExpanded()

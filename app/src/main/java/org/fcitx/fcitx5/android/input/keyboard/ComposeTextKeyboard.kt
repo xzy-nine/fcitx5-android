@@ -5,6 +5,7 @@
 package org.fcitx.fcitx5.android.input.keyboard
 
 import android.view.View
+import androidx.annotation.Keep
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,6 +22,7 @@ import org.fcitx.fcitx5.android.core.KeyStates
 import org.fcitx.fcitx5.android.core.KeySym
 import org.fcitx.fcitx5.android.data.InputFeedbacks
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.input.popup.PopupAction
 import org.fcitx.fcitx5.android.input.popup.PopupActionListener
 import kotlin.math.absoluteValue
@@ -72,8 +74,27 @@ class TextKeyboardState(initialReturnDrawable: Int) {
     var returnDrawable: Int by mutableStateOf(initialReturnDrawable)
         private set
 
-    private val keepLettersUppercase =
+    /**
+     * 字母键副文本是否保持大写（View: `updateAlphabetKeys` 读 keepLettersUppercase）。
+     *
+     * `KeyboardWindow` 是 essential 窗口、`TextKeyboardState` 长期复用，偏好变更必须
+     * 走监听即时写入 Compose 状态，否则 `layout()` 重算仍读到旧值。
+     */
+    var keepLettersUppercase: Boolean by mutableStateOf(
         AppPrefs.getInstance().keyboard.keepLettersUppercase.getValue()
+    )
+        private set
+
+    @Keep
+    private val keepLettersUppercaseListener =
+        ManagedPreference.OnChangeListener<Boolean> { _, newValue ->
+            keepLettersUppercase = newValue
+        }
+
+    init {
+        AppPrefs.getInstance().keyboard.keepLettersUppercase
+            .registerOnChangeListener(keepLettersUppercaseListener)
+    }
 
     // -----------------------------------------------------------------------
     // 状态变更（对应 View 侧各回调）

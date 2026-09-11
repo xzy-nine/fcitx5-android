@@ -116,16 +116,24 @@ fun computeSplitRowSpec(
     val rightWidth = rightRaw * scale
     val groupTotal = (leftWidth + rightWidth + gapRatio).coerceAtMost(1f)
     val protrude = row.size % 2 == 1
+    val gapInGroup = if (groupTotal > 0f) gapRatio / groupTotal else 0f
+    // 半键突出量不得超过缝隙的一半（gapInGroup / 2），否则缝隙宽度 gapInGroup - 2*halfKeyInGroup
+    // 会变成负百分比（gapInGroup = 0 时尤其如此），ConstraintLayout 不接受负的 matchConstraintPercentWidth
+    val halfKeyInGroup = if (protrude && groupTotal > 0f) {
+        (0.05f * scale / groupTotal).coerceAtMost(gapInGroup / 2f)
+    } else {
+        0f
+    }
     return SplitRowSpec(
         leftRow = leftRow,
         rightRow = rightRow,
         groupPercent = groupTotal,
         leftInGroup = if (groupTotal > 0f) leftWidth / groupTotal else 0f,
-        gapInGroup = if (groupTotal > 0f) gapRatio / groupTotal else 0f,
+        gapInGroup = gapInGroup,
         rightInGroup = if (groupTotal > 0f) rightWidth / groupTotal else 0f,
         leftScale = if (leftRaw > 0f) 1f / leftRaw else 1f,
         rightScale = if (rightRaw > 0f) 1f / rightRaw else 1f,
-        halfKeyInGroup = if (protrude && groupTotal > 0f) 0.05f * scale / groupTotal else 0f,
+        halfKeyInGroup = halfKeyInGroup,
     )
 }
 

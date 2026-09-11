@@ -237,18 +237,21 @@ class ComposeKawaiiBarComponent :
      * `isDark` —— 用户名下的自定义主题常常与 `isDark` 不一致。背景图主题下该色不代表实际
      * 画面明度，此时仍以此色为准（后续若要更准，可对背景图取平均亮度）。
      *
-     * 图标/文字色仍取 miuix（工具栏是纯 Compose 区，不参与 fcitx 主题的键面配色）。
+     * 图标/文字色同样随键盘明度取黑/白（工具栏是纯 Compose 区，不参与 fcitx 主题的键面配色；
+     * 不恒用 miuix onSurface —— miuix 主题明度与键盘主题可能不一致，会造成前景与底色反差不足）。
      */
     @Composable
     private fun getVisuals(): ToolbarVisuals {
         val theme = rememberActiveTheme()
         val keyboardIsLight = Color(theme.keyboardColor).luminance() > 0.5f
         val scrim = if (keyboardIsLight) Color.Black else Color.White
+        // 前景色随键盘明度取黑/白，确保与「键盘底色 + scrim」叠加后的工具栏底色对比足够
+        val foreground = if (keyboardIsLight) Color.Black else Color.White
         return ToolbarVisuals(
             // < 10%：只做「与键盘区分」的暗示，不遮挡背后的主题/背景图
             barColor = scrim.copy(alpha = 0.08f),
-            iconColor = MiuixTheme.colorScheme.onSurface,
-            textColor = MiuixTheme.colorScheme.onSurface,
+            iconColor = foreground,
+            textColor = foreground,
         )
     }
 

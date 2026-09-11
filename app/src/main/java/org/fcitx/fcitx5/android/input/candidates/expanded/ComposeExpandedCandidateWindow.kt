@@ -185,6 +185,16 @@ class ComposeExpandedCandidateWindow :
         val maxSpanCount = maxSpanCountPref.preferenceState()
         val itemCount = items.itemCount
 
+        // 引擎候选刷新（applyCandidates）时展开窗口的旧分页数据失效：
+        // CandidatesPagingSource 在创建时捕获 total，不失效会一直显示旧候选且分页终点错位。
+        // candidateGeneration 是 Compose 快照状态，代次变化触发本 effect 重启 → 使分页源失效重建。
+        val candidateGeneration = composeCandidate.candidateGeneration
+        LaunchedEffect(candidateGeneration) {
+            if (candidateGeneration > 0) {
+                items.refresh()
+            }
+        }
+
         // 对齐横向候选栏当前可见位置：等首屏数据到达（itemCount 覆盖目标）后再滚，
         // 等价于 View 侧的 `refreshWithOffset` + `addLoadStateListener` 首次补偿滚动。
         LaunchedEffect(pendingScrollOffset, itemCount) {

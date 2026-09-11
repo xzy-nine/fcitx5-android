@@ -445,7 +445,7 @@ windowManager.view
 2. 按键本体 = `ComposeKey`（`pointerInput` 原生手势，长按 / 滑行 / 移出取消语义与 View 版 `CustomGestureView` 同源）。
 3. 按键 / 弹层出口原样透传 `KeyActionListener` / `PopupActionListener`；按键 id 由 `ComposeKey` 依布局位置自造。
 4. 尺寸上报走 `Modifier.onSizeChanged`（首次布局即上报一次）；窗口生命周期回调改为写状态层，不再 mutate View。
-5. 布局数据：`TextKeyboard.Layout` / `NumberKeyboard.Layout` 由 `ComposeTextKeyboard` / `ComposeNumberKeyboard` 经 `ComposeKeyboardLayout` / `NumberKeyboardRows` 复用（数据已从 View 类抽离为纯 `KeyDef` 数据文件）。
+5. 布局数据：文本键盘由 `ComposeTextKeyboard` 经 `ComposeKeyboardRows`（定义于 `ComposeKeyboardLayout.kt`）消费 `TextKeyboard.Layout`（纯 `KeyDef` 数据）；数字键盘由 `ComposeNumberKeyboard` 直接读取 `NumberKeyboardRows`（`NumberKeyboard.Layout` 是空列表的死数据，勿改）。
 
 旧文件（断开接线，保留供对比 / 回退）：
 

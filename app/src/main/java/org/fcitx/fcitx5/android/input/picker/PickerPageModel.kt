@@ -42,6 +42,9 @@ class PickerPageModel(
         rawData.forEach { (category, array) ->
             val list = array.filter(policy::filter)
             val chunks = list.chunked(density.pageSize)
+            // 过滤后无符号的分类直接跳过：空分类的页面范围是 (n, n-1) 这种无效区间，
+            // 会让 categoryList() 暴露一个点开没有内容的空标签
+            if (chunks.isEmpty()) return@forEach
             categories.add(category to IntRange(pages.size, pages.size + chunks.size - 1))
             pages.addAll(chunks)
         }
