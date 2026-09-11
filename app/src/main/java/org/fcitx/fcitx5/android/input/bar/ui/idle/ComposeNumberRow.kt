@@ -8,7 +8,6 @@ import android.graphics.Rect
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -24,7 +23,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -36,13 +34,13 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.fcitx.fcitx5.android.core.KeySym
-import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyActionListener
 import org.fcitx.fcitx5.android.input.popup.PopupAction
 import org.fcitx.fcitx5.android.input.popup.PopupActionListener
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * Compose 版数字行，替代 [NumberRow]（View / BaseKeyboard）。
@@ -52,7 +50,6 @@ private val NUMBER_ROW_DIGITS = listOf("1", "2", "3", "4", "5", "6", "7", "8", "
 
 @Composable
 fun NumberRowContent(
-    theme: Theme,
     keyActionListener: KeyActionListener?,
     popupActionListener: PopupActionListener?,
     onCollapse: () -> Unit,
@@ -91,22 +88,27 @@ fun NumberRowContent(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         BoxWithConstraints(
-            modifier = Modifier.fillMaxWidth().fillMaxHeight(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(),
         ) {
             // BoxWithConstraints 是 Box（子项重叠堆叠），必须用 Row 横向排列 10 个键
             val keyWidth = maxWidth / NUMBER_ROW_DIGITS.size
             Row(
-                modifier = Modifier.fillMaxWidth().fillMaxHeight(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 NUMBER_ROW_DIGITS.forEachIndexed { index, digit ->
                     NumberKey(
                         digit = digit,
                         id = index,
-                        theme = theme,
                         keyActionListener = keyActionListener,
                         popupActionListener = popupActionListener,
-                        modifier = Modifier.width(keyWidth).fillMaxHeight(),
+                        modifier = Modifier
+                            .width(keyWidth)
+                            .fillMaxHeight(),
                     )
                 }
             }
@@ -118,7 +120,6 @@ fun NumberRowContent(
 private fun NumberKey(
     digit: String,
     id: Int,
-    theme: Theme,
     keyActionListener: KeyActionListener?,
     popupActionListener: PopupActionListener?,
     modifier: Modifier = Modifier,
@@ -138,7 +139,10 @@ private fun NumberKey(
 
     Box(
         modifier = modifier
-            .background(if (pressed) Color(theme.keyPressHighlightColor) else Color.Transparent)
+            .background(
+                if (pressed) MiuixTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                else Color.Transparent
+            )
             .onGloballyPositioned { coordinates: LayoutCoordinates ->
                 val window = coordinates.boundsInWindow()
                 bounds = Rect(
@@ -163,7 +167,7 @@ private fun NumberKey(
         Text(
             text = digit,
             fontSize = 21.sp,
-            color = Color(theme.keyTextColor),
+            color = MiuixTheme.colorScheme.onSurface,
         )
     }
 }

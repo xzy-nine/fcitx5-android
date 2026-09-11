@@ -298,3 +298,88 @@ FcitxInputMethodService
 **依赖统一（同批完成）**：Compose 由 JetBrains CMP 伞包（`org.jetbrains.compose.foundation:foundation-android`）改为 Google 官方 `androidx.compose.runtime` / `foundation` / `ui`，统一版本 `1.12.0`（`gradle/libs.versions.toml` 单一 `compose` 版本源），与 Notify-Relay / WebDAVPass 路线一致；不引入 compose BOM，避免与已固定版本冲突。
 
 **后续迁移计划（不变）**：主键盘（`windowManager.view` 下的 `KeyboardWindow`/`BaseKeyboard` 及 Picker 窗口）并入单一 Composition。本次已解除 `KeyView.bounds` 对弹窗层的耦合——键盘 Compose 化后只需把 Compose 坐标（`onGloballyPositioned`）换算成同一个 `Rect` 喂给 `PopupComponent.listener` 即可，两者不必同批迁移。
+
+---
+
+**视图层级结构：wm 共存机制 + 「更多页」Compose 化接线后（本次迁移）**
+
+```
+FcitxInputMethodService
+├── ComposeView (Compose 根)
+│   └── AndroidView
+│       └── InputView (extends BaseInputView extends ConstraintLayout)
+│           ├── customBackground (ImageView - 主题背景，铺满键盘体)
+│           ├── composeTopView (单一 ComposeView - MiuixTheme，仅含工具栏)
+│           │   └── composeKawaiiBar.ToolbarContent()
+│           ├── windowManager.view (InputWindowManager - FrameLayout)
+│           │   └── 当前活跃窗口:
+│           │       ├── KeyboardWindow / PickerWindow / Grid|FlexboxExpandedCandidateWindow (View 窗口，onCreateView 兜底)
+│           │       └── StatusAreaWindow (ComposeWindow - 更多页) [本次改动]
+│           │           └── composeWindowView (ComposeView - MiuixTheme，经 createComposeWindowView 创建)
+│           │               └── StatusAreaWindow.Content()
+│           │                   └── StatusAreaGrid (LazyVerticalGrid ×4，StateFlow 驱动)
+│           │                       ├── StatusAreaCell × N (miuix IconButton 48dp 圆角图标/首字符 + 12sp 标签)
+│           │                       └── StatusAreaMenu (fcitx 子菜单，Compose 弹层锚定格子)
+│           ├── composePreedit.view (ComposeView - 悬浮在 keyboardView 上方)
+│           ├── popup.root (ComposeView - 按键弹窗层，宿主统一走 createComposeWindowView)
+│           ├── leftPaddingSpace, rightPaddingSpace, bottomPaddingSpace
+├── CandidatesView (独立的浮动候选视图，迁移范围外，保持 View 实现)
+```
+
+接线链路（本次 wm 共存 + 更多页迁移）：
+
+1. **wm 共存挂载**：`InputWindowManager.attachWindow` 用 `window is ComposeWindow` 分流——Compose 窗口经
+   `createComposeWindowView(context) { window.Content() }` 创建统一 `ComposeView`（
+   `MiuixTheme(ThemeController(System))` 包裹，强制 LTR）；其余窗口维持 `window.onCreateView()` 兜底。
+   `TransitionManager` Slide/Fade 100ms 进出场动画对两类 view 一致，`EssentialWindow` 视图缓存逻辑不变。
+2. **Composition 生命周期**：detach 时对非 essential 的 Compose 窗口先 `onDetached()` →
+   `removeView` → `oldView.disposeComposition()`，避免 Composition 泄漏；essential Compose 窗口视图缓存复用、不
+   dispose。
+3. **更多页数据驱动**：`StatusAreaWindow` 实现 `ComposeWindow`，新增
+   `MutableStateFlow<List<StatusAreaEntry>>`；`onStatusAreaUpdate` 写入（staticEntries + fcitx 条目），
+   `Content()` 内 `collectAsState` 渲染；`onAttached` 仍 `fcitx.statusArea()` 拉数据。
+4. **fcitx 子菜单 Compose 弹层**：格子点击时用 `onGloballyPositioned` 记录 `boundsInRoot()` 作锚点，在根
+   `BoxWithConstraints` 内以 `Modifier.offset` 绝对定位展开 `StatusAreaMenu`（不触发系统 Dialog /
+   `PopupMenu`，IME 浮窗内安全）；菜单项 `isSeparator` 渲染分隔线，点击项回调 `activateAction(action)`。
+5. **点击逻辑复用**：Android 项（主题/输入法/重载/键盘）与无子菜单的 fcitx 项走
+   `StatusAreaWindow.onItemClick`（`AppUtil` 跳转 / `reloadConfig`+`SubtypeManager.syncWith` / 直接
+   `activateAction`）。
+6. **工具栏扩展槽不变**：`onCreateBarExtension()` 仍返回 View（editorinfo + settings `ToolButton`
+   ），由工具栏 Title 态 `AndroidView` 承载。
+
+旧文件/接口位置（本次接线变动）：
+
+| 项                                               | 路径/符号           | 状态                                                                                                                                                               |
+|-------------------------------------------------|-----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `ComposeWindow.kt`                              | `input/wm/`     | 新增：标记接口 `@Composable fun Content()`，Compose 化窗口实现                                                                                                                |
+| `ComposeWindowHost.kt`                          | 同上              | 新增：`createComposeWindowView(context, content)` 统一宿主（ComposeView + MiuixTheme + LTR）                                                                              |
+| `InputWindowManager.kt`                         | 同上              | 仅追加：attachWindow 增加 `ComposeWindow` 分支；detach 增加 `disposeComposition()`；`InputWindow.kt` 零改动                                                                     |
+| `ComposeStatusArea.kt`                          | `input/status/` | 新增：`StatusAreaGrid`（4 列 `LazyVerticalGrid`）/ `StatusAreaCell`（miuix `IconButton` 48dp 圆角+12sp 标签）/ `StatusAreaMenu`（fcitx 子菜单 Compose 弹层，miuix `DropdownImpl` 行） |
+| `StatusAreaWindow.kt`                           | 同上              | 实现 `ComposeWindow`；`onCreateView()` 改为 `createComposeWindowView` 兜底；移除 RecyclerView/`PopupMenu`/adapter，`onDetached` 不再 dismiss                                  |
+| `StatusAreaAdapter.kt` / `StatusAreaEntryUi.kt` | 同上              | 已断开接线，保留供对比（不再被任何代码引用）                                                                                                                                           |
+
+组件选型：**Compose 层全部走 miuix 主题**（`MiuixTheme.colorScheme`，不再读 fcitx View 主题），组件复用
+miuix（`IconButton` 可调 `cornerRadius`、`DropdownImpl` 行、`Icon` / `Text`），布局与定位用 foundation（
+`BoxWithConstraints` / `LazyVerticalGrid` / `GridCells.Fixed(4)` / `Modifier.offset`）；fcitx 子菜单弹层为纯
+Compose 覆盖层，严禁 Android `PopupMenu` / miuix `Window*` 弹层。这是「废弃 View 颜色主题体系、转为
+miuix 主题」的落地之一。
+
+**Compose 层主题统一（本次补充）**：工具栏 / 候选栏 / 数字行与状态区一并切到 miuix 主题——
+
+- `ComposeKawaiiBarComponent.getVisuals()`（`@Composable`）：`barColor = background`、
+  `iconColor/textColor = onSurface`（`ToolbarVisuals` 删除未使用的 `pressHighlightColor`/
+  `dividerColor`）；移除 `theme`/`keyBorder` 依赖。
+- `ComposeCandidateComponent.getVisuals()`（`@Composable`）：`textColor = onSurface`、
+  `commentColor = onSurfaceVariantSummary`、`pressHighlightColor = onSurface.copy(alpha=0.1f)`、
+  `dividerColor = dividerLine`。
+- `NumberRowContent`/`NumberKey`：删除 `theme: Theme` 参数，按键文字 `onSurface`、按下高亮
+  `onSurface.copy(alpha=0.1f)`。
+- `ComposePreeditComponent.getVisuals()`（`@Composable`）：`textColor = onSurface`、
+  `highlightColor = primary`、`backgroundColor = background`；移除 `theme`/`keyBorder` 依赖与未使用的
+  `activeBkg` 死代码。
+- View 侧（主键盘 `KeyboardWindow`/`BaseKeyboard`、展开候选窗口、`CandidatesView`、`ToolButton` 等）仍用
+  fcitx `Theme`，待后续迁移。
+
+**后续迁移计划（不变）**：主键盘（`windowManager.view` 下的 `KeyboardWindow`/`BaseKeyboard` 及 Picker
+窗口）可复用 wm 共存机制逐个 Compose 化，或并入 `composeTopView` 单一 Composition；`KeyView.bounds`
+对弹窗层的耦合已解除，两者不必同批迁移。
