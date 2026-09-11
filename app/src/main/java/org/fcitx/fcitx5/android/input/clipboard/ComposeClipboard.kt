@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +57,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
+import org.fcitx.fcitx5.android.input.bar.LongPressDelayProvider
 import org.fcitx.fcitx5.android.input.bar.inputFeedback
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -164,6 +166,16 @@ fun ClipboardListContent(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 长按菜单状态提到这一层，并以 lambda 形式延迟读取（见 [ClipboardActionMenuHost]）。
+    // 列表只拿到稳定的 onLongPress 回调，因此长按不再触发列表 / 卡片的整体重组。
+    val menuState = remember { mutableStateOf<ClipboardMenuState?>(null) }
+    val menuVisible = remember { mutableStateOf(false) }
+    val onLongPress = remember(menuState, menuVisible) {
+        { entry: ClipboardEntry, offset: Offset ->
+            menuState.value = ClipboardMenuState(entry, offset)
+            menuVisible.value = true
+        }
+    }
     Box(modifier = modifier.fillMaxSize()) {
         when (state) {
             ClipboardStateMachine.State.EnableListening -> EnableListeningUi(callbacks.onEnableListening)
@@ -172,7 +184,8 @@ fun ClipboardListContent(
                 entries,
                 maskSensitive,
                 callbacks,
-                onRetry
+                onRetry,
+                onLongPress,
             )
         }
         if (showDeleteAllDialog) {
@@ -202,7 +215,44 @@ fun ClipboardListContent(
                     .padding(16.dp),
             )
         }
+        // 菜单宿主与列表平级：自身读取状态 → 重组范围收敛到弹层，不触碰列表。
+        ClipboardActionMenuHost(
+            state = { menuState.value },
+            visible = { menuVisible.value },
+            callbacks = callbacks,
+            onDismissRequest = { menuVisible.value = false },
+            onDismissFinished = { menuState.value = null },
+        )
     }
+}
+
+/**
+ * 长按菜单宿主。
+ *
+ * 状态以 lambda 传入（延迟读取），因此只有本 composable 会因菜单状态变化而重组，
+ * [ClipboardEntryList] 与各卡片完全不受影响。
+ *
+ * 注意：本 composable **不得引入额外的布局节点**。`ListPopupLayout` 的锚点取自其内部
+ * `Spacer` 的**父布局**坐标（即窗口根），若这里包一层 wrapContent 容器，锚点会退化，
+ * `PopupPositionProvider` 里的窗口坐标换算随之出错。
+ */
+@Composable
+private fun ClipboardActionMenuHost(
+    state: () -> ClipboardMenuState?,
+    visible: () -> Boolean,
+    callbacks: ClipboardCallbacks,
+    onDismissRequest: () -> Unit,
+    onDismissFinished: () -> Unit,
+) {
+    val current = state() ?: return
+    ClipboardActionMenu(
+        entry = current.entry,
+        callbacks = callbacks,
+        anchorOffset = current.anchorOffset,
+        show = visible(),
+        onDismissRequest = onDismissRequest,
+        onDismissFinished = onDismissFinished,
+    )
 }
 
 /**
@@ -248,54 +298,41 @@ private fun ClipboardEntryList(
     maskSensitive: Boolean,
     callbacks: ClipboardCallbacks,
     onRetry: () -> Unit,
+    onLongPress: (ClipboardEntry, Offset) -> Unit,
 ) {
-    // 当前长按条目 + 长按位置 → 显示锚定操作菜单
-    var menuState by remember { mutableStateOf<ClipboardMenuState?>(null) }
-    // 菜单可见性单独持有：关闭时先让 miuix 弹层播完退出动画，再卸载菜单内容
-    var menuVisible by remember { mutableStateOf(false) }
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(
-            count = entries.itemCount,
-            key = { index -> entries.peek(index)?.id ?: IndexKey(index) }) { index ->
-            // 分页下条目可能因刷新暂时为 null（占位/被移除），跳过以免 NPE。
-            // 此时 key 退化为 IndexKey，与任何真实条目 id（Int）都不会相等。
-            val entry = entries[index] ?: return@items
-            ClipboardEntryCard(
-                entry = entry,
-                maskSensitive = maskSensitive,
-                onPaste = { callbacks.onPaste(entry) },
-                onChipClick = { callbacks.onPasteText(it) },
-                onLongPressAction = { offset ->
-                    menuState = ClipboardMenuState(entry, offset)
-                    menuVisible = true
-                },
-            )
-        }
-        when (val append = entries.loadState.append) {
-            is LoadState.Loading -> item(key = "paging_loading") { PagingFooterLoading() }
-            is LoadState.Error -> item(key = "paging_error") {
-                PagingFooterError(onRetry = onRetry)
+    // 长按阈值统一走偏好（AppPrefs.keyboard.longPressDelay），不再依赖各 ROM 不一的
+    // 系统 ViewConfiguration.getLongPressTimeout()。
+    LongPressDelayProvider {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(
+                count = entries.itemCount,
+                key = { index -> entries.peek(index)?.id ?: IndexKey(index) }) { index ->
+                // 分页下条目可能因刷新暂时为 null（占位/被移除），跳过以免 NPE。
+                // 此时 key 退化为 IndexKey，与任何真实条目 id（Int）都不会相等。
+                val entry = entries[index] ?: return@items
+                ClipboardEntryCard(
+                    entry = entry,
+                    maskSensitive = maskSensitive,
+                    callbacks = callbacks,
+                    onLongPress = onLongPress,
+                )
             }
-            // 首屏（refresh）失败时 append 不会触发，单独提示并提供重试
-            else -> Unit
+            when (val append = entries.loadState.append) {
+                is LoadState.Loading -> item(key = "paging_loading") { PagingFooterLoading() }
+                is LoadState.Error -> item(key = "paging_error") {
+                    PagingFooterError(onRetry = onRetry)
+                }
+                // 首屏（refresh）失败时 append 不会触发，单独提示并提供重试
+                else -> Unit
+            }
+            if (entries.loadState.refresh is LoadState.Error) {
+                item(key = "paging_refresh_error") { PagingFooterError(onRetry = onRetry) }
+            }
         }
-        if (entries.loadState.refresh is LoadState.Error) {
-            item(key = "paging_refresh_error") { PagingFooterError(onRetry = onRetry) }
-        }
-    }
-    menuState?.let { state ->
-        ClipboardActionMenu(
-            entry = state.entry,
-            callbacks = callbacks,
-            anchorOffset = state.anchorOffset,
-            show = menuVisible,
-            onDismissRequest = { menuVisible = false },
-            onDismissFinished = { menuState = null },
-        )
     }
 }
 
@@ -339,23 +376,33 @@ private fun PagingFooterError(onRetry: () -> Unit) {
 private fun ClipboardEntryCard(
     entry: ClipboardEntry,
     maskSensitive: Boolean,
-    onPaste: () -> Unit,
-    onChipClick: (String) -> Unit,
-    onLongPressAction: (Offset) -> Unit,
+    callbacks: ClipboardCallbacks,
+    onLongPress: (ClipboardEntry, Offset) -> Unit,
 ) {
     val cardData = rememberCardData(entry, maskSensitive)
     val display = cardData.display
     val chips = cardData.chips
     val containerCoords = remember { mutableStateOf<LayoutCoordinates?>(null) }
+    // 回调在卡片内部 remember：对外参数保持稳定（entry / Boolean / 稳定的 callbacks /
+    // 稳定的 onLongPress），卡片因此可被 skip，不再因列表重组而全量重跑。
+    val onPaste = remember(entry, callbacks) { { callbacks.onPaste(entry) } }
+    val onChipClick = remember(callbacks) { { text: String -> callbacks.onPasteText(text) } }
+    val onLongPressAction = remember(entry, onLongPress) {
+        { offset: Offset -> onLongPress(entry, offset) }
+    }
+    // pointerInput 的 key 只有 entry.id，回调必须走 rememberUpdatedState 取最新值，
+    // 否则 callbacks / onLongPress 变化后手势仍会调用旧闭包。
+    val currentOnPaste by rememberUpdatedState(onPaste)
+    val currentOnLongPressAction by rememberUpdatedState(onLongPressAction)
     // 触摸锚点：用于长按菜单跟随点击位置浮现
     val tapHandler = Modifier
         .onGloballyPositioned { containerCoords.value = it }
         .pointerInput(entry.id) {
             detectTapGestures(
-                onTap = { onPaste() },
+                onTap = { currentOnPaste() },
                 onLongPress = { offset ->
                     val rootOffset = containerCoords.value?.localToRoot(offset) ?: offset
-                    onLongPressAction(rootOffset)
+                    currentOnLongPressAction(rootOffset)
                 },
             )
         }
@@ -481,8 +528,14 @@ private fun AddMoreUi() {
  * 因此可在 IME 浮窗内使用；但它的宿主 `MiuixPopupHost` 必须由窗口根部的 miuix
  * `Scaffold` 提供（见 `ClipboardWindow.Content`）。
  *
- * 自带能力：窗口外点击 / 返回手势关闭、`windowDimming` 压暗层、
- * `ListPopupContent` 的 `surfaceContainer` 背景 + 16dp 圆角 + clip-reveal 入场动画。
+ * 自带能力：窗口外点击 / 返回手势关闭、`ListPopupContent` 的 `surfaceContainer` 背景 +
+ * 16dp 圆角 + clip-reveal 入场动画。
+ *
+ * **`enableWindowDim = false`**：miuix 在压暗模式下会额外组合一层
+ * `AnimatedVisibility { Box(fillMaxSize().pointerInput{consume 全部事件}.background(windowDimming)) }`，
+ * 即一块覆盖整个 IME 窗口的半透明层 + 全窗事件吞噬器，随 300ms 入场动画逐帧整窗重绘。
+ * IME 本身已是浮层，压暗没有意义；而 `ListPopupLayout` 的 KDoc 明确「outside-tap dismiss
+ * 与 enableWindowDim 无关」，因此关掉压暗**不损失**点击外部关闭。
  *
  * 定位沿用旧行为：以长按点为菜单左上角（外扩 8dp），越界则收回窗口内。
  */
@@ -529,6 +582,9 @@ private fun ClipboardActionMenu(
         show = show,
         popupPositionProvider = positionProvider,
         alignment = PopupPositionProvider.Align.TopStart,
+        // 关掉全窗压暗层（见上方 KDoc）：省掉一整层覆盖 IME 窗口的逐帧动画绘制，
+        // 同时保留「点击窗口外关闭」。
+        enableWindowDim = false,
         onDismissRequest = onDismissRequest,
         onDismissFinished = onDismissFinished,
     ) {

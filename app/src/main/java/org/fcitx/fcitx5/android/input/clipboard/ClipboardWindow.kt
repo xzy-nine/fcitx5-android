@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.lifecycleScope
 import androidx.paging.LoadState
@@ -144,11 +145,10 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
             }
         }
 
-        ClipboardListContent(
-            state = uiState,
-            entries = pagingItems,
-            maskSensitive = clipboardMaskSensitive,
-            callbacks = ClipboardCallbacks(
+        // callbacks 必须 remember：它是 data class，成员是 lambda（equals 按引用比较），
+        // 每次重组新建实例都会让下游（列表、每张卡片）收到「变化」的参数而无法 skip。
+        val callbacks = remember(service, windowManager) {
+            ClipboardCallbacks(
                 onPaste = { entry -> onPaste(entry.text) },
                 onPasteText = { text -> onPaste(text) },
                 onPin = { id -> service.lifecycleScope.launch { ClipboardManager.pin(id) } },
@@ -168,7 +168,14 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
                 },
                 onDelete = ::onDelete,
                 onEnableListening = { clipboardEnabledPref.setValue(true) },
-            ),
+            )
+        }
+
+        ClipboardListContent(
+            state = uiState,
+            entries = pagingItems,
+            maskSensitive = clipboardMaskSensitive,
+            callbacks = callbacks,
             showDeleteAllDialog = showDeleteAllDialog,
             deleteAllLabel = deleteAllLabel,
             onConfirmDeleteAll = {

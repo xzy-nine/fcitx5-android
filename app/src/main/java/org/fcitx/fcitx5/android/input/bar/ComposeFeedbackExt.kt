@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -17,12 +18,40 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.ViewConfiguration
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.data.InputFeedbacks
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+
+/**
+ * 用偏好 [AppPrefs.keyboard.longPressDelay] 覆盖 Compose 手势的长按阈值。
+ *
+ * `detectTapGestures` 的长按判定读的是 `PointerInputScope.viewConfiguration`（来自
+ * [LocalViewConfiguration]），默认取系统 `ViewConfiguration.getLongPressTimeout()` ——
+ * 各 ROM 不一致（AOSP 400ms，实测 MIUI 约 300ms）。包一层本 Provider 后，其内部所有基于
+ * `detectTapGestures` 的手势统一走用户可调的口径，与 [repeatableClick] 共用同一偏好。
+ *
+ * 只覆盖 `longPressTimeoutMillis`，其余字段全部委托给系统实现，因此
+ * `touchSlop` / `doubleTapTimeoutMillis` 等行为不变（`LazyColumn` 的滚动判定不受影响）。
+ *
+ * 注意：偏好读取不是响应式的（[org.fcitx.fcitx5.android.data.prefs.ManagedPreference]
+ * 的 `getValue()` 是普通读取），与 [repeatableClick] 一致 —— 改偏好后需窗口重建才生效。
+ */
+@Composable
+fun LongPressDelayProvider(content: @Composable () -> Unit) {
+    val systemViewConfiguration = LocalViewConfiguration.current
+    val longPressDelay by AppPrefs.getInstance().keyboard.longPressDelay
+    val viewConfiguration = remember(systemViewConfiguration, longPressDelay) {
+        object : ViewConfiguration by systemViewConfiguration {
+            override val longPressTimeoutMillis: Long = longPressDelay.toLong()
+        }
+    }
+    CompositionLocalProvider(LocalViewConfiguration provides viewConfiguration, content = content)
+}
 
 /**
  * Compose 触觉/音效反馈扩展
