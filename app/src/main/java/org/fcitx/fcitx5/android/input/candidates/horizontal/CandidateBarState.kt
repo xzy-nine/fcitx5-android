@@ -20,24 +20,24 @@ sealed interface CandidateBarState {
 
     /**
      * 候选词激活状态
+     *
+     * 只承载「内容」：滚动偏移不在此列（它是通知展开窗口的纯事件，
+     * 若放进状态里，滑动时每个跨项都会连带重组所有订阅者）。见 ComposeCandidateComponent。
      */
     data class Active(
-        val candidates: Array<CandidateWord>,
+        val candidates: CandidateList,
         val total: Int,
-        val offset: Int = 0,
     ) : CandidateBarState {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
             if (other !is Active) return false
-            return candidates.contentEquals(other.candidates) &&
-                    total == other.total &&
-                    offset == other.offset
+            return candidates == other.candidates &&
+                    total == other.total
         }
 
         override fun hashCode(): Int {
-            var result = candidates.contentHashCode()
+            var result = candidates.hashCode()
             result = 31 * result + total
-            result = 31 * result + offset
             return result
         }
     }
@@ -54,9 +54,8 @@ sealed interface CandidateBarState {
                 Idle
             } else {
                 Active(
-                    candidates = candidates,
+                    candidates = CandidateList(candidates),
                     total = total,
-                    offset = 0,
                 )
             }
         }

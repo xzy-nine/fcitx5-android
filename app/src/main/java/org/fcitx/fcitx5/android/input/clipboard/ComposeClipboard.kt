@@ -137,7 +137,7 @@ private fun rememberCardData(
             // 分词/截断在 IO 线程执行，避免主线程卡顿
             value = withContext(Dispatchers.IO) {
                 CardData(
-                    display = ClipboardAdapter.excerptText(entry.text, mask = masked),
+                    display = excerptClipboardText(entry.text, mask = masked),
                     chips = if (masked) emptyList() else ClipboardTextAnalyzer.analyze(entry.text),
                 )
             }

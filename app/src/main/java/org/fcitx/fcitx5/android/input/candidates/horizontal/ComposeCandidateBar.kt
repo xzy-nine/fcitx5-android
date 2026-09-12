@@ -6,14 +6,12 @@
 package org.fcitx.fcitx5.android.input.candidates.horizontal
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import org.fcitx.fcitx5.android.input.bar.inputFeedback
-import org.fcitx.fcitx5.android.data.InputFeedbacks
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -25,32 +23,34 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.flow.distinctUntilChanged
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.core.CandidateWord
+import org.fcitx.fcitx5.android.input.bar.inputFeedback
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
@@ -58,8 +58,36 @@ import top.yukonga.miuix.kmp.basic.VerticalDivider
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
-import kotlinx.coroutines.flow.distinctUntilChanged
-import org.fcitx.fcitx5.android.core.CandidateWord
+
+/**
+ * 候选列表容器。
+ *
+ * [CandidateWord] 数组在 Compose 里恒为 unstable，直接作为参数会强制子组合每次执行；
+ * 用 [Immutable] 包装并按内容比较相等性后，「内容未变」的重组可被跳过。
+ */
+@Immutable
+class CandidateList(private val items: Array<CandidateWord>) {
+
+    val size: Int get() = items.size
+
+    val lastIndex: Int get() = items.lastIndex
+
+    operator fun get(index: Int): CandidateWord = items[index]
+
+    /** 追加（懒加载更多候选）；返回新实例，不修改原对象 */
+    fun append(more: Array<CandidateWord>): CandidateList = CandidateList(items + more)
+
+    fun isEmpty(): Boolean = items.isEmpty()
+
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is CandidateList && items.contentEquals(other.items))
+
+    override fun hashCode(): Int = items.contentHashCode()
+
+    companion object {
+        val Empty = CandidateList(emptyArray())
+    }
+}
 
 /**
  * 候选栏视觉配置
@@ -103,6 +131,8 @@ fun ComposeCandidateBar(
     state: CandidateBarState,
     visuals: CandidateBarVisuals,
     callbacks: CandidateBarCallbacks,
+    /** 候选集整体更换（非前缀延续）令牌；变化时把 LazyRow 滚回首位，即使 bar 仍 Active */
+    scrollResetToken: Int = 0,
     modifier: Modifier = Modifier,
     fillMode: CandidateFillMode = CandidateFillMode.AutoFillWidth,
     maxSpanCount: Int = 5,
@@ -143,6 +173,13 @@ fun ComposeCandidateBar(
         }
     }
 
+    // 候选集整体更换（非前缀延续）时把 LazyRow 滚回首位，即使 bar 仍 Active
+    LaunchedEffect(scrollResetToken) {
+        if (scrollResetToken > 0) {
+            listState.scrollToItem(0)
+        }
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -150,39 +187,35 @@ fun ComposeCandidateBar(
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        when (state) {
-            is CandidateBarState.Idle -> {
-                // 空闲状态：不显示按钮（由工具栏处理）
-            }
-            is CandidateBarState.Active -> {
-                // 候选词列表
-                CandidateRow(
-                    candidates = state.candidates,
-                    fillMode = fillMode,
-                    maxSpanCount = maxSpanCount,
-                    listState = listState,
-                    userScrollEnabled = userScrollEnabled,
-                    textColor = visuals.textColor,
-                    commentColor = visuals.commentColor,
-                    pressHighlightColor = visuals.pressHighlightColor,
-                    dividerColor = visuals.dividerColor,
-                    showDivider = showDivider,
-                    onCandidateSelect = callbacks.onCandidateSelect,
-                    onCandidateLongClick = callbacks.onCandidateLongClick,
-                    endPadding = if (callbacks.onExpandClick != null) 40.dp else 0.dp,
-                    modifier = Modifier.weight(1f),
-                )
+        // LazyRow 始终留在组合中（空态 items=0）：候选栏 Idle→Active 时不重新创建 LazyRow，
+        // 避免首次进入组合的测量/布局延迟导致显示时整行闪烁
+        CandidateRow(
+            candidates = if (state is CandidateBarState.Active) state.candidates else CandidateList.Empty,
+            fillMode = fillMode,
+            maxSpanCount = maxSpanCount,
+            listState = listState,
+            userScrollEnabled = userScrollEnabled,
+            textColor = visuals.textColor,
+            commentColor = visuals.commentColor,
+            pressHighlightColor = visuals.pressHighlightColor,
+            dividerColor = visuals.dividerColor,
+            showDivider = showDivider,
+            onCandidateSelect = callbacks.onCandidateSelect,
+            onCandidateLongClick = callbacks.onCandidateLongClick,
+            endPadding = if (callbacks.onExpandClick != null) 40.dp else 0.dp,
+            modifier = Modifier.weight(1f),
+        )
 
-                // 内侧：展开/收起按钮
-                val expandClick = callbacks.onExpandClick
-                if (expandClick != null) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    ExpandButton(
-                        onClick = expandClick,
-                        isExpanded = isExpandMode,
-                        tint = visuals.textColor,
-                    )
-                }
+        // 展开/收起按钮仅在有候选时显示
+        if (state is CandidateBarState.Active) {
+            val expandClick = callbacks.onExpandClick
+            if (expandClick != null) {
+                Spacer(modifier = Modifier.width(8.dp))
+                ExpandButton(
+                    onClick = expandClick,
+                    isExpanded = isExpandMode,
+                    tint = visuals.textColor,
+                )
             }
         }
     }
@@ -193,7 +226,7 @@ fun ComposeCandidateBar(
  */
 @Composable
 private fun CandidateRow(
-    candidates: Array<CandidateWord>,
+    candidates: CandidateList,
     fillMode: CandidateFillMode,
     maxSpanCount: Int,
     listState: androidx.compose.foundation.lazy.LazyListState,
@@ -215,6 +248,18 @@ private fun CandidateRow(
         CandidateFillMode.NeverFillWidth -> false
         CandidateFillMode.AutoFillWidth -> candidates.size >= maxSpanCount
         CandidateFillMode.AlwaysFillWidth -> true
+    }
+
+    // item key 取候选词文本：击键后候选集整体位移时，内容未变的候选可复用原有组合节点；
+    // 同一文本重复出现时追加出现序号，保证 key 在整表内唯一（LazyList 要求 key 唯一）。
+    val itemKeys = remember(candidates) {
+        val seen = HashMap<String, Int>(candidates.size)
+        Array(candidates.size) { index ->
+            val text = candidates[index].text
+            val occurrence = (seen[text] ?: 0) + 1
+            seen[text] = occurrence
+            if (occurrence == 1) text else "$occurrence#$text"
+        }
     }
 
     BoxWithConstraints(modifier = modifier) {
@@ -240,10 +285,12 @@ private fun CandidateRow(
                 Arrangement.spacedBy(if (showDivider) 1.dp else 4.dp)
             },
         ) {
-            itemsIndexed(
-                items = candidates,
-                key = { index, candidate -> "$index-${candidate.text}" },
-            ) { index, candidate ->
+            items(
+                count = candidates.size,
+                key = { index -> itemKeys[index] },
+                contentType = { "candidate" },
+            ) { index ->
+                val candidate = candidates[index]
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

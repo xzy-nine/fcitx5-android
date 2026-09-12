@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.viewinterop.AndroidView
@@ -88,6 +89,9 @@ import splitties.bitflags.hasFlag
 import splitties.dimensions.dp
 import splitties.resources.styledColor
 import timber.log.Timber
+import top.yukonga.miuix.kmp.theme.ColorSchemeMode
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.ThemeController
 import kotlin.math.max
 
 class FcitxInputMethodService : LifecycleInputMethodService() {
@@ -109,7 +113,6 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     private lateinit var decorView: View
     private lateinit var contentView: FrameLayout
-    private var inputView: InputView? = null
     private var candidatesView: CandidatesView? = null
 
     // Compose host state: drives (re)composition of the InputView embedded via AndroidView.
@@ -117,6 +120,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     // pref changes. Both are read inside the Compose tree, so writing them triggers recomposition.
     private val themeState by lazy { mutableStateOf(ThemeManager.activeTheme) }
     private val recreateNonce by lazy { mutableStateOf(0) }
+
+    // `inputView` 作为 Compose 状态：根组合的弹窗层 / 候选操作菜单覆盖层据此读取
+    // 当前 InputView 的组件；InputView 重建（themeState/recreateNonce 变化）时值更新驱动重组。
+    private val inputView = mutableStateOf<InputView?>(null)
 
     private val navbarMgr = NavigationBarManager()
     private val inputDeviceMgr = InputDeviceManager { isVirtualKeyboard ->
@@ -190,29 +197,39 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private fun createComposeInputView(): View {
         val composeView = ComposeView(this).apply {
             setContent {
-                Box(Modifier.fillMaxSize()) {
-                    key(themeState.value, recreateNonce.value) {
-                        AndroidView(
-                            factory = { _ ->
-                                InputView(this@FcitxInputMethodService, fcitx, themeState.value)
-                                    .also {
-                                        inputView = it
-                                        inputDeviceMgr.setInputView(it)
-                                        // A recreated InputView is blank: [InputView.startInput]
-                                        // only ever runs from onStartInputView, so replay the
-                                        // ongoing session here to feed EditorInfo/capFlags to the
-                                        // keyboard components and to the return key drawable.
-                                        currentEditorInfo?.let { info ->
-                                            it.startInput(info, capabilityFlags, currentRestarting)
+                MiuixTheme(controller = remember { ThemeController(ColorSchemeMode.System) }) {
+                    Box(Modifier.fillMaxSize()) {
+                        key(themeState.value, recreateNonce.value) {
+                            AndroidView(
+                                factory = { _ ->
+                                    InputView(this@FcitxInputMethodService, fcitx, themeState.value)
+                                        .also {
+                                            inputView.value = it
+                                            inputDeviceMgr.setInputView(it)
+                                            // A recreated InputView is blank: [InputView.startInput]
+                                            // only ever runs from onStartInputView, so replay the
+                                            // ongoing session here to feed EditorInfo/capFlags to the
+                                            // keyboard components and to the return key drawable.
+                                            currentEditorInfo?.let { info ->
+                                                it.startInput(info, capabilityFlags, currentRestarting)
+                                            }
                                         }
-                                    }
-                            },
-                            modifier = Modifier.fillMaxSize(),
-                            onRelease = { view ->
-                                if (inputView === view) inputView = null
-                                inputDeviceMgr.clearInputView(view)
-                            }
-                        )
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                                onRelease = { view ->
+                                    if (inputView.value === view) inputView.value = null
+                                    inputDeviceMgr.clearInputView(view)
+                                }
+                            )
+                        }
+                        // 按键弹窗层 / 候选操作菜单覆盖层：与 InputView 同处根单一 Composition。
+                        // 弹窗层 Box 无 pointer handler → 触摸穿透到下方 AndroidView(InputView)；
+                        // InputView 重建时 inputView.value 变化驱动这两层重组。
+                        val iv = inputView.value
+                        if (iv != null) {
+                            iv.popup.PopupOverlayContent(Modifier.fillMaxSize())
+                            iv.candidateActionMenu.OverlayContent(Modifier.fillMaxSize())
+                        }
                     }
                 }
             }
@@ -680,10 +697,15 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onComputeInsets(outInsets: Insets) {
         if (inputDeviceMgr.isVirtualKeyboard) {
-            inputView?.keyboardView?.getLocationInWindow(inputViewLocation)
+            inputView.value?.keyboardView?.getLocationInWindow(inputViewLocation)
             outInsets.apply {
-                contentTopInsets = inputViewLocation[1]
-                visibleTopInsets = inputViewLocation[1]
+                // 预编辑栏已并入键盘体顶部，keyboardView 顶部 = 预编辑栏顶部；补偿「预编辑栏实际高度」
+                // （ComposePreeditComponent.heightPx）后即工具栏顶部 —— keyboardView 顶部本身已含
+                // 预编辑高度，补偿后正好抵消，故预编辑高度可变（贴合内容）也不影响 insets。
+                val topPx = inputViewLocation[1] +
+                    (inputView.value?.composePreedit?.heightPx?.value ?: 0)
+                contentTopInsets = topPx
+                visibleTopInsets = topPx
                 touchableInsets = Insets.TOUCHABLE_INSETS_VISIBLE
             }
         } else {
@@ -847,7 +869,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             // editorInfo and capFlags should be up-to-date
             currentEditorInfo = info
             currentRestarting = restarting
-            inputView?.startInput(info, capabilityFlags, restarting)
+            inputView.value?.startInput(info, capabilityFlags, restarting)
         } else {
             if (currentInputConnection?.monitorCursorAnchor() != true) {
                 if (!decorLocationUpdated) {
@@ -879,7 +901,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             candidatesEnd,
             cursorUpdateIndex
         )
-        inputView?.updateSelection(newSelStart, newSelEnd)
+        inputView.value?.updateSelection(newSelStart, newSelEnd)
     }
 
     private val contentSize = floatArrayOf(0f, 0f)
@@ -1128,7 +1150,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     @RequiresApi(Build.VERSION_CODES.R)
     override fun onInlineSuggestionsResponse(response: InlineSuggestionsResponse): Boolean {
         if (!inlineSuggestions || !inputDeviceMgr.isVirtualKeyboard) return false
-        return inputView?.handleInlineSuggestions(response) == true
+        return inputView.value?.handleInlineSuggestions(response) == true
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {

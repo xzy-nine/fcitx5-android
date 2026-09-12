@@ -81,34 +81,42 @@ FcitxInputMethodService
 
 ## 3. 工具栏 + 预编辑栏 Compose 化
 
-工具栏与候选栏收敛到单一 `composeTopView` Composition；预编辑栏维持独立悬浮层。
+工具栏、候选栏与预编辑栏收敛到单一 `composeTopView` Composition；预编辑栏高度**贴合内容**
+（空态 0 / 单行 / 双行，`ComposePreeditComponent.heightPx` 经 `onSizeChanged` 上报实际高度）。
 
-> **成因（合并曾回归）**：曾把预编辑栏并入 `composeTopView`，但其可变高度撑高 `keyboardView`
-> 使 `contentTopInsets` 随打字变化、应用页面反复伸缩；故预编辑栏移回键盘体之外独立悬浮（
-> `composePreedit.view`），键盘体高度恒定、insets 稳定。工具栏圆角落点也由此改为裁 `keyboardView`。
+> **成因（曾两次调整）**：预编辑栏曾并入 `composeTopView`（可变高度），撑高 `keyboardView`
+> 使 `contentTopInsets` 随打字变化、应用页面反复伸缩（回归，故 994ea988 移回独立悬浮）；
+> 本轮重新并入时关键在 `onComputeInsets` 补偿**预编辑栏实际高度**：keyboardView 顶部本身已含
+> 预编辑高度，补偿后正好抵消 —— 预编辑栏高度可贴合内容变化而 **insets 恒定**，无需固定占位
+> （固定占位会在预编辑文本与工具栏之间留空隙）。圆角由
+> `customBackground.applyTopRoundedCornerClip(16dp, 预编辑实际高度)`（跳过预编辑行）实现，
+> 高度经 `SideEffect` 跟随，keyboardView 不再整体裁剪（否则会裁掉顶部预编辑行）。
 
-```
+```text
 FcitxInputMethodService
-├── ComposeView (Compose 根)
-│   └── AndroidView
-│       └── InputView
-│           ├── customBackground (ImageView - 主题背景，铺满键盘体)
-│           ├── composeTopView (单一 ComposeView - MiuixTheme，仅含工具栏)
-│           │   └── composeKawaiiBar.ToolbarContent() (Composable 入口)
-│           │       └── ComposeToolbar (Idle/Candidate/Title 态)
-│           │           ├── Idle 态: MenuButton + [Empty|Toolbar|Clipboard|NumberRow|InlineSuggestion] + HideKeyboardButton
-│           │           │   ├── Toolbar: ToolbarButtonsRow (undo/redo/cursor/clipboard/split/more/tune)
-│           │           │   ├── Clipboard: 文本行 (AndroidView 仅 InlineSuggestionsUi.root)
-│           │           │   ├── NumberRow: NumberRowContent (ComposeNumberRow，全 Compose)
-│           │           │   └── InlineSuggestion: AndroidView(inlineSuggestionsUi.root)
-│           │           ├── Candidate 态: composeCandidate.CandidateBarContent() + ExpandButton
-│           │           └── Title 态: BackButton + TitleText + ExtensionSlot (AndroidView 包装 onCreateBarExtension)
-│           ├── windowManager.view (InputWindowManager - FrameLayout)
-│           │   └── 当前活跃窗口 (KeyboardWindow / PickerWindow / Grid|FlexboxExpandedCandidateWindow)
-│           ├── composePreedit.view (ComposeView - ComposePreeditComponent，悬浮在键盘体上方)
-│           │   └── ComposePreedit (上行: auxUp + preedit + 光标竖线 / 下行: auxDown)
-│           ├── leftPaddingSpace, rightPaddingSpace, bottomPaddingSpace
-│           └── popup.root
+├── ComposeView (根 - 全窗口，MiuixTheme)
+│   └── Box(fillMaxSize)
+│       ├── key(themeState, recreateNonce) → AndroidView(InputView)
+│       │   └── InputView
+│       │       ├── customBackground (ImageView，顶部圆角裁剪、经 SideEffect 跟随预编辑栏实际高度)
+│       │       ├── composeTopView (单一 ComposeView - MiuixTheme)
+│       │       │   └── Column {
+│       │       │       ├── composePreedit.PreeditContent()  ← 贴合内容高度（空态 0），onSizeChanged 上报 heightPx
+│       │       │       │   └── ComposePreedit (上行: auxUp + preedit + 光标竖线 / 下行: auxDown)
+│       │       │       └── composeKawaiiBar.ToolbarContent() (Idle/Candidate/Title 态)
+│       │       │           ├── Idle 态: MenuButton + [Empty|Toolbar|Clipboard|NumberRow|InlineSuggestion] + HideKeyboardButton
+│       │       │           │   ├── Toolbar: ToolbarButtonsRow (undo/redo/cursor/clipboard/split/more/tune)
+│       │       │           │   ├── Clipboard: 文本行 (AndroidView 仅 InlineSuggestionsUi.root)
+│       │       │           │   ├── NumberRow: NumberRowContent (ComposeNumberRow，全 Compose)
+│       │       │           │   └── InlineSuggestion: AndroidView(inlineSuggestionsUi.root)
+│       │       │           ├── Candidate 态: composeCandidate.CandidateBarContent() + ExpandButton
+│       │       │           └── Title 态: BackButton + TitleText + ExtensionSlot (AndroidView 包装 onCreateBarExtension)
+│       │       ├── windowManager.view (InputWindowManager - FrameLayout)
+│       │       │   └── 当前活跃窗口 (KeyboardWindow / PickerWindow / ComposeExpandedCandidateWindow)
+│       │       ├── leftPaddingSpace, rightPaddingSpace, bottomPaddingSpace
+│       │       └── (弹窗层 / 候选操作菜单见 §4 / §6，已并入根组合)
+│       ├── iv.popup.PopupOverlayContent()   ← 按键弹窗层（无触摸，见 §4）
+│       └── iv.candidateActionMenu.OverlayContent()   ← 候选操作菜单（见 §6）
 ├── CandidatesView (迁移范围外，保持 View 实现)
 ```
 
@@ -134,11 +142,16 @@ FcitxInputMethodService
 
 **工具栏高度**：由 `ToolbarContent` 内部 `HEIGHT`（动态 getter）决定；偏好变化 →
 `notifyToolbarHeightChanged()` → `_toolbarHeightVersion` 自增 → 父级 `key(toolbarHeightVersion)`
-触发重组。左右边距由 `updateKeyboardSize()` 对 `composeTopView` 与 `composePreedit.view` 分别
+触发重组。左右边距由 `updateKeyboardSize()` 对 `composeTopView`（含预编辑栏与工具栏）
 `setPadding(sidePadding, 0, sidePadding, 0)`。
 
-**顶部圆角**：`keyboardView.applyTopRoundedCornerClip(dp(16))`（`ViewOutlineExt`，圆角落在工具栏顶部，
-预编辑栏在键盘体外不受影响）。
+**圆角**：
+- **IME 体上缘**：`customBackground.applyTopRoundedCornerClip(dp(16), preeditHeightPx)`
+  （`ViewOutlineExt`；`preeditHeightPx` 取 `ComposePreeditComponent.heightPx`，经 `SideEffect`
+  跟随预编辑栏实际高度，圆角落在工具栏顶部、预编辑行保持透明露出应用内容）。
+- **工具栏自身**：`ComposeToolbar` 的 `clip(RoundedCornerShape(16.dp))`。起分隔作用的是**下两角**
+  （工具栏与键盘区的分界）—— 工具栏下缘不在屏幕边缘，必须自己裁；**IME 的下缘由屏幕自身的圆角代劳**，
+  所以 `keyboardView` 不裁下缘。上两角与父级 outline 重合，一并写上是为了不依赖父级裁剪。
 
 旧文件（断开接线，保留供对比）：
 
@@ -152,33 +165,36 @@ FcitxInputMethodService
 
 ## 4. 按键弹窗层 Compose 化
 
-`popup.root` 由 FrameLayout 改为 ComposeView（z 序最顶），只换渲染层、不动协调层。
+弹窗层由独立 `popup.root` ComposeView 宿主改为**根组合的覆盖层**
+（`FcitxInputMethodService.createComposeInputView` 内、`AndroidView(InputView)` 之上），
+只换渲染层、不动协调层。
 
-```
-popup.root (ComposeView, matchParent, z 序最顶)
-└── MiuixTheme
-    └── CompositionLocalProvider(LocalLayoutDirection = Ltr)
-        └── PopupContent() (Compose)
-            ├── PopupEntry × N (miuix Surface + Text，Modifier.offset 绝对定位)
-            └── PopupContainer × N (miuix Surface)
-                ├── PopupKeyboard (Row/Column 网格 + focusedIndex)
-                └── PopupMenu (CircleShape 圆底 + miuix Icon)
+```text
+根组合 Box(fillMaxSize) 内（MiuixTheme + 强制 LTR）
+└── iv.popup.PopupOverlayContent() (Box，无 pointer handler → 触摸穿透)
+    └── PopupContent() (Compose)
+        ├── PopupEntry × N (miuix Surface + Text，Modifier.offset 绝对定位)
+        └── PopupContainer × N (miuix Surface)
+            ├── PopupKeyboard (Row/Column 网格 + focusedIndex)
+            └── PopupMenu (CircleShape 圆底 + miuix Icon)
 ```
 
 接线链路：
 
 1. **只换渲染层**：`PopupComponent` 继续任协调器与唯一入口（`listener` / `dismissAll()` 契约不变），
-   内部由持有 View 引用改为维护 `MutableStateFlow<PopupLayerState>`；`root` 改 ComposeView，
-   `setContent` 内 `MiuixTheme` 调用 `PopupContent(state, visuals)`。
-2. **不接收触摸**：`root` 保持 `isClickable=false` / `isFocusable=false`；手势仍由 `BaseKeyboard` /
-   `PickerPageUi` 侧 `CustomGestureView` 捕获后经 `PopupActionListener` 转发。
+   内部由持有 View 引用改为维护 `MutableStateFlow<PopupLayerState>`；新增 `PopupOverlayContent()`
+   供根组合订阅渲染，`root` ComposeView 宿主已移除。
+2. **不接收触摸**：覆盖层 Box 无任何 pointer handler（等价原 `isClickable=false` / `isFocusable=false`），
+   触摸穿透到下方 `AndroidView(InputView)`；手势仍由 `BaseKeyboard` / `PickerPageUi` 侧
+   `CustomGestureView` 捕获后经 `PopupActionListener` 转发。
 3. **锚点抽象化（关键）**：弹窗只消费「窗口绝对坐标 `Rect`」—— View 侧来自 `KeyView.bounds`
    （`getLocationInWindow`），Compose 侧来自 `boundsInWindow()`。因此 `BaseKeyboard` / `TextKeyboard` /
    `PickerWindow` / `PickerPageUi` / `ComposeNumberRow` 五个生产方零改动。
 4. **同步返回语义保留**：`ChangeFocusAction.outResult` / `TriggerAction.outAction` 由调用方同步读取，
    故 `changeFocus` / `triggerFocused` 直接读写 `_state.value`，不经重组或协程。
-5. **定位算式来源**：`rootBounds` 继续用 `addOnLayoutChangeListener` + `getLocationInWindow()`，原 px
-   算式逐字保留，坐标相对 `popup.root` 左上角，Compose 侧 `Modifier.offset` + `LocalDensity` 换算。
+5. **定位算式来源**：`rootBounds` 由 `PopupOverlayContent` 的 `onGloballyPositioned` 持续更新
+   （`boundsInWindow()`），原 px 算式逐字保留，坐标相对覆盖层左上角，Compose 侧
+   `Modifier.offset` + `LocalDensity` 换算。
 6. **焦点热路径零分配**：行布局（`computeDisplayRows`）与 `keyOrders` 创建时算一次（`remember`）；
    `ChangeFocusAction`（手指 move 每帧）只替换 focusedIndex。
 7. **强制 LTR**：`CompositionLocalProvider(LocalLayoutDirection provides LTR)`，等价原
@@ -188,7 +204,7 @@ popup.root (ComposeView, matchParent, z 序最顶)
 
 | 项 | 状态 |
 |---|---|
-| `popup.root` | FrameLayout → ComposeView（宿主不变，仍由 InputView 挂载） |
+| `popup.root` | 已移除：FrameLayout → 独立 ComposeView → 根组合覆盖层 `PopupOverlayContent()` |
 | PopupLayoutMath.kt | 新增：纯计算模块（无 View 依赖），注入 `PopupLayerState` 渲染 |
 | PopupEntryUi.kt / PopupKeyboardUi.kt / PopupMenuUi.kt / PopupContainerUi.kt | 断开接线；PopupContainerUi 保持零改动（计算已复制到 PopupLayoutMath，避免上游合并冲突） |
 | PopupAction.kt / PopupActionListener.kt / PopupPreset.kt / EmojiModifier.kt | 不动，对外契约 |
@@ -273,30 +289,29 @@ wm 共存机制逐个 Compose 化，或并入 `composeTopView` 单一 Compositio
 
 ```
 FcitxInputMethodService
-├── ComposeView (Compose 根)
-│   └── AndroidView
-│       └── InputView
-│           ├── customBackground
-│           ├── composeTopView (单一 ComposeView - 仅含工具栏)
-│           ├── windowManager.view
-│           │   └── 当前活跃窗口:
-│           │       ├── KeyboardWindow / PickerWindow / Grid|FlexboxExpandedCandidateWindow (View 窗口)
-│           │       ├── StatusAreaWindow (ComposeWindow - 更多页)
-│           │       ├── ClipboardWindow (ComposeWindow - 剪贴板主页)
-│           │       ├── ClipboardEditWindow (ComposeWindow - 剪贴板编辑)
-│           │       └── TextEditingWindow (ComposeWindow - 文本编辑)
-│           ├── composePreedit.view (ComposeView - 悬浮预编辑)
-│           ├── popup.root (ComposeView - 按键弹窗层)
-│           ├── candidateActionMenu.root (ComposeView - 候选操作菜单覆盖层，z 序最高)
-│           │   └── ComposeCandidateActionMenu overlay (Rect 锚定 + dismiss 蒙层)
-│           ├── leftPaddingSpace, rightPaddingSpace, bottomPaddingSpace
+├── ComposeView (根 - 全窗口，MiuixTheme)
+│   └── Box(fillMaxSize)
+│       ├── key(themeState, recreateNonce) → AndroidView(InputView)
+│       │   └── InputView
+│       │       ├── customBackground
+│       │       ├── composeTopView (单一 ComposeView - 预编辑 + 工具栏 + 候选)
+│       │       ├── windowManager.view
+│       │       │   └── 当前活跃窗口:
+│       │       │       ├── KeyboardWindow / PickerWindow / ComposeExpandedCandidateWindow (ComposeWindow)
+│       │       │       ├── StatusAreaWindow (ComposeWindow - 更多页)
+│       │       │       ├── ClipboardWindow (ComposeWindow - 剪贴板主页)
+│       │       │       ├── ClipboardEditWindow (ComposeWindow - 剪贴板编辑)
+│       │       │       └── TextEditingWindow (ComposeWindow - 文本编辑)
+│       │       ├── leftPaddingSpace, rightPaddingSpace, bottomPaddingSpace
+│       ├── iv.popup.PopupOverlayContent() (按键弹窗层，无触摸)
+│       └── iv.candidateActionMenu.OverlayContent() (候选操作菜单覆盖层，z 序最高)
 ├── CandidatesView (独立的浮动候选视图，迁移范围外)
 ```
 
 **候选操作菜单**：
 1. `BaseInputView.showCandidateActionMenu` 增加基于 `Rect` 的重载（`open`，默认 no-op），供 Compose 使用。
-2. `InputView` 新增 `candidateActionMenu`（`ComposeCandidateActionMenu`），root 作为 `popup.root` 同级
-   覆盖层加入 `InputView`（matchParent）。
+2. `ComposeCandidateActionMenu` 的 `OverlayContent()` 由根组合渲染（`popup.root` 覆盖层之上、
+   `AndroidView(InputView)` 之上），`root` ComposeView 宿主已移除。
 3. `showCandidateActionMenu(idx, text, anchor: Rect)` → `MutableStateFlow<CandidateActionMenuState?>` 驱动
    `CandidateActionMenuOverlay`（Rect 锚定 + 透明 dismiss 蒙层），动作回调触发 fcitx 动作后 dismiss。
 4. `ComposeCandidateComponent` 长按候选用 `LayoutCoordinates.positionInWindow()` + 长按点 `Offset`
@@ -319,7 +334,10 @@ FcitxInputMethodService
 
 **剪贴板编辑**：
 1. `ClipboardEditWindow` 实现 `ComposeWindow`；分词用现成 `ClipboardTextAnalyzer.segment()`。
-2. `ComposeClipboardEdit.kt`（新增）：分词模式 `FlowRow` 词块（点击选中/长按单选）+ 重组预览；
+2. `ComposeClipboardEdit.kt`（新增）：分词模式 `FlowRow` 词块 + 重组预览；芯片手势由
+   `ComposeClipboardSegment.kt`（新增）：单击切换 / 长按进入拖选（此后才消费、接管手势）/ 拖动按
+   「锚点..当前」整段连选（区间外原选中态保留）/ 拖到可视区上下边缘自动滚动并继续扩选（越过视口边界越远越快）/
+   长按前超 `touchSlop` 移动则**放弃手势且不消费**，交还父级 `verticalScroll`，保证普通上下拖动可正常滚动；
    文本模式 miuix `TextField`；底部 全选/反选/模式切换 + 复制/取消/确定。复制/上屏借窗口
    `copyOnly` / `commitToInput` / `exitToPrevWindow`。设置项 `clipboardEditInsertSpace` 落
    `AppPrefs`。
@@ -405,3 +423,249 @@ FcitxInputMethodService
   关键：**不传 `onClick`/`onLongPress`**——miuix `Card` 的 `combinedClickable` 挂在内层 `Column`，会在
   down 时 `consume()` 挡住外层自己的 `pointerInput { detectTapGestures }`；不传时 `pressable`（承载
   `SinkFeedback`）走 `requireUnconsumed = false` 且从不 consume，两者共存，按压态与长按点坐标同时拿到。
+
+---
+
+## 8. 主键盘 Compose 化（KeyboardWindow，批次 C3/D）
+
+`KeyboardWindow` 由 View（`onCreateView()` 兜底）改为 `ComposeWindow`，由 `InputWindowManager` 的统一 ComposeView 宿主承载（essential 窗口 Composition 缓存、不 dispose）。
+
+```
+windowManager.view
+└── KeyboardWindow (ComposeWindow - essential)
+    └── createComposeWindowView → KeyboardWindow.Content()
+        └── BoxWithConstraints
+            ├── TextKeyboard 态: ComposeTextKeyboard (ComposeKey × N + 空格 + 回车)
+            └── NumberKeyboard 态: ComposeNumberKeyboard (符号滑块 + 最近符号 + 数字键)
+```
+
+接线链路：
+
+1. 布局切换不再 `addView/removeView`，写 `currentLayout: MutableState<String>`（取值于 `KeyboardLayoutNames.Text` / `KeyboardLayoutNames.Number`）。
+2. 按键本体 = `ComposeKey`（`pointerInput` 原生手势，长按 / 滑行 / 移出取消语义与 View 版 `CustomGestureView` 同源）。
+3. 按键 / 弹层出口原样透传 `KeyActionListener` / `PopupActionListener`；按键 id 由 `ComposeKey` 依布局位置自造。
+4. 尺寸上报走 `Modifier.onSizeChanged`（首次布局即上报一次）；窗口生命周期回调改为写状态层，不再 mutate View。
+5. 布局数据：文本键盘由 `ComposeTextKeyboard` 经 `ComposeKeyboardRows`（定义于 `ComposeKeyboardLayout.kt`）消费 `TextKeyboard.Layout`（纯 `KeyDef` 数据）；数字键盘由 `ComposeNumberKeyboard` 直接读取 `NumberKeyboardRows`（`NumberKeyboard.Layout` 是空列表的死数据，勿改）。
+
+旧文件（断开接线，保留供对比 / 回退）：
+
+| 旧文件 | 状态 |
+|---|---|
+| `BaseKeyboard.kt` / `TextKeyboard.kt` / `NumberKeyboard.kt` | 断线；`TextKeyboard` 仍被设置页 `KeyboardPreviewUi` 实例化（主题预览），`Name` 常量已委托到 `KeyboardLayoutNames.kt` |
+| `KeyView.kt` / `CustomGestureView.kt` | 断线；`CustomGestureView` 仍被 View 桥接层（`PickerTabsUi` / `ToolButton`）依赖，不能删 |
+| `KeyViewExt.kt` / `RecentSymbolsView.kt` / `SymbolSliderKeyView.kt` | 断线 |
+
+> `KeyboardWindow.kt` 顶部注释引用的 `Docs/KeyboardComposePlan.md` 不存在（计划文档未落地），本节为其内容的正式记录。
+
+---
+
+## 9. Picker 窗口 Compose 化（批次 D-1~D-3）
+
+`PickerWindow`（符号 / Emoji / 颜文字）改为 `ComposeWindow`。
+
+```
+windowManager.view
+└── PickerWindow (ComposeWindow - essential)
+    └── createComposeWindowView → PickerWindow.Content()
+        ├── HorizontalPager (rememberPagerState) × ComposePickerPage × N
+        │   └── ComposeKey 网格 (density.columnCount × rowCount，末行 CHAIN_PACKED + 退格 15%)
+        ├── PickerKeyboardRows (底部内嵌键盘，纯 KeyDef 数据)
+        └── AndroidView islands:
+            ├── PickerPaginationUi (分页指示条，AndroidView 桥)
+            └── (经 onCreateBarExtension) PickerTabsUi (标签页 → 工具栏 Title 态 AndroidView)
+```
+
+接线链路：
+
+1. `ViewPager2` → `HorizontalPager`；弹层小键盘显示时 `userScrollEnabled = false`。
+2. 页数据 = `PickerPageModel`（从 `PickerPagesAdapter` 抽出，与 View 版共用同一份分页逻辑）。
+3. 密度规格 `PickerPageUi.Density` 抽离到 `PickerDensity.kt`；`PickerPageUi` 保留 `typealias Density = PickerDensity` 兼容死引用。
+4. 标签页 / 分页指示条仍是 View 版（`PickerTabsUi` / `PickerPaginationUi`），经 AndroidView 桥接（前者系统 `onCreateBarExtension` 契约、后者 View 渐变指示器复用）。
+
+旧文件（断开接线）：
+
+| 旧文件 | 状态 |
+|---|---|
+| `PickerPageUi.kt` | 断线；`Density` 已抽离，本类保留 `typealias` |
+| `PickerPagesAdapter.kt` / `PickerLayout.kt` | 断线（逻辑已抽到 `PickerPageModel` / `PickerKeyboardRows`） |
+
+---
+
+## 10. 展开候选窗口 Compose 化
+
+`ComposeExpandedCandidateWindow` 取代 View 版 `BaseExpandedCandidateWindow` / `GridExpandedCandidateWindow` / `FlexboxExpandedCandidateWindow` 与 `ExpandedCandidateLayout`。
+
+```
+windowManager.view
+└── ComposeExpandedCandidateWindow (ComposeWindow - 非 essential，每次 attach 新建、detach dispose)
+    └── createComposeWindowView → Content()
+        └── ComposeExpandedCandidatesUi
+            ├── 标签栏 (CandidateTabActions 数据)
+            ├── LazyVerticalGrid (列数由 computeGridSpanCount 按前段候选实测宽度反推)
+            └── 内嵌键盘 (ComposeExpandedCandidateKeyboard)
+```
+
+接线链路：
+
+1. **形态只保留表格（Grid）一种**：原「流式（Flexbox）」形态与 `expandedCandidateStyle` 偏好已移除（`AppPrefs` 定义、`group_candidate_style` 分组引用、import 均已删；`ExpandedCandidateStyle.kt` 枚举保留为断线文件）。
+2. 列数不再用户固定：`computeGridSpanCount`（`ExpandedCandidateGridSpan.kt`，与 View 侧 `SpanHelper` 同口径）按列表前段候选实测宽度（em）与 `expandedCandidateGridSpanCount` 上限反推；该偏好降级为列数上限，同时被横向候选栏填宽逻辑复用，故保留。
+3. 数据 = `CandidatesPagingSource` 分页 + `ComposeCandidateComponent` 的 `total` / `expandedCandidateOffset`（不直接订阅 `CandidateListEvent`）。
+
+旧文件（断开接线）：
+
+| 旧文件 | 状态 |
+|---|---|
+| `expanded/window/BaseExpandedCandidateWindow.kt` / `GridExpandedCandidateWindow.kt` / `FlexboxExpandedCandidateWindow.kt` | 断线 |
+| `expanded/ExpandedCandidateLayout.kt` / `PagingCandidateViewAdapter.kt` / `GridPagingCandidateViewAdapter.kt` / `SpanHelper.kt` / `CandidateTabActionsAdapter.kt` / `decoration/*` | 断线 |
+| `expanded/ExpandedCandidateStyle.kt` | 断线（偏好已删，枚举孤立保留） |
+
+> 第 6 节原记「展开候选页按用户要求跳过」——已过时，本节为正式落地记录。
+
+---
+
+## 11. 寄生数据 / 常量抽离与偏好清理
+
+为让 Compose 层不再 import 死 View 类，把寄生在死 View 类中的纯数据 / 常量抽到独立文件，死类保留别名 / 委托兼容内部引用：
+
+| 抽离项 | 新文件 | 原寄生位置 | Compose 消费方 |
+|---|---|---|---|
+| 数字行布局 | `bar/ui/idle/NumberRowLayout.kt`（`val NumberRowLayout`） | `NumberRow.companion.Layout` | `ComposeNumberRow` |
+| Picker 密度规格 | `picker/PickerDensity.kt`（`enum PickerDensity`） | `PickerPageUi` 嵌套 `enum Density` | `ComposePickerPage` / `ComposeNumberKeyboard` / `PickerWindow` / `PickerWindowPreset` / `PickerPageModel`（`PickerPageUi` 保留 `typealias Density = PickerDensity`） |
+| 剪贴板文本摘要 | `clipboard/ClipboardTextUtils.kt`（`fun excerptClipboardText`） | `ClipboardAdapter.companion.excerptText` | `ComposeClipboard`（`ClipboardAdapter.excerptText` 改为委托） |
+| 键盘布局名常量 | `keyboard/KeyboardLayoutNames.kt`（`object KeyboardLayoutNames`） | `TextKeyboard.companion.Name` / `NumberKeyboard.companion.Name` | `KeyboardWindow` / `NumberKeyboardRows` / `PickerKeyboardRows` / `PickerWindowPreset`（死类 `Name` 改为 `= KeyboardLayoutNames.X`） |
+
+同批清理：
+
+- `InputView` 中 `private val preedit = PreeditComponent()` 死实例化（属性、import、`scope += preedit` 注释三处；`PreeditComponent` 早已断开接线但属性残留，每次 `InputView` 创建都白构造一个 component 对象）。
+- `AppPrefs.expandedCandidateStyle` 偏好（定义、`group_candidate_style` 分组引用、import 三处）。
+
+---
+
+## 12. 单一 Composition 边界（为何不收敛为单一宿主）
+
+迁移收敛后，`InputView` 仅持 **1 个** `ComposeView` 宿主（`composeTopView`）+ wm 内每个
+`ComposeWindow` 一个宿主；**弹窗层与候选操作菜单已并入根组合**（`createComposeInputView` 的
+`Box(fillMaxSize)`，作为 `AndroidView(InputView)` 之上的覆盖层）。未能进一步收敛的硬约束：
+
+| 宿主 | 位置 | 成因 |
+|---|---|---|
+| `composeTopView` | `keyboardView` 内顶部 | 键盘顶部条单一 Composition（预编辑 + 工具栏 + 候选，已收敛：原 `KawaiiBarComponent` / `CandidateUi` / `IdleUi` / `TitleUi` / `ComposeCandidateComponent` / `ComposePreeditComponent` 合并到此）。 |
+| 根组合覆盖层（`PopupOverlayContent` / `OverlayContent`） | `createComposeInputView` 根 Box 内，`AndroidView(InputView)` 之上 | 弹窗层必须覆盖整个 IME 窗口且不接收触摸（覆盖层 Box 无 pointer handler，触摸穿透到下方 `AndroidView(InputView)`）；候选操作菜单须在弹窗层之上。物理上无法并入 `composeTopView`（后者在 keyboardView 内、仅键盘顶条高度）。 |
+| wm `createComposeWindowView` | `windowManager.view` 内 | 每个 `ComposeWindow` 独立 Composition，配合 essential 缓存 / 非 essential `disposeComposition()` 生命周期；与 `TransitionManager` Slide/Fade 进出场动画耦合。 |
+
+**根 `ComposeView`（`FcitxInputMethodService.createComposeInputView`）**：`ComposeView → Box → [AndroidView(InputView) + 两个覆盖层]`。根 ComposeView 职责为 `key(themeState, recreateNonce)` 触发 `InputView` 重建（等价旧 `replaceInputView`），并作为弹窗层 / 候选操作菜单的单一 Composition 宿主；若改为 `InputView` 直接作 `contentView` + 手动重建，可省根 ComposeView，但失去「主题 / 重建以 Compose 状态驱动」的统一入口，暂保留。`inputView` 在 Service 侧为 `mutableStateOf`，覆盖层据此读取当前 `InputView` 的组件并在重建时重组。
+
+**主题包装冗余**：`composeTopView` 与根组合各自包一层 `MiuixTheme`（2 次）+ wm 每窗口一次。这是独立 Composition 的必然代价；除非把 wm 与键盘体整体迁入单一组合，否则无法进一步省去。
+
+---
+
+## 13. EditorInfo 窗口 Compose 化（补窗口迁移漏网者）
+
+此前 `EditorInfoWindow` 是窗口迁移的漏网者（仍 View），本轮补上。
+
+```
+windowManager.view
+└── EditorInfoWindow (ComposeWindow - 非 essential，每次 attach 新建、detach dispose)
+    └── createComposeWindowView → EditorInfoWindow.Content()
+        └── ComposeEditorInfoContent (纵向滚动 键→值 两列表格，MiuixTheme 取色)
+```
+
+接线链路：
+
+1. `EditorInfoWindow` 实现 `ComposeWindow`；`onCreateView()` 改 `createComposeWindowView { Content() }`
+   （同样被 `InputWindowManager.createWindowView` 的 Compose 分流承载）。
+2. 数据驱动：`propertyMap` 改 `MutableStateFlow<Map<String,String>>`；`onAttached()` 写入
+   `EditorInfoParser.parse(service.currentInputEditorInfo)`，`Content()` 内 `collectAsState` 渲染。
+3. `buildMarkdownString()` 改读 `_propertyMap.value`；标题 `title` 与复制按钮 `onCreateBarExtension()`
+   （copy `ToolButton`，仍 View，与 `ClipboardWindow` / `TextEditingWindow` 一致）不变。
+4. `ComposeEditorInfo.kt`（新增）：渲染层，`Column + verticalScroll`，两列（加粗键名 + 可换行取值），
+   列间/行间用 miuix `Text` / `HorizontalDivider`，颜色取 `MiuixTheme.colorScheme`
+   （`background` / `onSurface` / `dividerLine`）。
+
+旧文件（断开接线，保留供审查）：
+
+| 旧文件 | 状态 |
+|---|---|
+| `EditorInfoUi.kt` | 断线（原 TableLayout 表格，被 `ComposeEditorInfoContent` 取代） |
+| `EditorInfoWindow.kt`（原 onCreateView 内 `ui` 惰性实例） | 已删除（window 仍保留，仅去掉 View 渲染） |
+
+---
+
+## 附录 A：断线文件清单
+
+> 「断线」= 已不再被活跃代码引用，仅被同类断线文件互引或保留别名 / 委托。上游文件按 fork 约定保留不动、不删除；custom 私有文件可择机清理。
+
+### A.1 候选栏 / 展开候选
+
+| 文件 | 状态 |
+|---|---|
+| `candidates/CandidateItemUi.kt` / `CandidateViewHolder.kt` | 断线（原被展开候选窗口用，Compose 化后仅死文件互引） |
+| `candidates/horizontal/HorizontalCandidateComponent.kt` / `HorizontalCandidateViewAdapter.kt` | 断线（被 `ComposeCandidateComponent` 取代） |
+| `candidates/expanded/ExpandedCandidateStyle.kt` | 断线（偏好已删，枚举孤立保留） |
+| `candidates/expanded/ExpandedCandidateLayout.kt` / `PagingCandidateViewAdapter.kt` / `GridPagingCandidateViewAdapter.kt` / `SpanHelper.kt` / `CandidateTabActionsAdapter.kt` | 断线 |
+| `candidates/expanded/window/{Base,Grid,Flexbox}ExpandedCandidateWindow.kt` | 断线 |
+| `candidates/expanded/decoration/*` | 断线 |
+
+### A.2 工具栏 / 预编辑
+
+| 文件 | 状态 |
+|---|---|
+| `bar/KawaiiBarComponent.kt` | 断线（被 `ComposeKawaiiBarComponent` 取代；内部仍 import 死展开窗口） |
+| `bar/ui/IdleUi.kt` / `CandidateUi.kt` / `TitleUi.kt` / `idle/ButtonsBarUi.kt` / `idle/ClipboardSuggestionUi.kt` | 断线 |
+| `bar/ui/idle/NumberRow.kt` | 断线（`Layout` 已抽离到 `NumberRowLayout.kt`，本类仅保留别名） |
+| `preedit/PreeditComponent.kt` | 断线（被 `ComposePreeditComponent` 取代；`InputView` 死实例化已清理） |
+| `preedit/PreeditUi.kt` | **仍活跃**（被范围外的 `CandidatesView` 使用，非断线） |
+
+### A.3 弹窗层
+
+| 文件 | 状态 |
+|---|---|
+| `popup/PopupEntryUi.kt` / `PopupKeyboardUi.kt` / `PopupMenuUi.kt` / `PopupContainerUi.kt` | 断线（被 `ComposePopupLayer` 取代；计算已复制到 `PopupLayoutMath.kt`，避免改上游文件） |
+
+### A.4 状态区 / 剪贴板 / 文本编辑
+
+| 文件 | 状态 |
+|---|---|
+| `status/StatusAreaAdapter.kt` / `StatusAreaEntryUi.kt` | 断线 |
+| `clipboard/ClipboardUi.kt` / `ClipboardEntryUi.kt` / `ClipboardInstructionUi.kt` / `SpacesItemDecoration.kt` | 断线 |
+| `clipboard/ClipboardAdapter.kt` | 断线（`excerptText` 已委托到 `ClipboardTextUtils.kt`） |
+| `editing/TextEditingUi.kt` / `TextEditingButton.kt` | 断线 |
+
+### A.5 键盘 / Picker
+
+| 文件 | 状态 |
+|---|---|
+| `keyboard/BaseKeyboard.kt` | 断线（仍被 `TextKeyboard` / `NumberRow` 继承；`TextKeyboard` 被设置页 `KeyboardPreviewUi` 实例化故全链保留） |
+| `keyboard/TextKeyboard.kt` | **半活跃**（`KeyboardPreviewUi` 实例化；`Name` 已委托 `KeyboardLayoutNames.Text`，`Layout` 被 `ComposeTextKeyboard` 经数据文件复用） |
+| `keyboard/NumberKeyboard.kt` | 断线（`Name` 已委托 `KeyboardLayoutNames.Number`） |
+| `keyboard/KeyView.kt` | 断线（仍被 `CustomGestureView` 体系与 View 桥接层 `PickerPageUi` 等引用） |
+| `keyboard/CustomGestureView.kt` | **半活跃**（被 View 桥接层 `PickerTabsUi` / `ToolButton` 依赖，不能删） |
+| `keyboard/KeyViewExt.kt` / `RecentSymbolsView.kt` / `SymbolSliderKeyView.kt` | 断线 |
+| `picker/PickerPageUi.kt` | 断线（`Density` 已抽离到 `PickerDensity.kt`，本类保留 `typealias`） |
+| `picker/PickerPagesAdapter.kt` / `PickerLayout.kt` | 断线 |
+
+### A.6 范围外（仍活跃 View，非断线，仅登记）
+
+| 文件 | 说明 |
+|---|---|
+| `input/CandidatesView.kt` | 浮动候选（物理键盘模式），仍被 `FcitxInputMethodService` 挂载；用 `PreeditUi` / `PagedCandidatesUi` / `LabeledCandidateItemUi` |
+| `input/keyboard/KeyboardTuneOverlay.kt` | custom 调校浮层，仍 View，挂 `keyboardView` 内 |
+| `ui/main/settings/theme/KeyboardPreviewUi.kt` | 设置页主题预览，实例化 `TextKeyboard`（View 键盘） |
+| `input/bar/ui/ToolButton.kt` | 仍活跃（多个窗口 `onCreateBarExtension` 返回的 View 按钮） |
+| `input/picker/PickerTabsUi.kt` / `PickerPaginationUi.kt` | 仍活跃（`PickerWindow` 的 AndroidView island） |
+| `input/bar/ui/idle/InlineSuggestionsUi.kt` | 仍活跃（系统 API 限制，`ComposeKawaiiBarComponent` AndroidView 包装） |
+
+### A.7 本次新增的独立数据文件
+
+| 文件 | 内容 |
+|---|---|
+| `bar/ui/idle/NumberRowLayout.kt` | 数字行 `KeyDef` 布局数据 |
+| `picker/PickerDensity.kt` | Picker 密度枚举 |
+| `clipboard/ClipboardTextUtils.kt` | `excerptClipboardText` 顶层函数 |
+| `keyboard/KeyboardLayoutNames.kt` | 布局名常量对象 |
+
+### A.8 EditorInfo
+
+| 文件 | 状态 |
+|---|---|
+| `editorinfo/EditorInfoUi.kt` | 断线（被 `ComposeEditorInfoContent` 取代） |

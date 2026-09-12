@@ -36,7 +36,7 @@ class NumberKeyboard(
     override val supportsSplitLayout: Boolean = true
 
     companion object {
-        const val Name = "Number"
+        const val Name = KeyboardLayoutNames.Number
 
         // 仅供 super 构造使用；实际布局由 rebuildKeyboardRows 自定义生成
         val Layout: List<List<KeyDef>> = emptyList()
@@ -59,66 +59,17 @@ class NumberKeyboard(
     private val recentlyUsed: RecentlyUsed
         get() = RecentlyUsed(PickerWindow.Key.Symbol.name, PickerPageUi.Density.High.pageSize)
 
-    private fun buildRow1() = createKeyRow(
-        listOf(
-            NumPadKey("1", 0xffb1, 30f, 0f),
-            NumPadKey("2", 0xffb2, 30f, 0f),
-            NumPadKey("3", 0xffb3, 30f, 0f),
-            BackspaceKey()
-        )
-    )
+    // 行数据见 NumberKeyboardRows（纯 KeyDef，Compose 侧共用同一份）
+    private fun buildRow1() = createKeyRow(NumberKeyboardRows.row1())
 
-    private fun buildRow2() = createKeyRow(
-        listOf(
-            NumPadKey("4", 0xffb4, 30f, 0f),
-            NumPadKey("5", 0xffb5, 30f, 0f),
-            NumPadKey("6", 0xffb6, 30f, 0f),
-            MiniSpaceKey()
-        )
-    )
+    private fun buildRow2() = createKeyRow(NumberKeyboardRows.row2())
 
-    private fun buildRow3() = createKeyRow(
-        listOf(
-            NumPadKey("7", 0xffb7, 30f, 0f),
-            NumPadKey("8", 0xffb8, 30f, 0f),
-            NumPadKey("9", 0xffb9, 30f, 0f),
-            NumPadKey("/", 0xffaf, 23f, 0.15f, Variant.Alternative)
-        )
-    )
+    private fun buildRow3() = createKeyRow(NumberKeyboardRows.row3())
 
-    private fun buildRow4() = createKeyRow(
-        listOf(
-            ImageLayoutSwitchKey(
-                R.drawable.ic_baseline_arrow_back_24,
-                TextKeyboard.Name,
-                percentWidth = 0.15f,
-                variant = Variant.Accent
-            ),
-            NumPadKey(",", 0xffac, 23f, 0.1f, Variant.Alternative),
-            LayoutSwitchKey("!?#", PickerWindow.Key.Symbol.name, 0.13333f, Variant.AltForeground),
-            NumPadKey("0", 0xffb0, 30f, 0.23334f),
-            NumPadKey("@", 0x40, 23f, 0.13333f, Variant.AltForeground),
-            NumPadKey(".", 0xffae, 23f, 0.1f, Variant.Alternative),
-            ReturnKey()
-        )
-    )
+    private fun buildRow4() = createKeyRow(NumberKeyboardRows.row4())
 
     /** 分体模式下的第 4 行：「!?#」已移至左侧历史符号面板，逗号键占用其释放的空间。 */
-    private fun buildRow4Split() = createKeyRow(
-        listOf(
-            ImageLayoutSwitchKey(
-                R.drawable.ic_baseline_arrow_back_24,
-                TextKeyboard.Name,
-                percentWidth = 0.15f,
-                variant = Variant.Accent
-            ),
-            NumPadKey(",", 0xffac, 23f, 0.23333f, Variant.Alternative),
-            NumPadKey("0", 0xffb0, 30f, 0.23334f),
-            NumPadKey("@", 0x40, 23f, 0.13333f, Variant.AltForeground),
-            NumPadKey(".", 0xffae, 23f, 0.1f, Variant.Alternative),
-            ReturnKey()
-        )
-    )
+    private fun buildRow4Split() = createKeyRow(NumberKeyboardRows.row4Split())
 
     override fun rebuildKeyboardRows(split: Boolean) {
         if (!::sliderSymbols.isInitialized) {

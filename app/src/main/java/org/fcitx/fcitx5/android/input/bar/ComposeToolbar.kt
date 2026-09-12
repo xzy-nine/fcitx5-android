@@ -12,6 +12,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,11 +24,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -34,10 +38,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.fcitx.fcitx5.android.R
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+
+/**
+ * 工具栏高度。
+ *
+ * 由宿主（[ComposeKawaiiBarComponent.ToolbarContent]）注入按偏好版本缓存的值，
+ * 使工具栏子树内十余处读取共享同一份结果，而不是各自去读 SharedPreferences。
+ * 默认值仅在脱离工具栏宿主单独使用 [ComposeToolbar] 时兜底。
+ */
+val LocalToolbarHeight = staticCompositionLocalOf { ComposeKawaiiBarComponent.HEIGHT.dp }
 
 /**
  * Compose 工具栏
@@ -55,6 +69,10 @@ fun ComposeToolbar(
     splitKeyboardEnabled: Boolean = false,
     menuRotation: Float = 0f,
     modifier: Modifier = Modifier,
+    // 工具栏高度：宿主注入缓存值（见 [LocalToolbarHeight]）
+    toolbarHeight: Dp = LocalToolbarHeight.current,
+    // 候选栏可见性：由调用方按「候选内容就绪」驱动（默认按 barState，调用方覆盖以消除闪烁）
+    candidateVisible: Boolean = barState == KawaiiBarStateMachine.State.Candidate,
     // 候选栏内容由外部传入
     candidateContent: @Composable () -> Unit = {},
     // NumberRow 需要 AndroidView 包装
@@ -66,34 +84,46 @@ fun ComposeToolbar(
     // 标题扩展内容
     titleExtensionContent: @Composable (() -> Unit)? = null,
 ) {
-    Box(modifier = modifier.fillMaxWidth().background(visuals.barColor)) {
-        // 候选栏始终留在组合树中（底层），避免 AndroidView 反复 attach/detach 导致渲染不同步
-        CandidateContent(
-            candidateContent = candidateContent,
-            visible = barState == KawaiiBarStateMachine.State.Candidate,
-        )
-        when (barState) {
-            KawaiiBarStateMachine.State.Idle -> {
-                IdleContent(
-                    subState = idleSubState,
-                    callbacks = callbacks,
-                    visuals = visuals,
-                    splitKeyboardEnabled = splitKeyboardEnabled,
-                    menuRotation = menuRotation,
-                    numberRowContent = numberRowContent,
-                    inlineSuggestionContent = inlineSuggestionContent,
-                    clipboardContent = clipboardContent,
-                )
+    CompositionLocalProvider(LocalToolbarHeight provides toolbarHeight) {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                // 四角裁圆：
+                //  · 上两角与父级 keyboardView 的 outline 圆角重合（ViewOutlineExt.applyTopRoundedCornerClip），
+                //    这里一并写上是为了不依赖父级裁剪，将来父级不再裁也不塌；
+                //  · **下两角是工具栏与键盘区的分界**，必须自己裁 —— IME 的下缘在屏幕边缘，
+                //    由屏幕自身的圆角代劳，所以 IME 不裁下缘，但工具栏下缘不在屏幕边缘。
+                .clip(RoundedCornerShape(16.dp))
+                .background(visuals.barColor)
+        ) {
+            // 候选栏始终留在组合树中（底层），避免 AndroidView 反复 attach/detach 导致渲染不同步
+            CandidateContent(
+                candidateContent = candidateContent,
+                visible = candidateVisible,
+            )
+            when (barState) {
+                KawaiiBarStateMachine.State.Idle -> {
+                    IdleContent(
+                        subState = idleSubState,
+                        callbacks = callbacks,
+                        visuals = visuals,
+                        splitKeyboardEnabled = splitKeyboardEnabled,
+                        menuRotation = menuRotation,
+                        numberRowContent = numberRowContent,
+                        inlineSuggestionContent = inlineSuggestionContent,
+                        clipboardContent = clipboardContent,
+                    )
+                }
+                KawaiiBarStateMachine.State.Title -> {
+                    TitleContent(
+                        titleData = titleData,
+                        callbacks = callbacks,
+                        visuals = visuals,
+                        extensionContent = titleExtensionContent,
+                    )
+                }
+                else -> {}
             }
-            KawaiiBarStateMachine.State.Title -> {
-                TitleContent(
-                    titleData = titleData,
-                    callbacks = callbacks,
-                    visuals = visuals,
-                    extensionContent = titleExtensionContent,
-                )
-            }
-            else -> {}
         }
     }
 }
@@ -112,7 +142,7 @@ private fun IdleContent(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(ComposeKawaiiBarComponent.HEIGHT.dp),
+            .height(LocalToolbarHeight.current),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 左侧：菜单按钮
@@ -126,7 +156,7 @@ private fun IdleContent(
         Box(
             modifier = Modifier
                 .weight(1f)
-                .height(ComposeKawaiiBarComponent.HEIGHT.dp),
+                .height(LocalToolbarHeight.current),
             contentAlignment = Alignment.Center,
         ) {
             AnimatedContent(
@@ -185,7 +215,7 @@ private fun CandidateContent(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(ComposeKawaiiBarComponent.HEIGHT.dp)
+            .height(LocalToolbarHeight.current)
             .padding(end = 40.dp)
             .graphicsLayer {
                 alpha = if (visible) 1f else 0f
@@ -206,7 +236,7 @@ private fun TitleContent(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(ComposeKawaiiBarComponent.HEIGHT.dp),
+            .height(LocalToolbarHeight.current),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 返回按钮
@@ -244,7 +274,7 @@ private fun ToolbarButtonsRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(ComposeKawaiiBarComponent.HEIGHT.dp)
+            .height(LocalToolbarHeight.current)
             .padding(horizontal = 4.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
@@ -308,11 +338,11 @@ private fun MenuButton(
     IconButton(
         onClick = onClick,
         modifier = modifier
-            .size(ComposeKawaiiBarComponent.HEIGHT.dp)
+            .size(LocalToolbarHeight.current)
             .inputFeedback(),
-        cornerRadius = ComposeKawaiiBarComponent.HEIGHT.dp / 2,
-        minWidth = ComposeKawaiiBarComponent.HEIGHT.dp,
-        minHeight = ComposeKawaiiBarComponent.HEIGHT.dp,
+        cornerRadius = LocalToolbarHeight.current / 2,
+        minWidth = LocalToolbarHeight.current,
+        minHeight = LocalToolbarHeight.current,
     ) {
         Icon(
             painter = painterResource(R.drawable.ic_baseline_expand_more_24),
@@ -339,7 +369,7 @@ private fun HideKeyboardButton(
     IconButton(
         onClick = onClick,
         modifier = modifier
-            .size(ComposeKawaiiBarComponent.HEIGHT.dp)
+            .size(LocalToolbarHeight.current)
             .inputFeedback()
             .pointerInput(Unit) {
                 detectDragGestures(
@@ -372,9 +402,9 @@ private fun HideKeyboardButton(
                     },
                 )
             },
-        cornerRadius = ComposeKawaiiBarComponent.HEIGHT.dp / 2,
-        minWidth = ComposeKawaiiBarComponent.HEIGHT.dp,
-        minHeight = ComposeKawaiiBarComponent.HEIGHT.dp,
+        cornerRadius = LocalToolbarHeight.current / 2,
+        minWidth = LocalToolbarHeight.current,
+        minHeight = LocalToolbarHeight.current,
     ) {
         Icon(
             painter = painterResource(R.drawable.ic_baseline_arrow_drop_down_24),
@@ -398,11 +428,11 @@ private fun ToolbarIconButton(
     IconButton(
         onClick = onClick,
         modifier = modifier
-            .size(ComposeKawaiiBarComponent.HEIGHT.dp)
+            .size(LocalToolbarHeight.current)
             .inputFeedback(),
-        cornerRadius = ComposeKawaiiBarComponent.HEIGHT.dp / 2,
-        minWidth = ComposeKawaiiBarComponent.HEIGHT.dp,
-        minHeight = ComposeKawaiiBarComponent.HEIGHT.dp,
+        cornerRadius = LocalToolbarHeight.current / 2,
+        minWidth = LocalToolbarHeight.current,
+        minHeight = LocalToolbarHeight.current,
     ) {
         Icon(
             painter = painterResource(iconRes),

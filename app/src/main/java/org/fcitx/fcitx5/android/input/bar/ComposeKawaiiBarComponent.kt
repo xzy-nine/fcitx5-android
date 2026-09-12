@@ -58,7 +58,11 @@ import org.fcitx.fcitx5.android.input.bar.KawaiiBarStateMachine.TransitionEvent.
 import org.fcitx.fcitx5.android.input.bar.KawaiiBarStateMachine.TransitionEvent.WindowDetached
 import org.fcitx.fcitx5.android.input.bar.ui.idle.InlineSuggestionsUi
 import org.fcitx.fcitx5.android.input.bar.ui.idle.NumberRowContent
+import org.fcitx.fcitx5.android.input.keyboard.rememberActiveTheme
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
+import org.fcitx.fcitx5.android.input.candidates.horizontal.CandidateBarState
 import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
@@ -157,6 +161,31 @@ class ComposeKawaiiBarComponent :
         _toolbarHeightVersion.value++
     }
 
+    private var cachedHeightKey: Pair<Int, Int>? = null
+    private var cachedHeightValue = 0
+
+    /**
+     * 工具栏高度（dp 数值）。
+     *
+     * 组合期工具栏子树会读它十余次，若每次都走 `AppPrefs` + `SharedPreferences` 会重复付出
+     * 同步读取与配置查询的开销；这里按「偏好版本 + 屏幕方向」缓存，任一变化即重算。
+     * 版本变化本身已驱动父级重组（[toolbarHeightVersion] 被 InputView 收集），
+     * 方向变化则会重建 IME 视图树，故不会读到过期值。
+     */
+    val toolbarHeight: Int
+        get() {
+            val orientation = context.resources.configuration.orientation
+            val key = _toolbarHeightVersion.value to orientation
+            if (key != cachedHeightKey) {
+                cachedHeightKey = key
+                cachedHeightValue = if (orientation == Configuration.ORIENTATION_LANDSCAPE)
+                    keyboardPrefs.toolbarHeightLandscape.getValue()
+                else
+                    keyboardPrefs.toolbarHeight.getValue()
+            }
+            return cachedHeightValue
+        }
+
     // InlineSuggestions 视图容器
     private val inlineSuggestionsUi by lazy { InlineSuggestionsUi(context) }
     private var inlineRenderJob: Job? = null
@@ -222,14 +251,32 @@ class ComposeKawaiiBarComponent :
     }
 
     /**
-     * 工具栏视觉配置，全部取自 miuix 主题（不再读 fcitx View 主题）。
+     * 工具栏视觉配置。
+     *
+     * **背景是刻意的「反差薄层」**：工具栏与键盘背景要分开，做法是在键盘底色上叠一层
+     * **反色**的极低透明度 scrim（键盘深 → 叠白、键盘浅 → 叠黑，`alpha < 10%`），
+     * 再配圆角（见 `ComposeToolbar`）把它和键盘区在视觉上切开 —— 起分隔作用的是**下**两角
+     * （工具栏与键盘区的分界；IME 的下缘由屏幕自身圆角代劳，不在此列）。
+     *
+     * 深浅判断用**键盘背景色本身的明度**（`theme.keyboardColor`），而不是主题自报的
+     * `isDark` —— 用户名下的自定义主题常常与 `isDark` 不一致。背景图主题下该色不代表实际
+     * 画面明度，此时仍以此色为准（后续若要更准，可对背景图取平均亮度）。
+     *
+     * 图标/文字色同样随键盘明度取黑/白（工具栏是纯 Compose 区，不参与 fcitx 主题的键面配色；
+     * 不恒用 miuix onSurface —— miuix 主题明度与键盘主题可能不一致，会造成前景与底色反差不足）。
      */
     @Composable
     private fun getVisuals(): ToolbarVisuals {
+        val theme = rememberActiveTheme()
+        val keyboardIsLight = Color(theme.keyboardColor).luminance() > 0.5f
+        val scrim = if (keyboardIsLight) Color.Black else Color.White
+        // 前景色随键盘明度取黑/白，确保与「键盘底色 + scrim」叠加后的工具栏底色对比足够
+        val foreground = if (keyboardIsLight) Color.Black else Color.White
         return ToolbarVisuals(
-            barColor = MiuixTheme.colorScheme.background,
-            iconColor = MiuixTheme.colorScheme.onSurface,
-            textColor = MiuixTheme.colorScheme.onSurface,
+            // < 10%：只做「与键盘区分」的暗示，不遮挡背后的主题/背景图
+            barColor = scrim.copy(alpha = 0.08f),
+            iconColor = foreground,
+            textColor = foreground,
         )
     }
 
@@ -473,11 +520,23 @@ class ComposeKawaiiBarComponent :
         val splitKeyboardEnabled by _splitKeyboardEnabled.collectAsState()
         val menuRotation by _menuRotation.collectAsState()
 
+        // 候选栏可见性由「候选内容就绪」驱动（composeCandidate.barState 是唯一事实源）：
+        // barState 与候选内容是两个独立 StateFlow 异步收集，若仅按 barState 显示候选栏，
+        // 可能在候选内容尚未到达的帧显示空行 → 闪烁。内容未就绪时保持 Idle 展示。
+        val candidateState by composeCandidate.barState.collectAsState()
+        val candidateActive = candidateState is CandidateBarState.Active
+        val effectiveBarState =
+            if (barState == KawaiiBarStateMachine.State.Candidate && !candidateActive) {
+                KawaiiBarStateMachine.State.Idle
+            } else barState
+        // 候选栏仅当「内容就绪且处于候选态」时可见（Title 态不显示，避免透出候选词与标题重叠）
+        val candidateVisible = effectiveBarState == KawaiiBarStateMachine.State.Candidate
+
         val callbacks = remember { createCallbacks() }
         val visuals = getVisuals()
 
         ComposeToolbar(
-            barState = barState,
+            barState = effectiveBarState,
             idleSubState = idleSubState,
             titleData = titleData,
             callbacks = callbacks,
@@ -486,6 +545,8 @@ class ComposeKawaiiBarComponent :
             splitKeyboardEnabled = splitKeyboardEnabled,
             menuRotation = menuRotation,
             modifier = modifier,
+            toolbarHeight = toolbarHeight.dp,
+            candidateVisible = candidateVisible,
             candidateContent = {
                 // 候选栏内容由 ComposeCandidateComponent 提供，直接作为 Composable 接入（去除嵌套 ComposeView）
                 composeCandidate.CandidateBarContent()

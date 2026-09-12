@@ -12,7 +12,6 @@ import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.InputFeedbacks.InputFeedbackMode
-import org.fcitx.fcitx5.android.input.candidates.expanded.ExpandedCandidateStyle
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesMode
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesOrientation
 import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateMode
@@ -310,12 +309,6 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             "horizontal_candidate_swipe",
             true
         )
-        val expandedCandidateStyle = enumList(
-            R.string.expanded_candidate_style,
-            "expanded_candidate_style",
-            ExpandedCandidateStyle.Grid
-        )
-
         val expandedCandidateGridSpanCount: ManagedPreference.PInt
         val expandedCandidateGridSpanCountLandscape: ManagedPreference.PInt
         val candidateDivider: ManagedPreference.PBool
@@ -392,7 +385,6 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                     horizontalCandidateStyle.key,
                     horizontalCandidateSwipe.key,
                     candidateDivider.key,
-                    expandedCandidateStyle.key,
                     expandedCandidateGridSpanCount.key,
                     expandedCandidateGridSpanCountLandscape.key,
                 )),

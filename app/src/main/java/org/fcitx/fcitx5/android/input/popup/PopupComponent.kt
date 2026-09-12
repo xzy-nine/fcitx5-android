@@ -5,8 +5,14 @@
 package org.fcitx.fcitx5.android.input.popup
 
 import android.graphics.Rect
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.lifecycleScope
@@ -22,7 +28,6 @@ import org.fcitx.fcitx5.android.input.dependency.inputMethodService
 import org.fcitx.fcitx5.android.input.dependency.theme
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyDef
-import org.fcitx.fcitx5.android.input.wm.createComposeWindowView
 import org.mechdancer.dependency.Dependent
 import org.mechdancer.dependency.UniqueComponent
 import org.mechdancer.dependency.manager.ManagedHandler
@@ -35,7 +40,7 @@ import kotlin.time.Duration.Companion.milliseconds
  * 按键弹窗层协调器。
  *
  * 对外契约（[PopupAction] / [PopupActionListener] / [listener] / [dismissAll]）与旧 View 实现完全一致，
- * 但内部不再持有 View，而是维护一份 [PopupLayerState]，由 [root] 持有的 ComposeView 订阅渲染。
+ * 但内部不再持有 View，而是维护一份 [PopupLayerState]，由根组合经 [PopupOverlayContent] 订阅渲染。
  *
  * 所有生产方（`BaseKeyboard` / `TextKeyboard` / `PickerWindow` / `PickerPageUi` / `ComposeNumberRow`）
  * 仍以「窗口绝对坐标 [Rect]」作为锚点，无需改动。
@@ -79,13 +84,11 @@ class PopupComponent :
     }
     private val hideThreshold = 100L
 
-    private val rootLocation = intArrayOf(0, 0)
-
     /**
-     * [root] 在窗口中的位置。
+     * 本层在窗口中的位置。
      *
-     * 继续沿用 View 的 `addOnLayoutChangeListener` + `getLocationInWindow`（ComposeView 本身也是 View）：
-     * 这样原 px 定位算式可以逐字保留，也避免 Compose 首次布局未完成时拿不到原点。
+     * 由 [PopupOverlayContent] 的 `onGloballyPositioned` 持续更新（ComposeView 本身也是 View，
+     * 语义与原 `getLocationInWindow` 一致），原 px 定位算式可以逐字保留。
      */
     private val rootBounds: Rect = Rect()
 
@@ -109,28 +112,28 @@ class PopupComponent :
     }
 
     /**
-     * 弹窗层宿主。
+     * 弹窗层 Compose 覆盖层内容。
      *
-     * 位于 `InputView` 最顶层、键盘体之外，与 `composePreedit.view` 一样不影响键盘体高度与 IME insets。
-     * 不接收触摸：手势由键盘侧的 `CustomGestureView` 捕获后经 [listener] 转发。
+     * 由根组合（`FcitxInputMethodService.createComposeInputView`）在 `AndroidView(InputView)` 之上
+     * 调用，与键盘内容同处单一 Composition，替代原先独立的 `root` ComposeView 宿主。
+     * 本层**不接收触摸**：Box 无任何 pointer handler，触摸穿透到下方 `AndroidView(InputView)`；
+     * 手势仍由键盘侧的 `CustomGestureView` 捕获后经 [listener] 转发。
      *
-     * ComposeView + MiuixTheme 宿主统一走 [createComposeWindowView]（与 wm 共存机制的窗口宿主一致），
-     * 这里只需补齐「不接收触摸」与窗口原点追踪。
+     * 定位沿用「窗口绝对坐标」契约：`rootBounds` 由 [onGloballyPositioned] 追踪本层在窗口中的
+     * 位置（填满 IME 窗口时即为窗口原点），原 px 定位算式无需改动。
      */
-    val root by lazy {
-        createComposeWindowView(context) {
-            PopupContent(state = _state.collectAsState().value, visuals = visuals)
-        }.apply {
-            // we want (0, 0) at top left
-            isClickable = false
-            isFocusable = false
-
-            addOnLayoutChangeListener { v, left, top, right, bottom, _, _, _, _ ->
-                val (x, y) = rootLocation.also { v.getLocationInWindow(it) }
-                val width = right - left
-                val height = bottom - top
-                rootBounds.set(x, y, x + width, y + height)
+    @Composable
+    fun PopupOverlayContent(modifier: Modifier = Modifier) {
+        val state by _state.collectAsState()
+        Box(
+            modifier = modifier.onGloballyPositioned { coords ->
+                val b = coords.boundsInWindow()
+                rootBounds.set(
+                    b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt()
+                )
             }
+        ) {
+            PopupContent(state = state, visuals = visuals)
         }
     }
 

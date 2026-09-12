@@ -17,17 +17,15 @@ import android.view.inputmethod.InlineSuggestionsResponse
 import android.widget.ImageView
 import androidx.annotation.Keep
 import androidx.annotation.RequiresApi
-import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.core.view.updateLayoutParams
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.view.updateLayoutParams
 import org.fcitx.fcitx5.android.core.CapabilityFlags
-import top.yukonga.miuix.kmp.theme.ColorSchemeMode
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.theme.ThemeController
 import org.fcitx.fcitx5.android.core.FcitxEvent
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
 import org.fcitx.fcitx5.android.daemon.launchOnReady
@@ -52,7 +50,6 @@ import org.fcitx.fcitx5.android.input.picker.emoticonPicker
 import org.fcitx.fcitx5.android.input.picker.symbolPicker
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
 import org.fcitx.fcitx5.android.input.preedit.ComposePreeditComponent
-import org.fcitx.fcitx5.android.input.preedit.PreeditComponent
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.unset
 import org.fcitx.fcitx5.android.utils.windowManager
@@ -79,6 +76,9 @@ import splitties.views.dsl.core.view
 import splitties.views.dsl.core.wrapContent
 import splitties.views.imageDrawable
 import timber.log.Timber
+import top.yukonga.miuix.kmp.theme.ColorSchemeMode
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.ThemeController
 
 @SuppressLint("ViewConstructor")
 class InputView(
@@ -110,29 +110,31 @@ class InputView(
 
     private val scope = DynamicScope()
     private val broadcaster = InputBroadcaster()
-    private val popup = PopupComponent()
+    // 按键弹窗层：根组合（createComposeInputView）经 PopupOverlayContent 渲染，故需对外可见
+    internal val popup = PopupComponent()
     private val punctuation = PunctuationComponent()
     private val returnKeyDrawable = ReturnKeyDrawableComponent()
     private val preeditEmptyState = PreeditEmptyStateComponent()
-    private val preedit = PreeditComponent()
-    private val composePreedit = ComposePreeditComponent()
+    // 预编辑栏：根组合/Service 经 heightPx 读取当前高度做 insets 补偿，故需对外可见
+    internal val composePreedit = ComposePreeditComponent()
     private val commonKeyActionListener = CommonKeyActionListener()
     private val windowManager = InputWindowManager()
     private val composeKawaiiBar = ComposeKawaiiBarComponent()
     // Compose 实现的候选栏组件
     // 旧 View 实现：HorizontalCandidateComponent（已断开接线，保留供对比）
     private val composeCandidate = ComposeCandidateComponent()
-    // 候选操作菜单覆盖层（Compose 调用方长按候选词时在 IME 内弹出的悬浮菜单）
-    private val candidateActionMenu = ComposeCandidateActionMenu()
+    // 候选操作菜单覆盖层（Compose 调用方长按候选词时在 IME 内弹出的悬浮菜单）：
+    // 根组合（createComposeInputView）经 OverlayContent 渲染，故需对外可见
+    internal val candidateActionMenu = ComposeCandidateActionMenu()
     private val keyboardWindow = KeyboardWindow()
     private val symbolPicker = symbolPicker()
     private val emojiPicker = emojiPicker()
     private val emoticonPicker = emoticonPicker()
 
     /**
-     * 工具栏 Compose 容器：预编辑栏与工具栏合并后的单一 Composition 中仅保留工具栏。
-     * 预编辑栏必须悬浮在键盘体（keyboardView）之外，因此单独持有一个 View 宿主；
-     * 否则其可变高度会撑高键盘体，导致 IME 上报的 insets 随打字变化、应用页面反复伸缩。
+     * 工具栏 Compose 容器：预编辑栏与工具栏合并后的单一 Composition。
+     * 预编辑栏高度**贴合内容**（空态 0），`onComputeInsets` 补偿 `composePreedit.heightPx`
+     * 实际高度 —— keyboardView 顶部已含预编辑高度，补偿后正好抵消，故 insets 恒定不随打字变化。
      */
     private val composeTopView: ComposeView by lazy {
         ComposeView(themedContext).apply {
@@ -141,9 +143,23 @@ class InputView(
             )
             setContent {
                 MiuixTheme(controller = remember { ThemeController(ColorSchemeMode.System) }) {
-                    // 工具栏高度由 Composable 内部的 HEIGHT 决定，偏好变化后用 key 触发重组
-                    key(composeKawaiiBar.toolbarHeightVersion.collectAsState().value) {
-                        composeKawaiiBar.ToolbarContent()
+                    // 预编辑栏高度变化时同步键盘背景裁剪：跳过预编辑行、圆角落在工具栏顶部
+                    // 用 LaunchedEffect 而非 SideEffect：后者在每次成功重组后都会执行，
+                    // 而裁剪参数只在高度变化时才需要重新下发（避免反复重建 OutlineProvider）
+                    val preeditHeightPx = composePreedit.heightPx.collectAsState().value
+                    androidx.compose.runtime.LaunchedEffect(preeditHeightPx) {
+                        customBackground.applyTopRoundedCornerClip(
+                            dp(16).toFloat(),
+                            preeditHeightPx.toFloat()
+                        )
+                    }
+                    Column {
+                        // 预编辑栏在上（贴合内容高度），工具栏在下
+                        composePreedit.PreeditContent()
+                        // 工具栏高度由 Composable 内部的 HEIGHT 决定，偏好变化后用 key 触发重组
+                        key(composeKawaiiBar.toolbarHeightVersion.collectAsState().value) {
+                            composeKawaiiBar.ToolbarContent()
+                        }
                     }
                 }
             }
@@ -161,7 +177,6 @@ class InputView(
         scope += punctuation
         scope += returnKeyDrawable
         scope += preeditEmptyState
-        // 旧 View 实现：scope += preedit（已断开接线，保留供对比）
         scope += composePreedit
         scope += commonKeyActionListener
         scope += windowManager
@@ -288,6 +303,8 @@ class InputView(
         broadcaster.onImeUpdate(fcitx.runImmediately { inputMethodEntryCached })
 
         customBackground.imageDrawable = theme.backgroundDrawable(keyBorder)
+        // 键盘背景裁剪（跳过预编辑栏、圆角落在工具栏顶部）在 composeTopView 组合内
+        // 经 LaunchedEffect 跟随预编辑栏实际高度动态更新（见 composeTopView setContent）
 
         keyboardView = constraintLayout {
             // allow MotionEvent to be delivered to keyboard while pressing on padding views.
@@ -326,17 +343,16 @@ class InputView(
             })
         }
 
-        // 为键盘区域添加顶部圆角裁剪效果（键盘体顶部即工具栏顶部，
-        // 预编辑栏悬浮在键盘体之外，不会被此圆角裁到）
-        keyboardView.applyTopRoundedCornerClip(dp(16).toFloat())
-
+        // 顶部圆角由 customBackground（跳过预编辑栏固定高度）与 ComposeToolbar 自身的
+        // clip(RoundedCornerShape(16.dp)) 共同实现，keyboardView 不再整体裁剪，
+        // 以免把键盘体顶部的预编辑行裁掉。
         // Custom: 调校浮层挂在键盘主体内（match-constraint 填充 keyboardView），
         // 这样它既不会撑高 InputView，也不会溢出到键盘之外。
         keyboardView.add(keyboardTuneOverlay, ConstraintLayout.LayoutParams(matchParent, 0).apply {
-            topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+            topToTop = LayoutParams.PARENT_ID
+            bottomToBottom = LayoutParams.PARENT_ID
+            startToStart = LayoutParams.PARENT_ID
+            endToEnd = LayoutParams.PARENT_ID
         })
 
         updateKeyboardSize()
@@ -345,20 +361,8 @@ class InputView(
             centerHorizontally()
             bottomOfParent()
         })
-        // 预编辑栏悬浮在键盘体上方（透明背景），不影响键盘体高度与 IME insets
-        add(composePreedit.view, lParams(matchParent, wrapContent) {
-            above(keyboardView)
-            startOfParent()
-        })
-        add(popup.root, lParams(matchParent, matchParent) {
-            centerVertically()
-            centerHorizontally()
-        })
-        // 候选操作菜单覆盖层：填满 InputView（透明蒙层 + 菜单），位于弹窗层之上
-        add(candidateActionMenu.root, lParams(matchParent, matchParent) {
-            centerVertically()
-            centerHorizontally()
-        })
+        // 按键弹窗层与候选操作菜单覆盖层已并入根组合（FcitxInputMethodService.createComposeInputView），
+        // 由根 Composition 在 AndroidView(InputView) 之上渲染，InputView 不再持有这两个宿主。
 
         keyboardPrefs.registerOnChangeListener(onKeyboardSizeChangeListener)
         advancedPrefs.registerOnChangeListener(onKeyboardSizeChangeListener)
@@ -401,7 +405,6 @@ class InputView(
             }
         }
         composeTopView.setPadding(sidePadding, 0, sidePadding, 0)
-        composePreedit.view.setPadding(sidePadding, 0, sidePadding, 0)
     }
 
     // Custom: visual keyboard tuning overlay entry points
@@ -419,14 +422,12 @@ class InputView(
 
     @android.annotation.TargetApi(31)
     private fun setKeyboardTuneBlur(enabled: Boolean) {
-        if (Build.VERSION.SDK_INT >= 31) {
-            val blur = if (enabled) {
-                android.graphics.RenderEffect.createBlurEffect(
-                    14f, 14f, android.graphics.Shader.TileMode.CLAMP
-                )
-            } else null
-            windowManager.view.setRenderEffect(blur)
-        }
+        val blur = if (enabled) {
+            android.graphics.RenderEffect.createBlurEffect(
+                14f, 14f, android.graphics.Shader.TileMode.CLAMP
+            )
+        } else null
+        windowManager.view.setRenderEffect(blur)
     }
 
     private fun keyboardTuneMetrics() = KeyboardTuneOverlay.TuneMetrics(
