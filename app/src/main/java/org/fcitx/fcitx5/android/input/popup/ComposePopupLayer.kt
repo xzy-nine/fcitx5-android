@@ -20,8 +20,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,12 +38,12 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.Surface
-import top.yukonga.miuix.kmp.basic.Text
 import org.fcitx.fcitx5.android.input.keyboard.KeyDef
 import org.fcitx.fcitx5.android.input.popup.PopupContainerState.Keyboard
 import org.fcitx.fcitx5.android.input.popup.PopupContainerState.Menu
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.Surface
+import top.yukonga.miuix.kmp.basic.Text
 
 /** 弹窗文字字号，等价原 `AutoScaleTextView.textSize = 23f` */
 private val PopupTextSize = 23.sp
@@ -60,11 +60,14 @@ private val MenuActiveCircleSize = 34.dp
 /**
  * 按键弹窗层渲染。
  *
- * 由 [PopupComponent] 持有的 `ComposeView` 调用（未来也可直接并入 `composeTopView` 的单一 Composition）。
- * 本层**不接收触摸**：所有手势都由 `BaseKeyboard` / `PickerPageUi` 侧的 `CustomGestureView` 捕获后，
- * 通过 [PopupActionListener] 的 `ChangeFocusAction` / `TriggerAction` 转发进来，因此这里只做绘制。
+ * 由根组合（`FcitxInputMethodService.createComposeInputView`）经 `PopupComponent.OverlayContent()`
+ * 渲染在 `AndroidView(InputView)` 之上（原先独立的 `root` ComposeView 宿主已移除）。
+ * 本层**不接收触摸**：所有手势都由 Compose 键盘侧捕获 —— `ComposeKey`（含数字键盘的符号滑块）、
+ * `ComposePickerPage`、`ComposeRecentSymbolsPanel` —— 再通过 [PopupActionListener] 的
+ * `ChangeFocusAction` / `TriggerAction` 转发进来，因此这里只做绘制。
  *
- * 定位全部使用「相对 [PopupComponent.root] 左上角的 px」+ [Modifier.offset]，并用
+ * 定位全部使用「相对弹窗层自身左上角的 px」+ [Modifier.offset]（`rootBounds` 由
+ * `PopupComponent.PopupOverlayContent` 追踪，填满 IME 窗口时即窗口原点），并用
  * [LayoutDirection.Ltr] 固定方向，等价原 View 的 `root.layoutDirection = LTR`。
  */
 @Composable
@@ -195,7 +198,10 @@ private fun PopupKeyCell(
             .size(keyWidth, keyHeight)
             .then(
                 if (focused) {
-                    Modifier.background(visuals.activeBackgroundColor, RoundedCornerShape(visuals.radius))
+                    Modifier.background(
+                        visuals.activeBackgroundColor,
+                        RoundedCornerShape(visuals.radius)
+                    )
                 } else {
                     Modifier
                 }

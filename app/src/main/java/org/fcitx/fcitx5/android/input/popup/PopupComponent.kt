@@ -117,7 +117,8 @@ class PopupComponent :
      * 由根组合（`FcitxInputMethodService.createComposeInputView`）在 `AndroidView(InputView)` 之上
      * 调用，与键盘内容同处单一 Composition，替代原先独立的 `root` ComposeView 宿主。
      * 本层**不接收触摸**：Box 无任何 pointer handler，触摸穿透到下方 `AndroidView(InputView)`；
-     * 手势仍由键盘侧的 `CustomGestureView` 捕获后经 [listener] 转发。
+     * 手势仍由 Compose 键盘侧（`ComposeKey` / `ComposePickerPage` / `ComposeRecentSymbolsPanel`）
+     * 捕获后经 [listener] 转发。
      *
      * 定位沿用「窗口绝对坐标」契约：`rootBounds` 由 [onGloballyPositioned] 追踪本层在窗口中的
      * 位置（填满 IME 窗口时即为窗口原点），原 px 定位算式无需改动。

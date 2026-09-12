@@ -18,8 +18,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 
 /**
@@ -39,6 +39,12 @@ import org.fcitx.fcitx5.android.data.prefs.AppPrefs
  * **恒为 LTR**：View 侧用的是绝对 `left/right` 约束（`leftOfParent` / `leftToRightOf`），
  * 在 RTL 语言下不镜像；Compose 的 `Row` 默认跟随 `LocalLayoutDirection`，故每行显式固定 LTR。
  * 固定 LTR 后 `start/end` 等价于 `left/right`，`KeyInsets` 的单侧内缩不会翻边。
+ *
+ * **`row` 的实例稳定性（缓存契约）**：行缓存（键槽位 / 分体组宽）都以 `row` 作为 `remember`
+ * 的 key，而 `remember` 是按 `equals` 比较的，`KeyDef` 又是普通类（identity 判等）——
+ * 所以**调用方必须保证「内容未变 ⇒ 同一个 List 实例」**，否则每次重组都会全量重算：
+ * `ComposeTextKeyboard` 用 `derivedStateOf` 缓存 `layout()`，`ComposeNumberKeyboard` 用
+ * `NumberKeyboardRows` 的缓存行数据（`val` 而非 `fun`）。
  */
 
 /** 键内容槽：由容器提供，拿到稳定 id、单侧内缩与尺寸修饰符。 */
@@ -71,6 +77,7 @@ fun ComposeKeyRow(
     val visuals = rememberKeyboardVisuals()
     val expandKeypressArea =
         remember { AppPrefs.getInstance().keyboard.expandKeypressArea.getValue() }
+    // 缓存契约见文件头「row 的实例稳定性」：只有调用方保证 row 实例稳定，这里才会命中
     val slots = remember(row, widthScale, allowExpand, expandKeypressArea) {
         computeKeyRowSlots(
             row = row,

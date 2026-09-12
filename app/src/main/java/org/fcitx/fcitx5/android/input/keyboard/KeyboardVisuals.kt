@@ -178,7 +178,8 @@ fun <T : Any> ManagedPreference<T>.preferenceState(): T {
 
 /**
  * 观察当前 fcitx 主题（换主题即重组）。凡是需要**原始 [Theme] 对象**而非
- * [KeyboardVisuals] 的场景（如要构造 View 侧的 `RecentSymbolsView`）用它。
+ * [KeyboardVisuals] 的场景用它 —— 目前只有工具栏（`ComposeKawaiiBarComponent.getVisuals()`
+ * 要按 `theme.keyboardColor` 的明度决定图标/文字取黑还是取白）。
  */
 @Composable
 fun rememberActiveTheme(): Theme {

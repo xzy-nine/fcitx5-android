@@ -40,6 +40,12 @@ import org.fcitx.fcitx5.android.input.popup.PopupActionListener
  *
  * 与 View 侧的差异：View 的 `recentlyUsed` 是个每次访问都新建的 getter，这里持有一个实例；
  * `RecentlyUsed` 只是持久化存储的薄封装，语义相同。
+ *
+ * **偏好读取口径（约定，勿当 bug 修）**：[symbolSliderVisibleCount] 是普通 getter 直读偏好，
+ * 读点在**重组/重建时刻**（View 侧等价物是 `NumberKeyboard` 构造期读一次）。它与
+ * `KeyboardVisuals.rememberKeyboardVisuals()`、`LongPressDelayProvider` 同一约定：
+ * 「改偏好 → 键盘窗口重建」才生效。**不要**给它套 `preferenceState()` —— 那只会让符号数
+ * 变更引发整块键盘重组，而这个场景本来就需要重建窗口（数字键盘通常随 IME 重开重建）。
  */
 class NumberKeyboardState {
 
@@ -55,7 +61,7 @@ class NumberKeyboardState {
         RecentlyUsed(PickerWindow.Key.Symbol.name, PickerDensity.High.pageSize)
     }
 
-    /** 外显的滑块子按钮数量（`symbols.symbolSliderVisibleCount`，View 侧每次重建都即时读取）。 */
+    /** 外显的滑块子按钮数量（`symbols.symbolSliderVisibleCount`）。 */
     val symbolSliderVisibleCount: Int
         get() = AppPrefs.getInstance().symbols.symbolSliderVisibleCount.getValue()
 
@@ -85,7 +91,7 @@ class NumberKeyboardState {
 }
 
 /**
- * Compose 版数字键盘（批次 C2）。
+ * Compose 版数字键盘（批次 C2；横屏分体的历史符号面板为 C5）。
  *
  * 布局与 `NumberKeyboard.buildNormalLayout` / `buildSplitLayout` 一一对应：
  *
@@ -96,9 +102,9 @@ class NumberKeyboardState {
  * 用 `weight` 表达这些比例：外层两段 3:1 即 75% / 25%；同层 `weight` 之和为 1 时
  * 等价于 `matchConstraintPercentWidth`。
  *
- * **历史符号面板现阶段用 `AndroidView` 包 View 版 [RecentSymbolsView]**（见 §0 的 C5 待办）：
- * 它是 fork 私有控件（249 行，含 RecyclerView + 网格布局），只在横屏分体的数字键盘出现；
- * 纯 Compose 重做留到 C5，避免在本批把风险面摊大。
+ * 历史符号面板是纯 Compose 的 [ComposeRecentSymbolsPanel]（C5 已落地）：键盘域内**没有**
+ * `AndroidView` 桥，View 版 `RecentSymbolsView` 只被已断线的 `NumberKeyboard.buildSplitLayout`
+ * 引用（见 `Docs/View2Compose.md` §14）。
  */
 @Composable
 fun ComposeNumberKeyboard(
@@ -163,27 +169,60 @@ fun ComposeNumberKeyboard(
                 symbols = state.recentSymbols,
                 onSymbolInput = onRecentSymbolInput,
                 onLayoutSwitch = onLayoutSwitch,
-                modifier = Modifier.weight(0.45f).fillMaxHeight(),
+                modifier = Modifier
+                    .weight(0.45f)
+                    .fillMaxHeight(),
             )
             Spacer(Modifier.weight(0.10f))
-            Column(Modifier.weight(0.45f).fillMaxHeight()) {
-                Row(Modifier.fillMaxWidth().weight(3f)) {
+            Column(Modifier
+                .weight(0.45f)
+                .fillMaxHeight()) {
+                Row(Modifier
+                    .fillMaxWidth()
+                    .weight(3f)) {
                     ComposeSymbolSlider(
                         symbols = state.sliderSymbols,
                         visibleCount = state.symbolSliderVisibleCount,
                         onSymbolInput = onSymbolInput,
                         onEditClick = onSymbolSliderEdit,
-                        modifier = Modifier.weight(0.15f).fillMaxHeight(),
+                        modifier = Modifier
+                            .weight(0.15f)
+                            .fillMaxHeight(),
                     )
-                    Column(Modifier.weight(0.85f).fillMaxHeight()) {
-                        ComposeKeyRow(NumberKeyboardRows.row1(), Modifier.fillMaxWidth().weight(1f), keyIdBase = 0, key = keySlot)
-                        ComposeKeyRow(NumberKeyboardRows.row2(), Modifier.fillMaxWidth().weight(1f), keyIdBase = 100, key = keySlot)
-                        ComposeKeyRow(NumberKeyboardRows.row3(), Modifier.fillMaxWidth().weight(1f), keyIdBase = 200, key = keySlot)
+                    Column(Modifier
+                        .weight(0.85f)
+                        .fillMaxHeight()) {
+                        ComposeKeyRow(
+                            NumberKeyboardRows.row1,
+                            Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            keyIdBase = 0,
+                            key = keySlot
+                        )
+                        ComposeKeyRow(
+                            NumberKeyboardRows.row2,
+                            Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            keyIdBase = 100,
+                            key = keySlot
+                        )
+                        ComposeKeyRow(
+                            NumberKeyboardRows.row3,
+                            Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            keyIdBase = 200,
+                            key = keySlot
+                        )
                     }
                 }
                 ComposeKeyRow(
-                    row = NumberKeyboardRows.row4Split(),
-                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    row = NumberKeyboardRows.row4Split,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
                     keyIdBase = 300,
                     key = keySlot,
                 )
@@ -191,23 +230,52 @@ fun ComposeNumberKeyboard(
         }
     } else {
         Column(modifier = modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().weight(3f)) {
+            Row(Modifier
+                .fillMaxWidth()
+                .weight(3f)) {
                 ComposeSymbolSlider(
                     symbols = state.sliderSymbols,
                     visibleCount = state.symbolSliderVisibleCount,
                     onSymbolInput = onSymbolInput,
                     onEditClick = onSymbolSliderEdit,
-                    modifier = Modifier.weight(0.15f).fillMaxHeight(),
+                    modifier = Modifier
+                        .weight(0.15f)
+                        .fillMaxHeight(),
                 )
-                Column(Modifier.weight(0.85f).fillMaxHeight()) {
-                    ComposeKeyRow(NumberKeyboardRows.row1(), Modifier.fillMaxWidth().weight(1f), keyIdBase = 0, key = keySlot)
-                    ComposeKeyRow(NumberKeyboardRows.row2(), Modifier.fillMaxWidth().weight(1f), keyIdBase = 100, key = keySlot)
-                    ComposeKeyRow(NumberKeyboardRows.row3(), Modifier.fillMaxWidth().weight(1f), keyIdBase = 200, key = keySlot)
+                Column(Modifier
+                    .weight(0.85f)
+                    .fillMaxHeight()) {
+                    ComposeKeyRow(
+                        NumberKeyboardRows.row1,
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        keyIdBase = 0,
+                        key = keySlot
+                    )
+                    ComposeKeyRow(
+                        NumberKeyboardRows.row2,
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        keyIdBase = 100,
+                        key = keySlot
+                    )
+                    ComposeKeyRow(
+                        NumberKeyboardRows.row3,
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        keyIdBase = 200,
+                        key = keySlot
+                    )
                 }
             }
             ComposeKeyRow(
-                row = NumberKeyboardRows.row4(),
-                modifier = Modifier.fillMaxWidth().weight(1f),
+                row = NumberKeyboardRows.row4,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
                 keyIdBase = 300,
                 key = keySlot,
             )
@@ -244,7 +312,9 @@ fun ComposeSymbolSlider(
                     ComposeKey(
                         def = remember(symbol) { symbolCellDef(symbol) },
                         keyId = index,
-                        modifier = Modifier.fillMaxWidth().height(cellHeight),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(cellHeight),
                         keyActionListener = remember(symbol) {
                             KeyActionListener { _, _ -> onSymbolInput(symbol) }
                         },
@@ -253,17 +323,15 @@ fun ComposeSymbolSlider(
                 ComposeKey(
                     def = remember { editCellDef() },
                     keyId = symbols.size,
-                    modifier = Modifier.fillMaxWidth().height(cellHeight),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(cellHeight),
                     keyActionListener = remember { KeyActionListener { _, _ -> onEditClick() } },
                 )
             }
         }
     }
 }
-
-/**
- * 横屏分体的历史符号面板：纯 Compose 版见 [ComposeRecentSymbolsPanel]（C5）。
- */
 
 // ---------------------------------------------------------------------------
 // 子按钮外观（对应 SymbolSliderKeyView.makeSymbolButton / makeEditButton）

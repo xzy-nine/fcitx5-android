@@ -25,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import org.fcitx.fcitx5.android.R
@@ -47,6 +46,9 @@ import org.fcitx.fcitx5.android.input.keyboard.KeyDef.Appearance.Variant
  *
  * **纯 Compose 的意义**：View 版通过 `AndroidView` 嵌进 Compose 键盘时，`factory` 只跑一次，
  * 换主题不会重染；这里所有颜色都取自 [rememberKeyboardVisuals]，换主题即时生效。
+ * 本文件是键盘域内最后一个 View 依赖（`RecentSymbolsView`）的替代品：View 版现已只被
+ * **已断线**的 `NumberKeyboard.buildSplitLayout` 引用，生产路径（`ComposeNumberKeyboard`）
+ * 全部走这里，不再有 `AndroidView` 桥（见 `Docs/View2Compose.md` §14）。
  */
 @Composable
 fun ComposeRecentSymbolsPanel(
@@ -71,12 +73,20 @@ fun ComposeRecentSymbolsPanel(
                     KeyActionListener { _, _ -> onLayoutSwitch() }
                 },
             )
-            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                // View 侧空态 TextView 是 gravity = CENTER（横竖都居中）
+                contentAlignment = Alignment.Center,
+            ) {
                 if (symbols.isEmpty()) {
                     EmptyHint()
                 } else {
                     LazyVerticalGrid(columns = GridCells.Fixed(Columns)) {
-                        itemsIndexed(symbols) { index, symbol ->
+                        // 按符号文本取 key（`RecentlyUsed` 是去重的 map，不会出现重复 key）：
+                        // 点按某符号后它会移到最前，列表重排时节点跟着搬而不是原地换文本
+                        itemsIndexed(symbols, key = { _, symbol -> symbol }) { index, symbol ->
                             ComposeKey(
                                 def = remember(symbol) { symbolCellDef(symbol) },
                                 keyId = SymbolKeyIdBase + index,
@@ -95,14 +105,15 @@ fun ComposeRecentSymbolsPanel(
     }
 }
 
-/** 空态占位提示（View: `emptyHint` TextView）。 */
+/** 空态占位提示（View: `emptyHint` TextView，居中）。 */
 @Composable
 private fun EmptyHint() {
     val visuals = rememberKeyboardVisuals()
     val density = LocalDensity.current
     BasicText(
         text = stringResource(R.string.recent_symbols_empty_hint),
-        modifier = Modifier.fillMaxSize(),
+        // 竖直居中由外层 Box 的 contentAlignment 负责（BasicText 自身会把文字贴在左上角）
+        modifier = Modifier.fillMaxWidth(),
         style = TextStyle(
             fontSize = with(density) { EmptyHintTextSize.dp.toSp() },
             // View: (altKeyTextColor and 0x00FFFFFF) or (0x80 shl 24) → 半透明

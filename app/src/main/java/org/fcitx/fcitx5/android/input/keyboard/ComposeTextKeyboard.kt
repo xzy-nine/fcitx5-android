@@ -8,6 +8,7 @@ import android.view.View
 import androidx.annotation.Keep
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,8 +32,10 @@ import kotlin.math.absoluteValue
  * 文本键盘的状态层（`Docs/KeyboardComposePlan.md` 批次 C2）。
  *
  * View 侧 `TextKeyboard` 是「布局是死的、键面靠 setText/imageResource 改」；Compose 侧改成
- * **状态 → 键面（`KeyDef` 变换）** 的纯映射：`layout()` 每次重组按当前状态生成一份新的
- * `KeyDef` 列表（键数远小于每帧预算，成本可忽略），按键原语 [ComposeKey] 不需要知道任何状态。
+ * **状态 → 键面（`KeyDef` 变换）** 的纯映射：`layout()` 按当前状态生成一份新的
+ * `KeyDef` 列表（键数远小于每帧预算）。列表由 [ComposeTextKeyboard] 用 `derivedStateOf`
+ * 缓存，只有状态真的变了才重算 —— `KeyDef` 是普通类（identity 判等），不缓存会让下游
+ * `ComposeKeyRow` 的 `remember(row, …)` 每次重组都失效。按键原语 [ComposeKey] 不需要知道任何状态。
  *
  * 逐项对应 View 侧：
  *
@@ -239,6 +242,10 @@ class TextKeyboardState(initialReturnDrawable: Int) {
     /**
      * 按当前状态生成布局。
      *
+     * **每次调用都新建 `KeyDef` 实例**（`KeyDef` 按 identity 判等），调用方必须缓存结果才能让
+     * 下游按 `row` 做的 `remember` 命中；[ComposeTextKeyboard] 用 `derivedStateOf` 包裹本方法
+     * （状态未变 ⇒ 下游拿到同一份 List 实例）。
+     *
      * 语言键隐藏时直接**移除**该键（对应 View 的 `visibility = GONE`：ConstraintLayout 的
      * chain 会把该键从链里去掉，其余键宽度不变、整行因总宽变小而居中，与这里少一个 `percentWidth`
      * 的效果一致）。
@@ -414,8 +421,14 @@ fun ComposeTextKeyboard(
         PopupActionListener { popupActionListener?.onPopupAction(state.transformPopup(it)) }
     }
 
+    // `layout()` 每次调用都产出一份新的 `KeyDef` 列表，而 `KeyDef` 是普通类（identity 判等）：
+    // 直接在组合里调用会让下游 `ComposeKeyRow` / `ComposeKeyboardRows` 的 `remember(row, …)`
+    // 每次重组都失效（键槽位、分体组宽全量重算）。`derivedStateOf` 按 `layout()` 实际读到的
+    // 状态（caps / 标点映射 / 键面变换）缓存结果，状态不变时下游拿到的是同一个 List 实例。
+    val rows = remember(state) { derivedStateOf { state.layout() } }.value
+
     ComposeKeyboardRows(
-        rows = state.layout(),
+        rows = rows,
         modifier = modifier.fillMaxSize(),
         split = split,
         gapRatio = gapRatio,

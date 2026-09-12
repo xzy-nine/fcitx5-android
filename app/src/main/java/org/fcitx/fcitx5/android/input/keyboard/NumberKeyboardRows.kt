@@ -6,6 +6,7 @@ package org.fcitx.fcitx5.android.input.keyboard
 
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.input.keyboard.KeyDef.Appearance.Variant
+import org.fcitx.fcitx5.android.input.keyboard.NumberKeyboardRows.row4Split
 import org.fcitx.fcitx5.android.input.picker.PickerWindow
 
 /**
@@ -16,31 +17,36 @@ import org.fcitx.fcitx5.android.input.picker.PickerWindow
  * 同一个思路）。
  *
  * 注意 [row4Split]：分体模式下「!?#」键被移到了左侧历史符号面板，释放的空间给了逗号键。
+ *
+ * 行数据是**单一实例**（`val` 而非 `fun`）：`KeyDef` 是普通类、按 identity 判等，
+ * 每次返回新列表都会让 Compose 侧 `ComposeKeyRow` 的 `remember(row, …)` 缓存失效
+ * （每次重组全量重算槽位）。行内 `KeyDef` 均不可变，View 侧 `createKeyRow` 只读，
+ * 两套实现共用同一份实例是安全的。
  */
 internal object NumberKeyboardRows {
 
-    fun row1(): List<KeyDef> = listOf(
+    val row1: List<KeyDef> = listOf(
         NumPadKey("1", 0xffb1, 30f, 0f),
         NumPadKey("2", 0xffb2, 30f, 0f),
         NumPadKey("3", 0xffb3, 30f, 0f),
         BackspaceKey()
     )
 
-    fun row2(): List<KeyDef> = listOf(
+    val row2: List<KeyDef> = listOf(
         NumPadKey("4", 0xffb4, 30f, 0f),
         NumPadKey("5", 0xffb5, 30f, 0f),
         NumPadKey("6", 0xffb6, 30f, 0f),
         MiniSpaceKey()
     )
 
-    fun row3(): List<KeyDef> = listOf(
+    val row3: List<KeyDef> = listOf(
         NumPadKey("7", 0xffb7, 30f, 0f),
         NumPadKey("8", 0xffb8, 30f, 0f),
         NumPadKey("9", 0xffb9, 30f, 0f),
         NumPadKey("/", 0xffaf, 23f, 0.15f, Variant.Alternative)
     )
 
-    fun row4(): List<KeyDef> = listOf(
+    val row4: List<KeyDef> = listOf(
         ImageLayoutSwitchKey(
             R.drawable.ic_baseline_arrow_back_24,
             KeyboardLayoutNames.Text,
@@ -55,7 +61,7 @@ internal object NumberKeyboardRows {
         ReturnKey()
     )
 
-    fun row4Split(): List<KeyDef> = listOf(
+    val row4Split: List<KeyDef> = listOf(
         ImageLayoutSwitchKey(
             R.drawable.ic_baseline_arrow_back_24,
             KeyboardLayoutNames.Text,

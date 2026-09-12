@@ -53,7 +53,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -71,6 +70,7 @@ import org.fcitx.fcitx5.android.input.popup.PopupAction
 import org.fcitx.fcitx5.android.input.popup.PopupActionListener
 import org.fcitx.fcitx5.android.utils.styledFloat
 import top.yukonga.miuix.kmp.basic.Icon
+import kotlin.math.min
 
 /**
  * Compose 版按键原语（`Docs/KeyboardComposePlan.md` 批次 B）。
@@ -155,7 +155,10 @@ fun ComposeKey(
 
     Box(
         modifier = modifier
-            .pointerInput(spec, enabled, cancelEpoch) {
+            // `enabled` **不做** pointerInput 的 key：它已由下面的 enabledState 在手势入口判空，
+            // 再当 key 只会让 enabled 翻转时取消进行中的手势（等于 View 侧 setEnabled 时
+            // 给已按下的键补一次 ACTION_CANCEL，属多余行为）。
+            .pointerInput(spec, cancelEpoch) {
                 if (!enabledState.value) return@pointerInput
                 val env = KeyGestureEnv(
                     keyId = keyId,
@@ -886,7 +889,10 @@ private fun performClickOrDoubleTap(env: KeyGestureEnv) {
         return
     }
     val state = env.doubleTapState
-    val now = System.currentTimeMillis()
+    // 时钟口径与长按/重复统一为单调时钟 `uptimeMillis()`。
+    // View 侧 `CustomGestureView` 这里用的是 `currentTimeMillis()`（NTP 校时跳变会让双击窗口
+    // 判定失真），重复触发用的却是 `uptimeMillis()`；Compose 侧统一到后者，行为等价且不受校时影响。
+    val now = SystemClock.uptimeMillis()
     if (state.maybeDoubleTap && now - state.lastClickTime <= env.longPressDelay()) {
         state.maybeDoubleTap = false
         env.action(doubleTapAction)

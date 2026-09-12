@@ -59,17 +59,17 @@ class NumberKeyboard(
     private val recentlyUsed: RecentlyUsed
         get() = RecentlyUsed(PickerWindow.Key.Symbol.name, PickerPageUi.Density.High.pageSize)
 
-    // 行数据见 NumberKeyboardRows（纯 KeyDef，Compose 侧共用同一份）
-    private fun buildRow1() = createKeyRow(NumberKeyboardRows.row1())
+    // 行数据见 NumberKeyboardRows（纯 KeyDef，Compose 侧共用同一份；行数据是单一实例）
+    private fun buildRow1() = createKeyRow(NumberKeyboardRows.row1)
 
-    private fun buildRow2() = createKeyRow(NumberKeyboardRows.row2())
+    private fun buildRow2() = createKeyRow(NumberKeyboardRows.row2)
 
-    private fun buildRow3() = createKeyRow(NumberKeyboardRows.row3())
+    private fun buildRow3() = createKeyRow(NumberKeyboardRows.row3)
 
-    private fun buildRow4() = createKeyRow(NumberKeyboardRows.row4())
+    private fun buildRow4() = createKeyRow(NumberKeyboardRows.row4)
 
     /** 分体模式下的第 4 行：「!?#」已移至左侧历史符号面板，逗号键占用其释放的空间。 */
-    private fun buildRow4Split() = createKeyRow(NumberKeyboardRows.row4Split())
+    private fun buildRow4Split() = createKeyRow(NumberKeyboardRows.row4Split)
 
     override fun rebuildKeyboardRows(split: Boolean) {
         if (!::sliderSymbols.isInitialized) {

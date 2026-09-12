@@ -449,11 +449,12 @@ windowManager.view
 
 旧文件（断开接线，保留供对比 / 回退）：
 
-| 旧文件 | 状态 |
-|---|---|
+| 旧文件                                                         | 状态                                                                                           |
+|-------------------------------------------------------------|----------------------------------------------------------------------------------------------|
 | `BaseKeyboard.kt` / `TextKeyboard.kt` / `NumberKeyboard.kt` | 断线；`TextKeyboard` 仍被设置页 `KeyboardPreviewUi` 实例化（主题预览），`Name` 常量已委托到 `KeyboardLayoutNames.kt` |
-| `KeyView.kt` / `CustomGestureView.kt` | 断线；`CustomGestureView` 仍被 View 桥接层（`PickerTabsUi` / `ToolButton`）依赖，不能删 |
-| `KeyViewExt.kt` / `RecentSymbolsView.kt` / `SymbolSliderKeyView.kt` | 断线 |
+| `KeyView.kt` / `CustomGestureView.kt`                       | 断线；`CustomGestureView` 仍被 View 桥接层（`PickerTabsUi` / `ToolButton`）依赖，不能删                      |
+| `KeyViewExt.kt` / `SymbolSliderKeyView.kt`                  | 断线                                                                                           |
+| `RecentSymbolsView.kt`                                      | 断线（Compose 版 `ComposeRecentSymbols.kt`，见 §14；仅被同样断线的 `NumberKeyboard.buildSplitLayout` 引用）   |
 
 > `KeyboardWindow.kt` 顶部注释引用的 `Docs/KeyboardComposePlan.md` 不存在（计划文档未落地），本节为其内容的正式记录。
 
@@ -591,6 +592,109 @@ windowManager.view
 
 ---
 
+## 14. 数字键盘 Compose 化（符号滑块 + 历史符号面板，批次 C5）
+
+数字键盘（`ComposeNumberKeyboard`）的横向分体布局在 C3 落地时还留着一个 `AndroidView` 岛：
+左侧历史符号面板用 View 版 `RecentSymbolsView`（RecyclerView + GridLayoutManager）。
+C5 把它换成 `ComposeRecentSymbols.kt`，**键盘域至此不再有 `AndroidView` 桥**。
+本节补记该节点，并登记残留的回退件（断线 View）与移除里程碑。
+
+```
+KeyboardWindow (ComposeWindow) → Content()
+└── ComposeNumberKeyboard (split = AppPrefs.splitKeyboard && isSplitAllowedByRatio)
+    ├── 普通 (竖屏 / 未开分体)
+    │   ├── ComposeSymbolSlider (15% × 75%，ComposeKey 子按钮 + 编辑按钮，可滚动)
+    │   └── ComposeKeyRow × 4 (85% × 75% 三行 + 底部通栏第 4 行，NumberKeyboardRows)
+    └── 分体 (横屏)
+        ├── ComposeRecentSymbolsPanel (45%，C5 新增)
+        ├── Spacer (10%)
+        └── 45%：
+            ├── 上 75%: ComposeSymbolSlider (15%) + ComposeKeyRow × 3 (85%)
+            └── 下 25%: ComposeKeyRow(row4Split, 「!?#」已让位给逗号)
+```
+
+与 View 版的逐项对应（`ComposeRecentSymbols.kt` 头部有完整表）：
+
+| View（`RecentSymbolsView` / `SymbolSliderKeyView`） | Compose                                                                           |
+|---------------------------------------------------|-----------------------------------------------------------------------------------|
+| 面板底 = `theme.backgroundColor`，面板本身不按压             | `Box.background(visuals.backgroundColor)`，不挂手势                                    |
+| 「!?#」按钮宽 = 面板宽 / (列数+1)、高占满                       | `Row` 内 `width(cellWidth)` + `fillMaxHeight()`，`ComposeKey`                       |
+| 4 列 RecyclerView 网格，格子高 = 列宽 × 0.6                | `LazyVerticalGrid(GridCells.Fixed(4))` + `height(cellWidth * 0.6f)`               |
+| 空态 `TextView`：居中、14dp、`altKeyTextColor @50%`      | 外层 `Box(contentAlignment = Center)` + `BasicText(fillMaxWidth, TextAlign.Center)` |
+| 子按钮复用 `TextKeyView`（26f、`Variant.Alternative`）    | 复用 `ComposeKey`，底色/圆角/按压高亮/震动音效一致                                                 |
+| 滑块区背景 = IME 主背景色，子按钮高 = 高 / 外显段数 × 0.9            | 同上（`ComposeSymbolSlider`）                                                         |
+
+**纯 Compose 换来的收益**：View 版经 `AndroidView` 嵌入时 `factory` 只跑一次，换主题不会重染；
+现在所有颜色都来自 `rememberKeyboardVisuals()`（监听 `ThemeManager`），换主题/旋转即时生效。
+**差异点**：网格改用 `LazyVerticalGrid`（没有 RecyclerView 的 View 复用池，但键数与格子数都很少），
+格子 key 取符号文本（`RecentlyUsed` 是去重 map，不会撞 key），列表重排时节点跟着搬而不是原地换文本。
+
+接线与数据：
+
+1. 状态层 `NumberKeyboardState`（由 `KeyboardWindow` 持有，跨布局切换存活）承载 `sliderSymbols`
+   / `recentSymbols`；`recentSymbols` 在窗口 attach（`KeyboardWindow.onAttached`）与点按
+   （`recordRecentSymbol`）时刷新，等价 View 侧每次 `rebuildKeyboardRows` 重建面板。
+2. 行数据 `NumberKeyboardRows` 改为**单一实例**（`val` 而非 `fun`）：`KeyDef` 是普通类
+   （identity 判等），每次返回新列表会让 `ComposeKeyRow` 的 `remember(row, …)` 失效。
+   文本键盘同理，`TextKeyboardState.layout()` 由 `ComposeTextKeyboard` 用 `derivedStateOf` 缓存。
+3. 滑块符号编辑仍走 `SymbolSliderEditActivity` + `SymbolSliderEditStore`（顶部弹窗 Activity，非
+   Compose 域）。
+
+旧文件去向与移除里程碑（`AGENTS.md` 要求保留断线 View、不允许无限期双份维护）：
+
+| 项                                                                         | 状态                                                                                  |
+|---------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
+| `keyboard/RecentSymbolsView.kt`                                           | 断线（fork 私有），仅被 `NumberKeyboard.buildSplitLayout` 引用；生产路径走 `ComposeRecentSymbols.kt` |
+| `keyboard/NumberKeyboard.kt` / `SymbolSliderKeyView.kt` / `KeyViewExt.kt` | 断线                                                                                  |
+| `keyboard/BaseKeyboard.kt` / `TextKeyboard.kt` / `KeyView.kt`             | 断线（`TextKeyboard` 半活跃：设置页主题预览 `KeyboardPreviewUi` 仍在用）                              |
+| `keyboard/CustomGestureView.kt`                                           | 半活跃（View 桥接层 `PickerTabsUi` / `ToolButton` 仍依赖）                                     |
+
+移除顺序（里程碑：Compose 键盘真机验收通过 —— 竖/横、分体、主题切换、Picker 往返、
+符号编辑弹窗 —— 且上游对应文件无待合并改动）：
+
+1. 先删 **fork 私有**死文件：`RecentSymbolsView.kt`（本轮的主角）、`SymbolSliderKeyView.kt`、
+   `KeyViewExt.kt`；
+2. 再把 `KeyboardPreviewUi`（设置页主题预览）迁到 Compose，然后删 `TextKeyboard.kt` /
+   `NumberKeyboard.kt` / `BaseKeyboard.kt` / `KeyView.kt`；
+3. 最后处理仍活跃的 `CustomGestureView.kt`（`PickerTabsUi` / `ToolButton` 改用 Compose
+   `repeatableClick` 后可删）。
+
+**本轮不删**：`RecentSymbolsView.kt` 留着是为了保住「View 键盘可回退」这条退路
+（断线文件清单的既定约定），删除归入上面的里程碑第 1 步。
+
+---
+
+## 15. 键盘域的两条约定（易被误当 bug）
+
+### 15.1 非响应式偏好读取：靠窗口重建生效
+
+键盘 Compose 件里有一批偏好是**普通 getter 直读**，不是 Compose 状态：
+
+| 读点                                                                                                      | 说明                                |
+|---------------------------------------------------------------------------------------------------------|-----------------------------------|
+| `KeyboardVisuals.rememberKeyboardVisuals()`（边框/圆角/边距）                                                   | 主题是响应式的（`ThemeManager` 监听），外观偏好不是 |
+| `NumberKeyboardState.symbolSliderVisibleCount`                                                          | 符号滑块外显段数，读点在重组/重建时刻               |
+| `ComposeKey` 手势协程里的偏好（`popupOnKeyPress` / `longPressDelay` / `swipeSymbolDirection` / `hapticOnRepeat`） | 传 lambda 在手势时刻读，下一次手势即生效          |
+| `ComposeKeyRow` 的 `expandKeypressArea`                                                                  | 与 View 侧构造期读一次同口径                 |
+
+约定：**「改设置 → 键盘窗口重建」生效**（与 View 侧 `KeyView` / `NumberKeyboard` 构造期读一次等价）。
+不要给它们套 `preferenceState()`：那只会让无关重组多起来，并不能换来真正的即时生效
+（这类偏好本来就紧随 IME 重开而重建）。确有必要即时生效的（`splitKeyboard` / `hapticOnRepeat` /
+`spaceSwipeMoveCursor` 等，View 侧原本就注册了 `OnChangeListener`）才用 `preferenceState()`。
+
+### 15.2 双主题体系并存（已知设计，非 bug）
+
+- **键盘键面/背景**：fcitx `Theme` → `KeyboardVisuals`（保留用户名下的自定义主题与背景图，
+  不切 miuix `colorScheme`）；
+- **工具栏/候选/数字行/预编辑/状态区/弹窗/剪贴板/文本编辑**：`MiuixTheme.colorScheme`；
+- **例外**：工具栏为了「与键盘底色形成对比」而读原始 `Theme.keyboardColor` 的明度
+  （`ComposeKawaiiBarComponent.getVisuals()`）——这是有意为之，不是回流到 fcitx 主题。
+
+风险：键盘与候选栏分属两套色源，深色/自定义主题下可能出现色调不匹配。**验收动作**：
+在主题设置页切换浅色 / 深色 / 自定义主题（含背景图）后，检查工具栏-候选栏-键盘三层过渡是否突兀。
+
+---
+
 ## 附录 A：断线文件清单
 
 > 「断线」= 已不再被活跃代码引用，仅被同类断线文件互引或保留别名 / 委托。上游文件按 fork 约定保留不动、不删除；custom 私有文件可择机清理。
@@ -633,16 +737,17 @@ windowManager.view
 
 ### A.5 键盘 / Picker
 
-| 文件 | 状态 |
-|---|---|
-| `keyboard/BaseKeyboard.kt` | 断线（仍被 `TextKeyboard` / `NumberRow` 继承；`TextKeyboard` 被设置页 `KeyboardPreviewUi` 实例化故全链保留） |
-| `keyboard/TextKeyboard.kt` | **半活跃**（`KeyboardPreviewUi` 实例化；`Name` 已委托 `KeyboardLayoutNames.Text`，`Layout` 被 `ComposeTextKeyboard` 经数据文件复用） |
-| `keyboard/NumberKeyboard.kt` | 断线（`Name` 已委托 `KeyboardLayoutNames.Number`） |
-| `keyboard/KeyView.kt` | 断线（仍被 `CustomGestureView` 体系与 View 桥接层 `PickerPageUi` 等引用） |
-| `keyboard/CustomGestureView.kt` | **半活跃**（被 View 桥接层 `PickerTabsUi` / `ToolButton` 依赖，不能删） |
-| `keyboard/KeyViewExt.kt` / `RecentSymbolsView.kt` / `SymbolSliderKeyView.kt` | 断线 |
-| `picker/PickerPageUi.kt` | 断线（`Density` 已抽离到 `PickerDensity.kt`，本类保留 `typealias`） |
-| `picker/PickerPagesAdapter.kt` / `PickerLayout.kt` | 断线 |
+| 文件                                                  | 状态                                                                                                              |
+|-----------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
+| `keyboard/BaseKeyboard.kt`                          | 断线（仍被 `TextKeyboard` / `NumberRow` 继承；`TextKeyboard` 被设置页 `KeyboardPreviewUi` 实例化故全链保留）                         |
+| `keyboard/TextKeyboard.kt`                          | **半活跃**（`KeyboardPreviewUi` 实例化；`Name` 已委托 `KeyboardLayoutNames.Text`，`Layout` 被 `ComposeTextKeyboard` 经数据文件复用） |
+| `keyboard/NumberKeyboard.kt`                        | 断线（`Name` 已委托 `KeyboardLayoutNames.Number`；分体分支仍 new `RecentSymbolsView`，属死路径）                                  |
+| `keyboard/KeyView.kt`                               | 断线（仍被 `CustomGestureView` 体系与 View 桥接层 `PickerPageUi` 等引用）                                                      |
+| `keyboard/CustomGestureView.kt`                     | **半活跃**（被 View 桥接层 `PickerTabsUi` / `ToolButton` 依赖，不能删）                                                        |
+| `keyboard/KeyViewExt.kt` / `SymbolSliderKeyView.kt` | 断线                                                                                                              |
+| `keyboard/RecentSymbolsView.kt`                     | 断线；**已被 `ComposeRecentSymbols.kt` 取代**（§14），仅被断线的 `NumberKeyboard.buildSplitLayout` 引用，可随时删除（fork 私有）           |
+| `picker/PickerPageUi.kt`                            | 断线（`Density` 已抽离到 `PickerDensity.kt`，本类保留 `typealias`）                                                          |
+| `picker/PickerPagesAdapter.kt` / `PickerLayout.kt`  | 断线                                                                                                              |
 
 ### A.6 范围外（仍活跃 View，非断线，仅登记）
 
