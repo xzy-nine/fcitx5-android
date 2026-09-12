@@ -27,9 +27,9 @@ import org.fcitx.fcitx5.android.core.FcitxEvent
 import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
-import org.fcitx.fcitx5.android.input.bar.LocalToolbarHeight
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.BooleanKey.ExpandedCandidatesEmpty
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.TransitionEvent.ExpandedCandidatesUpdated
+import org.fcitx.fcitx5.android.input.bar.LocalToolbarHeight
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.candidates.expanded.ComposeExpandedCandidateWindow
 import org.fcitx.fcitx5.android.input.dependency.context
@@ -86,6 +86,14 @@ class ComposeCandidateComponent :
      * 每跨过一个 item 就触发一次 _state 更新，连带重组工具栏等所有订阅者。
      */
     private val _scrollOffset = MutableStateFlow(0)
+
+    /**
+     * 候选集整体更换（非前缀延续）令牌：每次 [applyCandidates] 判定需重置滚动时自增，
+     * 供 ComposeCandidateBar 把 LazyRow 滚回首位。不放进 [_state]：仅影响可视滚动位置，
+     * 寄生于内容状态会让每次替换都触发多余重组。
+     */
+    private val _candidateResetToken = MutableStateFlow(0)
+    val candidateResetToken: StateFlow<Int> = _candidateResetToken.asStateFlow()
     private val _expandedCandidateOffset = MutableSharedFlow<Int>(
         replay = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
@@ -232,6 +240,7 @@ class ComposeCandidateComponent :
         // 非「前缀延续」时候选集整体更换，滚动偏移归零（与旧实现的 offset 语义一致）
         if (!keepScroll) {
             _scrollOffset.value = 0
+            _candidateResetToken.value++
         }
 
         _state.value = CandidateBarState.from(candidates, total)
@@ -304,6 +313,7 @@ class ComposeCandidateComponent :
     fun CandidateBarContent(modifier: Modifier = Modifier) {
         val state by _state.collectAsState()
         val isExpandedWindowShown by _isExpandedWindowShown.collectAsState()
+        val scrollResetToken by candidateResetToken.collectAsState()
 
         // 监听多个偏好变化，触发重组
         // 偏好「值」就地缓存：组合期只读 State，不再反复走 AppPrefs/SharedPreferences；
@@ -381,6 +391,7 @@ class ComposeCandidateComponent :
                     onScrollOffsetChanged(offset)
                 },
             ),
+            scrollResetToken = scrollResetToken,
             fillMode = fillMode.value,
             maxSpanCount = maxSpanCount.value,
             userScrollEnabled = swipeEnabled.value,

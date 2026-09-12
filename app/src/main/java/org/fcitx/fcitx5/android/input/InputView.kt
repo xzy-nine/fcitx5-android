@@ -17,18 +17,15 @@ import android.view.inputmethod.InlineSuggestionsResponse
 import android.widget.ImageView
 import androidx.annotation.Keep
 import androidx.annotation.RequiresApi
-import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.core.view.updateLayoutParams
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.view.updateLayoutParams
 import org.fcitx.fcitx5.android.core.CapabilityFlags
-import top.yukonga.miuix.kmp.theme.ColorSchemeMode
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.theme.ThemeController
 import org.fcitx.fcitx5.android.core.FcitxEvent
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
 import org.fcitx.fcitx5.android.daemon.launchOnReady
@@ -79,6 +76,9 @@ import splitties.views.dsl.core.view
 import splitties.views.dsl.core.wrapContent
 import splitties.views.imageDrawable
 import timber.log.Timber
+import top.yukonga.miuix.kmp.theme.ColorSchemeMode
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.ThemeController
 
 @SuppressLint("ViewConstructor")
 class InputView(
@@ -304,7 +304,7 @@ class InputView(
 
         customBackground.imageDrawable = theme.backgroundDrawable(keyBorder)
         // 键盘背景裁剪（跳过预编辑栏、圆角落在工具栏顶部）在 composeTopView 组合内
-        // 经 SideEffect 跟随预编辑栏实际高度动态更新（见 composeTopView setContent）
+        // 经 LaunchedEffect 跟随预编辑栏实际高度动态更新（见 composeTopView setContent）
 
         keyboardView = constraintLayout {
             // allow MotionEvent to be delivered to keyboard while pressing on padding views.
@@ -349,10 +349,10 @@ class InputView(
         // Custom: 调校浮层挂在键盘主体内（match-constraint 填充 keyboardView），
         // 这样它既不会撑高 InputView，也不会溢出到键盘之外。
         keyboardView.add(keyboardTuneOverlay, ConstraintLayout.LayoutParams(matchParent, 0).apply {
-            topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+            topToTop = LayoutParams.PARENT_ID
+            bottomToBottom = LayoutParams.PARENT_ID
+            startToStart = LayoutParams.PARENT_ID
+            endToEnd = LayoutParams.PARENT_ID
         })
 
         updateKeyboardSize()
@@ -422,14 +422,12 @@ class InputView(
 
     @android.annotation.TargetApi(31)
     private fun setKeyboardTuneBlur(enabled: Boolean) {
-        if (Build.VERSION.SDK_INT >= 31) {
-            val blur = if (enabled) {
-                android.graphics.RenderEffect.createBlurEffect(
-                    14f, 14f, android.graphics.Shader.TileMode.CLAMP
-                )
-            } else null
-            windowManager.view.setRenderEffect(blur)
-        }
+        val blur = if (enabled) {
+            android.graphics.RenderEffect.createBlurEffect(
+                14f, 14f, android.graphics.Shader.TileMode.CLAMP
+            )
+        } else null
+        windowManager.view.setRenderEffect(blur)
     }
 
     private fun keyboardTuneMetrics() = KeyboardTuneOverlay.TuneMetrics(

@@ -6,14 +6,12 @@
 package org.fcitx.fcitx5.android.input.candidates.horizontal
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import org.fcitx.fcitx5.android.input.bar.inputFeedback
-import org.fcitx.fcitx5.android.data.InputFeedbacks
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -31,25 +29,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.flow.distinctUntilChanged
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.core.CandidateWord
+import org.fcitx.fcitx5.android.input.bar.inputFeedback
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
@@ -57,8 +58,6 @@ import top.yukonga.miuix.kmp.basic.VerticalDivider
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
-import kotlinx.coroutines.flow.distinctUntilChanged
-import org.fcitx.fcitx5.android.core.CandidateWord
 
 /**
  * 候选列表容器。
@@ -132,6 +131,8 @@ fun ComposeCandidateBar(
     state: CandidateBarState,
     visuals: CandidateBarVisuals,
     callbacks: CandidateBarCallbacks,
+    /** 候选集整体更换（非前缀延续）令牌；变化时把 LazyRow 滚回首位，即使 bar 仍 Active */
+    scrollResetToken: Int = 0,
     modifier: Modifier = Modifier,
     fillMode: CandidateFillMode = CandidateFillMode.AutoFillWidth,
     maxSpanCount: Int = 5,
@@ -168,6 +169,13 @@ fun ComposeCandidateBar(
     // 当状态变为 Idle 时重置滚动位置
     LaunchedEffect(state) {
         if (state is CandidateBarState.Idle) {
+            listState.scrollToItem(0)
+        }
+    }
+
+    // 候选集整体更换（非前缀延续）时把 LazyRow 滚回首位，即使 bar 仍 Active
+    LaunchedEffect(scrollResetToken) {
+        if (scrollResetToken > 0) {
             listState.scrollToItem(0)
         }
     }
@@ -250,7 +258,7 @@ private fun CandidateRow(
             val text = candidates[index].text
             val occurrence = (seen[text] ?: 0) + 1
             seen[text] = occurrence
-            if (occurrence == 1) text else "$text#$occurrence"
+            if (occurrence == 1) text else "$occurrence#$text"
         }
     }
 

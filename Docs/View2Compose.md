@@ -92,7 +92,7 @@ FcitxInputMethodService
 > `customBackground.applyTopRoundedCornerClip(16dp, 预编辑实际高度)`（跳过预编辑行）实现，
 > 高度经 `SideEffect` 跟随，keyboardView 不再整体裁剪（否则会裁掉顶部预编辑行）。
 
-```
+```text
 FcitxInputMethodService
 ├── ComposeView (根 - 全窗口，MiuixTheme)
 │   └── Box(fillMaxSize)
@@ -169,7 +169,7 @@ FcitxInputMethodService
 （`FcitxInputMethodService.createComposeInputView` 内、`AndroidView(InputView)` 之上），
 只换渲染层、不动协调层。
 
-```
+```text
 根组合 Box(fillMaxSize) 内（MiuixTheme + 强制 LTR）
 └── iv.popup.PopupOverlayContent() (Box，无 pointer handler → 触摸穿透)
     └── PopupContent() (Compose)
