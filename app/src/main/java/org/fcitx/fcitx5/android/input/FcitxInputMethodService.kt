@@ -838,7 +838,14 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         capabilityFlags = flags
         // EditorInfo may change between onStartInput and onStartInputView
         inputDeviceMgr.notifyOnStartInput(attribute)
-        Timber.d("onStartInput: initialSel=${selection.current}, restarting=$restarting")
+        // 打上 pkg/fieldId/inputType：`restarting=true` 只可能由**客户端应用**发起
+        // （`InputMethodManager.restartInput()` / 输入连接被替换），IME 侧无法自造；
+        // 出问题时靠这三项定位是哪个应用/哪个输入框在重启输入连接。
+        Timber.d(
+            "onStartInput: initialSel=${selection.current}, restarting=$restarting, " +
+                "pkg=${attribute.packageName}, fieldId=${attribute.fieldId}, " +
+                "inputType=0x${attribute.inputType.toString(16)}"
+        )
         val isNullType = attribute.isTypeNull()
         // wait until InputContext created/activated
         postFcitxJob {

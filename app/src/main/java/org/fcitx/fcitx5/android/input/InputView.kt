@@ -192,6 +192,15 @@ class InputView(
 
     private val focusChangeResetKeyboard by keyboardPrefs.focusChangeResetKeyboard
 
+    /**
+     * 上一次 [startInput] 看到的输入框标识，用来区分「同一个框被应用重启输入连接」与「焦点换到了另一个框」。
+     *
+     * 两者在框架层都是 `onStartInputView(restarting = true)`，只看 `restarting` 分不开：
+     * 不少应用（例如 `io.legato.kazusa`）会在自己改动文本/选区之后重启输入连接做 resync，
+     * 此时把 Picker / 剪贴板等面板踢回主键盘是纯打扰。
+     */
+    private var lastEditorKey: EditorKey? = null
+
     private val keyboardHeightPercent = keyboardPrefs.keyboardHeightPercent
     private val keyboardHeightPercentLandscape = keyboardPrefs.keyboardHeightPercentLandscape
     private val toolbarHeight = keyboardPrefs.toolbarHeight
@@ -474,7 +483,14 @@ class InputView(
     fun startInput(info: EditorInfo, capFlags: CapabilityFlags, restarting: Boolean = false) {
         broadcaster.onStartInput(info, capFlags)
         returnKeyDrawable.updateDrawableOnEditorInfo(info)
-        if (focusChangeResetKeyboard || !restarting) {
+        // `restarting = false`（新一次输入会话）照旧重置回主键盘；
+        // `restarting = true` 只有在**换了输入框**时才按 `focusChangeResetKeyboard` 重置——
+        // 同一个框被应用 resync 重启输入连接时保留当前面板（见 [lastEditorKey]）。
+        val editorKey = EditorKey.of(info)
+        val sameEditor = editorKey.isSameAs(lastEditorKey)
+        lastEditorKey = editorKey
+        Timber.d("startInput: restarting=$restarting, sameEditor=$sameEditor, key=$editorKey")
+        if (!restarting || (focusChangeResetKeyboard && !sameEditor)) {
             windowManager.attachWindow(KeyboardWindow)
         }
     }
@@ -533,4 +549,44 @@ class InputView(
         super.onDetachedFromWindow()
     }
 
+}
+
+/**
+ * 输入框标识（只取「换框会变、同框重启不变」的字段），用于 [InputView.startInput] 区分
+ * 「同一输入框重启」与「焦点换框」。
+ *
+ * 刻意**不含** `initialSelStart/End`：应用重启输入连接时经常带上陈旧（甚至差一格）的选区，
+ * 把它算进来会让「同框重启」永远被判成换框。
+ *
+ * `fieldId` 为 [View.NO_ID]（应用没给控件 id）时退化为只比较其余字段。
+ */
+private class EditorKey(
+    private val packageName: String?,
+    private val fieldId: Int,
+    private val inputType: Int,
+    private val hintText: String?,
+    private val imeOptions: Int,
+) {
+
+    fun isSameAs(other: EditorKey?): Boolean = other != null &&
+            packageName == other.packageName &&
+            inputType == other.inputType &&
+            hintText == other.hintText &&
+            imeOptions == other.imeOptions &&
+            (fieldId == other.fieldId || fieldId == View.NO_ID)
+
+    override fun toString(): String =
+        "EditorKey(pkg=$packageName, fieldId=$fieldId, inputType=0x${inputType.toString(16)}, " +
+                "hint=$hintText, imeOptions=0x${imeOptions.toString(16)})"
+
+    companion object {
+        fun of(info: EditorInfo) = EditorKey(
+            packageName = info.packageName,
+            fieldId = info.fieldId,
+            inputType = info.inputType,
+            // hintText 可能是 Spanned，转成 String 再比较，避免同一段文字因实例类型不同而判成换框
+            hintText = info.hintText?.toString(),
+            imeOptions = info.imeOptions,
+        )
+    }
 }

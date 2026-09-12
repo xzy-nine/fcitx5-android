@@ -96,16 +96,10 @@ fun ComposeExpandedCandidatesUi(
         derivedStateOf { items.itemSnapshotList.firstOrNull()?.text }
     }
     val leadingWidthsEm = remember(density, firstCandidateText) {
-        items.itemSnapshotList.toList()
+        items.itemSnapshotList
+            .filterNotNull()
             .take(ExpandedCandidateLeadingSampleCount)
-            .map { c ->
-                c?.let {
-                    measurer.measure(
-                        it.textWithComment(),
-                        candidateStyle
-                    )
-                }?.size?.let { it.width / emWidthPx }
-            }
+            .map { c -> measurer.measure(c.textWithComment(), candidateStyle).size.width / emWidthPx }
     }
 
     // 列数只由「前段候选宽度（em）+ 列数上限」决定（与 View 侧 spanCount 口径一致），
