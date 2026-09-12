@@ -7,29 +7,19 @@ package org.fcitx.fcitx5.android.input.candidates.expanded
 
 import android.graphics.Rect
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.text.modifiers.TextAutoSizeLayoutScope
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -59,22 +49,21 @@ import androidx.paging.compose.LazyPagingItems
 import org.fcitx.fcitx5.android.core.CandidateAction
 import org.fcitx.fcitx5.android.core.CandidateWord
 import org.fcitx.fcitx5.android.input.bar.inputFeedback
-import org.fcitx.fcitx5.android.input.keyboard.ComposeKey
-import org.fcitx.fcitx5.android.input.keyboard.KeyAction
+import org.fcitx.fcitx5.android.input.candidates.ComposeSplitCandidatesUi
+import org.fcitx.fcitx5.android.input.candidates.SplitTab
 import org.fcitx.fcitx5.android.input.keyboard.KeyActionListener
-import org.fcitx.fcitx5.android.input.keyboard.KeyDef
 import org.fcitx.fcitx5.android.input.popup.PopupActionListener
-import top.yukonga.miuix.kmp.basic.VerticalDivider
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
- * 「展开候选」页面的整体排版：左栏一条竖排标签栏（与右侧内嵌键盘同款 `ComposeKey` 竖排等宽键），
- * 其右是「候选表格 + 1dp 分隔线 + 右侧内嵌键盘」两栏。
+ * 「展开候选」页面的中栏内容 + 三栏骨架调用。
  *
- * - 左栏标签与右栏键盘宽度均取总宽 15%，中间网格占剩余；无标签时左栏与左分隔线隐藏、网格自动占满。
- * - 列数不直接取用户偏好，而是由 [computeGridSpanCount] 按**前段候选实测宽度（em）**与列数上限反推：
- *   与 View 侧 `SpanHelper` 同口径，避免短词把列数顶满、一行词数比 View 实现多一倍（滚动掉帧）。
- * - 翻页按钮（内嵌键盘的上/下）的可用态由 [LazyGridState] 的滚动位置推导，到顶/到底置灰。
+ * 三栏骨架（左标签栏 / 中候选表格 / 右内嵌键盘）与 Picker 共用 [ComposeSplitCandidatesUi]，
+ * 本文件只负责候选特有的部分：
+ *
+ * - 列数不取用户偏好，而由 [computeGridSpanCount] 按**前段候选实测宽度（em）**与列数上限反推：
+ *   与 View 侧 `SpanHelper` 同口径，避免短词把列数顶满、一行词数比 View 实现多一倍（滚动掉帧）；
+ * - 翻页按钮（内嵌键盘的上/下）的可用态由网格滚动位置推导（到顶/到底置灰）——在共用组件里；
  * - 长按候选弹菜单的锚点用「窗口坐标 + 按下偏移」换算成 `Rect`，与横向候选栏同口径。
  */
 @Composable
@@ -107,25 +96,17 @@ fun ComposeExpandedCandidatesUi(
         derivedStateOf { items.itemSnapshotList.firstOrNull()?.text }
     }
     val leadingWidthsEm = remember(density, firstCandidateText) {
-        items.itemSnapshotList
-            .filterNotNull()
+        items.itemSnapshotList.toList()
             .take(ExpandedCandidateLeadingSampleCount)
-            .map { c -> measurer.measure(c.textWithComment(), candidateStyle).size.width / emWidthPx }
+            .map { c ->
+                c?.let {
+                    measurer.measure(
+                        it.textWithComment(),
+                        candidateStyle
+                    )
+                }?.size?.let { it.width / emWidthPx }
+            }
     }
-
-    // 翻页按钮可用态：从网格滚动位置推导（到顶/到底置灰）。
-    val canPageUp by remember {
-        derivedStateOf { gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0 }
-    }
-    val canPageDown by remember {
-        derivedStateOf {
-            val info = gridState.layoutInfo
-            val last = info.visibleItemsInfo.lastOrNull()?.index ?: -1
-            last < info.totalItemsCount - 1
-        }
-    }
-
-    val hasTabs = tabs.isNotEmpty()
 
     // 列数只由「前段候选宽度（em）+ 列数上限」决定（与 View 侧 spanCount 口径一致），
     // 不再按可用宽度反推——按宽度反推会把短词的列数顶满上限，一行词数翻倍（滚动掉帧）。
@@ -135,113 +116,32 @@ fun ComposeExpandedCandidatesUi(
         maxSpan = maxSpanCount.coerceAtLeast(2),
     )
 
-    BoxWithConstraints(
-        modifier
+    ComposeSplitCandidatesUi(
+        tabs = remember(tabs) { tabs.map { SplitTab(it.text, it.isCheckable && it.isChecked) } },
+        gridState = gridState,
+        returnDrawable = returnDrawable,
+        keyActionListener = keyActionListener,
+        popupActionListener = popupActionListener,
+        onTabSelected = onTabSelected,
+        // 展开候选的列数由实测宽度决定，与中栏可用宽度无关
+        columns = { _ -> span },
+        modifier = modifier
             .fillMaxSize()
-            .background(MiuixTheme.colorScheme.surface)
+            .background(MiuixTheme.colorScheme.surface),
     ) {
-        val totalWidthPx = with(density) { maxWidth.toPx() }
-        // 左栏与右键盘同取总宽 15%；无标签时左栏隐藏，省去左分隔线。
-        val leftPx = if (hasTabs) totalWidthPx * 0.15f else 0f
-        val keyboardPx = totalWidthPx * 0.15f
-
-        Row(Modifier.fillMaxSize()) {
-            // 左栏：竖排标签键，与右键盘同款 Alternative 变体、等高分片。
-            if (hasTabs) {
-                Column(
-                    Modifier
-                        .fillMaxHeight()
-                        .width(with(density) { leftPx.toDp() })
-                ) {
-                    tabs.forEachIndexed { index, tab ->
-                        ExpandedCandidateTabKey(
-                            tab = tab,
-                            index = index,
-                            onTabSelected = onTabSelected,
-                            modifier = Modifier.fillMaxWidth().weight(1f),
-                        )
-                    }
-                }
-                VerticalDivider(
-                    thickness = 1.dp,
-                    color = MiuixTheme.colorScheme.dividerLine,
-                )
-            }
-
-            // 中间：候选表格，占剩余宽度。
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(span),
-                state = gridState,
-                modifier = Modifier.fillMaxHeight().weight(1f),
-                contentPadding = PaddingValues(vertical = 4.dp),
-            ) {
-                items(
-                    count = items.itemCount,
-                    key = { index -> "$index-${items.peek(index)?.text}" },
-                ) { index ->
-                    val candidate = items[index] ?: return@items
-                    ExpandedCandidateCell(
-                        candidate = candidate,
-                        onClick = { onCandidateSelect(index) },
-                        onLongClick = { anchor -> onCandidateLongClick(index, candidate.text, anchor) },
-                    )
-                }
-            }
-            VerticalDivider(
-                thickness = 1.dp,
-                color = MiuixTheme.colorScheme.dividerLine,
-            )
-
-            // 右栏：内嵌键盘（上翻 / 下翻 / 退格 / 回车）。
-            ComposeExpandedCandidateKeyboard(
-                returnDrawable = returnDrawable,
-                pageUpEnabled = canPageUp,
-                pageDownEnabled = canPageDown,
-                keyActionListener = keyActionListener,
-                popupActionListener = popupActionListener,
-                modifier = Modifier.fillMaxHeight().width(with(density) { keyboardPx.toDp() }),
+        items(
+            count = items.itemCount,
+            key = { index -> "$index-${items.peek(index)?.text}" },
+        ) { index ->
+            val candidate = items[index] ?: return@items
+            ExpandedCandidateCell(
+                candidate = candidate,
+                onClick = { onCandidateSelect(index) },
+                onLongClick = { anchor -> onCandidateLongClick(index, candidate.text, anchor) },
             )
         }
     }
 }
-
-/**
- * 单颗候选分组标签键：与右栏内嵌键盘同款的竖排等宽 `ComposeKey`。
- *
- * - 默认用 `Variant.Alternative`（与右键盘一致）；当选中（`isCheckable && isChecked`）时换成
- *   `Variant.Accent` 高亮，沿用现有主题语义，不引入新颜色/样式。
- * - 点击经独立 `KeyActionListener` 直接回调 [onTabSelected]，与右键盘监听互不干扰。
- * - `keyId` 用独立基址，避免与右键盘的 0..3 冲突（popup 索引）。
- */
-@Composable
-private fun ExpandedCandidateTabKey(
-    tab: CandidateAction,
-    index: Int,
-    onTabSelected: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val variant = if (tab.isCheckable && tab.isChecked) {
-        KeyDef.Appearance.Variant.Accent
-    } else {
-        KeyDef.Appearance.Variant.Alternative
-    }
-    ComposeKey(
-        def = KeyDef(
-            KeyDef.Appearance.Text(
-                displayText = tab.text,
-                textSize = 16f,
-                variant = variant,
-                percentWidth = 1f,
-            ),
-            setOf(KeyDef.Behavior.Press(KeyAction.LayoutSwitchAction(act = "EXP_TAB_$index"))),
-        ),
-        keyId = ExpandedCandidateTabKeyIdBase + index,
-        keyActionListener = KeyActionListener { _, _ -> onTabSelected(index) },
-        modifier = modifier,
-    )
-}
-
-private const val ExpandedCandidateTabKeyIdBase = 0x8000
 
 /** 展开候选文本的字号上限（与横向候选栏一致）。 */
 private val CandidateFontSize = 20.sp
@@ -307,7 +207,9 @@ private fun ExpandedCandidateCell(
             .onGloballyPositioned { pressAnchor.coordinates = it }
             .pointerInput(Unit) {
                 awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false).also { pressAnchor.pressOffset = it.position }
+                    awaitFirstDown(requireUnconsumed = false).also {
+                        pressAnchor.pressOffset = it.position
+                    }
                 }
             }
             .combinedClickable(
@@ -317,7 +219,14 @@ private fun ExpandedCandidateCell(
                 onLongClick = {
                     val origin = pressAnchor.coordinates?.positionInWindow() ?: Offset.Zero
                     val point = origin + pressAnchor.pressOffset
-                    onLongClick(Rect(point.x.toInt(), point.y.toInt(), point.x.toInt(), point.y.toInt()))
+                    onLongClick(
+                        Rect(
+                            point.x.toInt(),
+                            point.y.toInt(),
+                            point.x.toInt(),
+                            point.y.toInt()
+                        )
+                    )
                 },
             )
             .padding(horizontal = 8.dp, vertical = 4.dp),

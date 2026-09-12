@@ -23,20 +23,16 @@ import androidx.transition.Transition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
-import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
-import org.fcitx.fcitx5.android.input.candidates.expanded.ExpandedCandidateKeyboard
+import org.fcitx.fcitx5.android.input.candidates.SplitCandidatesKeyboard
 import org.fcitx.fcitx5.android.input.candidates.expanded.computePageTargetIndex
-import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyActionListener
-import org.fcitx.fcitx5.android.input.keyboard.KeyDef
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
-import org.fcitx.fcitx5.android.input.keyboard.ReturnKey
 import org.fcitx.fcitx5.android.input.popup.PopupAction
 import org.fcitx.fcitx5.android.input.popup.PopupActionListener
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
@@ -137,10 +133,10 @@ class PickerWindow(
     private val keyActionListener = KeyActionListener { action, source ->
         // 右栏上/下翻：位移一整屏行数（复用展开候选页的纯函数与路由约定 "U"/"D"）
         val pageAct = (action as? KeyAction.LayoutSwitchAction)?.act
-        if (pageAct == ExpandedCandidateKeyboard.PageUp ||
-            pageAct == ExpandedCandidateKeyboard.PageDown
+        if (pageAct == SplitCandidatesKeyboard.PageUp ||
+            pageAct == SplitCandidatesKeyboard.PageDown
         ) {
-            scrollPage(forward = pageAct == ExpandedCandidateKeyboard.PageDown)
+            scrollPage(forward = pageAct == SplitCandidatesKeyboard.PageDown)
             return@KeyActionListener
         }
         when (action) {
@@ -229,7 +225,7 @@ class PickerWindow(
             bordered = followKeyBorder && keyBorder,
             gridState = gridState,
             gridScrollEnabled = gridScrollEnabled,
-            returnKeyDef = remember(returnDrawable) { withReturnDrawable(ReturnKey()) },
+            returnDrawable = returnDrawable,
             keyActionListener = keyActionListener,
             popupActionListener = popupActionListener,
             policy = policy,
@@ -303,38 +299,5 @@ class PickerWindow(
         } else {
             service.lifecycleScope.launch { gridState.scrollToItem(target) }
         }
-    }
-
-    // -----------------------------------------------------------------------
-    // 回车键图标
-    // -----------------------------------------------------------------------
-
-    /**
-     * 把 [ReturnKey] 的图标换成当前编辑框类型对应的 drawable（与 `KeyboardWindow` /
-     * `ComposeExpandedCandidateKeyboard` 同口径）；`returnDrawable` 尚未就绪（0）时原样返回，
-     * 避免 `painterResource(0)` 崩溃。
-     */
-    private fun withReturnDrawable(def: KeyDef): KeyDef {
-        val appearance = def.appearance
-        if (returnDrawable == 0 ||
-            appearance.viewId != R.id.button_return ||
-            appearance !is KeyDef.Appearance.Image ||
-            appearance.src == returnDrawable
-        ) {
-            return def
-        }
-        return KeyDef(
-            KeyDef.Appearance.Image(
-                src = returnDrawable,
-                percentWidth = appearance.percentWidth,
-                variant = appearance.variant,
-                border = appearance.border,
-                margin = appearance.margin,
-                viewId = appearance.viewId,
-                soundEffect = appearance.soundEffect,
-            ),
-            def.behaviors,
-            def.popup,
-        )
     }
 }

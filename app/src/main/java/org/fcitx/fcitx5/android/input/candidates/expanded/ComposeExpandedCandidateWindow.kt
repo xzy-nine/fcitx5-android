@@ -33,6 +33,7 @@ import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.TransitionEve
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.TransitionEvent.ExpandedCandidatesDetached
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
+import org.fcitx.fcitx5.android.input.candidates.SplitCandidatesKeyboard
 import org.fcitx.fcitx5.android.input.candidates.horizontal.CandidateBarState
 import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
 import org.fcitx.fcitx5.android.input.dependency.fcitx
@@ -43,7 +44,6 @@ import org.fcitx.fcitx5.android.input.keyboard.KeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyActionListener
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
 import org.fcitx.fcitx5.android.input.keyboard.preferenceState
-import org.fcitx.fcitx5.android.input.popup.PopupActionListener
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
 import org.fcitx.fcitx5.android.input.wm.ComposeWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindow
@@ -154,12 +154,12 @@ class ComposeExpandedCandidateWindow :
      */
     private val keyActionListener = KeyActionListener { action, source ->
         val handled = action is KeyAction.LayoutSwitchAction && when (action.act) {
-            ExpandedCandidateKeyboard.PageUp -> {
+            SplitCandidatesKeyboard.PageUp -> {
                 prevPage()
                 true
             }
 
-            ExpandedCandidateKeyboard.PageDown -> {
+            SplitCandidatesKeyboard.PageDown -> {
                 nextPage()
                 true
             }
