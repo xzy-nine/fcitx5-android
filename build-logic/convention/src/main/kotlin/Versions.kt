@@ -12,8 +12,9 @@ object Versions {
     // NOTE: miuix 0.9.4-rc01 (+ androidx compose 1.12.0-rc01) requires compileSdk >= 37 and minSdk >= 24
     // custom: bump minSdk to 26 for jieba-analysis WordDictionary.loadUserDict(Path) which
     // relies on java.nio.file.Files.newBufferedReader (API 26+)
+    // custom: bump minSdk to 33 to support miuix-blur (RenderEffect/API 33) for the frosted top bar
     const val compileSdk = 37
-    const val minSdk = 26
+    const val minSdk = 33
     const val targetSdk = 36
 
     const val defaultCMake = "3.31.6"

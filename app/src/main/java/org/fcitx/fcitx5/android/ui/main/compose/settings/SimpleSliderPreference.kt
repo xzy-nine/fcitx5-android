@@ -26,6 +26,7 @@ fun SimpleSliderPreference(
     step: Int = 1,
     suffix: String = "",
     enabled: Boolean = true,
+    startAction: (@Composable () -> Unit)? = null,
 ) {
     val range = min.toFloat()..max.toFloat()
     val realStep = if (step > 0) step else 1
@@ -46,6 +47,7 @@ fun SimpleSliderPreference(
             if (snapped != value) onValueChange(snapped)
         },
         enabled = enabled,
+        startAction = startAction,
         valueRange = range.start..range.endInclusive,
         steps = ((max - min) / realStep - 1).coerceAtLeast(0),
     )
@@ -66,6 +68,7 @@ fun SimpleSliderPreference(
     decimals: Int = 1,
     suffix: String = "",
     enabled: Boolean = true,
+    startAction: (@Composable () -> Unit)? = null,
 ) {
     val realStep = if (step > 0f) step else 1f
 
@@ -88,6 +91,7 @@ fun SimpleSliderPreference(
             if (snapped != value) onValueChange(snapped)
         },
         enabled = enabled,
+        startAction = startAction,
         valueRange = min..max,
         steps = (((max - min) / realStep).toInt() - 1).coerceAtLeast(0),
     )
