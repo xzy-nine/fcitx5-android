@@ -279,6 +279,9 @@ fun ComposeKeyboardRows(
  *
  * View 侧 `KeyView.onSizeChanged` 只给特殊形状键算内缩，而 `layoutMarginLeft/Right`
  * 是加在 `appearanceView` 上的，所以特殊形状键**同样**吃 `expandKeypressArea`。
+ *
+ * 注意 [KeyInsets.layoutStart] / [KeyInsets.layoutEnd] 只记录 `expandKeypressArea` 那一份，
+ * 供 [ComposeKey] 把键面内容也放进 `appearanceView`（见 `KeyView.onLayout`）。
  */
 private fun keyInsets(
     visuals: KeyboardVisuals,
@@ -293,8 +296,8 @@ private fun keyInsets(
         visuals.defaultInsets(def.appearance.margin)
     }
     return base
-        .plusStart(keyWidth * marginStart)
-        .plusEnd(keyWidth * marginEnd)
+        .plusLayoutStart(keyWidth * marginStart)
+        .plusLayoutEnd(keyWidth * marginEnd)
 }
 
 /** `Row` 的 `weight` 需要正数；0 或负（分体缝隙被钳零后）时用极小值占位。 */
