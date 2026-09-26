@@ -24,7 +24,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.constraintlayout.widget.ConstraintLayout
@@ -171,7 +173,35 @@ class InputView(
                     }
                     Column {
                         // 预编辑栏在上（贴合内容高度），键盘体顶部延伸带居中，工具栏在下
-                        composePreedit.PreeditContent()
+                        // 首次按键时 InputPanelEvent（预编辑）与 CandidateListEvent（候选）是两个
+                        // 独立事件，可能跨帧到达。若预编辑栏先出现而候选栏尚未到达，工具栏仍处
+                        // Idle 态（数字行/工具按钮），下一帧才切到候选态 → 单帧闪烁。
+                        // 用 candidateReceived 门控：预编辑变非空时置 false，候选事件到达时置 true，
+                        // 仅当候选事件已到达才让预编辑栏可见，两者同帧出现，消除闪烁。
+                        // AnimatedVisibility 做展开/收起过渡动画，onSizeChanged 上报动画中间高度，
+                        // 背景裁剪随之平滑跟进。
+                        val preeditVisible = composePreedit.preeditVisible.collectAsState().value
+                        val candidateReceived = composeKawaiiBar.candidateReceived.collectAsState().value
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = preeditVisible && candidateReceived,
+                            enter = androidx.compose.animation.expandVertically(
+                                expandFrom = Alignment.Top,
+                                animationSpec = androidx.compose.animation.core.tween(200),
+                            ) + androidx.compose.animation.fadeIn(
+                                animationSpec = androidx.compose.animation.core.tween(200),
+                            ),
+                            exit = androidx.compose.animation.shrinkVertically(
+                                shrinkTowards = Alignment.Top,
+                                animationSpec = androidx.compose.animation.core.tween(150),
+                            ) + androidx.compose.animation.fadeOut(
+                                animationSpec = androidx.compose.animation.core.tween(150),
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onSizeChanged { composePreedit.setHeightPx(it.height) },
+                        ) {
+                            composePreedit.PreeditContent(gate = true)
+                        }
                         Box(Modifier.fillMaxWidth().height(ImeTopExtension))
                         // 工具栏高度由 Composable 内部的 HEIGHT 决定，偏好变化后用 key 触发重组
                         key(composeKawaiiBar.toolbarHeightVersion.collectAsState().value) {
@@ -542,6 +572,10 @@ class InputView(
                 FcitxEvent.StatusAreaEvent.Data(statusAreaActions, inputMethodEntry)
             )
         ).forEach { handleFcitxEvent(it) }
+        // 恢复缓存事件时只发了 InputPanelEvent（无 CandidateListEvent），
+        // onPreeditEmptyStateUpdate 会把 candidateReceived 置 false → 预编辑栏被门控隐藏。
+        // 恢复阶段没有待到达的候选事件，复位为 true 让缓存的预编辑栏正常显示。
+        composeKawaiiBar.markCandidateReceived()
     }
 
     override fun handleFcitxEvent(it: FcitxEvent<*>) {

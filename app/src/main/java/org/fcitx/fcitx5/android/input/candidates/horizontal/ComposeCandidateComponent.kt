@@ -243,7 +243,14 @@ class ComposeCandidateComponent :
             _candidateResetToken.value++
         }
 
-        _state.value = CandidateBarState.from(candidates, total)
+        // 候选变空时不清 _state：保留旧内容供工具栏淡出动画使用，
+        // 否则「内容先清 → alpha 动画空盒 → 硬切」。
+        // 可见性由 barStateMachine 的 barState（→Idle）驱动 candidateVisible=false → alpha→0，
+        // 旧内容不可见但仍在组合树中（AndroidView 不 detach）。
+        // 下次非空候选到达时正常更新。
+        if (candidates.isNotEmpty()) {
+            _state.value = CandidateBarState.from(candidates, total)
+        }
 
         loadingMore = false
         noMoreData = false

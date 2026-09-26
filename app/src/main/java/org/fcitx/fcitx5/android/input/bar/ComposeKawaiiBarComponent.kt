@@ -140,6 +140,13 @@ class ComposeKawaiiBarComponent :
 
     // Compose 驱动状态
     private val _barState = kotlinx.coroutines.flow.MutableStateFlow(KawaiiBarStateMachine.State.Idle)
+    private val _candidateReceived = kotlinx.coroutines.flow.MutableStateFlow(true)
+    val candidateReceived: kotlinx.coroutines.flow.StateFlow<Boolean>
+        get() = _candidateReceived
+
+    fun markCandidateReceived() {
+        _candidateReceived.value = true
+    }
     private val _idleSubState = kotlinx.coroutines.flow.MutableStateFlow(IdleSubState.Empty)
     private val _titleData = kotlinx.coroutines.flow.MutableStateFlow<TitleData?>(null)
     private val _titleExtensionView = kotlinx.coroutines.flow.MutableStateFlow<View?>(null)
@@ -408,10 +415,13 @@ class ComposeKawaiiBarComponent :
     }
 
     override fun onPreeditEmptyStateUpdate(empty: Boolean) {
+        // 预编辑变非空 → 候选事件待到达；预编辑变空 → 无待到达的候选事件
+        _candidateReceived.value = empty
         barStateMachine.push(PreeditUpdated, PreeditEmpty to empty)
     }
 
     override fun onCandidateUpdate(data: CandidateListEvent.Data) {
+        _candidateReceived.value = true
         barStateMachine.push(CandidatesUpdated, CandidateEmpty to data.candidates.isEmpty())
     }
 

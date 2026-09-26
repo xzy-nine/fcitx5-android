@@ -101,28 +101,57 @@ fun ComposeToolbar(
                 candidateContent = candidateContent,
                 visible = candidateVisible,
             )
-            when (barState) {
-                KawaiiBarStateMachine.State.Idle -> {
-                    IdleContent(
-                        subState = idleSubState,
-                        callbacks = callbacks,
-                        visuals = visuals,
-                        splitKeyboardEnabled = splitKeyboardEnabled,
-                        menuRotation = menuRotation,
-                        numberRowContent = numberRowContent,
-                        inlineSuggestionContent = inlineSuggestionContent,
-                        clipboardContent = clipboardContent,
+            // Idle 态用滑入/滑出 + 淡入/淡出（与 IdleContent 内部子态展开收起动画同款），
+            // 候选栏消失时工具栏从左滑入，候选栏出现时工具栏向左滑出。
+            androidx.compose.animation.AnimatedVisibility(
+                visible = barState == KawaiiBarStateMachine.State.Idle,
+                enter = slideInHorizontally(animationSpec = androidx.compose.animation.core.tween(200)) { -it } +
+                    fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
+                exit = slideOutHorizontally(animationSpec = androidx.compose.animation.core.tween(150)) { -it } +
+                    fadeOut(animationSpec = androidx.compose.animation.core.tween(150)),
+            ) {
+                IdleContent(
+                    subState = idleSubState,
+                    callbacks = callbacks,
+                    visuals = visuals,
+                    splitKeyboardEnabled = splitKeyboardEnabled,
+                    menuRotation = menuRotation,
+                    numberRowContent = numberRowContent,
+                    inlineSuggestionContent = inlineSuggestionContent,
+                    clipboardContent = clipboardContent,
+                )
+            }
+            // 收起键盘按钮不跟随滑入/滑出，仅淡入/淡出，始终固定在右侧
+            androidx.compose.animation.AnimatedVisibility(
+                visible = barState == KawaiiBarStateMachine.State.Idle,
+                enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
+                exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(150)),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(LocalToolbarHeight.current),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    HideKeyboardButton(
+                        onClick = callbacks.onHideKeyboard,
+                        onSwipeLeft = callbacks.onNumberRowShow,
+                        iconColor = visuals.iconColor,
                     )
                 }
-                KawaiiBarStateMachine.State.Title -> {
-                    TitleContent(
-                        titleData = titleData,
-                        callbacks = callbacks,
-                        visuals = visuals,
-                        extensionContent = titleExtensionContent,
-                    )
-                }
-                else -> {}
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = barState == KawaiiBarStateMachine.State.Title,
+                enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
+                exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(150)),
+            ) {
+                TitleContent(
+                    titleData = titleData,
+                    callbacks = callbacks,
+                    visuals = visuals,
+                    extensionContent = titleExtensionContent,
+                )
             }
         }
     }
@@ -198,11 +227,9 @@ private fun IdleContent(
             }
         }
 
-        // 右侧：收起键盘按钮
-        HideKeyboardButton(
-            onClick = callbacks.onHideKeyboard,
-            onSwipeLeft = callbacks.onNumberRowShow,
-            iconColor = visuals.iconColor,
+        // 右侧占位：收起键盘按钮已移至 ComposeToolbar 层（不跟随滑入/滑出）
+        androidx.compose.foundation.layout.Spacer(
+            modifier = Modifier.size(LocalToolbarHeight.current),
         )
     }
 }
@@ -212,14 +239,18 @@ private fun CandidateContent(
     candidateContent: @Composable () -> Unit,
     visible: Boolean,
 ) {
+    // 淡入/淡出过渡，消除候选栏出现/消失时的硬切
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(200),
+        label = "candidateAlpha",
+    )
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(LocalToolbarHeight.current)
             .padding(end = 40.dp)
-            .graphicsLayer {
-                alpha = if (visible) 1f else 0f
-            },
+            .graphicsLayer { this.alpha = alpha },
         contentAlignment = Alignment.CenterStart,
     ) {
         candidateContent()
