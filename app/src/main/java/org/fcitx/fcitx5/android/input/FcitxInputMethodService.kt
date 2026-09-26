@@ -701,11 +701,17 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         if (inputDeviceMgr.isVirtualKeyboard) {
             inputView.value?.keyboardView?.getLocationInWindow(inputViewLocation)
             outInsets.apply {
-                // 预编辑栏已并入键盘体顶部，keyboardView 顶部 = 预编辑栏顶部；补偿「预编辑栏实际高度」
-                // （ComposePreeditComponent.heightPx）后即工具栏顶部 —— keyboardView 顶部本身已含
-                // 预编辑高度，补偿后正好抵消，故预编辑高度可变（贴合内容）也不影响 insets。
+                // keyboardView 顶部 = 键盘体圆角顶（顶部延伸带顶），其下依次是预编辑栏与工具栏；
+                // 这里把这两段「键盘体向上多长出来的、但不算入 IME 可见区」的高度加回去，
+                // 于是 contentTopInsets 恒等于**工具栏顶**：
+                //  - 预编辑栏高度可变（贴合内容）→ 顶部已含，补偿后抵消，insets 不随打字变化；
+                //  - 顶部延伸带（`IME_TOP_EXTENSION_DP` = 5dp，见 InputView.topExtensionPx）
+                //    恒定存在 → 补偿掉，使 app 内容区与改动前逐像素一致，圆角带只覆盖在
+                //    app 可视区之上遮住空隙。（不补偿的话 app 会跟着往上缩一截，
+                //    就变成「算入」而非「遮盖」。）
                 val topPx = inputViewLocation[1] +
-                    (inputView.value?.composePreedit?.heightPx?.value ?: 0)
+                    (inputView.value?.composePreedit?.heightPx?.value ?: 0) +
+                    (inputView.value?.topExtensionPx ?: 0)
                 contentTopInsets = topPx
                 visibleTopInsets = topPx
                 touchableInsets = Insets.TOUCHABLE_INSETS_VISIBLE

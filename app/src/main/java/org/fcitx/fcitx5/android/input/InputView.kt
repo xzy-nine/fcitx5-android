@@ -17,10 +17,14 @@ import android.view.inputmethod.InlineSuggestionsResponse
 import android.widget.ImageView
 import androidx.annotation.Keep
 import androidx.annotation.RequiresApi
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.constraintlayout.widget.ConstraintLayout
@@ -137,9 +141,15 @@ class InputView(
     private val emoticonPicker = emoticonPicker()
 
     /**
-     * 工具栏 Compose 容器：预编辑栏与工具栏合并后的单一 Composition。
+     * 工具栏 Compose 容器：预编辑栏、顶部延伸带与工具栏合并后的单一 Composition。
      * 预编辑栏高度**贴合内容**（空态 0），`onComputeInsets` 补偿 `composePreedit.heightPx`
      * 实际高度 —— keyboardView 顶部已含预编辑高度，补偿后正好抵消，故 insets 恒定不随打字变化。
+     *
+     * 结构自上而下：预编辑栏 → [顶部延伸带][topExtensionPx] → 工具栏。
+     * 延伸带是**键盘体圆角的向上延伸**（本身不画背景，由下方 customBackground 透出键盘底色/
+     * 背景图，圆角裁剪落在它的顶部），把键盘体上缘抬到 app 可视区之上，盖住部分其他 app
+     * UI 组件与键盘之间的空隙；带子**不计入 IME 可见区**（[topExtensionPx] 在
+     * `onComputeInsets` 里被补偿掉），因此 app 内容不伸缩。
      */
     private val composeTopView: ComposeView by lazy {
         ComposeView(themedContext).apply {
@@ -148,19 +158,20 @@ class InputView(
             )
             setContent {
                 MiuixTheme(controller = remember { ThemeController(ColorSchemeMode.System) }) {
-                    // 预编辑栏高度变化时同步键盘背景裁剪：跳过预编辑行、圆角落在工具栏顶部
+                    // 预编辑栏高度变化时同步键盘背景裁剪：跳过预编辑行、圆角落在顶部延伸带顶
                     // 用 LaunchedEffect 而非 SideEffect：后者在每次成功重组后都会执行，
                     // 而裁剪参数只在高度变化时才需要重新下发（避免反复重建 OutlineProvider）
                     val preeditHeightPx = composePreedit.heightPx.collectAsState().value
                     androidx.compose.runtime.LaunchedEffect(preeditHeightPx) {
                         customBackground.applyTopRoundedCornerClip(
-                            dp(16).toFloat(),
+                            dp(IME_TOP_CORNER_RADIUS_DP).toFloat(),
                             preeditHeightPx.toFloat()
                         )
                     }
                     Column {
-                        // 预编辑栏在上（贴合内容高度），工具栏在下
+                        // 预编辑栏在上（贴合内容高度），键盘体顶部延伸带居中，工具栏在下
                         composePreedit.PreeditContent()
+                        Box(Modifier.fillMaxWidth().height(ImeTopExtension))
                         // 工具栏高度由 Composable 内部的 HEIGHT 决定，偏好变化后用 key 触发重组
                         key(composeKawaiiBar.toolbarHeightVersion.collectAsState().value) {
                             composeKawaiiBar.ToolbarContent()
@@ -170,6 +181,13 @@ class InputView(
             }
         }
     }
+
+    /**
+     * 该高度被 `FcitxInputMethodService.onComputeInsets` 加回 `contentTopInsets` 的计算里，
+     * 把「键盘体向上多长出来的这一截」**抵消掉** —— 于是延伸带不计入 IME 可见区，
+     * app 的内容区与改动前逐像素一致，带子只是盖在 app 可视区之上遮住空隙。
+     */
+    val topExtensionPx: Int get() = dp(IME_TOP_EXTENSION_DP)
 
     private fun setupScope() {
         scope += this@InputView.wrapToUniqueComponent()
@@ -251,15 +269,6 @@ class InputView(
             }.getValue()
             Timber.d("keyboardHeightPx get(): baseType=${baseType}, base=${base}, percent=${percent}")
             return base * percent / 100
-        }
-
-    private val toolbarHeightPx: Int
-        get() {
-            val value = when (resources.configuration.orientation) {
-                Configuration.ORIENTATION_LANDSCAPE -> toolbarHeightLandscape
-                else -> toolbarHeight
-            }.getValue()
-            return dp(value)
         }
 
     private val keyboardSidePaddingPx: Int
@@ -353,9 +362,10 @@ class InputView(
             })
         }
 
-        // 顶部圆角由 customBackground（跳过预编辑栏固定高度）与 ComposeToolbar 自身的
-        // clip(RoundedCornerShape(16.dp)) 共同实现，keyboardView 不再整体裁剪，
-        // 以免把键盘体顶部的预编辑行裁掉。
+        // 顶部圆角由 customBackground 实现：裁剪时跳过预编辑高度，圆角便落在「顶部延伸带」顶部
+        // （composeTopView Column 里的恒高 Box），因此键盘体上缘比工具栏顶高出一截
+        // （见 composeTopView / topExtensionPx）。keyboardView 不整体裁剪，以免把键盘体顶部的
+        // 预编辑行裁掉；延伸带本身不画背景，透出 keyboardView 的底色/背景图。
         // Custom: 键盘调校浮层已迁为 Compose IME 覆盖层（KeyboardTuneCompose），
         // 由根组合（createComposeInputView）在 AndroidView(InputView) 之上渲染，
         // 不再作为 keyboardView 的子 View 挂载，坐标系改用窗口绝对坐标。
@@ -446,7 +456,9 @@ class InputView(
         val bottomLoc = IntArray(2).also { bottomPaddingSpace.getLocationInWindow(it) }
         return TuneMetrics(
             isLandscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
-            toolbarHeightPx = toolbarHeightPx,
+            // 键盘区顶（窗口绝对 y）：其上方是「顶部延伸带 + 预编辑栏 + 工具栏」，
+            // 调音浮层对这些区域的触摸一律放行，工具栏按钮保持可点（见 KeyboardTuneOverlay）
+            topGuardPx = kbLoc[1],
             // 实测键盘容器的真实矩形（IME 窗口绝对坐标，与浮层坐标系一致）
             keyboardRect = Rect(
                 kbLoc[0],

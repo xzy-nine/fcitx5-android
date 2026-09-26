@@ -83,14 +83,16 @@ FcitxInputMethodService
 
 工具栏、候选栏与预编辑栏收敛到单一 `composeTopView` Composition；预编辑栏高度**贴合内容**
 （空态 0 / 单行 / 双行，`ComposePreeditComponent.heightPx` 经 `onSizeChanged` 上报实际高度）。
+Column 结构为「预编辑栏 → 顶部延伸带（恒高，键盘体圆角上移到此）→ 工具栏」。
 
 > **成因（曾两次调整）**：预编辑栏曾并入 `composeTopView`（可变高度），撑高 `keyboardView`
 > 使 `contentTopInsets` 随打字变化、应用页面反复伸缩（回归，故 994ea988 移回独立悬浮）；
 > 本轮重新并入时关键在 `onComputeInsets` 补偿**预编辑栏实际高度**：keyboardView 顶部本身已含
 > 预编辑高度，补偿后正好抵消 —— 预编辑栏高度可贴合内容变化而 **insets 恒定**，无需固定占位
 > （固定占位会在预编辑文本与工具栏之间留空隙）。圆角由
-> `customBackground.applyTopRoundedCornerClip(16dp, 预编辑实际高度)`（跳过预编辑行）实现，
-> 高度经 `SideEffect` 跟随，keyboardView 不再整体裁剪（否则会裁掉顶部预编辑行）。
+> `customBackground.applyTopRoundedCornerClip(IME_TOP_CORNER_RADIUS_DP, 预编辑实际高度)`（跳过预编辑行，
+> 于是圆角落在此其上的**顶部延伸带**顶）实现，高度经 `LaunchedEffect` 跟随，keyboardView 不再整体
+> 裁剪（否则会裁掉顶部预编辑行）。延伸带同样靠 `onComputeInsets` 补偿掉，故 insets 仍恒为工具栏顶。
 
 ```text
 FcitxInputMethodService
@@ -98,11 +100,13 @@ FcitxInputMethodService
 │   └── Box(fillMaxSize)
 │       ├── key(themeState, recreateNonce) → AndroidView(InputView)
 │       │   └── InputView
-│       │       ├── customBackground (ImageView，顶部圆角裁剪、经 SideEffect 跟随预编辑栏实际高度)
+│       │       ├── customBackground (ImageView，顶部圆角裁剪、经 LaunchedEffect 跟随预编辑栏实际高度)
 │       │       ├── composeTopView (单一 ComposeView - MiuixTheme)
 │       │       │   └── Column {
 │       │       │       ├── composePreedit.PreeditContent()  ← 贴合内容高度（空态 0），onSizeChanged 上报 heightPx
 │       │       │       │   └── ComposePreedit (上行: auxUp + preedit + 光标竖线 / 下行: auxDown)
+│       │       │       ├── 顶部延伸带 (恒高 Box = 圆角半径，不画背景 → 透出 customBackground)
+│       │       │       │   └── 键盘体圆角上移到它顶部，盖住 app 可视区空隙；不计入 insets
 │       │       │       └── composeKawaiiBar.ToolbarContent() (Idle/Candidate/Title 态)
 │       │       │           ├── Idle 态: MenuButton + [Empty|Toolbar|Clipboard|NumberRow|InlineSuggestion] + HideKeyboardButton
 │       │       │           │   ├── Toolbar: ToolbarButtonsRow (undo/redo/cursor/clipboard/split/more/tune)
@@ -145,13 +149,24 @@ FcitxInputMethodService
 触发重组。左右边距由 `updateKeyboardSize()` 对 `composeTopView`（含预编辑栏与工具栏）
 `setPadding(sidePadding, 0, sidePadding, 0)`。
 
-**圆角**：
-- **IME 体上缘**：`customBackground.applyTopRoundedCornerClip(dp(16), preeditHeightPx)`
-  （`ViewOutlineExt`；`preeditHeightPx` 取 `ComposePreeditComponent.heightPx`，经 `SideEffect`
-  跟随预编辑栏实际高度，圆角落在工具栏顶部、预编辑行保持透明露出应用内容）。
+**圆角与顶部延伸带**（custom 特性，常量单一真源 `input/ImeTopCorner.kt` 的 `IME_TOP_CORNER_RADIUS_DP = 16`）：
+- **IME 体上缘**：`customBackground.applyTopRoundedCornerClip(dp(IME_TOP_CORNER_RADIUS_DP), preeditHeightPx)`
+  （`ViewOutlineExt`；`preeditHeightPx` 取 `ComposePreeditComponent.heightPx`，经 `LaunchedEffect`
+  跟随预编辑栏实际高度）。
+- **顶部延伸带**：`composeTopView` 的 `Column` 里、预编辑栏与工具栏之间插一格**恒高 Box**
+  （= 圆角半径，不画背景，透出 `customBackground` 的键盘底色/背景图）。它让键盘体上缘比工具栏顶
+  高出一截，而 `topInsetPx` 仍是预编辑高度 → **圆角自动落在延伸带顶部**，于是这条带子盖在 app
+  可视区之上，遮住部分其他 app UI 组件与键盘之间的空隙。
+  - **不计入 insets**：`onComputeInsets` 把 `InputView.topExtensionPx` 与预编辑高度一起加回
+    `contentTopInsets`，故它恒等于**工具栏顶**（与改动前逐像素一致），app 内容不伸缩。
+  - 带子本身不参与触摸：`touchableInsets = TOUCHABLE_INSETS_VISIBLE`，带子区域触摸仍归 app
+    （「遮盖而不抢占」的预期取舍）。
+  - 键盘调校浮层的拦截下界随之改为 `TuneMetrics.topGuardPx`（键盘区顶），把延伸带/预编辑/工具栏
+    一并放行给工具栏按钮。
 - **工具栏自身**：`ComposeToolbar` 的 `clip(RoundedCornerShape(16.dp))`。起分隔作用的是**下两角**
   （工具栏与键盘区的分界）—— 工具栏下缘不在屏幕边缘，必须自己裁；**IME 的下缘由屏幕自身的圆角代劳**，
-  所以 `keyboardView` 不裁下缘。上两角与父级 outline 重合，一并写上是为了不依赖父级裁剪。
+  所以 `keyboardView` 不裁下缘。上两角与键盘体 outline 不再重合（圆角已上移到延伸带顶），保留是为了
+  让工具栏读作独立的一条。
 
 旧文件（断开接线，保留供对比）：
 

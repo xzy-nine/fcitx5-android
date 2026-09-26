@@ -77,7 +77,13 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  */
 data class TuneMetrics(
     val isLandscape: Boolean,
-    val toolbarHeightPx: Int,
+    /**
+     * 键盘区顶的窗口绝对 y。
+     *
+     * 它上方依次是「键盘体顶部延伸带（圆角延伸，不计入 IME 可见区）+ 预编辑栏 + 工具栏」——
+     * 这些区域不属于可调校的键盘体，触摸应放行（工具栏按钮要保持可点），故用它作为拦截下界。
+     */
+    val topGuardPx: Int,
     /** real bounds of the keyboard container, in window-absolute coordinates */
     val keyboardRect: Rect,
     /** real bounds of the bottom padding space, in window-absolute coordinates */
@@ -399,8 +405,9 @@ class KeyboardTuneCompose(
                                 when {
                                     change.changedToDown() -> {
                                         val cur = metricsRef.value
-                                        // let the toolbar (above the keyboard) stay interactive
-                                        if (pos.y < cur.toolbarHeightPx) continue
+                                        // 键盘区之上（顶部延伸带 / 预编辑栏 / 工具栏）不拦截触摸，
+                                        // 让工具栏与状态按钮保持可点
+                                        if (pos.y < cur.topGuardPx) continue
                                         val lay = computeLayout(cur, barW, barH, density, overlayW)
                                         val mode = hitTest(pos.x.toInt(), pos.y.toInt(), lay, slop, grab)
                                         if (mode == DragMode.NONE) continue
