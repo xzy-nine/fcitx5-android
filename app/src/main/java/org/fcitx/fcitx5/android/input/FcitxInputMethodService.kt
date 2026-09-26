@@ -134,7 +134,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         if (isVirtualKeyboard) {
             hideStatusIcon()
         } else {
-            showStatusIcon(StatusIconMapping.fromEntry(fcitx.runImmediately { inputMethodEntryCached }))
+            showStatusIcon(StatusIconMapping.fromEntry(fcitx.peek { inputMethodEntryCached }))
         }
         window.window?.let {
             navbarMgr.evaluate(it, isVirtualKeyboard)
@@ -292,7 +292,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             jobs.consumeEach { it.join() }
         }
         lifecycleScope.launch {
-            fcitx.runImmediately { eventFlow }.collect {
+            fcitx.peek { eventFlow }.collect {
                 handleFcitxEvent(it)
             }
         }
@@ -894,7 +894,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 // support monitoring CursorAnchorInfo
                 candidatesView?.updateCursorAnchor(contentSize)
             }
-            showStatusIcon(StatusIconMapping.fromEntry(fcitx.runImmediately { inputMethodEntryCached }))
+            showStatusIcon(StatusIconMapping.fromEntry(fcitx.peek { inputMethodEntryCached }))
         }
     }
 

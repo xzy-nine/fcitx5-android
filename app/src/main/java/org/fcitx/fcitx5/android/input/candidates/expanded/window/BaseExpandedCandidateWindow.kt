@@ -162,7 +162,7 @@ abstract class BaseExpandedCandidateWindow<T : BaseExpandedCandidateWindow<T>> :
             it.onReturnDrawableUpdate(returnKeyDrawable.resourceId)
             it.keyActionListener = keyActionListener
         }
-        updateTabs(fcitx.runImmediately { inputPanelCached.tabs })
+        updateTabs(fcitx.peek { inputPanelCached.tabs })
         offsetJob = service.lifecycleScope.launch {
             composeCandidate.expandedCandidateOffset.collect {
                 // in swipe mode the offset may be 0 even when candidates exist,

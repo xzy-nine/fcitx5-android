@@ -58,8 +58,22 @@ object FcitxDaemon {
             }
         }
 
+        override fun <T> peek(block: FcitxAPI.() -> T): T = ensureConnected {
+            block(fcitxImpl)
+        }
+
         override suspend fun <T> runOnReady(block: suspend FcitxAPI.() -> T): T = ensureConnected {
-            realFcitx.lifecycle.whenReady { block(fcitxImpl) }
+            // 快路径：引擎已处于 READY 时直接执行，跳过 `whenReady` 的
+            // `stateFlow.first { it == READY }` 订阅/取消开销。
+            // 语义与 `whenReady` 等价——`whenReady` 在已 READY 时也是「立即执行」，
+            // 只是多走一轮必定立刻完成的流收集；而按键是 IME 最热的路径，
+            // 稳态下每一次击键都要付这份开销。
+            // 未 READY 时行为完全不变（挂起等待，直到引擎就绪后再执行）。
+            if (realFcitx.isReady) {
+                block(fcitxImpl)
+            } else {
+                realFcitx.lifecycle.whenReady { block(fcitxImpl) }
+            }
         }
 
         override fun runIfReady(block: suspend FcitxAPI.() -> Unit) {

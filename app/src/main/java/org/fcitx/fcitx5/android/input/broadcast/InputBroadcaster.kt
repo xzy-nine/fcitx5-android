@@ -16,11 +16,14 @@ import org.mechdancer.dependency.Dependent
 import org.mechdancer.dependency.DynamicScope
 import org.mechdancer.dependency.ScopeEvent
 import org.mechdancer.dependency.UniqueComponent
-import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CopyOnWriteArrayList
 
 class InputBroadcaster : UniqueComponent<InputBroadcaster>(), Dependent, InputBroadcastReceiver {
 
-    private val receivers = ConcurrentLinkedQueue<InputBroadcastReceiver>()
+    // CopyOnWriteArrayList：接收者仅在 scope 装配/拆卸时增删（极低频），
+    // 而每次输入事件都要遍历全表（高频）。COW 的 forEach 直接遍历内部快照数组、
+    // 不分配迭代器，且数组连续存放对缓存更友好；ConcurrentLinkedQueue.forEach 每次分配一个迭代器。
+    private val receivers = CopyOnWriteArrayList<InputBroadcastReceiver>()
 
     override fun handle(scopeEvent: ScopeEvent) {
         when (scopeEvent) {

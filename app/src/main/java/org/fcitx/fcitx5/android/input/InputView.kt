@@ -46,6 +46,7 @@ import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
 import org.fcitx.fcitx5.android.input.candidates.ComposeCandidateActionMenu
 import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
+import org.fcitx.fcitx5.android.input.keyboard.KeyboardHeightPercentBase
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardHeightPercentBase.DisplayMetrics
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardHeightPercentBase.RealSize
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardTuneCompose
@@ -249,19 +250,35 @@ class InputView(
         keyboardHeightPercentBase,
     )
 
+    // keyboardHeightPx 的 base 缓存：getRealSize() 走 Binder + Point 分配，
+    // displayMetrics 在配置不变时恒定。以 (baseType, configuration.hashCode()) 为键——
+    // 旋转/导航栏显隐等都会触发 onConfigurationChanged → Configuration 变化 → 缓存失效。
+    private var cachedBaseType: KeyboardHeightPercentBase? = null
+    private var cachedBaseConfig: Int = 0
+    private var cachedBase: Int = 0
+
     private val keyboardHeightPx: Int
         get() {
             val baseType = keyboardHeightPercentBase.getValue()
-            val base = when (baseType) {
-                DisplayMetrics -> resources.displayMetrics.heightPixels
-                RealSize -> Point().also {
-                    @Suppress("DEPRECATION")
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        context.display
-                    } else {
-                        context.windowManager.defaultDisplay
-                    }.getRealSize(it)
-                }.y
+            val configHash = resources.configuration.hashCode()
+            val base = if (baseType == cachedBaseType && configHash == cachedBaseConfig) {
+                cachedBase
+            } else {
+                val b = when (baseType) {
+                    DisplayMetrics -> resources.displayMetrics.heightPixels
+                    RealSize -> Point().also {
+                        @Suppress("DEPRECATION")
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            context.display
+                        } else {
+                            context.windowManager.defaultDisplay
+                        }.getRealSize(it)
+                    }.y
+                }
+                cachedBaseType = baseType
+                cachedBaseConfig = configHash
+                cachedBase = b
+                b
             }
             val percent = when (resources.configuration.orientation) {
                 Configuration.ORIENTATION_LANDSCAPE -> keyboardHeightPercentLandscape
@@ -319,7 +336,7 @@ class InputView(
         // show KeyboardWindow by default
         windowManager.attachWindow(KeyboardWindow)
 
-        broadcaster.onImeUpdate(fcitx.runImmediately { inputMethodEntryCached })
+        broadcaster.onImeUpdate(fcitx.peek { inputMethodEntryCached })
 
         customBackground.imageDrawable = theme.backgroundDrawable(keyBorder)
         // 键盘背景裁剪（跳过预编辑栏、圆角落在工具栏顶部）在 composeTopView 组合内
@@ -515,9 +532,9 @@ class InputView(
     }
 
     override fun onStartHandleFcitxEvent() {
-        val inputPanelData = fcitx.runImmediately { inputPanelCached }
-        val inputMethodEntry = fcitx.runImmediately { inputMethodEntryCached }
-        val statusAreaActions = fcitx.runImmediately { statusAreaActionsCached }
+        val inputPanelData = fcitx.peek { inputPanelCached }
+        val inputMethodEntry = fcitx.peek { inputMethodEntryCached }
+        val statusAreaActions = fcitx.peek { statusAreaActionsCached }
         arrayOf(
             FcitxEvent.InputPanelEvent(inputPanelData),
             FcitxEvent.IMChangeEvent(inputMethodEntry),

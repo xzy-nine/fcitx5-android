@@ -37,6 +37,7 @@ import org.fcitx.fcitx5.android.input.dependency.fcitx
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
 import org.fcitx.fcitx5.android.input.dependency.inputView
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
+import org.fcitx.fcitx5.android.input.keyboard.preferenceState
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.mechdancer.dependency.Dependent
@@ -64,7 +65,6 @@ class ComposeCandidateComponent :
     private val windowManager: InputWindowManager by manager.must()
 
     private val keyboardPrefs = AppPrefs.getInstance().keyboard
-    private val fillStyle by keyboardPrefs.horizontalCandidateStyle
     private val swipeEnabledPref = keyboardPrefs.horizontalCandidateSwipe
     private val candidateDividerPref = keyboardPrefs.candidateDivider
     // expandedCandidateStyle 偏好已随展开候选 Compose 化移除（只保留表格一种形态）；列数改为动态计算。
@@ -294,17 +294,6 @@ class ComposeCandidateComponent :
     }
 
     /**
-     * 获取填充模式
-     */
-    private fun getFillMode(): CandidateFillMode {
-        return when (fillStyle) {
-            HorizontalCandidateMode.NeverFillWidth -> CandidateFillMode.NeverFillWidth
-            HorizontalCandidateMode.AutoFillWidth -> CandidateFillMode.AutoFillWidth
-            HorizontalCandidateMode.AlwaysFillWidth -> CandidateFillMode.AlwaysFillWidth
-        }
-    }
-
-    /**
      * 候选栏 Composable 内容。
      * 不再持有独立 ComposeView，由父级（合并后的单一 Composition）在 MiuixTheme 内直接调用，
      * 从而消除「ComposeView 内嵌 ComposeView」。
@@ -315,41 +304,16 @@ class ComposeCandidateComponent :
         val isExpandedWindowShown by _isExpandedWindowShown.collectAsState()
         val scrollResetToken by candidateResetToken.collectAsState()
 
-        // 监听多个偏好变化，触发重组
-        // 偏好「值」就地缓存：组合期只读 State，不再反复走 AppPrefs/SharedPreferences；
-        // 监听器写值即自然触发重组（无需额外的 version 计数）
-        val swipeEnabled = remember { mutableStateOf(swipeEnabledPref.getValue()) }
-        val showDivider = remember { mutableStateOf(candidateDividerPref.getValue()) }
-        val fillMode = remember { mutableStateOf(getFillMode()) }
-        val maxSpanCount = remember { mutableStateOf(maxSpanCountPref.getValue()) }
-
-        androidx.compose.runtime.DisposableEffect(Unit) {
-            val swipeListener = object : org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<Boolean> {
-                override fun onChange(key: String, value: Boolean) {
-                    swipeEnabled.value = value
-                }
-            }
-            val dividerListener = object : org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<Boolean> {
-                override fun onChange(key: String, value: Boolean) {
-                    showDivider.value = value
-                }
-            }
-            val fillStyleListener = org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<HorizontalCandidateMode> { _, _ ->
-                fillMode.value = getFillMode()
-            }
-            val spanCountListener = org.fcitx.fcitx5.android.data.prefs.ManagedPreference.OnChangeListener<Int> { _, _ ->
-                maxSpanCount.value = maxSpanCountPref.getValue()
-            }
-            swipeEnabledPref.registerOnChangeListener(swipeListener)
-            candidateDividerPref.registerOnChangeListener(dividerListener)
-            keyboardPrefs.horizontalCandidateStyle.registerOnChangeListener(fillStyleListener)
-            maxSpanCountPref.registerOnChangeListener(spanCountListener)
-            onDispose {
-                swipeEnabledPref.unregisterOnChangeListener(swipeListener)
-                candidateDividerPref.unregisterOnChangeListener(dividerListener)
-                keyboardPrefs.horizontalCandidateStyle.unregisterOnChangeListener(fillStyleListener)
-                maxSpanCountPref.unregisterOnChangeListener(spanCountListener)
-            }
+        // 偏好「值」就地缓存：用 preferenceState() 订阅，偏好变化自动重组。
+        // 省掉手写 4× (mutableStateOf + DisposableEffect + listener register/unregister)。
+        val swipeEnabled = swipeEnabledPref.preferenceState()
+        val showDivider = candidateDividerPref.preferenceState()
+        val maxSpanCount = maxSpanCountPref.preferenceState()
+        val fillStyleValue = keyboardPrefs.horizontalCandidateStyle.preferenceState()
+        val fillMode = when (fillStyleValue) {
+            HorizontalCandidateMode.NeverFillWidth -> CandidateFillMode.NeverFillWidth
+            HorizontalCandidateMode.AutoFillWidth -> CandidateFillMode.AutoFillWidth
+            HorizontalCandidateMode.AlwaysFillWidth -> CandidateFillMode.AlwaysFillWidth
         }
 
         ComposeCandidateBar(
@@ -392,12 +356,12 @@ class ComposeCandidateComponent :
                 },
             ),
             scrollResetToken = scrollResetToken,
-            fillMode = fillMode.value,
-            maxSpanCount = maxSpanCount.value,
-            userScrollEnabled = swipeEnabled.value,
+            fillMode = fillMode,
+            maxSpanCount = maxSpanCount,
+            userScrollEnabled = swipeEnabled,
             isExpandMode = isExpandedWindowShown,
             barHeight = LocalToolbarHeight.current,
-            showDivider = showDivider.value,
+            showDivider = showDivider,
             modifier = modifier,
         )
     }

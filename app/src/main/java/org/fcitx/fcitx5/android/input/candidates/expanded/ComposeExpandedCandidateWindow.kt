@@ -289,7 +289,7 @@ class ComposeExpandedCandidateWindow :
         bar.expandButtonStateMachine.push(ExpandedCandidatesAttached)
         // 依赖只能在 attach 之后读（见 returnDrawable 的注释）
         returnDrawable = returnKeyDrawable.resourceId
-        updateTabs(fcitx.runImmediately { inputPanelCached.tabs })
+        updateTabs(fcitx.peek { inputPanelCached.tabs })
         offsetJob = service.lifecycleScope.launch {
             composeCandidate.expandedCandidateOffset.collect { offset ->
                 // 滑动模式下 offset 可能为 0 但确实没有候选，故以 total 判定「无候选」

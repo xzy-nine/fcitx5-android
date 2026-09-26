@@ -23,8 +23,8 @@ class PreeditEmptyStateComponent :
         private set
 
     fun updatePreeditEmptyState(
-        clientPreedit: FormattedText = fcitx.runImmediately { clientPreeditCached },
-        preedit: FormattedText = fcitx.runImmediately { inputPanelCached.preedit }
+        clientPreedit: FormattedText = fcitx.peek { clientPreeditCached },
+        preedit: FormattedText = fcitx.peek { inputPanelCached.preedit }
     ) {
         val empty = clientPreedit.isEmpty() && preedit.isEmpty()
         if (isEmpty == empty) return
