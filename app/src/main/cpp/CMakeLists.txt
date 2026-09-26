@@ -88,3 +88,7 @@ install(DIRECTORY "${PREBUILT_DIR}/chinese-addons-data/pinyinhelper" DESTINATION
 install(DIRECTORY "${PREBUILT_DIR}/libime/table" DESTINATION "${FCITX_INSTALL_PKGDATADIR}" COMPONENT prebuilt-assets)
 install(DIRECTORY "${PREBUILT_DIR}/libime/data/" DESTINATION "${FCITX_INSTALL_DATADIR}/libime" COMPONENT prebuilt-assets)
 install(DIRECTORY "${PREBUILT_DIR}/opencc/data/" DESTINATION "${FCITX_INSTALL_DATADIR}/opencc" COMPONENT prebuilt-assets)
+# custom: email domain suggestion builtin QuickPhrase dict (@ 后联想邮箱域名)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/email/email.mb"
+        DESTINATION "${FCITX_INSTALL_PKGDATADIR}/data/quickphrase.d"
+        COMPONENT prebuilt-assets)

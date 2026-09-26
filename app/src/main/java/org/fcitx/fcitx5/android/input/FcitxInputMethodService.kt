@@ -66,10 +66,12 @@ import org.fcitx.fcitx5.android.core.ScancodeMapping
 import org.fcitx.fcitx5.android.core.SubtypeManager
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
+import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.InputFeedbacks
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
+import org.fcitx.fcitx5.android.data.quickphrase.EmailDomainDict
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.cursor.CursorRange
@@ -527,6 +529,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 }
                 ic.finishComposingText()
             }
+            onEmailSuggestionTrigger(text)
             return
         }
         // committed text should replace composing (if any), replace selected range (if any),
@@ -544,6 +547,23 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 setSelection(target, target)
             }
         }
+        onEmailSuggestionTrigger(text)
+    }
+
+    /**
+     * custom：`@` 上屏后触发邮箱域名联想。
+     *
+     * 域名数据为标准 QuickPhrase 词库（内置 `email.mb` 预置域名 + 用户词库自学习，见
+     * [EmailDomainDict]）：词库条目 `@域名 域名`，键以 `@` 开头。触发 QuickPhrase
+     * 临时模式并预置缓冲 "@"，引擎按键前缀匹配词库提供域名候选，走完整候选词流程。
+     * 拼音输入法下 `@` 键由引擎的 `quickphraseTriggerRegex`（默认含 `(/|@)$`）在缓冲
+     * 非空时自动拦截进入临时模式（缓冲含 `@`，同样按键前缀匹配本词库）；本钩子只在
+     * `@` 被直接提交时生效。提交文本含 `@domain`（完整邮箱地址）时自学习写入用户词库。
+     */
+    private fun onEmailSuggestionTrigger(text: String) {
+        EmailDomainDict.selfLearn(text)
+        if (text != "@") return
+        fcitx.launchOnReady { it.triggerQuickPhraseWithBuffer("@") }
     }
 
     private fun sendDownKeyEvent(eventTime: Long, keyEventCode: Int, metaState: Int = 0) {

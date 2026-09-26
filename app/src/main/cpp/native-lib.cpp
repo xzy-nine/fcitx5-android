@@ -93,6 +93,7 @@ public:
         p_unicode = addonMgr.addon("unicode");
         p_clipboard = addonMgr.addon("clipboard", true);
         setupCallback(p_frontend);
+        initEmailDomainProvider();
     }
 
     void reloadConfig() {
@@ -355,6 +356,16 @@ public:
                 ic, "", "", "", "", fcitx::Key{FcitxKey_None}
         );
     }
+    
+    void triggerQuickPhraseWithBuffer(const std::string &text) {
+        if (!p_quickphrase) return;
+        auto *ic = p_frontend->call<fcitx::IAndroidFrontend::activeInputContext>();
+        if (!ic) return;
+        p_quickphrase->call<fcitx::IQuickPhrase::trigger>(
+                ic, "", "", "", "", fcitx::Key{FcitxKey_None}
+        );
+        p_quickphrase->call<fcitx::IQuickPhrase::setBuffer>(ic, text);
+    }
 
     void triggerUnicode() {
         if (!p_unicode) return;
@@ -466,6 +477,71 @@ private:
     fcitx::AddonInstance *p_quickphrase = nullptr;
     fcitx::AddonInstance *p_unicode = nullptr;
     fcitx::AddonInstance *p_clipboard = nullptr;
+    // custom: 邮箱域名联想 provider 句柄（按词库文件顺序=MRU 提供候选）
+    std::unique_ptr<fcitx::HandlerTableEntry<fcitx::QuickPhraseProviderCallbackV2>> emailDomainProvider_;
+
+    /**
+     * custom: 注册邮箱域名联想 QuickPhrase provider。
+     *
+     * 域名数据存于用户 QuickPhrase 词库 `$HOME/data/data/quickphrase.d/email.mb`
+     * （自学习按 MRU 前移写文件，见 App 层 EmailDomainDict）。引擎的 builtin 词库用
+     * std::map 按键序提供候选（MRU 无效），故此处注册自定义 provider：输入缓冲以 `@`
+     * 开头时**按词库文件顺序**（即 MRU）提供域名候选，并返回 false 阻止 builtin 词库
+     * 重复提供。用户词库尚不存在（首次使用）时返回 true，由 builtin 词库（内置
+     * email.mb）提供预置域名。
+     */
+    void initEmailDomainProvider() {
+        if (!p_quickphrase) return;
+        emailDomainProvider_ = p_quickphrase->call<fcitx::IQuickPhrase::addProviderV2>(
+            [this](fcitx::InputContext *, const std::string &input,
+                   const fcitx::QuickPhraseAddCandidateCallbackV2 &callback) {
+                if (input.empty() || input[0] != '@') {
+                    // 非邮箱输入：不影响其他 QuickPhrase 词库/扩展
+                    return true;
+                }
+                const char *home = getenv("HOME");
+                if (!home) {
+                    return true;
+                }
+                const std::string path =
+                    std::string(home) + "/data/data/quickphrase.d/email.mb";
+                std::ifstream file(path);
+                if (!file.good()) {
+                    // 用户词库不存在（首次）：交给 builtin 词库（内置 email.mb）
+                    return true;
+                }
+                std::string line;
+                while (std::getline(file, line)) {
+                    auto pos = line.find_first_of(" \t");
+                    if (pos == std::string::npos) {
+                        continue;
+                    }
+                    const std::string key = line.substr(0, pos);
+                    if (key.empty() || key[0] != '@') {
+                        continue;
+                    }
+                    // 前缀过滤：缓冲 "@g" 只提供 "@gmail.com" 等
+                    if (!key.starts_with(input)) {
+                        continue;
+                    }
+                    auto valuePos = line.find_first_not_of(" \t", pos);
+                    if (valuePos == std::string::npos) {
+                        continue;
+                    }
+                    std::string value = line.substr(valuePos);
+                    while (!value.empty() && (value.back() == ' ' || value.back() == '\t' ||
+                                              value.back() == '\r')) {
+                        value.pop_back();
+                    }
+                    if (value.empty()) {
+                        continue;
+                    }
+                    callback(value, value, "", fcitx::QuickPhraseAction::Commit);
+                }
+                // 已按 MRU 顺序提供邮箱域名，阻止 builtin 词库重复提供
+                return false;
+            });
+    }
 
     void resetGlobalPointers() {
         p_instance.reset();
@@ -474,6 +550,7 @@ private:
         p_quickphrase = nullptr;
         p_unicode = nullptr;
         p_clipboard = nullptr;
+        emailDomainProvider_.reset();
     }
 };
 
@@ -983,6 +1060,13 @@ JNIEXPORT void JNICALL
 Java_org_fcitx_fcitx5_android_core_Fcitx_triggerQuickPhraseInput(JNIEnv *env, jclass clazz) {
     RETURN_IF_NOT_RUNNING
     Fcitx::Instance().triggerQuickPhrase();
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_org_fcitx_fcitx5_android_core_Fcitx_triggerQuickPhraseInputWithBuffer(JNIEnv *env, jclass clazz, jstring text) {
+    RETURN_IF_NOT_RUNNING
+    Fcitx::Instance().triggerQuickPhraseWithBuffer(CString(env, text));
 }
 
 extern "C"

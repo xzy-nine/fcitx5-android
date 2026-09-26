@@ -88,6 +88,8 @@ interface FcitxAPI {
     suspend fun setAddonState(name: Array<String>, state: BooleanArray)
 
     suspend fun triggerQuickPhrase()
+    
+    suspend fun triggerQuickPhraseWithBuffer(text: String)
     suspend fun triggerUnicode()
 
     suspend fun focus(focus: Boolean = true)
