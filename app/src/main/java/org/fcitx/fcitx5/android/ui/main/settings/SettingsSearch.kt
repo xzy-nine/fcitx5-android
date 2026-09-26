@@ -7,23 +7,13 @@ package org.fcitx.fcitx5.android.ui.main.settings
 
 import android.content.Context
 import android.os.Parcelable
-import android.text.Editable
-import android.text.TextWatcher
-import android.view.LayoutInflater
-import android.view.View
-import android.view.ViewGroup
-import android.widget.TextView
 import androidx.annotation.StringRes
 import androidx.annotation.DrawableRes
-import androidx.appcompat.app.AlertDialog
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import kotlinx.parcelize.Parcelize
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceCategory
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceUi
-import org.fcitx.fcitx5.android.ui.main.MainActivity
 
 @Parcelize
 data class SearchResult(
@@ -162,85 +152,9 @@ object SettingsSearchManager {
         return results
     }
 
-    fun showSearchDialog(activity: MainActivity) {
-        val context = activity
-        val builder = AlertDialog.Builder(context)
-        builder.setTitle(R.string.search_settings)
-
-        val customView = LayoutInflater.from(context).inflate(R.layout.search_dialog_layout, null)
-        val searchEditText = customView.findViewById<android.widget.EditText>(R.id.search_edit_text)
-        val recyclerView = customView.findViewById<RecyclerView>(R.id.search_results_list)
-        builder.setView(customView)
-
-        val dialog = builder.create()
-
-        val adapter = SearchResultsAdapter(context) { result ->
-            dialog.dismiss()
-            activity.navigateToSetting(result)
-        }
-        recyclerView.layoutManager = LinearLayoutManager(context)
-        recyclerView.adapter = adapter
-
-        dialog.show()
-
-        searchEditText.requestFocus()
-
-        searchEditText.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                val query = s?.toString() ?: ""
-                if (query.isNotEmpty()) {
-                    val results = search(context, query)
-                    adapter.updateResults(results)
-                } else {
-                    adapter.updateResults(emptyList())
-                }
-            }
-
-            override fun afterTextChanged(s: Editable?) {}
-        })
-
-        adapter.updateResults(emptyList())
-    }
-
     private data class IndexItem(
         @StringRes val title: Int,
         @DrawableRes val icon: Int,
         val route: SettingsRoute
     )
-
-    private class SearchResultsAdapter(
-        private val context: Context,
-        private val onItemClick: (SearchResult) -> Unit
-    ) : RecyclerView.Adapter<SearchResultsAdapter.ViewHolder>() {
-
-        private var results = emptyList<SearchResult>()
-
-        fun updateResults(newResults: List<SearchResult>) {
-            results = newResults
-            notifyDataSetChanged()
-        }
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-            val view = LayoutInflater.from(context).inflate(android.R.layout.simple_list_item_2, parent, false)
-            return ViewHolder(view)
-        }
-
-        override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-            val result = results[position]
-            holder.titleView.text = result.title
-            holder.subtitleView.text = result.path.joinToString(" > ")
-            holder.itemView.setOnClickListener {
-                onItemClick(result)
-            }
-        }
-
-        override fun getItemCount(): Int = results.size
-
-        class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-            val titleView: TextView = itemView.findViewById(android.R.id.text1)
-            val subtitleView: TextView = itemView.findViewById(android.R.id.text2)
-        }
-    }
 }
