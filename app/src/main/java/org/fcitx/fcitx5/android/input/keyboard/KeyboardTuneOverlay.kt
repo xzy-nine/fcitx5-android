@@ -2,29 +2,59 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  */
+
 package org.fcitx.fcitx5.android.input.keyboard
 
-import android.content.Context
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
+import android.content.res.Configuration
+import android.graphics.Rect
 import android.os.Build
-import android.view.Gravity
 import android.view.HapticFeedbackConstants
-import android.view.MotionEvent
 import android.view.View
-import android.view.View.MeasureSpec
-import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.ImageButton
-import android.widget.LinearLayout
-import android.widget.TextView
-import androidx.appcompat.view.ContextThemeWrapper
-import androidx.core.content.ContextCompat
-import androidx.core.view.doOnLayout
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.toAndroidRect
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.ui.input.pointer.changedToDown
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
-import org.fcitx.fcitx5.android.data.theme.Theme
-import kotlin.math.roundToInt
+import org.mechdancer.dependency.Dependent
+import org.mechdancer.dependency.UniqueComponent
+import org.mechdancer.dependency.manager.ManagedHandler
+import org.mechdancer.dependency.manager.managedHandler
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * Glassmorphism tuning overlay shown **on top of the keyboard area only**.
@@ -39,199 +69,73 @@ import kotlin.math.roundToInt
  * Edge guard (landscape) is intentionally NOT tuned here — it stays in settings.
  *
  * The overlay never covers the toolbar, so the toolbar toggle stays reachable.
+ *
+ * Ported from the old View `KeyboardTuneOverlay` to a Compose IME overlay layer:
+ * the root `Box(fillMaxSize)` fills the IME window, so all coordinates are
+ * window-absolute. [TuneMetrics.keyboardRect]/[TuneMetrics.bottomRect] are therefore
+ * reported in window-absolute coordinates by the provider in [InputView].
  */
-class KeyboardTuneOverlay(
-    context: Context,
-    private val theme: Theme,
-    private val keyboardPrefs: AppPrefs.Keyboard,
-    private val onDismiss: () -> Unit,
-    private val metricsProvider: () -> TuneMetrics
-) : FrameLayout(context) {
+data class TuneMetrics(
+    val isLandscape: Boolean,
+    val toolbarHeightPx: Int,
+    /** real bounds of the keyboard container, in window-absolute coordinates */
+    val keyboardRect: Rect,
+    /** real bounds of the bottom padding space, in window-absolute coordinates */
+    val bottomRect: Rect,
+    val heightBasePx: Int
+)
 
-    data class TuneMetrics(
-        val isLandscape: Boolean,
-        val toolbarHeightPx: Int,
-        /** real bounds of the keyboard container, in overlay coordinates */
-        val keyboardRect: android.graphics.Rect,
-        /** real bounds of the bottom padding space, in overlay coordinates */
-        val bottomRect: android.graphics.Rect,
-        val heightBasePx: Int
-    )
+private enum class DragMode {
+    NONE, HEIGHT, BOTTOM, SIDE_LEFT, SIDE_RIGHT, GAP
+}
 
-    private enum class DragMode {
-        NONE, HEIGHT, BOTTOM, SIDE_LEFT, SIDE_RIGHT, GAP
+/**
+ * Computed geometry for one layout pass, in window-absolute coordinates.
+ * `fullRect` is null when split; `leftRect`/`rightRect` are null when not split.
+ */
+private data class TuneLayout(
+    val top: Int,
+    val kbBottom: Int,
+    val left: Int,
+    val right: Int,
+    val split: Boolean,
+    val fullRect: Rect?,
+    val leftRect: Rect?,
+    val rightRect: Rect?,
+    val buttonBarRect: Rect
+)
+
+class KeyboardTuneCompose(
+    private val metricsProvider: () -> TuneMetrics,
+    private val onDismiss: () -> Unit
+) : UniqueComponent<KeyboardTuneCompose>(),
+    Dependent,
+    ManagedHandler by managedHandler() {
+
+    private val keyboardPrefs = AppPrefs.getInstance().keyboard
+
+    private val _metrics = mutableStateOf<TuneMetrics?>(null)
+    val metrics: TuneMetrics? get() = _metrics.value
+
+    fun isShown(): Boolean = _metrics.value != null
+
+    fun show() {
+        val m = metricsProvider()
+        takeSnapshot(m)
+        _metrics.value = m
     }
 
-    private val density = context.resources.displayMetrics.density
-    private val accent = ContextCompat.getColor(context, R.color.tune_accent)
-
-    // card region rectangles (in overlay coordinate space)
-    private val fullRect = android.graphics.Rect()
-    private val leftRect = android.graphics.Rect()
-    private val rightRect = android.graphics.Rect()
-    private val buttonBarRect = android.graphics.Rect()
-
-    private var dragMode = DragMode.NONE
-    private var startX = 0f
-    private var startY = 0f
-    private var startKeyboardHeightPx = 0
-    private var startBottomPx = 0
-    private var startSidePx = 0
-    private var startGapPx = 0
-    private var startBaseWidthPx = 0
-    private var startLandscape = false
-
-    private data class Snapshot(
-        val landscape: Boolean,
-        val heightPercent: Int,
-        val sideDp: Int,
-        val bottomDp: Int,
-        val splitEnabled: Boolean,
-        val splitRatio: Int
-    )
-
-    private var snapshot = Snapshot(false, 30, 0, 0, false, 30)
-
-    // ----- views -----
-    private val fullCard: Card
-    private val leftCard: Card
-    private val rightCard: Card
-    private val leftGrip: View
-    private val rightGrip: View
-    private val bottomGrip: View
-    private val buttonBar: LinearLayout
-
-    private val slopPx get() = dp(24f)
-    /** width of the grab band for side/bottom margins; kept inside the keyboard
-     *  so screen-edge system gestures never swallow the drag. */
-    private val grabPx get() = dp(20f)
-
-    init {
-        visibility = View.GONE
-        setBackgroundColor(Color.TRANSPARENT)
-        isClickable = true
-        isFocusable = true
-
-        val panelCtx = ContextThemeWrapper(
-            context,
-            com.google.android.material.R.style.Theme_Material3_DayNight_NoActionBar
-        )
-
-        fullCard = Card(context, theme, R.string.keyboard_tune_height)
-        leftCard = Card(context, theme, R.string.keyboard_tune_split)
-        rightCard = Card(context, theme, R.string.keyboard_tune_split)
-        leftGrip = makeGrip()
-        rightGrip = makeGrip()
-        bottomGrip = makeGrip()
-
-        // ----- action bar (always inside keyboard region, always clickable) -----
-        val resetBtn = actionButton(panelCtx, R.drawable.ic_baseline_settings_backup_restore_24, R.string.tune_reset) {
-            resetToDefaults()
-        }
-        val cancelBtn = actionButton(panelCtx, R.drawable.ic_baseline_close_24, R.string.tune_cancel) {
-            applySnapshot(true)
-        }
-        val confirmBtn = actionButton(panelCtx, R.drawable.ic_baseline_check_24, R.string.tune_confirm) {
-            hide()
-        }
-        buttonBar = LinearLayout(panelCtx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(8f), dp(4f), dp(8f), dp(4f))
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(24f).toFloat()
-                setColor(theme.barColor)
-            }
-            elevation = dp(6f).toFloat()
-            addView(resetBtn, LinearLayout.LayoutParams(dp(44f), dp(44f)))
-            addView(cancelBtn, LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { leftMargin = dp(12f) })
-            addView(confirmBtn, LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { leftMargin = dp(12f) })
-        }
-
-        addView(fullCard)
-        addView(leftCard)
-        addView(rightCard)
-        addView(leftGrip)
-        addView(rightGrip)
-        addView(bottomGrip)
-        addView(buttonBar)
+    fun hide() {
+        onDismiss()
+        _metrics.value = null
     }
 
-    // ---------- builders ----------
-
-    private fun dp(v: Float) = (v * density).toInt()
-
-    /** A frosted, rounded, semi-transparent card with a centered label. */
-    private class Card(
-        context: Context,
-        theme: Theme,
-        labelRes: Int
-    ) : FrameLayout(context) {
-        private val label: TextView = TextView(context).apply {
-            setText(labelRes)
-            setTextColor(theme.keyTextColor)
-            textSize = 12f
-            gravity = Gravity.CENTER
-            alpha = 0.85f
-        }
-
-        init {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(12f, context).toFloat()
-                // frosted glass: theme bar color at ~55% opacity + accent stroke
-                val c = theme.barColor
-                setColor(Color.argb(140, Color.red(c), Color.green(c), Color.blue(c)))
-                setStroke(dp(2f, context), accentColor(context))
-            }
-            addView(label, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                gravity = Gravity.CENTER
-            })
-        }
-
-        fun setActive(active: Boolean) {
-            (background as? GradientDrawable)?.alpha = if (active) 200 else 140
-        }
-
-        /** Hide the label on narrow cards (e.g. edge-guard strips) where it would be clipped. */
-        fun setLabelVisible(visible: Boolean) {
-            label.visibility = if (visible) View.VISIBLE else View.GONE
-        }
-
-        private fun dp(v: Float, ctx: Context) = (v * ctx.resources.displayMetrics.density).toInt()
-        private fun accentColor(ctx: Context) =
-            ContextCompat.getColor(ctx, R.color.tune_accent)
+    /** Re-read the geometry after the keyboard relaid out (e.g. during a drag). */
+    fun refresh() {
+        if (_metrics.value != null) _metrics.value = metricsProvider()
     }
 
-    /** Thin accent bar marking the draggable band for side/bottom margins. */
-    private fun makeGrip(): View = View(context).apply {
-        background = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(2f).toFloat()
-            setColor(accent)
-        }
-        alpha = 0.85f
-        isClickable = false
-        isFocusable = false
-    }
-
-    private fun actionButton(
-        ctx: Context, iconRes: Int, descRes: Int, onClick: () -> Unit
-    ): ImageButton = ImageButton(ctx).apply {
-        setImageResource(iconRes)
-        contentDescription = ctx.getString(descRes)
-        background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(Color.argb(40, Color.red(accent), Color.green(accent), Color.blue(accent)))
-        }
-        imageTintList = android.content.res.ColorStateList.valueOf(accent)
-        setPadding(dp(10f), dp(10f), dp(10f), dp(10f))
-        scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
-        setOnClickListener { onClick() }
-    }
-
-    // ---------- pref accessors ----------
+    // ----- pref accessors (same as the original View overlay) -----
 
     private fun heightPref(landscape: Boolean) =
         if (landscape) keyboardPrefs.keyboardHeightPercentLandscape else keyboardPrefs.keyboardHeightPercent
@@ -245,10 +149,32 @@ class KeyboardTuneOverlay(
     private fun splitRatioPref(landscape: Boolean) =
         if (landscape) keyboardPrefs.splitKeyboardBlankRatioLandscape else keyboardPrefs.splitKeyboardBlankRatio
 
-    // ---------- public API ----------
+    // ----- snapshot (values captured when the overlay is opened) -----
 
-    fun show() {
-        val m = metricsProvider()
+    private data class Snapshot(
+        val landscape: Boolean,
+        val heightPercent: Int,
+        val sideDp: Int,
+        val bottomDp: Int,
+        val splitEnabled: Boolean,
+        val splitRatio: Int
+    )
+
+    private var snapshot = Snapshot(false, 30, 0, 0, false, 30)
+
+    // ----- drag state -----
+
+    private var dragMode = DragMode.NONE
+    private var startX = 0f
+    private var startY = 0f
+    private var startKeyboardHeightPx = 0
+    private var startBottomPx = 0
+    private var startSidePx = 0
+    private var startGapPx = 0
+    private var startBaseWidthPx = 0
+    private var startLandscape = false
+
+    private fun takeSnapshot(m: TuneMetrics) {
         snapshot = Snapshot(
             landscape = m.isLandscape,
             heightPercent = heightPref(m.isLandscape).getValue(),
@@ -257,23 +183,6 @@ class KeyboardTuneOverlay(
             splitEnabled = keyboardPrefs.splitKeyboard.getValue(),
             splitRatio = splitRatioPref(m.isLandscape).getValue()
         )
-        visibility = View.VISIBLE
-        if (width > 0 && height > 0) {
-            syncBox()
-        } else {
-            // overlay 首次显示时尚未布局，等键盘容器布局完成后再同步尺寸
-            doOnLayout { syncBox() }
-        }
-    }
-
-    fun hide() {
-        onDismiss()
-        // 退出后必须归还系统手势区域，否则返回手势在键盘边缘会一直失效
-        if (Build.VERSION.SDK_INT >= 29) systemGestureExclusionRects = emptyList()
-        visibility = View.GONE
-        fullCard.setActive(false)
-        leftCard.setActive(false)
-        rightCard.setActive(false)
     }
 
     private fun applySnapshot(close: Boolean) {
@@ -282,7 +191,7 @@ class KeyboardTuneOverlay(
         bottomPref(snapshot.landscape).setValue(snapshot.bottomDp)
         keyboardPrefs.splitKeyboard.setValue(snapshot.splitEnabled)
         splitRatioPref(snapshot.landscape).setValue(snapshot.splitRatio)
-        if (close) hide() else syncBox()
+        if (close) hide() else refresh()
     }
 
     /** “重置”写入各 ManagedPreference 的默认值，而非恢复打开浮层时的值。 */
@@ -293,172 +202,64 @@ class KeyboardTuneOverlay(
         bottomPref(landscape).setValue(bottomPref(landscape).defaultValue)
         keyboardPrefs.splitKeyboard.setValue(keyboardPrefs.splitKeyboard.defaultValue)
         splitRatioPref(landscape).setValue(splitRatioPref(landscape).defaultValue)
-        syncBox()
+        refresh()
     }
 
-    // ---------- layout sync ----------
+    // ----- geometry -----
 
-    private fun syncBox() {
-        if (width == 0 || height == 0) return
-        val m = metricsProvider()
-        // 以键盘容器的实测矩形为准，保证卡片严格落在键盘主体内
+    private fun computeLayout(
+        m: TuneMetrics,
+        barW: Int,
+        barH: Int,
+        density: Float,
+        overlayW: Int
+    ): TuneLayout {
         val top = m.keyboardRect.top
         val kbBottom = m.keyboardRect.bottom
         val left = m.keyboardRect.left
         val right = m.keyboardRect.right
-        if (kbBottom <= top || right <= left) return
-        // 与 BaseKeyboard.isSplitAllowed() 保持一致：需同时满足偏好开启 + 宽高比 > 阈值
+        if (kbBottom <= top || right <= left) {
+            return TuneLayout(top, kbBottom, left, right, false, null, null, null, Rect())
+        }
         val splitPref = keyboardPrefs.splitKeyboard.getValue()
         val threshold = keyboardPrefs.splitKeyboardThreshold.getValue()
         val kbW = (right - left).toFloat()
         val kbH = (kbBottom - top).toFloat()
         val split = splitPref && kbH > 0f && (kbW / kbH) > threshold
 
+        val fullRect: Rect?
+        val leftRect: Rect?
+        val rightRect: Rect?
         if (split) {
-            fullCard.visibility = View.GONE
-            leftCard.visibility = View.VISIBLE
-            rightCard.visibility = View.VISIBLE
+            fullRect = null
             val baseW = (right - left).coerceAtLeast(1)
             val gap = (baseW * splitRatioPref(m.isLandscape).getValue() / 100)
                 .coerceIn(0, baseW * 60 / 100)
             val half = (baseW - gap) / 2
-            leftRect.set(left, top, left + half, kbBottom)
-            rightRect.set(right - half, top, right, kbBottom)
-            positionCard(leftCard, leftRect)
-            positionCard(rightCard, rightRect)
+            leftRect = Rect(left, top, left + half, kbBottom)
+            rightRect = Rect(right - half, top, right, kbBottom)
         } else {
-            fullCard.visibility = View.VISIBLE
-            leftCard.visibility = View.GONE
-            rightCard.visibility = View.GONE
-            fullRect.set(left, top, right, kbBottom)
-            positionCard(fullCard, fullRect)
+            fullRect = Rect(left, top, right, kbBottom)
+            leftRect = null
+            rightRect = null
         }
-
-        // grips: thin accent bars just inside the card edges
-        val bar = dp(3f)
-        val inset = dp(24f)
-        positionCard(
-            leftGrip,
-            android.graphics.Rect(left + bar, top + inset, left + bar + dp(4f), kbBottom - inset)
-        )
-        positionCard(
-            rightGrip,
-            android.graphics.Rect(right - bar - dp(4f), top + inset, right - bar, kbBottom - inset)
-        )
-        positionCard(
-            bottomGrip,
-            android.graphics.Rect(left + inset, kbBottom - bar - dp(4f), right - inset, kbBottom - bar)
-        )
-        updateGestureExclusion()
 
         // action bar pinned to the bottom of the keyboard region, centered
-        buttonBar.measure(
-            MeasureSpec.makeMeasureSpec(width, MeasureSpec.AT_MOST),
-            MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-        )
-        val barW = buttonBar.measuredWidth
-        val barH = buttonBar.measuredHeight
-        val barLeft = ((width - barW) / 2).coerceAtLeast(0)
-        val barTop = (kbBottom - barH - dp(8f)).coerceAtLeast(top + dp(8f))
-        positionCard(buttonBar, android.graphics.Rect(barLeft, barTop, barLeft + barW, barTop + barH))
-        buttonBarRect.set(barLeft, barTop, barLeft + barW, barTop + barH)
+        val buttonBarOffset = (8 * density).toInt()
+        val barLeft = ((overlayW - barW) / 2).coerceAtLeast(0)
+        val barTop = (kbBottom - barH - buttonBarOffset).coerceAtLeast(top + buttonBarOffset)
+        val buttonBarRect = Rect(barLeft, barTop, barLeft + barW, barTop + barH)
+
+        return TuneLayout(top, kbBottom, left, right, split, fullRect, leftRect, rightRect, buttonBarRect)
     }
 
-    private fun positionCard(v: View, r: android.graphics.Rect) {
-        val lp = v.layoutParams as? FrameLayout.LayoutParams
-            ?: FrameLayout.LayoutParams(r.width(), r.height())
-        lp.width = r.width()
-        lp.height = r.height()
-        lp.gravity = Gravity.TOP or Gravity.START
-        lp.leftMargin = r.left
-        lp.topMargin = r.top
-        v.layoutParams = lp
-        if (v is Card) v.setLabelVisible(r.width() >= dp(64f))
-    }
+    private fun hitTest(x: Int, y: Int, layout: TuneLayout, slopPx: Int, grabPx: Int): DragMode {
+        if (layout.buttonBarRect.contains(x, y)) return DragMode.NONE
 
-    /**
-     * Ask the system not to treat touches inside the grab bands as edge-back /
-     * home gestures. Without this the side-margin drag is swallowed whenever the
-     * current padding is 0 (the band then sits right on the screen edge).
-     */
-    private fun updateGestureExclusion() {
-        if (Build.VERSION.SDK_INT < 29) return
-        val m = metricsProvider()
-        val top = m.keyboardRect.top
-        val bottom = m.keyboardRect.bottom
-        val left = m.keyboardRect.left
-        val right = m.keyboardRect.right
-        systemGestureExclusionRects = listOf(
-            android.graphics.Rect(left, top, left + grabPx, bottom),
-            android.graphics.Rect(right - grabPx, top, right, bottom),
-            android.graphics.Rect(left + grabPx, bottom - grabPx, right - grabPx, bottom)
-        )
-    }
-
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        super.onSizeChanged(w, h, oldw, oldh)
-        if (visibility == View.VISIBLE) syncBox()
-    }
-
-    // ---------- touch handling ----------
-
-    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
-        if (visibility != View.VISIBLE) return false
-        // let the toolbar (above the keyboard region) stay interactive -> toggle exits
-        if (ev.y < metricsProvider().toolbarHeightPx) return false
-        // let the action bar buttons receive their own clicks
-        if (buttonBarRect.contains(ev.x.toInt(), ev.y.toInt())) return false
-        return true
-    }
-
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (visibility != View.VISIBLE) return false
-        when (event.action) {
-            MotionEvent.ACTION_DOWN -> {
-                val m = metricsProvider()
-                dragMode = hitTest(event.x.toInt(), event.y.toInt(), m)
-                if (dragMode == DragMode.NONE) return false
-                startX = event.x
-                startY = event.y
-                startKeyboardHeightPx = m.keyboardRect.height()
-                startBottomPx = m.bottomRect.height()
-                startSidePx = m.keyboardRect.left
-                startLandscape = m.isLandscape
-                startBaseWidthPx = m.keyboardRect.width().coerceAtLeast(1)
-                startGapPx = (startBaseWidthPx * splitRatioPref(m.isLandscape).getValue() / 100)
-                setCardActive(dragMode, true)
-                if (Build.VERSION.SDK_INT >= 21) {
-                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                }
-                return true
-            }
-            MotionEvent.ACTION_MOVE -> {
-                if (dragMode == DragMode.NONE) return false
-                applyDrag(dragMode, event.x - startX, event.y - startY)
-                return true
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                setCardActive(dragMode, false)
-                dragMode = DragMode.NONE
-                return true
-            }
-        }
-        return false
-    }
-
-    private fun hitTest(x: Int, y: Int, m: TuneMetrics): DragMode {
-        val s = slopPx
-        if (buttonBarRect.contains(x, y)) return DragMode.NONE
-
-        val kbTop = m.keyboardRect.top
-        val kbBottom = m.keyboardRect.bottom
-        val cardLeft = m.keyboardRect.left
-        val cardRight = m.keyboardRect.right
-        val splitPref = keyboardPrefs.splitKeyboard.getValue()
-        val threshold = keyboardPrefs.splitKeyboardThreshold.getValue()
-        val kbW = (cardRight - cardLeft).toFloat()
-        val kbH = (kbBottom - kbTop).toFloat()
-        val split = splitPref && kbH > 0f && (kbW / kbH) > threshold
+        val kbTop = layout.top
+        val kbBottom = layout.kbBottom
+        val cardLeft = layout.left
+        val cardRight = layout.right
 
         // bottom band (inside the card) -> bottom margin (drag up = more space below)
         if (y in (kbBottom - grabPx)..kbBottom &&
@@ -472,22 +273,24 @@ class KeyboardTuneOverlay(
         }
 
         // split gap: inner edges of the two cards
-        if (split) {
-            if (y in leftRect.top..leftRect.bottom) {
-                if (x in (leftRect.right - s)..(leftRect.right + s)) return DragMode.GAP
-                if (x in (rightRect.left - s)..(rightRect.left + s)) return DragMode.GAP
+        if (layout.split) {
+            val l = layout.leftRect ?: return DragMode.NONE
+            val r = layout.rightRect ?: return DragMode.NONE
+            if (y in l.top..l.bottom) {
+                if (x in (l.right - slopPx)..(l.right + slopPx)) return DragMode.GAP
+                if (x in (r.left - slopPx)..(r.left + slopPx)) return DragMode.GAP
             }
-            if (leftRect.contains(x, y) || rightRect.contains(x, y)) return DragMode.HEIGHT
+            if (l.contains(x, y) || r.contains(x, y)) return DragMode.HEIGHT
         } else {
-            if (fullRect.contains(x, y)) return DragMode.HEIGHT
+            if (layout.fullRect?.contains(x, y) == true) return DragMode.HEIGHT
         }
         return DragMode.NONE
     }
 
-    private fun applyDrag(mode: DragMode, totalDx: Float, totalDy: Float) {
+    private fun applyDrag(mode: DragMode, totalDx: Float, totalDy: Float, density: Float) {
         when (mode) {
             DragMode.HEIGHT -> {
-                val base = metricsProvider().heightBasePx
+                val base = metrics?.heightBasePx ?: return
                 if (base <= 0) return
                 val minPx = base * 10 / 100
                 val maxPx = base * 90 / 100
@@ -495,40 +298,333 @@ class KeyboardTuneOverlay(
                 val percent = ((newPx * 100 / base).roundToInt()).coerceIn(10, 90)
                 heightPref(startLandscape).setValue(percent)
             }
+
             DragMode.BOTTOM -> {
                 // drag the card's bottom edge up -> more space below the keyboard
                 val newPx = (startBottomPx - totalDy).coerceIn(0f, 100f * density)
                 bottomPref(startLandscape).setValue((newPx / density).roundToInt().coerceIn(0, 100))
             }
+
             DragMode.SIDE_LEFT -> {
                 val newPx = (startSidePx + totalDx).coerceIn(0f, 300f * density)
                 sidePref(startLandscape).setValue((newPx / density).roundToInt().coerceIn(0, 300))
             }
+
             DragMode.SIDE_RIGHT -> {
                 val newPx = (startSidePx - totalDx).coerceIn(0f, 300f * density)
                 sidePref(startLandscape).setValue((newPx / density).roundToInt().coerceIn(0, 300))
             }
+
             DragMode.GAP -> {
                 val newGap = (startGapPx + totalDx).coerceIn(0f, startBaseWidthPx * 60 / 100f)
                 val ratio = ((newGap * 100 / startBaseWidthPx).roundToInt()).coerceIn(0, 60)
                 splitRatioPref(startLandscape).setValue(ratio)
             }
+
             else -> return
         }
         // 等 IME 窗口（windowManager.view）完成布局、约束更新生效后再刷新，
-        // 否则 syncBox() 读到的 keyboardRect 还是旧的键盘高度。
-        doOnLayout { syncBox() }
+        // 否则卡片读到的 keyboardRect 还是旧的键盘高度。由 InputView 在 updateKeyboardSize
+        // 后通过 doOnLayout{ refresh() } 触发，这里无需手动 syncBox。
     }
 
-    private fun setCardActive(mode: DragMode, active: Boolean) {
-        when (mode) {
-            DragMode.HEIGHT, DragMode.BOTTOM, DragMode.SIDE_LEFT, DragMode.SIDE_RIGHT ->
-                (if (leftCard.visibility == View.VISIBLE) leftCard else fullCard).setActive(active)
-            DragMode.GAP -> {
-                leftCard.setActive(active)
-                rightCard.setActive(active)
+    @Composable
+    fun OverlayContent(modifier: Modifier = Modifier) {
+        val m = _metrics.value ?: return
+        val density = LocalDensity.current.density
+        val view = LocalView.current
+
+        val grabPx = (20 * density).toInt()
+        val slopPx = (24 * density).toInt()
+        val bar = (3 * density).toInt()
+        val gapBar = (4 * density).toInt()
+        val inset = (24 * density).toInt()
+
+        // measured size of the action bar (set by onSizeChanged on the bar)
+        var barW by remember { mutableStateOf(0) }
+        var barH by remember { mutableStateOf(0) }
+
+        var fullActive by remember { mutableStateOf(false) }
+        var leftActive by remember { mutableStateOf(false) }
+        var rightActive by remember { mutableStateOf(false) }
+
+        // latest metrics, readable from the (restart-free) pointer handler
+        val metricsRef = remember { mutableStateOf(m) }
+        SideEffect { metricsRef.value = m }
+
+        // clear gesture exclusion when the overlay disappears
+        DisposableEffect(Unit) {
+            onDispose {
+                if (Build.VERSION.SDK_INT >= 29) view.systemGestureExclusionRects = emptyList()
             }
-            else -> {}
+        }
+
+        BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+            val overlayW = with(LocalDensity.current) { maxWidth.toPx().roundToInt() }
+            val layout = computeLayout(m, barW, barH, density, overlayW)
+
+            // system gesture exclusion bands (window-absolute == overlay coords)
+            if (Build.VERSION.SDK_INT >= 29) {
+                SideEffect {
+                    view.systemGestureExclusionRects = listOf(
+                        Rect(layout.left, layout.top, layout.left + grabPx, layout.kbBottom),
+                        Rect(layout.right - grabPx, layout.top, layout.right, layout.kbBottom),
+                        Rect(
+                            layout.left + grabPx,
+                            layout.kbBottom - grabPx,
+                            layout.right - grabPx,
+                            layout.kbBottom
+                        )
+                    )
+                }
+            }
+
+            // ---- drag-catching layer: fills the whole window so its coordinate
+            //      frame stays fixed (window-absolute), matching the old View overlay.
+            //      Touches above the toolbar band or on the action bar are passed
+            //      through (not consumed) so the toolbar stays reachable and the
+            //      buttons get their own clicks. ----
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        val slop = slopPx
+                        val grab = grabPx
+                        awaitEachGesture {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.pressed || it.previousPressed }
+                                    ?: continue
+                                val pos = change.position
+                                when {
+                                    change.changedToDown() -> {
+                                        val cur = metricsRef.value
+                                        // let the toolbar (above the keyboard) stay interactive
+                                        if (pos.y < cur.toolbarHeightPx) continue
+                                        val lay = computeLayout(cur, barW, barH, density, overlayW)
+                                        val mode = hitTest(pos.x.toInt(), pos.y.toInt(), lay, slop, grab)
+                                        if (mode == DragMode.NONE) continue
+                                        dragMode = mode
+                                        startX = pos.x
+                                        startY = pos.y
+                                        startKeyboardHeightPx = cur.keyboardRect.height()
+                                        startBottomPx = cur.bottomRect.height()
+                                        startSidePx = cur.keyboardRect.left
+                                        startLandscape = cur.isLandscape
+                                        startBaseWidthPx = cur.keyboardRect.width().coerceAtLeast(1)
+                                        startGapPx =
+                                            (startBaseWidthPx * splitRatioPref(cur.isLandscape).getValue() / 100)
+                                        setCardActive(mode, true) { a, b, c ->
+                                            fullActive = a
+                                            leftActive = b
+                                            rightActive = c
+                                        }
+                                        if (Build.VERSION.SDK_INT >= 21) {
+                                            view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                                        }
+                                        change.consume()
+                                    }
+
+                                    change.pressed && dragMode != DragMode.NONE -> {
+                                        applyDrag(
+                                            dragMode,
+                                            pos.x - startX,
+                                            pos.y - startY,
+                                            density
+                                        )
+                                        change.consume()
+                                    }
+
+                                    !change.pressed && dragMode != DragMode.NONE -> {
+                                        setCardActive(dragMode, false) { a, b, c ->
+                                            fullActive = a
+                                            leftActive = b
+                                            rightActive = c
+                                        }
+                                        dragMode = DragMode.NONE
+                                        change.consume()
+                                    }
+                                }
+                            }
+                        }
+                    }
+            )
+
+            val cs = MiuixTheme.colorScheme
+
+            // ---- frosted cards (visual only; pointer falls through to the catcher) ----
+            if (layout.split) {
+                val lr = layout.leftRect ?: return@BoxWithConstraints
+                TuneCard(
+                    rect = lr,
+                    label = R.string.keyboard_tune_split,
+                    active = leftActive,
+                    density = density
+                )
+                val rr = layout.rightRect ?: return@BoxWithConstraints
+                TuneCard(
+                    rect = rr,
+                    label = R.string.keyboard_tune_split,
+                    active = rightActive,
+                    density = density
+                )
+            } else {
+                val fr = layout.fullRect ?: return@BoxWithConstraints
+                TuneCard(
+                    rect = fr,
+                    label = R.string.keyboard_tune_height,
+                    active = fullActive,
+                    density = density
+                )
+            }
+
+            // ---- grips (thin accent bars just inside the card edges) ----
+            TuneGrip(
+                rect = Rect(layout.left + bar, layout.top + inset, layout.left + bar + gapBar, layout.kbBottom - inset),
+                density = density
+            )
+            TuneGrip(
+                rect = Rect(layout.right - bar - gapBar, layout.top + inset, layout.right - bar, layout.kbBottom - inset),
+                density = density
+            )
+            TuneGrip(
+                rect = Rect(layout.left + inset, layout.kbBottom - bar - gapBar, layout.right - inset, layout.kbBottom - bar),
+                density = density
+            )
+
+            // ---- action bar (always inside the keyboard region, always clickable) ----
+            TuneButtonBar(
+                rect = layout.buttonBarRect,
+                onReset = { resetToDefaults() },
+                onCancel = { applySnapshot(true) },
+                onConfirm = { hide() },
+                onSize = { w, h -> barW = w; barH = h }
+            )
+        }
+    }
+
+    private fun setCardActive(
+        mode: DragMode,
+        active: Boolean,
+        apply: (full: Boolean, left: Boolean, right: Boolean) -> Unit
+    ) {
+        val full = when (mode) {
+            DragMode.HEIGHT, DragMode.BOTTOM, DragMode.SIDE_LEFT, DragMode.SIDE_RIGHT -> active
+            else -> false
+        }
+        val left = when (mode) {
+            DragMode.HEIGHT, DragMode.BOTTOM, DragMode.SIDE_LEFT, DragMode.SIDE_RIGHT -> active
+            DragMode.GAP -> active
+            else -> false
+        }
+        val right = when (mode) {
+            DragMode.GAP -> active
+            else -> false
+        }
+        apply(full, left, right)
+    }
+
+    @Composable
+    private fun TuneCard(
+        rect: Rect,
+        label: Int,
+        active: Boolean,
+        density: Float
+    ) {
+        val cs = MiuixTheme.colorScheme
+        val wDp = with(LocalDensity.current) { rect.width().toDp() }
+        val hDp = with(LocalDensity.current) { rect.height().toDp() }
+        Box(
+            Modifier
+                .offset { IntOffset(rect.left, rect.top) }
+                .size(wDp, hDp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(
+                    cs.background.copy(alpha = if (active) 0.78f else 0.55f),
+                    RoundedCornerShape(12.dp)
+                )
+                .border(
+                    2.dp,
+                    cs.primary.copy(alpha = 0.85f),
+                    RoundedCornerShape(12.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (rect.width() >= (64 * density).toInt()) {
+                Text(
+                    text = stringResource(label),
+                    color = cs.onSurface.copy(alpha = 0.85f),
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+
+    @Composable
+    private fun TuneGrip(rect: Rect, density: Float) {
+        val cs = MiuixTheme.colorScheme
+        val wDp = with(LocalDensity.current) { rect.width().toDp() }
+        val hDp = with(LocalDensity.current) { rect.height().toDp() }
+        Box(
+            Modifier
+                .offset { IntOffset(rect.left, rect.top) }
+                .size(wDp, hDp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(cs.primary.copy(alpha = 0.85f), RoundedCornerShape(2.dp))
+        )
+    }
+
+    @Composable
+    private fun TuneButtonBar(
+        rect: Rect,
+        onReset: () -> Unit,
+        onCancel: () -> Unit,
+        onConfirm: () -> Unit,
+        onSize: (Int, Int) -> Unit
+    ) {
+        val cs = MiuixTheme.colorScheme
+        // NOTE: size to content (the 3 action buttons), NOT to rect — rect.width()/height()
+        // come from barW/barH which are themselves fed back by onSizeChanged below, so forcing
+        // a fixed .size() would create a 0x0 feedback loop and the dock would never appear.
+        // Position only via offset; onSizeChanged reports the real measured size for hit-testing.
+        Box(
+            Modifier
+                .offset { IntOffset(rect.left, rect.top) }
+                .clip(RoundedCornerShape(24.dp))
+                .background(cs.background, RoundedCornerShape(24.dp))
+                .onSizeChanged {
+                    onSize(it.width, it.height)
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TuneActionButton(R.drawable.ic_baseline_settings_backup_restore_24, R.string.tune_reset, onReset)
+                Box(Modifier.size(12.dp))
+                TuneActionButton(R.drawable.ic_baseline_close_24, R.string.tune_cancel, onCancel)
+                Box(Modifier.size(12.dp))
+                TuneActionButton(R.drawable.ic_baseline_check_24, R.string.tune_confirm, onConfirm)
+            }
+        }
+    }
+
+    @Composable
+    private fun TuneActionButton(iconRes: Int, descRes: Int, onClick: () -> Unit) {
+        val cs = MiuixTheme.colorScheme
+        Box(
+            Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(50))
+                .background(cs.primary.copy(alpha = 0.16f), RoundedCornerShape(50))
+                .clickable { onClick() }
+                .padding(10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.foundation.Image(
+                painter = painterResource(iconRes),
+                contentDescription = stringResource(descRes),
+                colorFilter = ColorFilter.tint(cs.primary),
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }

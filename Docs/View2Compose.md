@@ -754,7 +754,7 @@ KeyboardWindow (ComposeWindow) → Content()
 | 文件 | 说明 |
 |---|---|
 | `input/CandidatesView.kt` | 浮动候选（物理键盘模式），仍被 `FcitxInputMethodService` 挂载；用 `PreeditUi` / `PagedCandidatesUi` / `LabeledCandidateItemUi` |
-| `input/keyboard/KeyboardTuneOverlay.kt` | custom 调校浮层，仍 View，挂 `keyboardView` 内 |
+| `input/keyboard/KeyboardTuneOverlay.kt` | custom 调校浮层，已迁移为 Compose（`class KeyboardTuneCompose`，`OverlayContent()` 由根组合 `createComposeInputView` 在 `AndroidView(InputView)` 之上渲染，窗口绝对坐标）；`TuneMetrics` 提升为顶层；`InputView` 旧 `keyboardView.add(...)`/lazy 挂载已移除 |
 | `ui/main/settings/theme/KeyboardPreviewUi.kt` | 设置页主题预览，实例化 `TextKeyboard`（View 键盘） |
 | `input/bar/ui/ToolButton.kt` | 仍活跃（多个窗口 `onCreateBarExtension` 返回的 View 按钮） |
 | `input/picker/PickerTabsUi.kt` / `PickerPaginationUi.kt` | 仍活跃（`PickerWindow` 的 AndroidView island） |

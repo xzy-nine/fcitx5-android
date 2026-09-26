@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.view.doOnLayout
 import androidx.core.view.updateLayoutParams
 import org.fcitx.fcitx5.android.core.CapabilityFlags
 import org.fcitx.fcitx5.android.core.FcitxEvent
@@ -43,7 +44,8 @@ import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComp
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardHeightPercentBase.DisplayMetrics
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardHeightPercentBase.RealSize
-import org.fcitx.fcitx5.android.input.keyboard.KeyboardTuneOverlay
+import org.fcitx.fcitx5.android.input.keyboard.KeyboardTuneCompose
+import org.fcitx.fcitx5.android.input.keyboard.TuneMetrics
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
 import org.fcitx.fcitx5.android.input.picker.emojiPicker
 import org.fcitx.fcitx5.android.input.picker.emoticonPicker
@@ -126,6 +128,9 @@ class InputView(
     // 候选操作菜单覆盖层（Compose 调用方长按候选词时在 IME 内弹出的悬浮菜单）：
     // 根组合（createComposeInputView）经 OverlayContent 渲染，故需对外可见
     internal val candidateActionMenu = ComposeCandidateActionMenu()
+    // 键盘调音覆盖层（custom 特色：拖拽调键盘高度/边距/间隙，模糊键盘背景）：
+    // 根组合（createComposeInputView）经 OverlayContent 渲染，故需对外可见
+    internal val keyboardTune = KeyboardTuneCompose({ keyboardTuneMetrics() }) { setKeyboardTuneBlur(false) }
     private val keyboardWindow = KeyboardWindow()
     private val symbolPicker = symbolPicker()
     private val emojiPicker = emojiPicker()
@@ -185,6 +190,7 @@ class InputView(
         // 旧 View 实现：scope += horizontalCandidate（已断开接线）
         scope += composeCandidate
         scope += candidateActionMenu
+        scope += keyboardTune
         broadcaster.onScopeSetupFinished(scope)
     }
 
@@ -224,15 +230,6 @@ class InputView(
         keyboardBottomPaddingLandscape,
         keyboardHeightPercentBase,
     )
-
-    private val keyboardTuneOverlay by lazy {
-        KeyboardTuneOverlay(
-            context,
-            theme,
-            keyboardPrefs,
-            onDismiss = { setKeyboardTuneBlur(false) }
-        ) { keyboardTuneMetrics() }
-    }
 
     private val keyboardHeightPx: Int
         get() {
@@ -287,6 +284,10 @@ class InputView(
     private val onKeyboardSizeChangeListener = ManagedPreferenceProvider.OnChangeListener { key ->
         if (keyboardSizePrefs.any { it.key == key }) {
             updateKeyboardSize()
+            // 拖拽调音改了键盘尺寸后，让 Compose 调音浮层重新读取几何并刷新卡片位置
+            if (keyboardTune.isShown()) {
+                windowManager.view.doOnLayout { keyboardTune.refresh() }
+            }
         }
     }
 
@@ -355,14 +356,9 @@ class InputView(
         // 顶部圆角由 customBackground（跳过预编辑栏固定高度）与 ComposeToolbar 自身的
         // clip(RoundedCornerShape(16.dp)) 共同实现，keyboardView 不再整体裁剪，
         // 以免把键盘体顶部的预编辑行裁掉。
-        // Custom: 调校浮层挂在键盘主体内（match-constraint 填充 keyboardView），
-        // 这样它既不会撑高 InputView，也不会溢出到键盘之外。
-        keyboardView.add(keyboardTuneOverlay, ConstraintLayout.LayoutParams(matchParent, 0).apply {
-            topToTop = LayoutParams.PARENT_ID
-            bottomToBottom = LayoutParams.PARENT_ID
-            startToStart = LayoutParams.PARENT_ID
-            endToEnd = LayoutParams.PARENT_ID
-        })
+        // Custom: 键盘调校浮层已迁为 Compose IME 覆盖层（KeyboardTuneCompose），
+        // 由根组合（createComposeInputView）在 AndroidView(InputView) 之上渲染，
+        // 不再作为 keyboardView 的子 View 挂载，坐标系改用窗口绝对坐标。
 
         updateKeyboardSize()
 
@@ -418,16 +414,16 @@ class InputView(
 
     // Custom: visual keyboard tuning overlay entry points
     fun showKeyboardTune() {
-        keyboardTuneOverlay.show()
+        keyboardTune.show()
         setKeyboardTuneBlur(true)
     }
 
     fun hideKeyboardTune() {
-        keyboardTuneOverlay.hide()
+        keyboardTune.hide()
         setKeyboardTuneBlur(false)
     }
 
-    fun isKeyboardTuneShown(): Boolean = keyboardTuneOverlay.visibility == View.VISIBLE
+    fun isKeyboardTuneShown(): Boolean = keyboardTune.isShown()
 
     @android.annotation.TargetApi(31)
     private fun setKeyboardTuneBlur(enabled: Boolean) {
@@ -439,28 +435,39 @@ class InputView(
         windowManager.view.setRenderEffect(blur)
     }
 
-    private fun keyboardTuneMetrics() = KeyboardTuneOverlay.TuneMetrics(
-        isLandscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
-        toolbarHeightPx = toolbarHeightPx,
-        // 实测键盘容器与底部留白的真实矩形（相对 keyboardView，即浮层坐标系）
-        keyboardRect = Rect(
-            windowManager.view.left,
-            windowManager.view.top,
-            windowManager.view.right,
-            windowManager.view.bottom
-        ),
-        bottomRect = Rect(
-            bottomPaddingSpace.left,
-            bottomPaddingSpace.top,
-            bottomPaddingSpace.right,
-            bottomPaddingSpace.bottom
-        ),
-        heightBasePx = run {
-            val pct = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
-                keyboardHeightPercentLandscape.getValue() else keyboardHeightPercent.getValue()
-            if (pct > 0) keyboardHeightPx * 100 / pct else resources.displayMetrics.heightPixels
-        }
-    )
+    /**
+     * 调音浮层已迁为 Compose IME 覆盖层，宿主是 IME 根组合（填充整个 IME 窗口），
+     * 因此几何坐标必须是**窗口绝对坐标**（原点 0，落在整窗上），不再是相对 keyboardView 的局部坐标。
+     * 直接用 [View.getLocationInWindow] 把键盘容器与底部留白在 IME 窗口里的真实矩形取出来，
+     * 与浮层 BoxWithConstraints 的坐标系（同样填充 IME 窗口）完全对齐。
+     */
+    private fun keyboardTuneMetrics(): TuneMetrics {
+        val kbLoc = IntArray(2).also { windowManager.view.getLocationInWindow(it) }
+        val bottomLoc = IntArray(2).also { bottomPaddingSpace.getLocationInWindow(it) }
+        return TuneMetrics(
+            isLandscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+            toolbarHeightPx = toolbarHeightPx,
+            // 实测键盘容器的真实矩形（IME 窗口绝对坐标，与浮层坐标系一致）
+            keyboardRect = Rect(
+                kbLoc[0],
+                kbLoc[1],
+                kbLoc[0] + windowManager.view.width,
+                kbLoc[1] + windowManager.view.height
+            ),
+            // 底部留白（键盘下方的空间）真实矩形
+            bottomRect = Rect(
+                bottomLoc[0],
+                bottomLoc[1],
+                bottomLoc[0] + bottomPaddingSpace.width,
+                bottomLoc[1] + bottomPaddingSpace.height
+            ),
+            heightBasePx = run {
+                val pct = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
+                    keyboardHeightPercentLandscape.getValue() else keyboardHeightPercent.getValue()
+                if (pct > 0) keyboardHeightPx * 100 / pct else resources.displayMetrics.heightPixels
+            }
+        )
+    }
 
     /**
      * 候选操作菜单（Compose 覆盖层）：Compose 侧调用方经此路由到 `ComposeCandidateActionMenu`

@@ -229,6 +229,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                         if (iv != null) {
                             iv.popup.PopupOverlayContent(Modifier.fillMaxSize())
                             iv.candidateActionMenu.OverlayContent(Modifier.fillMaxSize())
+                            // Custom: 键盘调校浮层（Compose IME 覆盖层，已迁出 keyboardView 子 View）
+                            iv.keyboardTune.OverlayContent(Modifier.fillMaxSize())
                         }
                     }
                 }
