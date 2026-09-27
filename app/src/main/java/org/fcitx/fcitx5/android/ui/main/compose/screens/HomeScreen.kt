@@ -19,7 +19,6 @@ import org.fcitx.fcitx5.android.ui.main.compose.PrefCategory
 import org.fcitx.fcitx5.android.ui.main.compose.RawConfigHostType
 import org.fcitx.fcitx5.android.utils.Const
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.SmallTitle
@@ -118,7 +117,7 @@ private fun HomeCard(
     Card(
         modifier = Modifier.padding(horizontal = 12.dp),
     ) {
-        items.forEachIndexed { index, dest ->
+        items.forEach { dest ->
             ArrowPreference(
                 title = stringResource(dest.title),
                 startAction = {
@@ -126,9 +125,6 @@ private fun HomeCard(
                 },
                 onClick = { onNavigate(dest.route) },
             )
-            if (index < items.lastIndex) {
-                HorizontalDivider()
-            }
         }
     }
 }

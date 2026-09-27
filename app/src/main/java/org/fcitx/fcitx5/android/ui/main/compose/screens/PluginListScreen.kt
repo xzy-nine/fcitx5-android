@@ -50,7 +50,6 @@ import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
-import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
@@ -221,13 +220,12 @@ fun PluginListScreen(onBack: () -> Unit) {
                                 color = MiuixTheme.colorScheme.surfaceContainerHighest,
                             ),
                         ) {
-                            loaded.forEachIndexed { index, p ->
+                            loaded.forEach { p ->
                                 ArrowPreference(
                                     title = p.name,
                                     summary = "${p.versionName}\n${p.description}",
                                     onClick = { pluginAbout(p.packageName) },
                                 )
-                                if (index < loaded.size - 1) HorizontalDivider()
                             }
                         }
                     }
@@ -241,7 +239,7 @@ fun PluginListScreen(onBack: () -> Unit) {
                                 color = MiuixTheme.colorScheme.surfaceContainerHighest,
                             ),
                         ) {
-                            failed.entries.forEachIndexed { index, entry ->
+                            failed.entries.forEach { entry ->
                                 val pkg = entry.key
                                 val reason = entry.value
                                 ArrowPreference(
@@ -249,7 +247,6 @@ fun PluginListScreen(onBack: () -> Unit) {
                                     summary = failedSummary(reason),
                                     onClick = { pluginAbout(pkg) },
                                 )
-                                if (index < failed.size - 1) HorizontalDivider()
                             }
                         }
                     }

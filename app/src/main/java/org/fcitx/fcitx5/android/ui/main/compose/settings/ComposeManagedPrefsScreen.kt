@@ -60,7 +60,6 @@ import org.fcitx.fcitx5.android.utils.queryFileName
 import org.fcitx.fcitx5.android.utils.toast
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -265,8 +264,8 @@ fun ManagedPrefsScreen(
 
 /**
  * One grouped setting block: a [Card] that stacks the preference rows of a single group
- * (or the whole flattened list when the category has no explicit groups), separated
- * by [HorizontalDivider]. Matches KernelSU's "one Card per group" organization.
+ * (or the whole flattened list when the category has no explicit groups), with no separator
+ * between rows. Matches KernelSU's "one Card per group" organization.
  */
 @Composable
 private fun ManagedGroupCard(
@@ -281,7 +280,7 @@ private fun ManagedGroupCard(
     Card(
         modifier = Modifier.padding(horizontal = 12.dp),
     ) {
-        items.forEachIndexed { index, ui ->
+        items.forEach { ui ->
             ManagedHighlightRow(
                 ui = ui,
                 prefs = prefs,
@@ -290,7 +289,6 @@ private fun ManagedGroupCard(
                 isHighlight = uiTitleString(context, ui) == currentHighlight,
                 highlightColor = highlightColor,
             )
-            if (index < items.lastIndex) HorizontalDivider()
         }
     }
 }

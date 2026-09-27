@@ -46,7 +46,6 @@ import org.fcitx.fcitx5.android.utils.config.ConfigType
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
-import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -111,7 +110,7 @@ fun RawConfigScreen(
                                 ) {
                                     val children = descriptor.customTypeDef?.values.orEmpty()
                                     val customNode = cfg.findByName(descriptor.name)
-                                    children.forEachIndexed { index, child ->
+                                    children.forEach { child ->
                                         RawConfigRow(
                                             descriptor = child,
                                             parent = customNode,
@@ -119,7 +118,6 @@ fun RawConfigScreen(
                                             onSave = onSave,
                                             onMutated = { cfgVersion++ },
                                         )
-                                        if (index < children.lastIndex) HorizontalDivider()
                                     }
                                 }
                             }
