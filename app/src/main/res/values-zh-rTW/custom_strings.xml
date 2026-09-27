@@ -119,4 +119,9 @@
     <string name="voice_plugin_network_auth">外掛網路授權</string>
     <string name="voice_plugin_authorize">授權</string>
     <string name="voice_index_url">索引位址（留空使用內建）</string>
+    <string name="voice_in_use">使用中</string>
+    <string name="voice_use_this">使用</string>
+    <string name="voice_plugin_save">儲存</string>
+    <string name="voice_permission_granted">已授予</string>
+    <string name="voice_downloading">正在下載…</string>
 </resources>

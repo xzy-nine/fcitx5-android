@@ -180,7 +180,7 @@ fun VoiceModelMarketScreen(
                         }
                         if (model.id == selectedModelId || (selectedModelId.isBlank() && model.id == mirror)) {
                             Text(
-                                text = stringResource(R.string.ok),
+                                text = stringResource(R.string.voice_in_use),
                                 color = MiuixTheme.colorScheme.primary,
                             )
                         }
@@ -200,13 +200,13 @@ fun VoiceModelMarketScreen(
                                     if (s.totalBytes > 0) {
                                         "${s.bytesDownloaded / 1024 / 1024} / ${s.totalBytes / 1024 / 1024} MB"
                                     } else {
-                                        stringResource(R.string.voice_download)
+                                        stringResource(R.string.voice_downloading)
                                     }
                                 }
 
                                 is ModelDownloadState.Error -> stringResource(R.string.voice_download_failed)
-                                ModelDownloadState.Complete -> stringResource(R.string.voice_download_extracting)
-                                ModelDownloadState.Idle -> stringResource(R.string.voice_state_processing)
+                                ModelDownloadState.Complete -> stringResource(R.string.voice_download_ok)
+                                ModelDownloadState.Idle -> stringResource(R.string.voice_downloading)
                             },
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         )
@@ -239,7 +239,7 @@ fun VoiceModelMarketScreen(
                             )
                         }
                         TextButton(
-                            text = stringResource(R.string.ok),
+                            text = stringResource(R.string.voice_use_this),
                             onClick = { prefs.voiceAsrModelId.setValue(model.id) },
                         )
                     }

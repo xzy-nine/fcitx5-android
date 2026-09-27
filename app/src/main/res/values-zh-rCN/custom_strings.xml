@@ -228,4 +228,9 @@
     <string name="voice_plugin_network_auth">插件网络授权</string>
     <string name="voice_plugin_authorize">授权</string>
     <string name="voice_index_url">索引地址（留空使用内置）</string>
+    <string name="voice_in_use">使用中</string>
+    <string name="voice_use_this">使用</string>
+    <string name="voice_plugin_save">保存</string>
+    <string name="voice_permission_granted">已授予</string>
+    <string name="voice_downloading">正在下载…</string>
 </resources>

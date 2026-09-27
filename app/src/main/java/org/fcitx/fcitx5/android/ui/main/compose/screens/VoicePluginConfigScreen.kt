@@ -122,12 +122,12 @@ fun VoicePluginConfigScreen(
                     schema.forEach { node ->
                         node.key?.let { key -> store.set(key, values[key].orEmpty()) }
                     }
-                    Toast.makeText(context, R.string.voice_download_ok, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, R.string.voice_plugin_save, Toast.LENGTH_SHORT).show()
                     onBack()
                 },
                 enabled = !missingRequired,
             ) {
-                Text(stringResource(R.string.voice_plugin_config))
+                Text(stringResource(R.string.voice_plugin_save))
             }
         },
     ) {

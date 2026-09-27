@@ -147,7 +147,10 @@ fun VoiceInputSettingsScreen(
                                     }
                                 }
                                 if (plugin.pluginId == pluginId || (pluginId.isBlank() && configured)) {
-                                    Text(text = stringResource(R.string.ok))
+                                    Text(
+                                        text = stringResource(R.string.voice_in_use),
+                                        color = MiuixTheme.colorScheme.primary,
+                                    )
                                 }
                                 TextButton(
                                     text = stringResource(R.string.voice_plugin_config),
@@ -270,7 +273,7 @@ fun VoiceInputSettingsScreen(
                 ) {
                     Text(
                         text = if (permissionGranted) {
-                            stringResource(R.string.voice_state_idle)
+                            stringResource(R.string.voice_permission_granted)
                         } else {
                             stringResource(R.string.voice_record_permission_missing)
                         },
@@ -319,12 +322,12 @@ fun VoiceInputSettingsScreen(
                                 )
                                 if (info.id == current || (current.isBlank() && voiceImes.first().first.id == info.id)) {
                                     Text(
-                                        text = stringResource(R.string.ok),
+                                        text = stringResource(R.string.voice_in_use),
                                         color = MiuixTheme.colorScheme.primary,
                                     )
                                 }
                                 TextButton(
-                                    text = stringResource(R.string.ok),
+                                    text = stringResource(R.string.voice_use_this),
                                     onClick = {
                                         kbdPrefs.preferredVoiceInput.setValue(info.id)
                                     },
