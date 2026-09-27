@@ -10,11 +10,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -28,6 +31,7 @@ import com.kingzcheung.xime.model.ModelInfo
 import com.kingzcheung.xime.speech.AsrModelManager
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import org.fcitx.fcitx5.android.data.voice.VoiceModelRepository
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -39,7 +43,7 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Ok
+import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -56,14 +60,27 @@ fun VoiceModelMarketScreen(
     val context = LocalContext.current
     val prefs = AppPrefs.getInstance().voice
 
+    var version by remember { mutableIntStateOf(0) }
+    DisposableEffect(prefs) {
+        val listener = object : ManagedPreferenceProvider.OnChangeListener {
+            override fun onChange(key: String) {
+                version += 1
+            }
+        }
+        prefs.registerOnChangeListener(listener)
+        onDispose { prefs.unregisterOnChangeListener(listener) }
+    }
+
     val models by VoiceModelRepository.models.collectAsState()
     val loading by VoiceModelRepository.loadingIndex.collectAsState()
     val indexError by VoiceModelRepository.indexError.collectAsState()
     val downloadState by VoiceModelRepository.downloadState.collectAsState()
     val downloadingId by VoiceModelRepository.downloadingId.collectAsState()
     val lastError by VoiceModelRepository.lastError.collectAsState()
-    val selectedModelId = prefs.voiceAsrModelId.getValue()
-    val mirror = AsrModelManager(context).getSelectedModelId()
+    // 与 AsrModelManager.getSelectedModelId() 同口径（空值回落内置默认模型）
+    val selectedModelId = remember(version) {
+        prefs.voiceAsrModelId.getValue().ifBlank { AsrModelManager.DEFAULT_ID }
+    }
 
     LaunchedEffect(Unit) {
         VoiceModelRepository.ensureIndexLoaded(context)
@@ -159,96 +176,99 @@ fun VoiceModelMarketScreen(
         items(displayed, key = { it.id }) { model ->
             val downloaded = VoiceModelRepository.isDownloaded(context, model)
             val isTarget = downloadingId == model.id
+            val inUse = model.id == selectedModelId
+            val failed = isTarget && downloadState is ModelDownloadState.Error
             Card(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
                 colors = CardDefaults.defaultColors(
                     color = MiuixTheme.colorScheme.surfaceContainerHighest,
                 ),
             ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = model.name)
-                            val size = model.size.ifBlank {
-                                model.resolvedVersion()?.size.orEmpty()
-                            }
-                            Text(
-                                text = listOfNotNull(
-                                    model.description.takeIf { it.isNotBlank() },
-                                    size.takeIf { it.isNotBlank() },
-                                    stringResource(
-                                        if (downloaded) R.string.voice_model_state_ready
-                                        else R.string.voice_model_state_missing
-                                    ),
-                                ).joinToString(" · "),
-                                color = if (downloaded) MiuixTheme.colorScheme.primary
-                                else MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(vertical = 12.dp)) {
+                        Text(text = model.name)
+                        val size = model.size.ifBlank {
+                            model.resolvedVersion()?.size.orEmpty()
                         }
-                        if (model.id == selectedModelId || (selectedModelId.isBlank() && model.id == mirror)) {
-                            Text(
-                                text = stringResource(R.string.voice_in_use),
-                                color = MiuixTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-
-                    if (isTarget) {
-                        Spacer(Modifier.height(8.dp))
-                        val progress = (downloadState as? ModelDownloadState.Downloading)?.progress
-                        LinearProgressIndicator(
-                            modifier = Modifier.fillMaxWidth(),
-                            progress = progress,
-                        )
-                        Spacer(Modifier.height(4.dp))
                         Text(
-                            text = when (val s = downloadState) {
-                                is ModelDownloadState.Downloading -> {
-                                    if (s.totalBytes > 0) {
-                                        "${s.bytesDownloaded / 1024 / 1024} / ${s.totalBytes / 1024 / 1024} MB"
-                                    } else {
-                                        stringResource(R.string.voice_downloading)
-                                    }
-                                }
-
-                                is ModelDownloadState.Error -> stringResource(R.string.voice_download_failed)
-                                ModelDownloadState.Complete -> stringResource(R.string.voice_download_ok)
-                                ModelDownloadState.Idle -> stringResource(R.string.voice_downloading)
-                            },
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        )
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val failed = isTarget && downloadState is ModelDownloadState.Error
-                        if (!downloaded) {
-                            TextButton(
-                                text = stringResource(
-                                    when {
-                                        failed -> R.string.voice_download_retry
-                                        isTarget -> R.string.voice_download_cancel
-                                        else -> R.string.voice_download
-                                    }
+                            text = listOfNotNull(
+                                model.description.takeIf { it.isNotBlank() },
+                                size.takeIf { it.isNotBlank() },
+                                stringResource(
+                                    if (downloaded) R.string.voice_model_state_ready
+                                    else R.string.voice_model_state_missing
                                 ),
-                                onClick = {
-                                    when {
-                                        failed -> VoiceModelRepository.downloadModel(context, model)
-                                        isTarget -> VoiceModelRepository.cancelDownload()
-                                        else -> VoiceModelRepository.downloadModel(context, model)
-                                    }
-                                },
+                            ).joinToString(" · "),
+                            color = if (downloaded) MiuixTheme.colorScheme.primary
+                            else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+
+                        if (isTarget) {
+                            Spacer(Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth(),
+                                progress = (downloadState as? ModelDownloadState.Downloading)?.progress,
                             )
-                        } else {
-                            TextButton(
-                                text = stringResource(R.string.voice_model_delete),
-                                onClick = { VoiceModelRepository.deleteModel(context, model) },
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = when (val s = downloadState) {
+                                    is ModelDownloadState.Downloading -> {
+                                        if (s.totalBytes > 0) {
+                                            "${s.bytesDownloaded / 1024 / 1024} / ${s.totalBytes / 1024 / 1024} MB"
+                                        } else {
+                                            stringResource(R.string.voice_downloading)
+                                        }
+                                    }
+
+                                    is ModelDownloadState.Error -> stringResource(R.string.voice_download_failed)
+                                    ModelDownloadState.Complete -> stringResource(R.string.voice_download_ok)
+                                    ModelDownloadState.Idle -> stringResource(R.string.voice_downloading)
+                                },
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             )
                         }
-                        IconButton(onClick = { prefs.voiceAsrModelId.setValue(model.id) }) {
-                            Icon(
-                                imageVector = MiuixIcons.Ok,
-                                contentDescription = stringResource(R.string.voice_use_this),
+                    }
+
+                    when {
+                        // 未下载：只有下载/取消/重试，不能「使用」
+                        !downloaded -> TextButton(
+                            text = stringResource(
+                                when {
+                                    failed -> R.string.voice_download_retry
+                                    isTarget -> R.string.voice_download_cancel
+                                    else -> R.string.voice_download
+                                }
+                            ),
+                            onClick = {
+                                when {
+                                    failed -> VoiceModelRepository.downloadModel(context, model)
+                                    isTarget -> VoiceModelRepository.cancelDownload()
+                                    else -> VoiceModelRepository.downloadModel(context, model)
+                                }
+                            },
+                        )
+                        // 已下载且在用：不再给动作，只显示状态
+                        inUse -> Text(
+                            text = stringResource(R.string.voice_in_use),
+                            color = MiuixTheme.colorScheme.primary,
+                        )
+                        // 已下载且未在用：删除 + 使用
+                        else -> {
+                            IconButton(
+                                onClick = { VoiceModelRepository.deleteModel(context, model) },
+                            ) {
+                                Icon(
+                                    imageVector = MiuixIcons.Delete,
+                                    contentDescription = stringResource(R.string.voice_model_delete),
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                            TextButton(
+                                text = stringResource(R.string.voice_use_this),
+                                onClick = { prefs.voiceAsrModelId.setValue(model.id) },
                             )
                         }
                     }
