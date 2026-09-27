@@ -8,16 +8,16 @@ import android.content.Context
 import android.media.AudioManager
 import android.text.InputType
 import androidx.core.content.ContextCompat
-import com.kingzcheung.xime.service.VoiceRecognitionHandler
-import com.kingzcheung.xime.service.VoiceUiState
-import com.kingzcheung.xime.speech.AsrModelManager
-import com.kingzcheung.xime.speech.AsrPluginHostRegistry
-import com.kingzcheung.xime.speech.RecognitionState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.data.voice.VoiceModelStore
 import org.fcitx.fcitx5.android.data.voice.VoicePermissionState
+import org.fcitx.fcitx5.android.data.voice.VoiceRecognitionState
+import org.fcitx.fcitx5.android.data.voice.VoiceSession
+import org.fcitx.fcitx5.android.data.voice.VoiceUiState
+import org.fcitx.fcitx5.android.data.voice.online.OnlineAsrRegistry
 import org.fcitx.fcitx5.android.input.FcitxInputMethodService
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
@@ -65,7 +65,7 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
     private val _spectrum = MutableStateFlow(FloatArray(SPECTRUM_BARS))
     val spectrum: StateFlow<FloatArray> = _spectrum.asStateFlow()
 
-    private var handler: VoiceRecognitionHandler? = null
+    private var session: VoiceSession? = null
     private var savedMediaVolume = -1
 
     /** 本次面板由空格长按进入（出字后自动回主键盘）。 */
@@ -101,10 +101,8 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
         enabled = prefs.voiceInputEnabled.getValue(),
         permissionGranted = VoicePermissionState.has(context),
         useLocal = prefs.voiceUseLocal.getValue(),
-        localModelReady = AsrModelManager(context).isModelReady(),
-        onlinePluginReady = AsrPluginHostRegistry
-            .enabledAsrPlugins(context)
-            .any { it.isConfigured(context) },
+        localModelReady = VoiceModelStore.isReady(context, prefs.voiceAsrModelId.getValue()),
+        onlineProviderReady = OnlineAsrRegistry.configured(context).isNotEmpty(),
         hasExternalVoiceIme = InputMethodUtil
             .findVoiceSubtype(kbdPrefs.preferredVoiceInput.getValue()) != null,
     )
@@ -143,19 +141,24 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
 
     // ---- 会话控制 ----
 
-    private fun handler(): VoiceRecognitionHandler {
-        handler?.let { return it }
-        val h = VoiceRecognitionHandler(
-            context = context,
-            onStateChanged = { _state.value = it },
-            getState = { _state.value },
-            writeComposing = { service.setVoiceComposingText(it) },
-            commitVoiceText = {
+    private fun session(): VoiceSession = session ?: VoiceSession(
+        context = context,
+        callbacks = object : VoiceSession.Callbacks {
+            override fun onState(state: VoiceUiState) {
+                _state.value = state
+            }
+
+            override fun onPartialText(text: String) {
+                // 部分结果写入 composing（复用 fcitx 的 preedit 状态机）
+                service.setVoiceComposingText(text)
+            }
+
+            override fun onFinalText(text: String) {
                 committedThisSession = true
-                service.commitText(it)
-            },
-            finishComposing = { service.finishComposing() },
-            onVoiceComplete = {
+                service.commitText(text)
+            }
+
+            override fun onSessionComplete() {
                 _spectrum.value = FloatArray(SPECTRUM_BARS)
                 // 空格长按进入：出字后自动回主键盘（未出字，例如识别失败/无语音，则留在面板）
                 if (autoReturnOnCommit && committedThisSession) {
@@ -166,51 +169,49 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
                         windowManager.attachWindow(KeyboardWindow)
                     }
                 }
-            },
-            onAmplitudeChanged = { amplitude ->
+            }
+
+            override fun onAmplitude(amplitude: Float) {
                 // 振幅驱动可视化：整体缩放当前频谱
                 val current = _spectrum.value
                 _spectrum.value = FloatArray(SPECTRUM_BARS) { i ->
                     (current[i] * 0.7f + amplitude * 0.3f).coerceIn(0f, 1f)
                 }
-            },
-            onSpectrumChanged = { spectrum ->
+            }
+
+            override fun onSpectrum(spectrum: FloatArray) {
                 if (spectrum.isNotEmpty()) _spectrum.value = spectrum
-            },
-        )
-        h.initialize()
-        handler = h
-        return h
-    }
+            }
+        },
+    ).also { session = it }
 
     /** 按下麦克风：开始识别。 */
     fun startRecognition() {
-        val h = handler()
         if (prefs.voiceMuteDuringRecording.getValue()) muteMedia()
-        h.startRecognition()
+        session().startRecognition()
         _state.value = _state.value.copy(isVoiceMode = true)
     }
 
     /** 抬起/再次点击麦克风：先提交已识别的部分，再停止。 */
     fun stopRecognition() {
-        val h = handler ?: return
-        h.commitPendingOnRelease()
-        h.stopRecognition()
+        val s = session
+        s?.commitPendingOnRelease()
+        s?.stopRecognition()
         unmuteMedia()
     }
 
     /** 取消本次会话（丢弃已识别文本）。 */
     fun cancelSession() {
-        val h = handler
-        h?.cancelPreStart()
-        h?.abandonSession()
-        h?.stopRecognition()
+        val s = session
+        s?.cancelPreStart()
+        s?.abandonSession()
         service.finishComposing()
         unmuteMedia()
         _state.value = _state.value.copy(
             isVoiceMode = false,
-            voiceRecognizedText = "",
-            voiceRecognitionState = RecognitionState.IDLE,
+            recognizedText = "",
+            recognitionState = VoiceRecognitionState.IDLE,
+            error = null,
         )
         _spectrum.value = FloatArray(SPECTRUM_BARS)
     }
@@ -220,36 +221,38 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
         VoicePermissionState.refresh(context)
         _state.value = _state.value.copy(isVoiceMode = true)
         committedThisSession = false
+        session().warmUp()
         if (canAutoStart()) startRecognition()
     }
 
-    /** 当前选中的引擎是否已就绪（本地模型已下载 / 在线插件已配置）且已获录音权限。 */
+    /** 当前选中的引擎是否已就绪（本地模型已下载 / 在线平台已配置）且已获录音权限。 */
     fun canAutoStart(): Boolean {
         if (!VoicePermissionState.has(context)) return false
-        return if (prefs.voiceUseLocal.getValue()) {
-            AsrModelManager(context).isModelReady()
-        } else {
-            AsrPluginHostRegistry.enabledAsrPlugins(context).any { it.isConfigured(context) }
-        }
+        return session().isEngineReady()
     }
 
     /** 面板隐藏（切走窗口/输入框失焦）：丢弃未结束的会话，迟到结果不得上屏。 */
     fun onPanelHidden() {
-        val h = handler
-        h?.cancelPreStart()
-        h?.abandonSession()
-        h?.stopRecognition()
+        val s = session
+        s?.cancelPreStart()
+        s?.abandonSession()
         unmuteMedia()
         _state.value = _state.value.copy(
             isVoiceMode = false,
-            voiceRecognizedText = "",
-            voiceRecognitionState = RecognitionState.IDLE,
+            recognizedText = "",
+            recognitionState = VoiceRecognitionState.IDLE,
+            error = null,
         )
         _spectrum.value = FloatArray(SPECTRUM_BARS)
     }
 
-    /** 引擎展示名（本地 Zipformer / 插件名）。 */
-    fun engineName(): String = _state.value.voicePluginName
+    /** 引擎展示名（本地 Zipformer / 在线平台名）。 */
+    fun engineName(): String = _state.value.engineName
+
+    /** 关闭「本地识别」开关时卸载 :asr 侧模型句柄。 */
+    fun releaseLocalModel() {
+        session?.releaseLocalModel()
+    }
 
     // ---- 录音时静音媒体音量 ----
 

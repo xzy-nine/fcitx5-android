@@ -100,9 +100,9 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object VoiceModelMarket : AppRoute
 
-    /** custom: 在线 ASR 插件的声明式配置表单（按插件 id） */
+    /** custom: 在线 ASR 平台的声明式配置表单（按平台 id） */
     @Serializable
-    data class VoicePluginConfig(val pluginId: String) : AppRoute
+    data class VoiceProviderConfig(val providerId: String) : AppRoute
 }
 
 @Serializable

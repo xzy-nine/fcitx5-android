@@ -11,72 +11,12 @@ plugins {
 }
 
 // ---------------------------------------------------------------------------
-// custom: 离线 ASR 的 ONNX Runtime（MIT）
+// custom: 离线语音识别引擎 = 官方 sherpa-onnx AAR（Apache-2.0）
 //
-// 与 Xime 同版本同来源：从 Maven Central 解析官方 AAR
-//   com.microsoft.onnxruntime:onnxruntime-android:1.28.0
-// 并抽出 jni/<abi>/libonnxruntime.so。C++ 头文件已随仓库收录于
-// app/src/main/cpp/asr/onnxruntime/include/（AAR 不提供头文件）。
+// 见 dependencies 里的 implementation(files("libs/sherpa-onnx-1.13.8.aar"))：
+// AAR 自带官方 Kotlin/JNI 适配器与各 ABI 的 .so（含其内置的 ONNX Runtime），
+// 因此不再自己抽 ONNX Runtime、也不再需要本地 C++ ASR 目标。
 // ---------------------------------------------------------------------------
-val onnxRuntimeVersion = "1.28.0"
-val onnxRuntimeJniDir = layout.buildDirectory.dir("onnxruntime/aar/jni").get().asFile
-val onnxRuntimeLibDir = onnxRuntimeJniDir
-
-val onnxRuntimeAar = configurations.create("onnxRuntimeAar") {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-}
-dependencies.add(onnxRuntimeAar.name, "com.microsoft.onnxruntime:onnxruntime-android:$onnxRuntimeVersion")
-
-val extractOnnxRuntime = tasks.register<Sync>("extractOnnxRuntime") {
-    description = "Extract libonnxruntime.so from the official ONNX Runtime Android AAR"
-    group = "custom"
-    into(layout.buildDirectory.dir("onnxruntime/aar"))
-    inputs.files(onnxRuntimeAar).withPropertyName("onnxRuntimeAar")
-    from({ onnxRuntimeAar.files.map { zipTree(it) } }) {
-        include("jni/**/libonnxruntime.so")
-    }
-}
-
-// ---------------------------------------------------------------------------
-val luaPluginsAssetsDir = layout.buildDirectory.dir("luaPluginsAssets").get().asFile
-val luaPluginsSourceDir = rootProject.file("plugins")
-val luaPluginDirs = luaPluginsSourceDir
-    .listFiles { f -> f.isDirectory && File(f, "manifest.yaml").exists() }
-    ?.sortedBy { it.name }
-    .orEmpty()
-val zipLuaPluginTasks = luaPluginDirs.map { dir ->
-    tasks.register<Zip>("zipLuaPlugin${dir.name.replace("-", "")}") {
-        description = "Pack Lua plugin ${dir.name} into a .xipk archive"
-        group = "custom"
-        from(dir)
-        archiveFileName.set("${dir.name}.xipk")
-        destinationDirectory.set(File(luaPluginsAssetsDir, "plugins"))
-    }
-}
-val copyLuaPluginsToAssets = tasks.register("copyLuaPluginsToAssets") {
-    description = "Pack bundled Lua ASR plugins into assets/plugins/*.xipk"
-    group = "custom"
-    dependsOn(zipLuaPluginTasks)
-}
-
-// CMake configure 与打包都必须在抽取完成之后
-tasks.configureEach {
-    if (name != extractOnnxRuntime.name &&
-        (name.startsWith("configureCMake") ||
-                name.startsWith("buildCMake") ||
-                name.startsWith("externalNativeBuild") ||
-                (name.startsWith("merge") && name.endsWith("JniLibFolders")) ||
-                name == "preBuild")
-    ) {
-        dependsOn(extractOnnxRuntime)
-    }
-    if (name.startsWith("merge") && name.endsWith("Assets") ||
-        name == "preBuild" || name == "generateDebugLintReportModel"
-    ) {
-        dependsOn(copyLuaPluginsToAssets)
-    }
-}
 
 android {
     namespace = "org.fcitx.fcitx5.android"
@@ -100,22 +40,10 @@ android {
                     // android specific modules
                     "androidfrontend",
                     "androidkeyboard",
-                    "androidnotification",
-                    // custom: 离线流式 zipformer2 ASR（移植自 Xime）
-                    "asr_jni"
+                    "androidnotification"
                 )
-                // custom: ASR 原生库需要 libonnxruntime.so 的位置（由 extractOnnxRuntime 抽取）
-                arguments("-DONNXRUNTIME_LIB_DIR=${onnxRuntimeLibDir.absolutePath}")
             }
         }
-    }
-
-    // custom: libonnxruntime.so 由 CMake 的 IMPORTED 目标链接，但 AGP 不会自动打包
-    // IMPORTED 库，必须额外挂进 jniLibs（这也是 Xime 需要放两份 .so 的原因）
-    sourceSets.getByName("main") {
-        jniLibs.directories.add(onnxRuntimeJniDir.absolutePath)
-        // Lua 在线 ASR 插件（仓库根 plugins/ → assets/plugins/）
-        assets.directories.add(luaPluginsAssetsDir.absolutePath)
     }
 
     buildFeatures {
@@ -158,6 +86,7 @@ ksp {
 
 dependencies {
     implementation(libs.androidx.compose.runtime)
+    implementation(files("libs/sherpa-onnx-1.13.8.aar"))
     ksp(project(":codegen"))
     implementation(project(":lib:fcitx5"))
     implementation(project(":lib:fcitx5-lua"))
@@ -217,13 +146,11 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.ui)
     implementation(libs.jieba.analysis)
-    // custom: 语音输入（Xime 核心移植）—— 在线 ASR 插件、模型索引/下载、简繁转换
-    implementation(project(":plugin-core"))
+    // custom: 语音输入 —— 在线识别（okhttp/SSE）、模型索引（kaml）、归档解压（commons-compress）
     implementation(libs.okhttp)
     implementation(libs.okhttp.sse)
     implementation(libs.kaml)
     implementation(libs.commons.compress)
-    implementation(libs.opencc4j)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)

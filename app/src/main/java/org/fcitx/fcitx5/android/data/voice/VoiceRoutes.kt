@@ -25,10 +25,10 @@ object VoiceRoutes {
     /** 模型市场（下载/删除）页。 */
     const val MODELS = "models"
 
-    /** 在线插件配置表单页（需要配合 [EXTRA_PLUGIN_ID]）。 */
-    const val PLUGIN_CONFIG = "plugin_config"
+    /** 在线识别平台配置页（需要配合 [EXTRA_PROVIDER_ID]）。 */
+    const val PROVIDER_CONFIG = "provider_config"
 
-    const val EXTRA_PLUGIN_ID = "org.fcitx.fcitx5.android.EXTRA_VOICE_PLUGIN_ID"
+    const val EXTRA_PROVIDER_ID = "org.fcitx.fcitx5.android.EXTRA_VOICE_PROVIDER_ID"
 
     fun open(context: Context, route: String) {
         val intent = Intent(context, MainActivity::class.java).apply {
@@ -39,27 +39,27 @@ object VoiceRoutes {
         context.startActivity(intent)
     }
 
-    /** 打开某个在线插件的配置表单（IME 与设置页共用同一机制）。 */
-    fun openPluginConfig(context: Context, pluginId: String) {
+    /** 打开某个在线识别平台的配置表单（IME 与设置页共用同一机制）。 */
+    fun openProviderConfig(context: Context, providerId: String) {
         val intent = Intent(context, MainActivity::class.java).apply {
             action = Intent.ACTION_RUN
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra(EXTRA, PLUGIN_CONFIG)
-            putExtra(EXTRA_PLUGIN_ID, pluginId)
+            putExtra(EXTRA, PROVIDER_CONFIG)
+            putExtra(EXTRA_PROVIDER_ID, providerId)
         }
         context.startActivity(intent)
     }
 }
 
 /**
- * custom: 在线 ASR 插件的「配置表单」入口。
+ * custom: 在线识别平台的「配置表单」入口。
  *
  * 表单页在应用内（MainActivity Compose 导航），因此 IME 与设置页都通过
- * [VoiceRoutes.openPluginConfig] 跳转（singleTask 会走 onNewIntent → 导航）。
+ * [VoiceRoutes.openProviderConfig] 跳转（singleTask 会走 onNewIntent → 导航）。
  */
-object VoicePluginConfigEntryPoint {
+object VoiceProviderConfigEntryPoint {
 
-    fun open(context: Context, pluginId: String) {
-        VoiceRoutes.openPluginConfig(context, pluginId)
+    fun open(context: Context, providerId: String) {
+        VoiceRoutes.openProviderConfig(context, providerId)
     }
 }

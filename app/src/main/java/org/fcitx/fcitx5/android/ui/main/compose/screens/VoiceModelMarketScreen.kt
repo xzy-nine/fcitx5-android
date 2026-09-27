@@ -26,12 +26,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.kingzcheung.xime.model.ModelDownloadState
-import com.kingzcheung.xime.model.ModelInfo
-import com.kingzcheung.xime.speech.AsrModelManager
+import org.fcitx.fcitx5.android.data.voice.VoiceModelCatalog
+import org.fcitx.fcitx5.android.data.voice.VoiceModelDownloadState
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
+import org.fcitx.fcitx5.android.data.voice.VoiceModelInfo
 import org.fcitx.fcitx5.android.data.voice.VoiceModelRepository
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -77,37 +77,17 @@ fun VoiceModelMarketScreen(
     val downloadState by VoiceModelRepository.downloadState.collectAsState()
     val downloadingId by VoiceModelRepository.downloadingId.collectAsState()
     val lastError by VoiceModelRepository.lastError.collectAsState()
-    // 与 AsrModelManager.getSelectedModelId() 同口径（空值回落内置默认模型）
+    // 与引擎同口径（空值回落内置默认模型）
     val selectedModelId = remember(version) {
-        prefs.voiceAsrModelId.getValue().ifBlank { AsrModelManager.DEFAULT_ID }
+        prefs.voiceAsrModelId.getValue().ifBlank { VoiceModelCatalog.DEFAULT_ID }
     }
 
     LaunchedEffect(Unit) {
         VoiceModelRepository.ensureIndexLoaded(context)
     }
 
-    // 索引为空时回落到内置默认模型，保证页面永远有内容可选
-    val displayed: List<ModelInfo> = models.ifEmpty {
-        val default = AsrModelManager.DEFAULT_MODEL
-        listOf(
-            ModelInfo(
-                id = default.id,
-                name = default.name,
-                description = default.description,
-                category = com.kingzcheung.xime.model.ModelCategory.ASR,
-                size = default.size,
-                versions = listOf(
-                    com.kingzcheung.xime.model.ModelVersion(
-                        files = default.files.map {
-                            com.kingzcheung.xime.model.ModelFile(it, "")
-                        },
-                        archiveUrl = default.downloadUrl,
-                        size = default.size,
-                    )
-                ),
-            )
-        )
-    }
+    // 索引为空时回落到内置官方模型清单，保证页面永远有内容可选
+    val displayed: List<VoiceModelInfo> = models.ifEmpty { VoiceModelCatalog.builtin }
 
     PageScaffold(
         title = stringResource(R.string.voice_model_market),
@@ -156,7 +136,7 @@ fun VoiceModelMarketScreen(
             }
         }
 
-        // 索引地址覆盖（留空 = 用 xime.yaml 的 xime_index.base_urls）
+        // 索引地址覆盖（留空 = 用内置默认索引 index.ximei.me）
         item {
             var indexUrl by remember { mutableStateOf(prefs.voiceIndexUrl.getValue()) }
             TextField(
@@ -177,7 +157,7 @@ fun VoiceModelMarketScreen(
             val downloaded = VoiceModelRepository.isDownloaded(context, model)
             val isTarget = downloadingId == model.id
             val inUse = model.id == selectedModelId
-            val failed = isTarget && downloadState is ModelDownloadState.Error
+            val failed = isTarget && downloadState is VoiceModelDownloadState.Error
             Card(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
                 colors = CardDefaults.defaultColors(
@@ -190,9 +170,7 @@ fun VoiceModelMarketScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f).padding(vertical = 12.dp)) {
                         Text(text = model.name)
-                        val size = model.size.ifBlank {
-                            model.resolvedVersion()?.size.orEmpty()
-                        }
+                        val size = model.size
                         Text(
                             text = listOfNotNull(
                                 model.description.takeIf { it.isNotBlank() },
@@ -210,12 +188,12 @@ fun VoiceModelMarketScreen(
                             Spacer(Modifier.height(8.dp))
                             LinearProgressIndicator(
                                 modifier = Modifier.fillMaxWidth(),
-                                progress = (downloadState as? ModelDownloadState.Downloading)?.progress,
+                                progress = (downloadState as? VoiceModelDownloadState.Downloading)?.progress,
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
                                 text = when (val s = downloadState) {
-                                    is ModelDownloadState.Downloading -> {
+                                    is VoiceModelDownloadState.Downloading -> {
                                         if (s.totalBytes > 0) {
                                             "${s.bytesDownloaded / 1024 / 1024} / ${s.totalBytes / 1024 / 1024} MB"
                                         } else {
@@ -223,9 +201,9 @@ fun VoiceModelMarketScreen(
                                         }
                                     }
 
-                                    is ModelDownloadState.Error -> stringResource(R.string.voice_download_failed)
-                                    ModelDownloadState.Complete -> stringResource(R.string.voice_download_ok)
-                                    ModelDownloadState.Idle -> stringResource(R.string.voice_downloading)
+                                    is VoiceModelDownloadState.Error -> stringResource(R.string.voice_download_failed)
+                                    VoiceModelDownloadState.Complete -> stringResource(R.string.voice_download_ok)
+                                    VoiceModelDownloadState.Idle -> stringResource(R.string.voice_downloading)
                                 },
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             )

@@ -21,7 +21,7 @@ class VoiceEntryRoutingTest {
                 permissionGranted = true,
                 useLocal = true,
                 localModelReady = true,
-                onlinePluginReady = false,
+                onlineProviderReady = false,
                 hasExternalVoiceIme = true,
             )
         )
@@ -36,7 +36,7 @@ class VoiceEntryRoutingTest {
                 permissionGranted = true,
                 useLocal = true,
                 localModelReady = true,
-                onlinePluginReady = false,
+                onlineProviderReady = false,
                 hasExternalVoiceIme = false,
             )
         )
@@ -51,7 +51,7 @@ class VoiceEntryRoutingTest {
                 permissionGranted = false,
                 useLocal = true,
                 localModelReady = false,
-                onlinePluginReady = false,
+                onlineProviderReady = false,
                 hasExternalVoiceIme = true,
             )
         )
@@ -66,7 +66,7 @@ class VoiceEntryRoutingTest {
                 permissionGranted = true,
                 useLocal = true,
                 localModelReady = true,
-                onlinePluginReady = false,
+                onlineProviderReady = false,
                 hasExternalVoiceIme = false,
             )
         )
@@ -81,7 +81,7 @@ class VoiceEntryRoutingTest {
                 permissionGranted = true,
                 useLocal = true,
                 localModelReady = false,
-                onlinePluginReady = true,
+                onlineProviderReady = true,
                 hasExternalVoiceIme = true,
             )
         )
@@ -96,7 +96,7 @@ class VoiceEntryRoutingTest {
                 permissionGranted = true,
                 useLocal = false,
                 localModelReady = true,
-                onlinePluginReady = true,
+                onlineProviderReady = true,
                 hasExternalVoiceIme = false,
             )
         )
@@ -111,7 +111,7 @@ class VoiceEntryRoutingTest {
                 permissionGranted = true,
                 useLocal = false,
                 localModelReady = true,
-                onlinePluginReady = false,
+                onlineProviderReady = false,
                 hasExternalVoiceIme = true,
             )
         )
@@ -126,7 +126,7 @@ class VoiceEntryRoutingTest {
                 permissionGranted = true,
                 useLocal = false,
                 localModelReady = false,
-                onlinePluginReady = false,
+                onlineProviderReady = false,
                 hasExternalVoiceIme = false,
             )
         )

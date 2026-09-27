@@ -74,6 +74,16 @@
     <string name="voice_use_local_summary">使用離線 Zipformer 模型；關閉後改用線上外掛</string>
     <string name="voice_online_provider">線上服務商</string>
     <string name="voice_online_provider_none">尚未安裝線上外掛</string>
+    <string name="voice_provider_volcengine">火山引擎串流語音辨識</string>
+    <string name="voice_provider_mimo">小米 MiMo 語音辨識</string>
+    <string name="voice_provider_settings">平台設定</string>
+    <string name="voice_provider_hint_console">在平台主控台取得</string>
+    <string name="voice_volc_api_key">API Key</string>
+    <string name="voice_volc_app_key">App Key</string>
+    <string name="voice_volc_access_key">Access Key</string>
+    <string name="voice_volc_resource_id">資源 ID</string>
+    <string name="voice_mimo_api_key">API Key</string>
+    <string name="voice_mimo_language">語種提示</string>
     <string name="voice_provider_not_configured">未設定</string>
     <string name="voice_plugin_config">外掛設定</string>
     <string name="voice_plugin_config_summary">設定此外掛的 API Key 與選項</string>

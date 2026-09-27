@@ -40,7 +40,7 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.ThemeScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WebDavSyncScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceInputSettingsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceModelMarketScreen
-import org.fcitx.fcitx5.android.ui.main.compose.screens.VoicePluginConfigScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceProviderConfigScreen
 import org.fcitx.fcitx5.android.ui.main.compose.settings.ManagedPrefsScreen
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.utils.parcelable
@@ -111,10 +111,10 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                                 return@collect
                             }
 
-                            org.fcitx.fcitx5.android.data.voice.VoiceRoutes.PLUGIN_CONFIG -> {
+                            org.fcitx.fcitx5.android.data.voice.VoiceRoutes.PROVIDER_CONFIG -> {
                                 intent.getStringExtra(
-                                    org.fcitx.fcitx5.android.data.voice.VoiceRoutes.EXTRA_PLUGIN_ID
-                                )?.let { navigateTo(AppRoute.VoicePluginConfig(it)) }
+                                    org.fcitx.fcitx5.android.data.voice.VoiceRoutes.EXTRA_PROVIDER_ID
+                                )?.let { navigateTo(AppRoute.VoiceProviderConfig(it)) }
                                 return@collect
                             }
                         }
@@ -295,9 +295,9 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 entry<AppRoute.VoiceModelMarket> {
                     VoiceModelMarketScreen(onBack = { backStack.removeLastOrNull() })
                 }
-                entry<AppRoute.VoicePluginConfig> { route ->
-                    VoicePluginConfigScreen(
-                        pluginId = route.pluginId,
+                entry<AppRoute.VoiceProviderConfig> { route ->
+                    VoiceProviderConfigScreen(
+                        providerId = route.providerId,
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }

@@ -171,13 +171,13 @@
         </service>
 
         <!--
-          custom: 离线语音识别服务（移植自 Xime）。
-          独立 `:asr` 进程：模型加载与 dlopen ONNX Runtime 不占用输入法进程内存；
+          custom: 离线语音识别服务（官方 sherpa-onnx 引擎）。
+          独立 `:asr` 进程：模型加载与 dlopen sherpa/ONNX Runtime 不占用输入法进程内存；
           该进程不初始化 AppPrefs/剪贴板/WebDAV 子系统（见 FcitxApplication 的进程守卫），
           模型文件路径由 app 侧经 AIDL 传入。
         -->
         <service
-            android:name="com.kingzcheung.xime.service.AsrInferenceService"
+            android:name="org.fcitx.fcitx5.android.data.voice.VoiceAsrService"
             android:exported="false"
             android:process=":asr" />
 

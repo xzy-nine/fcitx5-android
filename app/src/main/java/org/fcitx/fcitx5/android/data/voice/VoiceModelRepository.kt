@@ -5,10 +5,6 @@
 package org.fcitx.fcitx5.android.data.voice
 
 import android.content.Context
-import com.kingzcheung.xime.model.ModelDownloadState
-import com.kingzcheung.xime.model.ModelInfo
-import com.kingzcheung.xime.model.ModelManager
-import com.kingzcheung.xime.speech.AsrModelManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,21 +18,19 @@ import timber.log.Timber
 /**
  * custom: 语音模型市场/下载的进程级状态。
  *
- * 设计（对应计划里的「关掉页面下载继续」要求）：
+ * 设计（对应「关掉页面下载继续」要求）：
  * - 单例 + 应用级 [CoroutineScope]：切走 IME 面板或退出设置页不会中断下载；
  * - 进度以 [StateFlow] 暴露，页面重新进入即恢复显示；
- * - 模型清单来自 Xime 的远程索引（[ModelManager.loadFromRemote]，地址取
- *   `xime.yaml` 的 `xime_index.base_urls`，可在设置里用 `voice_index_url` 覆盖），
- *   索引不可用时回落到内置默认模型（[AsrModelManager.DEFAULT_MODEL]）。
- *
- * 不做 WorkManager/前台服务：与仓库既有做法（AutoDictSync 等）保持一致。
+ * - 清单来自远程索引（[VoiceModelIndex]，默认 `https://index.ximei.me/`，可在设置里用
+ *   `voice_index_url` 覆盖），索引不可用时回落到内置的官方 sherpa-onnx 模型清单
+ *   （[VoiceModelCatalog.builtin]）。
  */
 object VoiceModelRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val _models = MutableStateFlow<List<ModelInfo>>(emptyList())
-    val models: StateFlow<List<ModelInfo>> = _models.asStateFlow()
+    private val _models = MutableStateFlow<List<VoiceModelInfo>>(emptyList())
+    val models: StateFlow<List<VoiceModelInfo>> = _models.asStateFlow()
 
     private val _loadingIndex = MutableStateFlow(false)
     val loadingIndex: StateFlow<Boolean> = _loadingIndex.asStateFlow()
@@ -44,10 +38,12 @@ object VoiceModelRepository {
     private val _indexError = MutableStateFlow<String?>(null)
     val indexError: StateFlow<String?> = _indexError.asStateFlow()
 
-    private val _downloadState = MutableStateFlow<ModelDownloadState>(ModelDownloadState.Idle)
-    val downloadState: StateFlow<ModelDownloadState> = _downloadState.asStateFlow()
+    private val _downloadState = MutableStateFlow<VoiceModelDownloadState>(
+        VoiceModelDownloadState.Idle
+    )
+    val downloadState: StateFlow<VoiceModelDownloadState> = _downloadState.asStateFlow()
 
-    /** 正在下载的模型 id（用于列表里定位进度条）。 */
+    /** 正在下载（或下载失败等待重试）的模型 id。 */
     private val _downloadingId = MutableStateFlow<String?>(null)
     val downloadingId: StateFlow<String?> = _downloadingId.asStateFlow()
 
@@ -57,19 +53,19 @@ object VoiceModelRepository {
 
     private var downloadJob: Job? = null
 
-    /** 加载/刷新远程索引；失败时保留上一次成功结果。 */
+    /** 加载/刷新索引；失败时保留上一次成功结果。 */
     fun refreshIndex(context: Context) {
         if (_loadingIndex.value) return
         _loadingIndex.value = true
         scope.launch {
             try {
-                ModelManager.loadFromRemote(context.applicationContext)
+                _models.value = VoiceModelIndex.load(context.applicationContext)
                 _indexError.value = null
             } catch (e: Exception) {
                 Timber.w(e, "voice model index load failed")
                 _indexError.value = e.message ?: "unknown"
+                if (_models.value.isEmpty()) _models.value = VoiceModelCatalog.builtin
             } finally {
-                _models.value = ModelManager.getAllModels()
                 _loadingIndex.value = false
             }
         }
@@ -81,28 +77,20 @@ object VoiceModelRepository {
         refreshIndex(context)
     }
 
-    fun downloadModel(context: Context, model: ModelInfo) {
+    fun downloadModel(context: Context, model: VoiceModelInfo) {
         if (downloadJob?.isActive == true) return
         val appContext = context.applicationContext
         _lastError.value = null
         _downloadingId.value = model.id
-        _downloadState.value = ModelDownloadState.Downloading(0f, 0L, 0L)
+        _downloadState.value = VoiceModelDownloadState.Downloading(0f, 0L, 0L)
         downloadJob = scope.launch {
-            try {
-                ModelManager.downloadModel(appContext, model, onProgress = { state ->
-                    _downloadState.value = state
-                })
-                // 失败时保留 downloadingId，使模型卡片继续显示错误与「重新下载」
-                if (_downloadState.value is ModelDownloadState.Error) {
-                    _lastError.value =
-                        (_downloadState.value as ModelDownloadState.Error).message
-                } else {
-                    _downloadingId.value = null
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "voice model download failed")
-                _downloadState.value = ModelDownloadState.Error(e.message ?: "download failed")
-                _lastError.value = e.message ?: "download failed"
+            VoiceModelDownloader.download(appContext, model) { state ->
+                _downloadState.value = state
+            }.onSuccess {
+                _downloadingId.value = null
+            }.onFailure { e ->
+                // 失败时保留 downloadingId，使卡片继续显示错误与「重试下载」
+                _lastError.value = e.message ?: "下载失败"
             }
         }
     }
@@ -111,15 +99,16 @@ object VoiceModelRepository {
         downloadJob?.cancel()
         downloadJob = null
         _downloadingId.value = null
-        _downloadState.value = ModelDownloadState.Idle
+        _downloadState.value = VoiceModelDownloadState.Idle
     }
 
-    fun deleteModel(context: Context, model: ModelInfo): Boolean =
-        ModelManager.deleteModel(context.applicationContext, model)
+    fun deleteModel(context: Context, model: VoiceModelInfo): Boolean =
+        VoiceModelStore.delete(context.applicationContext, model.id)
 
-    fun isDownloaded(context: Context, model: ModelInfo): Boolean =
-        ModelManager.isModelDownloaded(context.applicationContext, model)
+    /** 「已下载」以引擎可解析出 4 个模型文件为准（而不是索引里的文件名清单）。 */
+    fun isDownloaded(context: Context, model: VoiceModelInfo): Boolean =
+        VoiceModelStore.resolve(context.applicationContext, model.id) != null
 
-    fun sizeOnDisk(context: Context, model: ModelInfo): Long =
-        ModelManager.getModelSizeOnDisk(context.applicationContext, model.id)
+    fun sizeOnDisk(context: Context, model: VoiceModelInfo): Long =
+        VoiceModelStore.sizeOnDisk(context.applicationContext, model.id)
 }

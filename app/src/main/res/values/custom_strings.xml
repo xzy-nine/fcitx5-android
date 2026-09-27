@@ -187,6 +187,16 @@
     <string name="voice_use_local_summary">Use the offline Zipformer model; online plugins are used when disabled</string>
     <string name="voice_online_provider">Online provider</string>
     <string name="voice_online_provider_none">No online plugin installed</string>
+    <string name="voice_provider_volcengine">Volcengine streaming ASR</string>
+    <string name="voice_provider_mimo">Xiaomi MiMo ASR</string>
+    <string name="voice_provider_settings">Provider settings</string>
+    <string name="voice_provider_hint_console">Obtain it from the provider console</string>
+    <string name="voice_volc_api_key">API Key</string>
+    <string name="voice_volc_app_key">App Key</string>
+    <string name="voice_volc_access_key">Access Key</string>
+    <string name="voice_volc_resource_id">Resource ID</string>
+    <string name="voice_mimo_api_key">API Key</string>
+    <string name="voice_mimo_language">Language hint</string>
     <string name="voice_provider_not_configured">Not configured</string>
     <string name="voice_plugin_config">Plugin settings</string>
     <string name="voice_plugin_config_summary">Configure API keys and options for this plugin</string>

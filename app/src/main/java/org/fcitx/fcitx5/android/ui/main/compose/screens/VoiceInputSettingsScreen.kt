@@ -18,17 +18,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.kingzcheung.xime.plugin.ExtensionManager
-import com.kingzcheung.xime.settings.SettingsPreferences
-import com.kingzcheung.xime.speech.AsrModelManager
-import com.kingzcheung.xime.speech.AsrPluginHostRegistry
-import com.kingzcheung.xime.util.PermissionHelper
+import org.fcitx.fcitx5.android.data.voice.VoicePermissionHelper
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
+import org.fcitx.fcitx5.android.data.voice.VoiceModelStore
 import org.fcitx.fcitx5.android.data.voice.VoicePermissionState
-import org.fcitx.fcitx5.android.data.voice.VoicePluginBootstrap
-import org.fcitx.fcitx5.android.data.voice.VoicePluginConfigEntryPoint
+import org.fcitx.fcitx5.android.data.voice.VoiceProviderConfigEntryPoint
+import org.fcitx.fcitx5.android.data.voice.online.OnlineAsrRegistry
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
@@ -80,15 +77,20 @@ fun VoiceInputSettingsScreen(
 
     val enabled = remember(version) { prefs.voiceInputEnabled.getValue() }
     val useLocal = remember(version) { prefs.voiceUseLocal.getValue() }
-    val pluginId = remember(version) { prefs.voiceOnlinePluginId.getValue() }
     val simpleChinese = remember(version) { prefs.voiceSimpleChinese.getValue() }
     val muteDuringRecording = remember(version) { prefs.voiceMuteDuringRecording.getValue() }
     val autoMode = remember(version) { prefs.voiceAutoMode.getValue() }
     val modelId = remember(version) { prefs.voiceAsrModelId.getValue() }
     val permissionGranted by VoicePermissionState.granted.collectAsState()
 
-    val plugins = AsrPluginHostRegistry.enabledAsrPlugins(context)
-    val localReady = AsrModelManager(context).isModelReady()
+    /** 内置在线识别平台（火山 / MiMo）；选中项 = 偏好，空则回落到第一个已配置的平台。 */
+    val providers = OnlineAsrRegistry.providers
+    val selectedProviderId = remember(version) {
+        val saved = prefs.voiceOnlineProviderId.getValue()
+        if (saved.isNotBlank()) saved
+        else OnlineAsrRegistry.configured(context).firstOrNull()?.id ?: providers.firstOrNull()?.id.orEmpty()
+    }
+    val localReady = VoiceModelStore.isReady(context, modelId)
     // 外部语音输入法列表随系统设置变化，不做 remember，与上游 VoiceInputList 同口径
     val voiceImes = InputMethodUtil.listVoiceInputMethods()
     val preferredVoiceIme = kbdPrefs.preferredVoiceInput.getValue()
@@ -98,14 +100,6 @@ fun VoiceInputSettingsScreen(
 
     LaunchedEffect(Unit) {
         VoicePermissionState.refresh(context)
-        // 确保插件框架已初始化（冷启动路径也会由 FcitxApplication 触发，这里兜底）
-        VoicePluginBootstrap.ensureLoaded(context)
-    }
-
-    // 插件的待授权网络域名（每次重组重新读取，授权后即时消失）
-    val pendingHosts = remember(version, plugins.size) {
-        plugins.associate { it.pluginId to ExtensionManager.getUnauthorizedHosts(context, it.pluginId) }
-            .filterValues { it.isNotEmpty() }
     }
 
     PageScaffold(
@@ -146,67 +140,31 @@ fun VoiceInputSettingsScreen(
                         color = MiuixTheme.colorScheme.surfaceContainerHighest,
                     ),
                 ) {
-                    if (plugins.isEmpty()) {
+                    if (providers.isEmpty()) {
                         BasicComponent(title = stringResource(R.string.voice_online_provider_none))
                     } else {
-                        plugins.forEach { plugin ->
-                            val configured = plugin.isConfigured(context)
+                        providers.forEach { provider ->
+                            val configured = provider.isConfigured(context)
+                            val name = stringResource(provider.nameRes)
                             RadioButtonPreference(
-                                title = plugin.displayName,
+                                title = name,
                                 summary = if (configured) null
                                 else stringResource(R.string.voice_provider_not_configured),
-                                selected = plugin.pluginId == pluginId ||
-                                        (pluginId.isBlank() && configured),
-                                // 插件配置与「当前是否启用语音输入」无关，行始终可点（选中项写入偏好）
-                                onClick = { prefs.voiceOnlinePluginId.setValue(plugin.pluginId) },
+                                selected = provider.id == selectedProviderId,
+                                // 平台配置与「当前是否启用语音输入」无关，行始终可点（选中项写入偏好）
+                                onClick = { prefs.voiceOnlineProviderId.setValue(provider.id) },
                                 endActions = {
                                     IconButton(
                                         onClick = {
-                                            VoicePluginConfigEntryPoint.open(context, plugin.pluginId)
+                                            VoiceProviderConfigEntryPoint.open(context, provider.id)
                                         },
                                     ) {
                                         Icon(
                                             imageVector = MiuixIcons.Tune,
-                                            contentDescription = stringResource(R.string.voice_plugin_config),
+                                            contentDescription = stringResource(R.string.voice_provider_settings),
                                             modifier = Modifier.size(20.dp),
                                         )
                                     }
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        if (pendingHosts.isNotEmpty()) {
-            item { SmallTitle(text = stringResource(R.string.voice_plugin_network_auth)) }
-            item {
-                Card(
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    colors = CardDefaults.defaultColors(
-                        color = MiuixTheme.colorScheme.surfaceContainerHighest,
-                    ),
-                ) {
-                    pendingHosts.forEach { (hostPluginId, hosts) ->
-                        val pluginName = ExtensionManager.getAllInstalledPlugins()
-                            .firstOrNull { it.id == hostPluginId }?.name ?: hostPluginId
-                        hosts.forEach { host ->
-                            ArrowPreference(
-                                title = host,
-                                summary = pluginName,
-                                endActions = {
-                                    Text(
-                                        text = stringResource(R.string.voice_plugin_authorize),
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                        modifier = Modifier.padding(start = 8.dp),
-                                    )
-                                },
-                                onClick = {
-                                    SettingsPreferences.authorizePluginHost(
-                                        context, hostPluginId, host
-                                    )
-                                    version += 1
                                 },
                             )
                         }
@@ -281,7 +239,7 @@ fun VoiceInputSettingsScreen(
                     ArrowPreference(
                         title = stringResource(R.string.voice_grant_permission),
                         summary = stringResource(R.string.voice_record_permission_missing),
-                        onClick = { PermissionHelper.requestRecordAudioPermission(context) },
+                        onClick = { VoicePermissionHelper.requestRecordAudioPermission(context) },
                     )
                 }
             }

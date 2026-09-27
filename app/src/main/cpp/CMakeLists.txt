@@ -93,13 +93,8 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/email/email.mb"
         DESTINATION "${FCITX_INSTALL_PKGDATADIR}/data/quickphrase.d"
         COMPONENT prebuilt-assets)
 
-# custom: 离线流式 zipformer2 ASR（移植自 Xime，GPL-3.0-or-later）
-# 必须放在所有 fcitx5 子目录之后：asr/CMakeLists.txt 会 set(BUILD_SHARED_LIBS OFF) 给
-# kaldi-native-fbank 用，放最后才不会影响 fcitx5 侧目标；同理其 cache 变量
-# （CMAKE_CXX_STANDARD / CMAKE_ARCHIVE_OUTPUT_DIRECTORY）也不会外泄到前面的目标。
-add_subdirectory(asr)
-
-# custom: 随包分发许可与归属声明（GPL-3.0-or-later 要求许可文本随分发附带）
+# custom: 随包分发许可与归属声明
+# （sherpa-onnx / ONNX Runtime / Apache-2.0 等要求许可文本随二进制分发附带）
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../../../NOTICE.md"
         DESTINATION "${FCITX_INSTALL_PKGDATADIR}/voice"
         COMPONENT prebuilt-assets)

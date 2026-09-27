@@ -10,9 +10,9 @@ import androidx.annotation.Keep
 import androidx.annotation.RequiresApi
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
-import com.kingzcheung.xime.speech.AsrModelManager
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.InputFeedbacks.InputFeedbackMode
+import org.fcitx.fcitx5.android.data.voice.VoiceModelCatalog
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesMode
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesOrientation
 import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateMode
@@ -507,12 +507,12 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
     /**
      * custom: 语音输入。
      *
-     * 内核移植自 Xime（GPL-3.0-or-later，见仓库根 NOTICE.md），页面结构参考 whisperIME。
-     * 这些偏好同时被 IME 内的语音面板与应用内「语音输入」设置页读取；
-     * [com.kingzcheung.xime.settings.SettingsPreferences] 这个 Xime 兼容门面也委托到这里。
+     * 离线引擎为官方 sherpa-onnx（Apache-2.0，见仓库根 NOTICE.md），在线平台为内置 provider
+     * （火山引擎 / 小米 MiMo，见 `data/voice/online/`）；页面结构参考 whisperIME。
+     * 这些偏好同时被 IME 内的语音面板与应用内「语音输入」设置页读取。
      *
-     * 注意：本地离线 ASR 的模型推理跑在独立 `:asr` 进程，该进程不初始化 AppPrefs，
-     * 因此 `:asr` 侧只通过 AIDL 接收 modelDir，不读这些偏好。
+     * 注意：本地离线推理跑在独立 `:asr` 进程，该进程不初始化 AppPrefs，
+     * 因此 `:asr` 侧只通过 AIDL 接收模型文件路径与音频采样，不读这些偏好。
      */
     inner class Voice : ManagedPreferenceCategory(R.string.voice_input, sharedPreferences) {
         val voiceInputEnabled = switch(
@@ -548,16 +548,45 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         ) { voiceInputEnabled.getValue() }
 
         /**
-         * 当前选中的在线 ASR 插件 id（空 = 未选择，走第一个已启用插件或内置兜底）。
-         * 原名 `stt_online_plugin_id`（Xime），此处追加 `voice_` 前缀以免与上游 key 冲突。
+         * 当前选中的在线识别平台 id（空 = 未选择，走第一个已配置的平台）。
+         *
+         * 平台由 app 侧内置实现（火山引擎 / 小米 MiMo），不再是可安装的 Lua 插件，
+         * 因此这里直接存 provider id（见 `data/voice/online/OnlineAsrRegistry`）。
          */
-        val voiceOnlinePluginId =
-            ManagedPreference.PString(sharedPreferences, "voice_online_plugin_id", "")
+        val voiceOnlineProviderId =
+            ManagedPreference.PString(sharedPreferences, "voice_online_provider_id", "")
                 .apply { register() }
+
+        /** 火山引擎流式语音识别凭据（任选一种认证：apiKey 或 appKey+accessKey）。 */
+        val voiceVolcApiKey =
+            ManagedPreference.PString(sharedPreferences, "voice_volc_api_key", "")
+                .apply { register() }
+        val voiceVolcAppKey =
+            ManagedPreference.PString(sharedPreferences, "voice_volc_app_key", "")
+                .apply { register() }
+        val voiceVolcAccessKey =
+            ManagedPreference.PString(sharedPreferences, "voice_volc_access_key", "")
+                .apply { register() }
+
+        /** 火山引擎资源 id（默认 `volc.seedasr.sauc.duration`）。 */
+        val voiceVolcResourceId =
+            ManagedPreference.PString(sharedPreferences, "voice_volc_resource_id", "")
+                .apply { register() }
+
+        /** 小米 MiMo ASR 凭据（OpenAI 兼容接口，模型 `mimo-v2.5-asr`）。 */
+        val voiceMiMoApiKey =
+            ManagedPreference.PString(sharedPreferences, "voice_mimo_api_key", "")
+                .apply { register() }
+
+        /** MiMo ASR 语种提示（auto / zh / en，空 = auto）。 */
+        val voiceMiMoLanguage =
+            ManagedPreference.PString(sharedPreferences, "voice_mimo_language", "auto")
+                .apply { register() }
+
 
         /** 当前选中的本地模型 id（模型市场索引里的 id）。 */
         val voiceAsrModelId = ManagedPreference.PString(
-            sharedPreferences, "voice_asr_model_id", AsrModelManager.DEFAULT_ID
+            sharedPreferences, "voice_asr_model_id", VoiceModelCatalog.DEFAULT_ID
         ).apply { register() }
 
         /** 模型市场索引地址覆盖（空 = 用 xime.yaml 里的 xime_index.base_urls）。 */
@@ -576,7 +605,6 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                     listOf(
                         voiceInputEnabled.key,
                         voiceUseLocal.key,
-                        voiceOnlinePluginId.key,
                         voiceSimpleChinese.key,
                         voiceMuteDuringRecording.key,
                         voiceAutoMode.key,

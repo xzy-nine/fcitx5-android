@@ -31,9 +31,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kingzcheung.xime.service.VoiceUiState
-import com.kingzcheung.xime.speech.RecognitionState
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.data.voice.VoiceRecognitionState
+import org.fcitx.fcitx5.android.data.voice.VoiceUiState
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
@@ -64,8 +64,8 @@ fun ComposeVoicePanel(
     onGrantPermission: () -> Unit,
 ) {
     val colors = MiuixTheme.colorScheme
-    val listening = state.voiceRecognitionState == RecognitionState.LISTENING
-    val processing = state.voiceRecognitionState == RecognitionState.PROCESSING
+    val listening = state.recognitionState == VoiceRecognitionState.LISTENING
+    val processing = state.recognitionState == VoiceRecognitionState.PROCESSING
 
     Column(
         modifier = Modifier
@@ -80,14 +80,14 @@ fun ComposeVoicePanel(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = state.voicePluginName.ifBlank { stringResource(R.string.voice_input) },
+                text = state.engineName.ifBlank { stringResource(R.string.voice_input) },
                 color = colors.onSurfaceVariantSummary,
                 fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = stringResource(stateTextRes(state.voiceRecognitionState, listening)),
+                text = stringResource(stateTextRes(state.recognitionState, listening)),
                 color = colors.onSurfaceVariantSummary,
                 fontSize = 12.sp,
                 maxLines = 1,
@@ -123,9 +123,9 @@ fun ComposeVoicePanel(
                 .height(72.dp),
             contentAlignment = Alignment.Center,
         ) {
-            if (state.voiceRecognizedText.isNotEmpty()) {
+            if (state.recognizedText.isNotEmpty()) {
                 Text(
-                    text = state.voiceRecognizedText,
+                    text = state.recognizedText,
                     color = colors.onSurface,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Medium,
@@ -312,10 +312,10 @@ private fun SpectrumBars(
     }
 }
 
-private fun stateTextRes(state: RecognitionState, listening: Boolean): Int = when (state) {
-    RecognitionState.IDLE -> R.string.voice_state_idle
-    RecognitionState.LISTENING -> R.string.voice_state_listening
-    RecognitionState.PROCESSING -> if (listening) R.string.voice_state_listening
+private fun stateTextRes(state: VoiceRecognitionState, listening: Boolean): Int = when (state) {
+    VoiceRecognitionState.IDLE -> R.string.voice_state_idle
+    VoiceRecognitionState.LISTENING -> R.string.voice_state_listening
+    VoiceRecognitionState.PROCESSING -> if (listening) R.string.voice_state_listening
     else R.string.voice_state_processing
-    RecognitionState.ERROR -> R.string.voice_state_error
+    VoiceRecognitionState.ERROR -> R.string.voice_state_error
 }

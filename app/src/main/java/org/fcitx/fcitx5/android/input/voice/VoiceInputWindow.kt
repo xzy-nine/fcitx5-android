@@ -89,7 +89,7 @@ class VoiceInputWindow : InputWindow.ExtendedInputWindow<VoiceInputWindow>(), Co
                     )
                 },
                 onGrantPermission = {
-                    com.kingzcheung.xime.util.PermissionHelper.requestRecordAudioPermission(context)
+                    org.fcitx.fcitx5.android.data.voice.VoicePermissionHelper.requestRecordAudioPermission(context)
                 },
             )
         }
