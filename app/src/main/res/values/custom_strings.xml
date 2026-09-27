@@ -186,7 +186,8 @@
     <string name="voice_use_local">On-device recognition</string>
     <string name="voice_use_local_summary">Use the offline Zipformer model; online plugins are used when disabled</string>
     <string name="voice_online_provider">Online provider</string>
-    <string name="voice_online_provider_none">No online plugin installed</string>
+    <string name="voice_online_provider_none">No online recognition platform available</string>
+    <string name="voice_provider_configured">Configured</string>
     <string name="voice_provider_volcengine">Volcengine streaming ASR</string>
     <string name="voice_provider_mimo">Xiaomi MiMo ASR</string>
     <string name="voice_provider_settings">Provider settings</string>
@@ -198,8 +199,6 @@
     <string name="voice_mimo_api_key">API Key</string>
     <string name="voice_mimo_language">Language hint</string>
     <string name="voice_provider_not_configured">Not configured</string>
-    <string name="voice_plugin_config">Plugin settings</string>
-    <string name="voice_plugin_config_summary">Configure API keys and options for this plugin</string>
     <string name="voice_simple_chinese">Simplified Chinese output</string>
     <string name="voice_mute_during_recording">Mute media during recording</string>
     <string name="voice_auto_mode">Automatic mode</string>
@@ -229,13 +228,9 @@
     <string name="voice_back_to_keyboard">Back to keyboard</string>
     <string name="voice_open_settings">Voice input settings</string>
     <string name="voice_partial_hint">Recognized text is inserted as you speak</string>
-    <string name="voice_plugin_network_auth">Plugin network access</string>
-    <string name="voice_plugin_authorize">Authorize</string>
     <string name="voice_index_url">Index source URL</string>
     <string name="voice_in_use">In use</string>
     <string name="voice_use_this">Use</string>
-    <string name="voice_plugin_save">Save</string>
     <string name="voice_permission_granted">Granted</string>
     <string name="voice_downloading">Downloading…</string>
-    <string name="voice_plugin_required">Required: </string>
 </resources>

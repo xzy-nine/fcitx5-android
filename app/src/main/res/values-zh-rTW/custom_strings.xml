@@ -73,7 +73,8 @@
     <string name="voice_use_local">本機辨識</string>
     <string name="voice_use_local_summary">使用離線 Zipformer 模型；關閉後改用線上外掛</string>
     <string name="voice_online_provider">線上服務商</string>
-    <string name="voice_online_provider_none">尚未安裝線上外掛</string>
+    <string name="voice_online_provider_none">沒有可用的線上辨識平台</string>
+    <string name="voice_provider_configured">已設定</string>
     <string name="voice_provider_volcengine">火山引擎串流語音辨識</string>
     <string name="voice_provider_mimo">小米 MiMo 語音辨識</string>
     <string name="voice_provider_settings">平台設定</string>
@@ -85,8 +86,6 @@
     <string name="voice_mimo_api_key">API Key</string>
     <string name="voice_mimo_language">語種提示</string>
     <string name="voice_provider_not_configured">未設定</string>
-    <string name="voice_plugin_config">外掛設定</string>
-    <string name="voice_plugin_config_summary">設定此外掛的 API Key 與選項</string>
     <string name="voice_simple_chinese">輸出簡體中文</string>
     <string name="voice_mute_during_recording">錄音時靜音媒體音量</string>
     <string name="voice_auto_mode">自動模式</string>
@@ -116,13 +115,9 @@
     <string name="voice_back_to_keyboard">返回鍵盤</string>
     <string name="voice_open_settings">語音輸入設定</string>
     <string name="voice_partial_hint">說話過程中辨識結果會即時寫入輸入框</string>
-    <string name="voice_plugin_network_auth">外掛網路授權</string>
-    <string name="voice_plugin_authorize">授權</string>
     <string name="voice_index_url">索引位址（留空使用內建）</string>
     <string name="voice_in_use">使用中</string>
     <string name="voice_use_this">使用</string>
-    <string name="voice_plugin_save">儲存</string>
     <string name="voice_permission_granted">已授予</string>
     <string name="voice_downloading">正在下載…</string>
-    <string name="voice_plugin_required">必填：</string>
 </resources>

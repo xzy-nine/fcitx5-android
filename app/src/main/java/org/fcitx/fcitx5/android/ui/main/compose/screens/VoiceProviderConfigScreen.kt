@@ -86,7 +86,7 @@ fun VoiceProviderConfigScreen(
             item {
                 BasicComponent(
                     title = stringResource(R.string.voice_provider_settings),
-                    summary = stringResource(R.string.voice_permission_granted),
+                    summary = stringResource(R.string.voice_provider_configured),
                     endActions = {
                         Icon(
                             imageVector = MiuixIcons.Ok,
