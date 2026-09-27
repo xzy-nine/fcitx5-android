@@ -80,9 +80,27 @@ class VoiceAudioCapture(
             return false
         }
         record = recorder
-        running = true
-        thread = Thread({ loop(recorder) }, "voice-capture").apply { start() }
-        return true
+        return try {
+            recorder.startRecording()
+            if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                Timber.e("$TAG: startRecording did not take effect")
+                recorder.release()
+                record = null
+                onError("录音启动失败")
+                false
+            } else {
+                running = true
+                Timber.i("$TAG: capture started")
+                thread = Thread({ loop(recorder) }, "voice-capture").apply { start() }
+                true
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "$TAG: startRecording failed")
+            recorder.release()
+            record = null
+            onError("录音启动失败")
+            false
+        }
     }
 
     /** 停止采集（读线程自行退出；不释放 AudioRecord，便于复用）。 */
@@ -90,7 +108,8 @@ class VoiceAudioCapture(
         running = false
         val recorder = record ?: return
         try {
-            recorder.stop()
+            // 未启动就 stop() 会抛 IllegalStateException
+            if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) recorder.stop()
         } catch (e: Exception) {
             Timber.w(e, "$TAG: stop failed")
         }
@@ -109,12 +128,31 @@ class VoiceAudioCapture(
         val shortBuffer = ShortArray(CHUNK_SAMPLES)
         val preRoll = ArrayDeque<FloatArray>()
         var speechDetected = false
+        var readErrors = 0
+        var chunks = 0
         try {
             while (running) {
                 val read = recorder.read(shortBuffer, 0, shortBuffer.size)
-                if (read <= 0) {
-                    if (read < 0) break else continue
+                if (read == 0) continue
+                if (read < 0) {
+                    // 停止过程中的负值属正常；运行中出现的负值先容忍，
+                    // 仅当录音状态已不健康或连续多次失败才终止会话
+                    if (!running) break
+                    readErrors++
+                    Timber.w("$TAG: AudioRecord read error $read (x$readErrors)")
+                    if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                        onError("录音中断（read=$read）")
+                        break
+                    }
+                    if (readErrors >= 5) {
+                        onError("录音读取出错（read=$read）")
+                        break
+                    }
+                    continue
                 }
+                readErrors = 0
+                chunks++
+                if (chunks == 1) Timber.i("$TAG: first audio chunk read ($read samples)")
                 var peak = 0
                 for (i in 0 until read) {
                     val abs = kotlin.math.abs(shortBuffer[i].toInt())
