@@ -84,6 +84,14 @@ class FcitxApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // custom: 离线语音识别跑在独立 `:asr` 进程（见 AsrInferenceService / AndroidManifest）。
+        // 该进程只需要能 dlopen 原生库并读模型文件，绝不能初始化剪贴板 Room 数据库、
+        // WebDAV 自动同步、主题/广播/偏好等主进程子系统 —— 否则会出现多进程同时打开同一个
+        // Room 库、以及在 `:asr` 里凭空启动网络同步等严重问题。
+        if (Application.getProcessName().endsWith(ASR_PROCESS_SUFFIX)) {
+            instance = this
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !userManager.isUserUnlocked) {
             isDirectBootMode = true
             registerReceiver(unlockReceiver, IntentFilter(Intent.ACTION_USER_UNLOCKED))
@@ -177,6 +185,9 @@ class FcitxApplication : Application() {
 
         const val ACTION_RESTART_FCITX_INSTANCE =
             "${BuildConfig.APPLICATION_ID}.action.RESTART_FCITX_INSTANCE"
+
+        /** custom: 离线语音识别独立进程的后缀（与 AndroidManifest 中 android:process 一致）。 */
+        private const val ASR_PROCESS_SUFFIX = ":asr"
 
         /**
          * This permission is requested by com.android.shell, makes it possible to restart

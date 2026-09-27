@@ -16,6 +16,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- custom: 内置语音输入（录音采集 + 模型下载所需） -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
     <!-- remove intent queries merged from library manifest (namely Android-Image-Cropper) -->
     <queries tools:node="removeAll" />
 
@@ -81,11 +85,17 @@
             android:taskAffinity="org.fcitx.fcitx5.android.symbols"
             android:theme="@style/Theme.DialogTheme"
             android:windowSoftInputMode="stateAlwaysVisible|adjustPan" />
+        <!-- custom: 录音权限的透明中转 Activity（输入法服务无法自行发起运行时权限请求） -->
+        <activity
+            android:name=".ui.main.VoicePermissionActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity
             android:name=".ui.main.MainActivity"
             android:exported="true"
-            android:launchMode="singleTask">
-            <intent-filter>
+            android:launchMode="singleTask">            <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -159,6 +169,17 @@
                 <action android:name="org.fcitx.fcitx5.android.BROADCAST_PAIRING" />
             </intent-filter>
         </service>
+
+        <!--
+          custom: 离线语音识别服务（移植自 Xime）。
+          独立 `:asr` 进程：模型加载与 dlopen ONNX Runtime 不占用输入法进程内存；
+          该进程不初始化 AppPrefs/剪贴板/WebDAV 子系统（见 FcitxApplication 的进程守卫），
+          模型文件路径由 app 侧经 AIDL 传入。
+        -->
+        <service
+            android:name="com.kingzcheung.xime.service.AsrInferenceService"
+            android:exported="false"
+            android:process=":asr" />
 
         <provider
             android:name=".provider.FcitxDataProvider"

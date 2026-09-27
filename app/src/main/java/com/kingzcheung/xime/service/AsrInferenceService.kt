@@ -1,3 +1,13 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * SPDX-FileCopyrightText: Copyright 2026 Kingz Cheung
+ *
+ * 移植自 Xime (https://github.com/ximeiorg/xime) 的 service/AsrInferenceService.kt，见仓库根 NOTICE.md。
+ *
+ * 与上游的差异：上游 startAsr(modelDir, cb) 由本进程（`:asr`）用 AsrModelManager 读偏好定位模型文件；
+ * 本移植的 `:asr` 进程不初始化 AppPrefs/用户数据目录（见 FcitxApplication 的进程守卫），
+ * 因此改为由 app 侧把 4 个模型文件的绝对路径经 AIDL 传入。
+ */
 package com.kingzcheung.xime.service
 
 import android.app.Service
@@ -6,7 +16,6 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
-import com.kingzcheung.xime.speech.AsrModelManager
 import com.kingzcheung.xime.speech.AsrNative
 import com.kingzcheung.xime.util.FileLogger
 import java.io.File
@@ -57,13 +66,19 @@ class AsrInferenceService : Service() {
 
     private val binder = object : IInferenceAsrService.Stub() {
 
-        override fun startAsr(modelDir: String, callback: IInferenceAsrCallback): Boolean {
+        override fun startAsr(
+            encoderPath: String,
+            decoderPath: String,
+            joinerPath: String,
+            tokensPath: String,
+            callback: IInferenceAsrCallback
+        ): Boolean {
             cancelIdleRelease()
             // 模型加载耗时较长，放在 asrLock 外执行，避免阻塞其它 ASR 控制操作
             if (synchronized(asrLock) { asrHandle } == 0L) {
-                val handle = createAsrHandle(modelDir)
+                val handle = createAsrHandle(encoderPath, decoderPath, joinerPath, tokensPath)
                 if (handle == 0L) {
-                    Log.e(TAG, "Failed to create ASR recognizer from $modelDir")
+                    Log.e(TAG, "Failed to create ASR recognizer from $encoderPath")
                     return false
                 }
                 synchronized(asrLock) {
@@ -139,21 +154,20 @@ class AsrInferenceService : Service() {
         }
     }
 
-    /** 按 AsrModelInfo 权威清单定位模型文件并创建识别器（在 :asr 进程加载模型）。 */
-    private fun createAsrHandle(modelDir: String): Long {
+    /** 按 app 侧传来的 4 个绝对路径创建识别器（模型加载发生在本 `:asr` 进程）。 */
+    private fun createAsrHandle(
+        encoderPath: String,
+        decoderPath: String,
+        joinerPath: String,
+        tokensPath: String
+    ): Long {
         return try {
-            val info = AsrModelManager(this).getSelectedModelInfo()
-                ?: run {
-                    Log.e(TAG, "No selected ASR model")
-                    return 0L
-                }
-            val dir = File(modelDir)
-            val encoder = File(dir, info.encoderFile)
-            val decoder = File(dir, info.decoderFile)
-            val joiner = File(dir, info.joinerFile)
-            val tokens = File(dir, "tokens.txt")
+            val encoder = File(encoderPath)
+            val decoder = File(decoderPath)
+            val joiner = File(joinerPath)
+            val tokens = File(tokensPath)
             if (!encoder.exists() || !decoder.exists() || !joiner.exists() || !tokens.exists()) {
-                Log.e(TAG, "ASR model files incomplete in $modelDir")
+                Log.e(TAG, "ASR model files incomplete: $encoderPath")
                 return 0L
             }
             AsrNative.nativeCreate(

@@ -29,6 +29,8 @@ import com.kingzcheung.xime.speech.AsrPluginHostRegistry
 import com.kingzcheung.xime.speech.AsrSupport
 import com.kingzcheung.xime.speech.RecognitionState
 import com.kingzcheung.xime.speech.SpeechRecognitionManager
+import com.kingzcheung.xime.speech.VoiceCommitPlan
+import com.kingzcheung.xime.speech.VoiceTextRules
 import com.kingzcheung.xime.util.FileLogger
 
 class VoiceRecognitionHandler(

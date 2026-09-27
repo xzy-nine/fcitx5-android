@@ -1,3 +1,9 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * SPDX-FileCopyrightText: Copyright 2026 Kingz Cheung
+ *
+ * 移植自 Xime (https://github.com/ximeiorg/xime)，见仓库根 NOTICE.md。
+ */
 package com.kingzcheung.xime.service
 
 import android.content.ComponentName
@@ -102,10 +108,18 @@ class AsrInferenceClient(private val context: Context) {
         return service ?: throw IllegalStateException("AsrInferenceService not bound")
     }
 
-    suspend fun startAsr(modelDir: String, callback: AsrCallback): Boolean = withContext(Dispatchers.IO) {
+    suspend fun startAsr(
+        encoderPath: String,
+        decoderPath: String,
+        joinerPath: String,
+        tokensPath: String,
+        callback: AsrCallback
+    ): Boolean = withContext(Dispatchers.IO) {
         try {
             asrCallbackStub.attach(callback)
-            requireService().startAsr(modelDir, asrCallbackStub)
+            requireService().startAsr(
+                encoderPath, decoderPath, joinerPath, tokensPath, asrCallbackStub
+            )
         } catch (e: Exception) {
             FileLogger.e(TAG, "startAsr failed", e)
             asrCallbackStub.detach()

@@ -1,3 +1,9 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * SPDX-FileCopyrightText: Copyright 2026 Kingz Cheung
+ *
+ * 移植自 Xime (https://github.com/ximeiorg/xime)，见仓库根 NOTICE.md。
+ */
 package com.kingzcheung.xime.speech
 
 import android.Manifest
@@ -10,7 +16,6 @@ import android.os.Looper
 import android.util.Log
 
 import androidx.annotation.RequiresPermission
-import com.kingzcheung.xime.plugin.ExtensionManager
 import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.util.FileLogger
 
@@ -341,18 +346,18 @@ class SpeechRecognitionManager(private val context: Context) {
     }
 
     private fun createOnlineAsrBackend(): AsrBackend? {
-        val enabledPlugins = ExtensionManager.getEnabledAsrPlugins(context)
-        if (enabledPlugins.isEmpty()) return null
+        // 在线插件由宿主注册（plugin-core 桥接层），未注册时返回 null → 上层回落
+        val plugins = AsrPluginHostRegistry.enabledAsrPlugins(context)
+        if (plugins.isEmpty()) return null
 
         val selectedId = SettingsPreferences.getSttOnlinePluginId(context)
-        val selected = enabledPlugins.firstOrNull { it.first == selectedId }
-            ?: enabledPlugins.firstOrNull()
-        val (_, plugin) = selected ?: return null
-
-        val backend = plugin.createBackend(context.applicationContext)
-        val pluginName = ExtensionManager.getAllInstalledPlugins()
-            .firstOrNull { it.id == selected?.first }?.name ?: selected?.first ?: "语音识别"
-        return PluginAsrBackendAdapter(pluginName, backend)
+        val plugin = AsrPluginHostRegistry.selectPlugin(context, plugins, selectedId) ?: return null
+        // 未配置（如 API Key 缺失）时让上层明确报错，而不是启动后卡住
+        if (!plugin.isConfigured(context)) {
+            FileLogger.w(TAG, "online plugin '${plugin.pluginId}' is not configured")
+            return null
+        }
+        return plugin.createBackend(context.applicationContext)
     }
 
     private fun createAudioRecord(bufferSecs: Float = 2.0f): AudioRecord? {

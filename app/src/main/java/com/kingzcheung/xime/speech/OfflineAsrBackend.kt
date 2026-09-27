@@ -1,3 +1,9 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * SPDX-FileCopyrightText: Copyright 2026 Kingz Cheung
+ *
+ * 移植自 Xime (https://github.com/ximeiorg/xime)，见仓库根 NOTICE.md。
+ */
 package com.kingzcheung.xime.speech
 
 import android.content.Context
@@ -64,10 +70,13 @@ class OfflineAsrBackend(private val context: Context) : AsrBackend {
             // 预热模型：绑定后立即创建模型句柄并驻留，避免首次语音时
             // 1s 模型加载导致开头音频（如"你觉得"）在录音缓冲中被丢弃
             try {
-                val modelManager = AsrModelManager(context)
-                if (modelManager.isModelReady()) {
-                    val modelDir = modelManager.getSelectedModelDir().absolutePath
-                    runBlocking { client.startAsr(modelDir, asrCallback) }
+                val files = AsrModelManager(context).resolveModelFiles()
+                if (files != null) {
+                    runBlocking {
+                        client.startAsr(
+                            files.encoder, files.decoder, files.joiner, files.tokens, asrCallback
+                        )
+                    }
                     runBlocking { client.stopAsr() }
                 }
             } catch (e: Exception) {
@@ -84,16 +93,19 @@ class OfflineAsrBackend(private val context: Context) : AsrBackend {
     override fun start(): Boolean {
         if (!initialized) return false
         return try {
-            val modelManager = AsrModelManager(context)
-            if (!modelManager.isModelReady()) {
+            val files = AsrModelManager(context).resolveModelFiles()
+            if (files == null) {
                 FileLogger.e(TAG, "ASR model not downloaded")
                 errorCallback?.invoke("离线语音模型未下载，请在设置中先下载")
                 return false
             }
             // 每次会话开始都重新 startAsr：服务端会 nativeReset 并重设回调，
             // 否则 preload 预热时 stop() 清空的 callback 会导致 partial 结果丢失
-            val modelDir = modelManager.getSelectedModelDir().absolutePath
-            runBlocking { client.startAsr(modelDir, asrCallback) }
+            runBlocking {
+                client.startAsr(
+                    files.encoder, files.decoder, files.joiner, files.tokens, asrCallback
+                )
+            }
         } catch (e: Exception) {
             FileLogger.e(TAG, "start failed", e)
             false
