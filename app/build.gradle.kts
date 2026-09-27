@@ -10,6 +10,47 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// ---------------------------------------------------------------------------
+// custom: 离线 ASR 的 ONNX Runtime（MIT）
+//
+// 与 Xime 同版本同来源：从 Maven Central 解析官方 AAR
+//   com.microsoft.onnxruntime:onnxruntime-android:1.28.0
+// 并抽出 jni/<abi>/libonnxruntime.so。C++ 头文件已随仓库收录于
+// app/src/main/cpp/asr/onnxruntime/include/（AAR 不提供头文件）。
+// ---------------------------------------------------------------------------
+val onnxRuntimeVersion = "1.28.0"
+val onnxRuntimeJniDir = layout.buildDirectory.dir("onnxruntime/aar/jni").get().asFile
+val onnxRuntimeLibDir = onnxRuntimeJniDir
+
+val onnxRuntimeAar = configurations.create("onnxRuntimeAar") {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+}
+dependencies.add(onnxRuntimeAar.name, "com.microsoft.onnxruntime:onnxruntime-android:$onnxRuntimeVersion")
+
+val extractOnnxRuntime = tasks.register<Sync>("extractOnnxRuntime") {
+    description = "Extract libonnxruntime.so from the official ONNX Runtime Android AAR"
+    group = "custom"
+    into(layout.buildDirectory.dir("onnxruntime/aar"))
+    inputs.files(onnxRuntimeAar).withPropertyName("onnxRuntimeAar")
+    from({ onnxRuntimeAar.files.map { zipTree(it) } }) {
+        include("jni/**/libonnxruntime.so")
+    }
+}
+
+// CMake configure 与打包都必须在抽取完成之后
+tasks.configureEach {
+    if (name != extractOnnxRuntime.name &&
+        (name.startsWith("configureCMake") ||
+                name.startsWith("buildCMake") ||
+                name.startsWith("externalNativeBuild") ||
+                (name.startsWith("merge") && name.endsWith("JniLibFolders")) ||
+                name == "preBuild")
+    ) {
+        dependsOn(extractOnnxRuntime)
+    }
+}
+
 android {
     namespace = "org.fcitx.fcitx5.android"
 
@@ -32,16 +73,28 @@ android {
                     // android specific modules
                     "androidfrontend",
                     "androidkeyboard",
-                    "androidnotification"
+                    "androidnotification",
+                    // custom: 离线流式 zipformer2 ASR（移植自 Xime）
+                    "asr_jni"
                 )
+                // custom: ASR 原生库需要 libonnxruntime.so 的位置（由 extractOnnxRuntime 抽取）
+                arguments("-DONNXRUNTIME_LIB_DIR=${onnxRuntimeLibDir.absolutePath}")
             }
         }
+    }
+
+    // custom: libonnxruntime.so 由 CMake 的 IMPORTED 目标链接，但 AGP 不会自动打包
+    // IMPORTED 库，必须额外挂进 jniLibs（这也是 Xime 需要放两份 .so 的原因）
+    sourceSets.getByName("main") {
+        jniLibs.directories.add(onnxRuntimeJniDir.absolutePath)
     }
 
     buildFeatures {
         viewBinding = true
         resValues = true
         compose = true
+        // custom: 离线语音识别服务 AIDL（:asr 进程）
+        aidl = true
     }
 
     buildTypes {
