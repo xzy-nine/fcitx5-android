@@ -171,6 +171,9 @@
     <string name="retry">重试</string>
     <string name="more_options">更多操作</string>
 
+    <!-- Custom: settings home custom-branch group -->
+    <string name="home_group_custom">分支特色</string>
+
     <!-- Custom: voice input (ported from whisperIME UI + Xime core) -->
     <string name="voice_input">语音输入</string>
     <string name="voice_input_enabled">启用语音输入</string>

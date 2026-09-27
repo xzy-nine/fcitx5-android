@@ -175,6 +175,9 @@
     <string name="retry">Retry</string>
     <string name="more_options">More options</string>
 
+    <!-- Custom: settings home custom-branch group -->
+    <string name="home_group_custom">Custom</string>
+
     <!-- Custom: voice input (ported from whisperIME UI + Xime core) -->
     <string name="voice_input">Voice input</string>
     <string name="voice_input_enabled">Enable voice input</string>

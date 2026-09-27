@@ -36,6 +36,7 @@ import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.icon.extended.MoreCircle
 import top.yukonga.miuix.kmp.icon.extended.Promotions
 import top.yukonga.miuix.kmp.icon.extended.Search
+import top.yukonga.miuix.kmp.icon.extended.Store
 import top.yukonga.miuix.kmp.icon.extended.Theme
 import top.yukonga.miuix.kmp.icon.extended.Translate
 import top.yukonga.miuix.kmp.icon.extended.Tune
@@ -107,6 +108,13 @@ fun HomeScreen(
         item {
             HomeCard(homeAndroidItems, onNavigate)
         }
+        // custom: 分支特有功能的独立分组（语音输入 / 模型市场 / WebDAV）
+        item {
+            SmallTitle(text = stringResource(R.string.home_group_custom))
+        }
+        item {
+            HomeCard(homeCustomItems, onNavigate)
+        }
     }
 }
 
@@ -146,11 +154,15 @@ private val homeAndroidItems = listOf(
     HomeDestination(R.string.theme, MiuixIcons.Theme, AppRoute.Theme),
     HomeDestination(R.string.virtual_keyboard, MiuixIcons.GridView, AppRoute.Prefs(PrefCategory.Keyboard)),
     HomeDestination(R.string.clipboard, MiuixIcons.Copy, AppRoute.Prefs(PrefCategory.Clipboard)),
-    HomeDestination(R.string.broadcast_settings, MiuixIcons.Promotions, AppRoute.Prefs(PrefCategory.Broadcast)),
     HomeDestination(R.string.emoji_and_symbols, MiuixIcons.Messages, AppRoute.Prefs(PrefCategory.Symbols)),
     HomeDestination(R.string.plugins, MiuixIcons.Layers, AppRoute.PluginList),
-    HomeDestination(R.string.webdav_settings_title, MiuixIcons.UploadCloud, AppRoute.WebDavSync),
-    // custom: 内置语音输入（移植自 Xime，页面结构参考 whisperIME）
-    HomeDestination(R.string.voice_input, MiuixIcons.AppRecording, AppRoute.VoiceInputSettings),
     HomeDestination(R.string.advanced, MiuixIcons.More, AppRoute.Prefs(PrefCategory.Advanced)),
+)
+
+/** custom: 分支特有功能（上游没有的能力集中在这里，避免混进上游分组） */
+private val homeCustomItems = listOf(
+    HomeDestination(R.string.voice_input, MiuixIcons.AppRecording, AppRoute.VoiceInputSettings),
+    HomeDestination(R.string.voice_model_market, MiuixIcons.Store, AppRoute.VoiceModelMarket),
+    HomeDestination(R.string.webdav_settings_title, MiuixIcons.UploadCloud, AppRoute.WebDavSync),
+    HomeDestination(R.string.broadcast_settings, MiuixIcons.Promotions, AppRoute.Prefs(PrefCategory.Broadcast)),
 )

@@ -62,6 +62,9 @@
     <string name="candidate_expand">展開</string>
     <string name="candidate_collapse">收起</string>
 
+    <!-- Custom: settings home custom-branch group -->
+    <string name="home_group_custom">分支特色</string>
+
     <!-- Custom: voice input (ported from whisperIME UI + Xime core) -->
     <string name="voice_input">語音輸入</string>
     <string name="voice_input_enabled">啟用語音輸入</string>
