@@ -116,4 +116,6 @@
     <string name="voice_back_to_keyboard">返回鍵盤</string>
     <string name="voice_open_settings">語音輸入設定</string>
     <string name="voice_partial_hint">說話過程中辨識結果會即時寫入輸入框</string>
+    <string name="voice_plugin_network_auth">外掛網路授權</string>
+    <string name="voice_plugin_authorize">授權</string>
 </resources>

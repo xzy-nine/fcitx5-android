@@ -24,12 +24,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.kingzcheung.xime.plugin.ExtensionManager
+import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.speech.AsrModelManager
 import com.kingzcheung.xime.speech.AsrPluginHostRegistry
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import org.fcitx.fcitx5.android.data.voice.VoicePermissionState
+import org.fcitx.fcitx5.android.data.voice.VoicePluginBootstrap
 import org.fcitx.fcitx5.android.data.voice.VoicePluginConfigEntryPoint
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import top.yukonga.miuix.kmp.basic.Card
@@ -83,6 +86,14 @@ fun VoiceInputSettingsScreen(
 
     LaunchedEffect(Unit) {
         VoicePermissionState.refresh(context)
+        // 确保插件框架已初始化（冷启动路径也会由 FcitxApplication 触发，这里兜底）
+        VoicePluginBootstrap.ensureLoaded(context)
+    }
+
+    // 插件的待授权网络域名（每次重组重新读取，授权后即时消失）
+    val pendingHosts = remember(version, plugins.size) {
+        plugins.associate { it.pluginId to ExtensionManager.getUnauthorizedHosts(context, it.pluginId) }
+            .filterValues { it.isNotEmpty() }
     }
 
     PageScaffold(title = stringResource(R.string.voice_input), onBack = onBack) {
@@ -151,6 +162,45 @@ fun VoiceInputSettingsScreen(
             }
         }
 
+        if (pendingHosts.isNotEmpty()) {
+            item {
+                SmallTitle(stringResource(R.string.voice_plugin_network_auth))
+            }
+            item {
+                SettingCard {
+                    pendingHosts.forEach { (pluginId, hosts) ->
+                        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                            Text(
+                                text = ExtensionManager.getAllInstalledPlugins()
+                                    .firstOrNull { it.id == pluginId }?.name ?: pluginId
+                            )
+                            hosts.forEach { host ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = host,
+                                        modifier = Modifier.weight(1f),
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    )
+                                    TextButton(
+                                        text = stringResource(R.string.voice_plugin_authorize),
+                                        onClick = {
+                                            SettingsPreferences.authorizePluginHost(
+                                                context, pluginId, host
+                                            )
+                                            version += 1
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             SmallTitle(stringResource(R.string.voice_models))
         }
@@ -211,6 +261,7 @@ fun VoiceInputSettingsScreen(
         item {
             SmallTitle(stringResource(R.string.voice_record_permission))
         }
+
         item {
             SettingCard {
                 Row(

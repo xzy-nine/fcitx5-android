@@ -165,6 +165,8 @@ class FcitxApplication : Application() {
         )
         if (!isDirectBootMode) {
             AutoDictSync.startDownloadLoop()
+            // custom: 内置语音输入的在线插件框架（安装内置 Lua 插件 + 注册 ASR 插件宿主）
+            org.fcitx.fcitx5.android.data.voice.VoicePluginBootstrap.ensureStarted(this)
         }
     }
 

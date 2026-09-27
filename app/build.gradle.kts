@@ -208,6 +208,7 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.jieba.analysis)
     // custom: 语音输入（Xime 核心移植）—— 在线 ASR 插件、模型索引/下载、简繁转换
+    implementation(project(":plugin-core"))
     implementation(libs.okhttp)
     implementation(libs.okhttp.sse)
     implementation(libs.kaml)

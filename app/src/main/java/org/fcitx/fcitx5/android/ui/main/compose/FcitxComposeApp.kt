@@ -40,6 +40,7 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.ThemeScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WebDavSyncScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceInputSettingsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceModelMarketScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.VoicePluginConfigScreen
 import org.fcitx.fcitx5.android.ui.main.compose.settings.ManagedPrefsScreen
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.utils.parcelable
@@ -107,6 +108,13 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
 
                             org.fcitx.fcitx5.android.data.voice.VoiceRoutes.MODELS -> {
                                 navigateTo(AppRoute.VoiceModelMarket)
+                                return@collect
+                            }
+
+                            org.fcitx.fcitx5.android.data.voice.VoiceRoutes.PLUGIN_CONFIG -> {
+                                intent.getStringExtra(
+                                    org.fcitx.fcitx5.android.data.voice.VoiceRoutes.EXTRA_PLUGIN_ID
+                                )?.let { navigateTo(AppRoute.VoicePluginConfig(it)) }
                                 return@collect
                             }
                         }
@@ -286,6 +294,12 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 }
                 entry<AppRoute.VoiceModelMarket> {
                     VoiceModelMarketScreen(onBack = { backStack.removeLastOrNull() })
+                }
+                entry<AppRoute.VoicePluginConfig> { route ->
+                    VoicePluginConfigScreen(
+                        pluginId = route.pluginId,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
                 }
                 entry<AppRoute.RawConfigHost> { route ->
                     RawConfigHostScreen(

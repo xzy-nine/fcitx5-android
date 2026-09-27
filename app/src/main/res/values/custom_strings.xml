@@ -229,4 +229,6 @@
     <string name="voice_back_to_keyboard">Back to keyboard</string>
     <string name="voice_open_settings">Voice input settings</string>
     <string name="voice_partial_hint">Recognized text is inserted as you speak</string>
+    <string name="voice_plugin_network_auth">Plugin network access</string>
+    <string name="voice_plugin_authorize">Authorize</string>
 </resources>

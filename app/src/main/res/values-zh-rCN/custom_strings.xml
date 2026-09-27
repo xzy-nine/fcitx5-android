@@ -225,4 +225,6 @@
     <string name="voice_back_to_keyboard">返回键盘</string>
     <string name="voice_open_settings">语音输入设置</string>
     <string name="voice_partial_hint">说话过程中识别结果会实时写入输入框</string>
+    <string name="voice_plugin_network_auth">插件网络授权</string>
+    <string name="voice_plugin_authorize">授权</string>
 </resources>

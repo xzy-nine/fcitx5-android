@@ -25,6 +25,11 @@ object VoiceRoutes {
     /** 模型市场（下载/删除）页。 */
     const val MODELS = "models"
 
+    /** 在线插件配置表单页（需要配合 [EXTRA_PLUGIN_ID]）。 */
+    const val PLUGIN_CONFIG = "plugin_config"
+
+    const val EXTRA_PLUGIN_ID = "org.fcitx.fcitx5.android.EXTRA_VOICE_PLUGIN_ID"
+
     fun open(context: Context, route: String) {
         val intent = Intent(context, MainActivity::class.java).apply {
             action = Intent.ACTION_RUN
@@ -33,21 +38,28 @@ object VoiceRoutes {
         }
         context.startActivity(intent)
     }
+
+    /** 打开某个在线插件的配置表单（IME 与设置页共用同一机制）。 */
+    fun openPluginConfig(context: Context, pluginId: String) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_RUN
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra(EXTRA, PLUGIN_CONFIG)
+            putExtra(EXTRA_PLUGIN_ID, pluginId)
+        }
+        context.startActivity(intent)
+    }
 }
 
 /**
  * custom: 在线 ASR 插件的「配置表单」入口。
  *
- * 插件配置表单由插件框架桥接层（P5）在初始化时注入；未注入时设置页只显示「未配置」。
+ * 表单页在应用内（MainActivity Compose 导航），因此 IME 与设置页都通过
+ * [VoiceRoutes.openPluginConfig] 跳转（singleTask 会走 onNewIntent → 导航）。
  */
 object VoicePluginConfigEntryPoint {
 
-    @Volatile
-    var openConfig: ((Context, String) -> Unit)? = null
-
-    fun open(context: Context, pluginId: String): Boolean {
-        val entry = openConfig ?: return false
-        entry(context, pluginId)
-        return true
+    fun open(context: Context, pluginId: String) {
+        VoiceRoutes.openPluginConfig(context, pluginId)
     }
 }
