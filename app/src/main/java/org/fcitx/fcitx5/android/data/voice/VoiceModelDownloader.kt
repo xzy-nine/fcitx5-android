@@ -23,6 +23,7 @@ import timber.log.Timber
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.FilterInputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -50,20 +51,62 @@ object VoiceModelDownloader {
     ): Result<Unit> = withContext(Dispatchers.IO) {
         val targetDir = VoiceModelStore.modelDir(context, model.id)
         targetDir.mkdirs()
+        val throttle = ProgressThrottle(onProgress)
         val archiveUrl = model.archiveUrl
         try {
             if (!archiveUrl.isNullOrBlank()) {
-                downloadArchive(context, archiveUrl, targetDir, onProgress)
+                downloadArchive(context, archiveUrl, targetDir) { throttle.emit(it) }
             } else {
-                downloadFiles(model.files, targetDir, onProgress)
+                downloadFiles(model.files, targetDir) { throttle.emit(it) }
             }
-            onProgress(VoiceModelDownloadState.Complete)
+            throttle.emit(VoiceModelDownloadState.Complete, force = true)
             Result.success(Unit)
         } catch (e: Exception) {
             Timber.e(e, "$TAG: download failed for ${model.id}")
             val message = e.message ?: "下载失败"
-            onProgress(VoiceModelDownloadState.Error(message))
+            throttle.emit(VoiceModelDownloadState.Error(message), force = true)
             Result.failure(e)
+        }
+    }
+
+    /**
+     * 进度节流：下载/解压回调可能非常密集（按 64KB/块上报），
+     * 每次都推 StateFlow 会让页面重组上千次；这里按时长与幅度合并（尾值必发）。
+     */
+    private class ProgressThrottle(
+        private val sink: (VoiceModelDownloadState) -> Unit,
+        private val minDelta: Float = 0.005f,
+        private val minIntervalMs: Long = 250L,
+    ) {
+        private var last: VoiceModelDownloadState? = null
+        private var lastTime = 0L
+
+        fun emit(state: VoiceModelDownloadState, force: Boolean = false) {
+            val now = System.currentTimeMillis()
+            val changedEnough = when {
+                force -> true
+                state !is VoiceModelDownloadState.Downloading &&
+                        state !is VoiceModelDownloadState.Extracting -> true
+
+                else -> {
+                    val previous = last
+                    val previousProgress = when (previous) {
+                        is VoiceModelDownloadState.Downloading -> previous.progress
+                        is VoiceModelDownloadState.Extracting -> previous.progress
+                        else -> -1f
+                    }
+                    val progress = if (state is VoiceModelDownloadState.Downloading) state.progress
+                    else (state as VoiceModelDownloadState.Extracting).progress
+                    previousProgress < 0f ||
+                            progress - previousProgress >= minDelta ||
+                            progress >= 1f
+                }
+            }
+            if (changedEnough && (force || now - lastTime >= minIntervalMs || state is VoiceModelDownloadState.Complete)) {
+                last = state
+                lastTime = now
+                sink(state)
+            }
         }
     }
 
@@ -83,7 +126,7 @@ object VoiceModelDownloader {
                     delay(1000L * attempt)
                 }
                 downloadTo(url, tmp, onProgress)
-                extractTarBz2(tmp, targetDir)
+                extractTarBz2(tmp, targetDir, onProgress)
                 tmp.delete()
                 return
             } catch (e: Exception) {
@@ -146,11 +189,39 @@ object VoiceModelDownloader {
         }
     }
 
-    /** 解压 tar.bz2，剥掉首层目录（官方包形如 `<模型名>/...`）。 */
-    private fun extractTarBz2(archive: File, targetDir: File) {
+    /**
+     * 解压 tar.bz2，剥掉首层目录（官方包形如 `<模型名>/...`）。
+     *
+     * 进度按「已从归档文件读出的字节 / 归档大小」估算：bzip2 解压是纯 CPU 密集且没有回调，
+     * 只有统计压缩侧的读取量才能给出单调、接近真实的进度（payload 字节会被压缩比放大）。
+     */
+    private fun extractTarBz2(
+        archive: File,
+        targetDir: File,
+        onProgress: (VoiceModelDownloadState) -> Unit,
+    ) {
+        val totalBytes = archive.length().coerceAtLeast(1L)
+        var consumed = 0L
+        onProgress(VoiceModelDownloadState.Extracting(0f))
+
+        fun report() {
+            val progress = (consumed.toFloat() / totalBytes).coerceIn(0f, 1f)
+            onProgress(VoiceModelDownloadState.Extracting(progress))
+        }
+
         FileInputStream(archive).use { fis ->
-            BZip2CompressorInputStream(fis).use { bz ->
+            // 统计压缩侧读取量（BZip2 输入流按块拉取，进度平滑）
+            val counting = object : FilterInputStream(fis) {
+                override fun read(): Int = super.read().also { if (it >= 0) consumed++ }
+
+                override fun read(b: ByteArray, off: Int, len: Int): Int =
+                    super.read(b, off, len).also { if (it > 0) consumed += it }
+
+                override fun skip(n: Long): Long = super.skip(n).also { if (it > 0) consumed += it }
+            }
+            BZip2CompressorInputStream(counting, false).use { bz ->
                 TarArchiveInputStream(bz).use { tar ->
+                    var lastReportAt = 0L
                     var entry = tar.nextEntry
                     while (entry != null) {
                         val raw = entry.name
@@ -165,6 +236,11 @@ object VoiceModelDownloader {
                                     val n = tar.read(buffer)
                                     if (n <= 0) break
                                     os.write(buffer, 0, n)
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastReportAt >= 250L) {
+                                        lastReportAt = now
+                                        report()
+                                    }
                                 }
                             }
                         }
@@ -173,5 +249,6 @@ object VoiceModelDownloader {
                 }
             }
         }
+        report()
     }
 }

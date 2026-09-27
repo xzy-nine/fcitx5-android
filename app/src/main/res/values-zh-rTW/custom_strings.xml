@@ -120,4 +120,5 @@
     <string name="voice_use_this">使用</string>
     <string name="voice_permission_granted">已授予</string>
     <string name="voice_downloading">正在下載…</string>
+    <string name="voice_extracting">正在解壓…</string>
 </resources>

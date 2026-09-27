@@ -233,4 +233,5 @@
     <string name="voice_use_this">Use</string>
     <string name="voice_permission_granted">Granted</string>
     <string name="voice_downloading">Downloading…</string>
+    <string name="voice_extracting">Extracting…</string>
 </resources>

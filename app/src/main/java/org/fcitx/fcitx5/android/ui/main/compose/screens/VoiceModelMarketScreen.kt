@@ -186,9 +186,14 @@ fun VoiceModelMarketScreen(
 
                         if (isTarget) {
                             Spacer(Modifier.height(8.dp))
+                            val progress = when (val s = downloadState) {
+                                is VoiceModelDownloadState.Downloading -> s.progress
+                                is VoiceModelDownloadState.Extracting -> s.progress
+                                else -> null
+                            }
                             LinearProgressIndicator(
                                 modifier = Modifier.fillMaxWidth(),
-                                progress = (downloadState as? VoiceModelDownloadState.Downloading)?.progress,
+                                progress = progress,
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
@@ -200,6 +205,11 @@ fun VoiceModelMarketScreen(
                                             stringResource(R.string.voice_downloading)
                                         }
                                     }
+
+                                    // bzip2 解压耗时且无下载字节可显示，单独给文案与百分比
+                                    is VoiceModelDownloadState.Extracting ->
+                                        stringResource(R.string.voice_extracting) +
+                                                " ${(s.progress * 100).toInt()}%"
 
                                     is VoiceModelDownloadState.Error -> stringResource(R.string.voice_download_failed)
                                     VoiceModelDownloadState.Complete -> stringResource(R.string.voice_download_ok)

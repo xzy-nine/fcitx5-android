@@ -35,6 +35,14 @@ sealed class VoiceModelDownloadState {
         val totalBytes: Long,
     ) : VoiceModelDownloadState()
 
+    /**
+     * 正在解压归档。
+     *
+     * tar.bz2 的 bzip2 解压是单线程 CPU 密集操作（100MB+ 包在手机上几十秒），
+     * 必须单独上报
+     */
+    data class Extracting(val progress: Float) : VoiceModelDownloadState()
+
     data class Error(val message: String) : VoiceModelDownloadState()
     data object Complete : VoiceModelDownloadState()
 }

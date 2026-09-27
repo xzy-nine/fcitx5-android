@@ -25,11 +25,23 @@ object VoiceModelStore {
     fun modelDir(context: Context, modelId: String): File =
         File(modelsRoot(context), modelId)
 
-    /** 解析模型目录下的 4 个文件；任一缺失返回 null。 */
+    /**
+     * 解析模型目录下的 4 个文件；任一缺失返回 null。
+     *
+     * 先只看目录的**直接子文件**（官方包解压后就是这个形状），凑不齐再递归查找；
+     * 市场页会在每次重组时按模型调用这里，避免每次都遍历整棵树。
+     */
     fun resolve(context: Context, modelId: String): VoiceModelFiles? {
         val dir = modelDir(context, modelId)
         if (!dir.isDirectory) return null
-        val files = dir.walkTopDown().filter { it.isFile && it.length() > 0L }.toList()
+        val direct = dir.listFiles()?.filter { it.isFile && it.length() > 0L }.orEmpty()
+        match(direct)?.let { return it }
+        val all = dir.walkTopDown().filter { it.isFile && it.length() > 0L }.toList()
+        return match(all)
+    }
+
+    /** 在给定候选文件里匹配 4 个角色；纯逻辑，便于 JVM 单测。 */
+    internal fun match(files: List<File>): VoiceModelFiles? {
         val tokens = files.firstOrNull { it.name.equals(TOKENS_FILE, ignoreCase = true) }
             ?: return null
         val encoder = pick(files, "encoder") ?: return null
