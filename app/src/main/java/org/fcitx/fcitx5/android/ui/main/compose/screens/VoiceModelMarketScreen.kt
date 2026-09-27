@@ -15,6 +15,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -32,6 +35,7 @@ import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -114,6 +118,21 @@ fun VoiceModelMarketScreen(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
+        }
+
+        // 索引地址覆盖（留空 = 用 xime.yaml 的 xime_index.base_urls）
+        item {
+            var indexUrl by remember { mutableStateOf(prefs.voiceIndexUrl.getValue()) }
+            TextField(
+                value = indexUrl,
+                onValueChange = {
+                    indexUrl = it
+                    prefs.voiceIndexUrl.setValue(it.trim())
+                },
+                label = stringResource(R.string.voice_index_url),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            )
         }
 
         item { SmallTitle(stringResource(R.string.voice_models)) }

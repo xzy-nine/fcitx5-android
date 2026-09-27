@@ -227,4 +227,5 @@
     <string name="voice_partial_hint">说话过程中识别结果会实时写入输入框</string>
     <string name="voice_plugin_network_auth">插件网络授权</string>
     <string name="voice_plugin_authorize">授权</string>
+    <string name="voice_index_url">索引地址（留空使用内置）</string>
 </resources>

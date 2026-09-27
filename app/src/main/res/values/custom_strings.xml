@@ -231,4 +231,5 @@
     <string name="voice_partial_hint">Recognized text is inserted as you speak</string>
     <string name="voice_plugin_network_auth">Plugin network access</string>
     <string name="voice_plugin_authorize">Authorize</string>
+    <string name="voice_index_url">Index source URL</string>
 </resources>
