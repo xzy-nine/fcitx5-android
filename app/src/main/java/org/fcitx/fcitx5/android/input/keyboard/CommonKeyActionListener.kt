@@ -187,8 +187,9 @@ class CommonKeyActionListener :
                         SpaceLongPressBehavior.ShowPicker -> showInputMethodPicker()
                         SpaceLongPressBehavior.VoiceInput -> {
                             // custom: 内置语音输入优先；未启用或引擎未就绪时由
-                            // VoiceInputComponent 自行回落到外部语音输入法（保持既有行为）
-                            voiceInput.onVoiceEntryClicked()
+                            // VoiceInputComponent 自行回落到外部语音输入法（保持既有行为）。
+                            // 空格长按进入面板：出字后自动回到主键盘。
+                            voiceInput.onVoiceEntryClicked(returnToKeyboardOnCommit = true)
                         }
                     }
                 }

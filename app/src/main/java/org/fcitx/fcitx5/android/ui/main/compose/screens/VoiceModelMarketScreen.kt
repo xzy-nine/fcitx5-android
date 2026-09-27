@@ -31,11 +31,16 @@ import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.voice.VoiceModelRepository
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Ok
+import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -91,10 +96,12 @@ fun VoiceModelMarketScreen(
         title = stringResource(R.string.voice_model_market),
         onBack = onBack,
         actions = {
-            TextButton(
-                text = stringResource(R.string.voice_index_refresh),
-                onClick = { VoiceModelRepository.refreshIndex(context) },
-            )
+            IconButton(onClick = { VoiceModelRepository.refreshIndex(context) }) {
+                Icon(
+                    imageVector = MiuixIcons.Refresh,
+                    contentDescription = stringResource(R.string.voice_index_refresh),
+                )
+            }
         },
     ) {
         if (loading) {
@@ -238,10 +245,12 @@ fun VoiceModelMarketScreen(
                                 onClick = { VoiceModelRepository.deleteModel(context, model) },
                             )
                         }
-                        TextButton(
-                            text = stringResource(R.string.voice_use_this),
-                            onClick = { prefs.voiceAsrModelId.setValue(model.id) },
-                        )
+                        IconButton(onClick = { prefs.voiceAsrModelId.setValue(model.id) }) {
+                            Icon(
+                                imageVector = MiuixIcons.Ok,
+                                contentDescription = stringResource(R.string.voice_use_this),
+                            )
+                        }
                     }
                 }
             }

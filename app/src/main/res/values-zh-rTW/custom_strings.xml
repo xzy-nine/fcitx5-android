@@ -85,20 +85,13 @@
     <string name="voice_model_state_ready">已下載</string>
     <string name="voice_model_state_missing">未下載</string>
     <string name="voice_model_delete">刪除模型</string>
-    <string name="voice_model_delete_confirm">刪除模型「%1$s」？</string>
-    <string name="voice_model_deleted">模型已刪除</string>
-    <string name="voice_model_builtin">內建預設模型</string>
     <string name="voice_download">下載</string>
     <string name="voice_download_cancel">取消下載</string>
     <string name="voice_download_retry">重新下載</string>
-    <string name="voice_download_extracting">正在解壓模型…</string>
     <string name="voice_download_failed">下載失敗</string>
     <string name="voice_download_ok">模型已就緒</string>
-    <string name="voice_mirror_source">鏡像來源</string>
     <string name="voice_index_refresh">重新整理模型清單</string>
-    <string name="voice_index_loading">正在載入模型清單…</string>
     <string name="voice_index_failed">模型清單載入失敗</string>
-    <string name="voice_index_empty">暫無可用模型</string>
     <string name="voice_index_using_builtin">正在使用內建模型清單</string>
     <string name="voice_record_permission">麥克風權限</string>
     <string name="voice_record_permission_missing">語音輸入需要錄音權限</string>
@@ -107,12 +100,6 @@
     <string name="voice_state_listening">正在聆聽…</string>
     <string name="voice_state_processing">正在辨識…</string>
     <string name="voice_state_error">辨識失敗</string>
-    <string name="voice_error_no_input">未接收到語音輸入</string>
-    <string name="voice_error_engine_start">啟動語音引擎失敗</string>
-    <string name="voice_error_model_missing">本機模型尚未下載</string>
-    <string name="voice_error_plugin_unconfigured">線上服務商未設定</string>
-    <string name="voice_error_backend_unavailable">沒有可用的語音引擎</string>
-    <string name="voice_go_to_models">去下載模型</string>
     <string name="voice_back_to_keyboard">返回鍵盤</string>
     <string name="voice_open_settings">語音輸入設定</string>
     <string name="voice_partial_hint">說話過程中辨識結果會即時寫入輸入框</string>
@@ -124,4 +111,5 @@
     <string name="voice_plugin_save">儲存</string>
     <string name="voice_permission_granted">已授予</string>
     <string name="voice_downloading">正在下載…</string>
+    <string name="voice_plugin_required">必填：</string>
 </resources>

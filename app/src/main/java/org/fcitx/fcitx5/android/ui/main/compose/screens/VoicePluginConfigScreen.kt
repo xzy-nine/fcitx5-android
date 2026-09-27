@@ -40,11 +40,15 @@ import org.fcitx.fcitx5.android.data.voice.VoicePluginBootstrap
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -109,25 +113,35 @@ fun VoicePluginConfigScreen(
             }
     }
 
-    val missingRequired = schema.any { node ->
-        node.required && node.key != null && values[node.key].orEmpty().isBlank()
-    }
-
     PageScaffold(
         title = pluginName,
         onBack = onBack,
         actions = {
-            Button(
+            IconButton(
                 onClick = {
+                    val missing = schema.firstOrNull { node ->
+                        node.required && node.key != null && values[node.key].orEmpty().isBlank()
+                    }
+                    if (missing != null) {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.voice_plugin_required) +
+                                    (missing.label ?: missing.key.orEmpty()),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        return@IconButton
+                    }
                     schema.forEach { node ->
                         node.key?.let { key -> store.set(key, values[key].orEmpty()) }
                     }
                     Toast.makeText(context, R.string.voice_plugin_save, Toast.LENGTH_SHORT).show()
                     onBack()
                 },
-                enabled = !missingRequired,
             ) {
-                Text(stringResource(R.string.voice_plugin_save))
+                Icon(
+                    imageVector = MiuixIcons.Ok,
+                    contentDescription = stringResource(R.string.voice_plugin_save),
+                )
             }
         },
     ) {

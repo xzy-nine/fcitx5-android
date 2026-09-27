@@ -198,20 +198,13 @@
     <string name="voice_model_state_ready">Downloaded</string>
     <string name="voice_model_state_missing">Not downloaded</string>
     <string name="voice_model_delete">Delete model</string>
-    <string name="voice_model_delete_confirm">Delete model “%1$s”?</string>
-    <string name="voice_model_deleted">Model deleted</string>
-    <string name="voice_model_builtin">Built-in default model</string>
     <string name="voice_download">Download</string>
     <string name="voice_download_cancel">Cancel download</string>
     <string name="voice_download_retry">Retry download</string>
-    <string name="voice_download_extracting">Extracting model…</string>
     <string name="voice_download_failed">Download failed</string>
     <string name="voice_download_ok">Model ready</string>
-    <string name="voice_mirror_source">Mirror</string>
     <string name="voice_index_refresh">Refresh model list</string>
-    <string name="voice_index_loading">Loading model list…</string>
     <string name="voice_index_failed">Failed to load model list</string>
-    <string name="voice_index_empty">No models available</string>
     <string name="voice_index_using_builtin">Using the built-in model list</string>
     <string name="voice_record_permission">Microphone permission</string>
     <string name="voice_record_permission_missing">Microphone permission is required for voice input</string>
@@ -220,12 +213,6 @@
     <string name="voice_state_listening">Listening…</string>
     <string name="voice_state_processing">Recognizing…</string>
     <string name="voice_state_error">Recognition failed</string>
-    <string name="voice_error_no_input">No speech detected</string>
-    <string name="voice_error_engine_start">Failed to start the speech engine</string>
-    <string name="voice_error_model_missing">On-device model not downloaded yet</string>
-    <string name="voice_error_plugin_unconfigured">Online provider is not configured</string>
-    <string name="voice_error_backend_unavailable">No speech engine available</string>
-    <string name="voice_go_to_models">Download a model</string>
     <string name="voice_back_to_keyboard">Back to keyboard</string>
     <string name="voice_open_settings">Voice input settings</string>
     <string name="voice_partial_hint">Recognized text is inserted as you speak</string>
@@ -237,4 +224,5 @@
     <string name="voice_plugin_save">Save</string>
     <string name="voice_permission_granted">Granted</string>
     <string name="voice_downloading">Downloading…</string>
+    <string name="voice_plugin_required">Required: </string>
 </resources>

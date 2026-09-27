@@ -21,6 +21,7 @@ import org.fcitx.fcitx5.android.data.voice.VoicePermissionState
 import org.fcitx.fcitx5.android.input.FcitxInputMethodService
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
+import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import org.mechdancer.dependency.Dependent
@@ -67,6 +68,12 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
     private var handler: VoiceRecognitionHandler? = null
     private var savedMediaVolume = -1
 
+    /** 本次面板由空格长按进入（出字后自动回主键盘）。 */
+    private var autoReturnOnCommit = false
+
+    /** 本次会话是否已经提交过文本。 */
+    private var committedThisSession = false
+
     /** 语音输入总开关。 */
     val isEnabled: Boolean get() = prefs.voiceInputEnabled.getValue()
 
@@ -103,22 +110,25 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
     )
 
     /**
-     * 语音入口被触发（空格长按 / 工具栏麦克风）：
-     * 按 [planEntry] 打开内置面板，或回落到外部语音输入法。
+     * 语音入口被触发。
+     *
+     * @param returnToKeyboardOnCommit 提交出文本后自动回到主键盘（空格长按进入时为 true，
+     *   工具栏麦克风进入时为 false —— 后者留在语音页方便连续说话）。
      */
-    fun onVoiceEntryClicked() {
+    fun onVoiceEntryClicked(returnToKeyboardOnCommit: Boolean) {
         if (isPasswordField()) {
             Timber.d("voice input: skipped on password field")
             return
         }
         when (planEntry()) {
-            VoiceEntryPlan.OpenPanel -> openPanel()
+            VoiceEntryPlan.OpenPanel -> openPanel(returnToKeyboardOnCommit)
             VoiceEntryPlan.SwitchExternalIme -> switchToExternalVoiceIme()
             VoiceEntryPlan.Noop -> Timber.d("voice input: no engine and no external voice IME")
         }
     }
 
-    fun openPanel() {
+    fun openPanel(returnToKeyboardOnCommit: Boolean = false) {
+        autoReturnOnCommit = returnToKeyboardOnCommit
         ContextCompat.getMainExecutor(service).execute {
             windowManager.attachWindow(VoiceInputWindow())
         }
@@ -140,10 +150,22 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
             onStateChanged = { _state.value = it },
             getState = { _state.value },
             writeComposing = { service.setVoiceComposingText(it) },
-            commitVoiceText = { service.commitText(it) },
+            commitVoiceText = {
+                committedThisSession = true
+                service.commitText(it)
+            },
             finishComposing = { service.finishComposing() },
             onVoiceComplete = {
                 _spectrum.value = FloatArray(SPECTRUM_BARS)
+                // 空格长按进入：出字后自动回主键盘（未出字，例如识别失败/无语音，则留在面板）
+                if (autoReturnOnCommit && committedThisSession) {
+                    autoReturnOnCommit = false
+                    committedThisSession = false
+                    service.finishComposing()
+                    ContextCompat.getMainExecutor(service).execute {
+                        windowManager.attachWindow(KeyboardWindow)
+                    }
+                }
             },
             onAmplitudeChanged = { amplitude ->
                 // 振幅驱动可视化：整体缩放当前频谱
@@ -193,10 +215,22 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
         _spectrum.value = FloatArray(SPECTRUM_BARS)
     }
 
-    /** 面板显示：刷新权限缓存与引擎名。 */
+    /** 面板显示：刷新权限缓存，并在引擎可用时自动开始识别（进入语音页即录音，无需手动点麦克风）。 */
     fun onPanelShown() {
         VoicePermissionState.refresh(context)
         _state.value = _state.value.copy(isVoiceMode = true)
+        committedThisSession = false
+        if (canAutoStart()) startRecognition()
+    }
+
+    /** 当前选中的引擎是否已就绪（本地模型已下载 / 在线插件已配置）且已获录音权限。 */
+    fun canAutoStart(): Boolean {
+        if (!VoicePermissionState.has(context)) return false
+        return if (prefs.voiceUseLocal.getValue()) {
+            AsrModelManager(context).isModelReady()
+        } else {
+            AsrPluginHostRegistry.enabledAsrPlugins(context).any { it.isConfigured(context) }
+        }
     }
 
     /** 面板隐藏（切走窗口/输入框失焦）：丢弃未结束的会话，迟到结果不得上屏。 */

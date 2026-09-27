@@ -378,7 +378,8 @@ class ComposeKawaiiBarComponent :
             },
             splitKeyboardEnabled = splitKeyboardPref.getValue(),
             onVoiceInput = if (AppPrefs.getInstance().voice.voiceInputEnabled.getValue()) {
-                { voiceInput.onVoiceEntryClicked() }
+                // 工具栏麦克风进入：留在语音页，方便连续说话
+                { voiceInput.onVoiceEntryClicked(returnToKeyboardOnCommit = false) }
             } else null,
         )
     }

@@ -194,20 +194,13 @@
     <string name="voice_model_state_ready">已下载</string>
     <string name="voice_model_state_missing">未下载</string>
     <string name="voice_model_delete">删除模型</string>
-    <string name="voice_model_delete_confirm">删除模型“%1$s”？</string>
-    <string name="voice_model_deleted">模型已删除</string>
-    <string name="voice_model_builtin">内置默认模型</string>
     <string name="voice_download">下载</string>
     <string name="voice_download_cancel">取消下载</string>
     <string name="voice_download_retry">重新下载</string>
-    <string name="voice_download_extracting">正在解压模型…</string>
     <string name="voice_download_failed">下载失败</string>
     <string name="voice_download_ok">模型已就绪</string>
-    <string name="voice_mirror_source">镜像源</string>
     <string name="voice_index_refresh">刷新模型列表</string>
-    <string name="voice_index_loading">正在加载模型列表…</string>
     <string name="voice_index_failed">模型列表加载失败</string>
-    <string name="voice_index_empty">暂无可用模型</string>
     <string name="voice_index_using_builtin">正在使用内置模型列表</string>
     <string name="voice_record_permission">麦克风权限</string>
     <string name="voice_record_permission_missing">语音输入需要录音权限</string>
@@ -216,12 +209,6 @@
     <string name="voice_state_listening">正在聆听…</string>
     <string name="voice_state_processing">正在识别…</string>
     <string name="voice_state_error">识别失败</string>
-    <string name="voice_error_no_input">未接收到语音输入</string>
-    <string name="voice_error_engine_start">启动语音引擎失败</string>
-    <string name="voice_error_model_missing">本地模型尚未下载</string>
-    <string name="voice_error_plugin_unconfigured">在线服务商未配置</string>
-    <string name="voice_error_backend_unavailable">没有可用的语音引擎</string>
-    <string name="voice_go_to_models">去下载模型</string>
     <string name="voice_back_to_keyboard">返回键盘</string>
     <string name="voice_open_settings">语音输入设置</string>
     <string name="voice_partial_hint">说话过程中识别结果会实时写入输入框</string>
@@ -233,4 +220,5 @@
     <string name="voice_plugin_save">保存</string>
     <string name="voice_permission_granted">已授予</string>
     <string name="voice_downloading">正在下载…</string>
+    <string name="voice_plugin_required">必填：</string>
 </resources>
