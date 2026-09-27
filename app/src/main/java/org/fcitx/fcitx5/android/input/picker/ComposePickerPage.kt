@@ -185,7 +185,7 @@ private fun PickerCells(
 // ---------------------------------------------------------------------------
 
 /** 普通格子；`raw == null` 时为空位（无动作、半透明）。 */
-private fun cellDef(
+internal fun cellDef(
     display: String?,
     raw: String?,
     density: PickerDensity,

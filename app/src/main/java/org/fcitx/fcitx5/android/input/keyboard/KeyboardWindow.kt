@@ -209,7 +209,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         textKeyboardState.onReturnDrawableUpdate(returnKeyDrawable.resourceId)
         textKeyboardState.refreshLangSwitchKeyVisibility()
         textKeyboardState.refreshSpaceVoiceIcon()
-        fcitx.runImmediately { inputMethodEntryCached }?.let {
+        fcitx.peek { inputMethodEntryCached }?.let {
             textKeyboardState.onInputMethodUpdate(it)
         }
         // 符号滑块编辑结果回调（View: NumberKeyboard.onAttach）

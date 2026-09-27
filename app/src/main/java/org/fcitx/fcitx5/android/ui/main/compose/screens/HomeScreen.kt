@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.ui.main.compose.AppRoute
@@ -19,8 +19,6 @@ import org.fcitx.fcitx5.android.ui.main.compose.PrefCategory
 import org.fcitx.fcitx5.android.ui.main.compose.RawConfigHostType
 import org.fcitx.fcitx5.android.utils.Const
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CardDefaults
-import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.SmallTitle
@@ -42,8 +40,6 @@ import top.yukonga.miuix.kmp.icon.extended.Translate
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.icon.extended.UploadCloud
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import androidx.compose.ui.res.stringResource
 
 private data class HomeDestination(
     @StringRes val title: Int,
@@ -57,7 +53,6 @@ fun HomeScreen(
     onOpenUrl: (String) -> Unit,
     onSearch: () -> Unit,
 ) {
-    val context = LocalContext.current
     val appName = stringResource(R.string.app_name)
 
     PageScaffold(
@@ -119,14 +114,10 @@ private fun HomeCard(
     items: List<HomeDestination>,
     onNavigate: (AppRoute) -> Unit,
 ) {
-    val context = LocalContext.current
     Card(
         modifier = Modifier.padding(horizontal = 12.dp),
-        colors = CardDefaults.defaultColors(
-            color = MiuixTheme.colorScheme.surface,
-        ),
     ) {
-        items.forEachIndexed { index, dest ->
+        items.forEach { dest ->
             ArrowPreference(
                 title = stringResource(dest.title),
                 startAction = {
@@ -134,9 +125,6 @@ private fun HomeCard(
                 },
                 onClick = { onNavigate(dest.route) },
             )
-            if (index < items.lastIndex) {
-                HorizontalDivider()
-            }
         }
     }
 }

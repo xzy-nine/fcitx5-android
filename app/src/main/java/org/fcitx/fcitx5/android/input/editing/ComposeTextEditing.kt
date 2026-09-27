@@ -5,7 +5,6 @@
 
 package org.fcitx.fcitx5.android.input.editing
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -132,16 +131,23 @@ fun TextEditingContent(
                 hapticOnRepeat,
                 callbacks.onRight,
             )
-            // 列4：全选 / 复制 / 粘贴
+            // 列4：全选↔剪切 / 复制 / 粘贴
+            // 旧 `TextEditingUi.updateSelection`：有选区时「全选」隐藏、「剪切」显示（剪切只在有选区时可用）
             Column(
                 modifier = Modifier
                     .weight(1.2f)
                     .fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(gap),
             ) {
-                ActionButton(Modifier
-                    .weight(1f)
-                    .fillMaxWidth(), stringResource(R.string.select_all), onClick = callbacks.onSelectAll)
+                if (hasSelection) {
+                    ActionButton(Modifier
+                        .weight(1f)
+                        .fillMaxWidth(), stringResource(R.string.cut), onClick = callbacks.onCut)
+                } else {
+                    ActionButton(Modifier
+                        .weight(1f)
+                        .fillMaxWidth(), stringResource(R.string.select_all), onClick = callbacks.onSelectAll)
+                }
                 ActionButton(Modifier
                     .weight(1f)
                     .fillMaxWidth(), stringResource(R.string.copy), onClick = callbacks.onCopy)
@@ -230,10 +236,16 @@ private fun SelectButton(
 }
 
 /**
- * 文本动作按钮（全选/复制/粘贴/退格）。
+ * 文本动作按钮（全选/剪切/复制/粘贴/退格）。
  *
- * 仅退格（[repeatable] = true）走 [repeatableClick] 支持长按连续删除；全选/复制/粘贴
+ * 仅退格（[repeatable] = true）走 [repeatableClick] 支持长按连续删除；全选/剪切/复制/粘贴
  * 为一次性动作，用普通点击即可，避免长按误触连续触发。
+ *
+ * **一次性动作必须把 [onClick] 交给 miuix [Button] 自己的 `onClick`**：miuix 的 `Button` 把
+ * `clickable` 挂在传入 `modifier` 的**内侧**（`modifier.squircleSurface().clickable(...)`），
+ * 内部 clickable 在 Main pass 先消费 DOWN/UP，外层再叠一个 `Modifier.clickable` 会因
+ * `isConsumed`/`waitForUpOrCancellation` 判为取消而**永不触发** —— 这就是全选/复制/粘贴
+ * 点了没反应的根因。只有重复键才需要 `onClick = {}`（单击由 [repeatableClick] 派发，避免双发）。
  */
 @Composable
 private fun ActionButton(
@@ -246,10 +258,15 @@ private fun ActionButton(
     val clickModifier = if (repeatable) {
         Modifier.repeatableClick(hapticOnRepeat = hapticOnRepeat, onClick = onClick)
     } else {
-        Modifier.inputFeedback().clickable(onClick = onClick)
+        Modifier.inputFeedback()
+    }
+    val buttonOnClick: () -> Unit = if (repeatable) {
+        {}
+    } else {
+        onClick
     }
     Button(
-        onClick = {},
+        onClick = buttonOnClick,
         modifier = modifier.then(clickModifier),
         colors = ButtonDefaults.buttonColorsPrimary(),
         cornerRadius = 10.dp,

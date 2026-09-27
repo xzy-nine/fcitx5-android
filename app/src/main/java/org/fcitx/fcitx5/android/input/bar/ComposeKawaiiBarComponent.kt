@@ -140,6 +140,13 @@ class ComposeKawaiiBarComponent :
 
     // Compose 驱动状态
     private val _barState = kotlinx.coroutines.flow.MutableStateFlow(KawaiiBarStateMachine.State.Idle)
+    private val _candidateReceived = kotlinx.coroutines.flow.MutableStateFlow(true)
+    val candidateReceived: kotlinx.coroutines.flow.StateFlow<Boolean>
+        get() = _candidateReceived
+
+    fun markCandidateReceived() {
+        _candidateReceived.value = true
+    }
     private val _idleSubState = kotlinx.coroutines.flow.MutableStateFlow(IdleSubState.Empty)
     private val _titleData = kotlinx.coroutines.flow.MutableStateFlow<TitleData?>(null)
     private val _titleExtensionView = kotlinx.coroutines.flow.MutableStateFlow<View?>(null)
@@ -408,10 +415,13 @@ class ComposeKawaiiBarComponent :
     }
 
     override fun onPreeditEmptyStateUpdate(empty: Boolean) {
+        // 预编辑变非空 → 候选事件待到达；预编辑变空 → 无待到达的候选事件
+        _candidateReceived.value = empty
         barStateMachine.push(PreeditUpdated, PreeditEmpty to empty)
     }
 
     override fun onCandidateUpdate(data: CandidateListEvent.Data) {
+        _candidateReceived.value = true
         barStateMachine.push(CandidatesUpdated, CandidateEmpty to data.candidates.isEmpty())
     }
 
@@ -535,38 +545,33 @@ class ComposeKawaiiBarComponent :
         val callbacks = remember { createCallbacks() }
         val visuals = getVisuals()
 
-        ComposeToolbar(
-            barState = effectiveBarState,
-            idleSubState = idleSubState,
-            titleData = titleData,
-            callbacks = callbacks,
-            visuals = visuals,
-            expandButtonState = expandButtonState,
-            splitKeyboardEnabled = splitKeyboardEnabled,
-            menuRotation = menuRotation,
-            modifier = modifier,
-            toolbarHeight = toolbarHeight.dp,
-            candidateVisible = candidateVisible,
-            candidateContent = {
-                // 候选栏内容由 ComposeCandidateComponent 提供，直接作为 Composable 接入（去除嵌套 ComposeView）
-                composeCandidate.CandidateBarContent()
-            },
-            numberRowContent = {
-                // NumberRow 已全 Compose 化（替代原 View / BaseKeyboard）
+        // 稳定化 slot lambda：remember 后 ComposeToolbar 的对应参数实例不变，
+        // 候选更新等只改 barState/candidateVisible 时，这些 slot 的内部组合可被复用、不再整片重组。
+        // （NumberRow 含整排按键，候选每次更新都连带重组它是主要浪费源。）
+        val candidateContent: @Composable () -> Unit = remember {
+            { composeCandidate.CandidateBarContent() }
+        }
+        val numberRowContent: @Composable () -> Unit = remember {
+            {
                 NumberRowContent(
                     onCollapse = callbacks.onNumberRowCollapse,
                     keyActionListener = commonKeyActionListener.listener,
                     popupActionListener = popup.listener,
                 )
-            },
-            inlineSuggestionContent = {
-                // InlineSuggestionsUi 包含 SurfaceControl 生命周期管理
+            }
+        }
+        val inlineSuggestionContent: @Composable () -> Unit = remember {
+            {
                 androidx.compose.ui.viewinterop.AndroidView(
                     factory = { inlineSuggestionsUi.root },
                     modifier = Modifier.fillMaxWidth(),
                 )
-            },
-            clipboardContent = {
+            }
+        }
+        // clipboardContent 读 visuals（主题色）与 clipboardText（State delegate）：
+        // 以 visuals 为 key——主题切换时重建；clipboardText 在 lambda 内经 delegate 读取、自带追踪。
+        val clipboardContent: @Composable () -> Unit = remember(visuals) {
+            {
                 if (clipboardText.isNotEmpty()) {
                     androidx.compose.foundation.layout.Row(
                         modifier = Modifier
@@ -595,10 +600,11 @@ class ComposeKawaiiBarComponent :
                         )
                     }
                 }
-            },
-            titleExtensionContent = if (titleExtensionView != null) {
+            }
+        }
+        val titleExtensionContent: (@Composable () -> Unit)? = if (titleExtensionView != null) {
+            remember {
                 {
-                    // 扩展 View 用 AndroidView 包装
                     titleExtensionView?.let { extView ->
                         androidx.compose.runtime.key(extView) {
                             androidx.compose.ui.viewinterop.AndroidView(
@@ -607,7 +613,26 @@ class ComposeKawaiiBarComponent :
                         }
                     }
                 }
-            } else null,
+            }
+        } else null
+
+        ComposeToolbar(
+            barState = effectiveBarState,
+            idleSubState = idleSubState,
+            titleData = titleData,
+            callbacks = callbacks,
+            visuals = visuals,
+            expandButtonState = expandButtonState,
+            splitKeyboardEnabled = splitKeyboardEnabled,
+            menuRotation = menuRotation,
+            modifier = modifier,
+            toolbarHeight = toolbarHeight.dp,
+            candidateVisible = candidateVisible,
+            candidateContent = candidateContent,
+            numberRowContent = numberRowContent,
+            inlineSuggestionContent = inlineSuggestionContent,
+            clipboardContent = clipboardContent,
+            titleExtensionContent = titleExtensionContent,
         )
     }
 

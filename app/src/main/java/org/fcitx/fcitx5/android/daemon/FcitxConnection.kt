@@ -21,6 +21,22 @@ interface FcitxConnection {
     fun <T> runImmediately(block: suspend FcitxAPI.() -> T): T
 
     /**
+     * Read the cached snapshot fields of [FcitxAPI] without touching the fcitx thread.
+     *
+     * [runImmediately] wraps the block in `runBlocking` over the fcitx lifecycle scope, so any
+     * block reaching `withFcitxContext` (i.e. a `suspend` API that needs the fcitx thread) makes
+     * the **caller thread block until fcitx has run it**. The snapshot fields
+     * (`inputPanelCached`, `inputMethodEntryCached`, `statusAreaActionsCached`,
+     * `clientPreeditCached`) are plain `@Volatile`-ish reads maintained by the fcitx thread, and
+     * [FcitxAPI.eventFlow] is a plain [SharedFlow] reference — none of them need dispatching.
+     *
+     * Use this for those reads on hot paths (IME `onStartInputView`, `InputView` recreation,
+     * status icon, expanded-candidate tabs), so they never hand work to (or wait on) the fcitx
+     * thread.
+     */
+    fun <T> peek(block: FcitxAPI.() -> T): T
+
+    /**
      * Run an operation immediately if fcitx is at ready state.
      * Otherwise, caller will be suspended until fcitx is ready and operation is done.
      * The suspended [block] will be executed in caller's thread.

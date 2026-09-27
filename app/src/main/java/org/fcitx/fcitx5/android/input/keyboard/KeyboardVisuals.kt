@@ -141,6 +141,15 @@ data class KeyboardVisuals(
  *
  * [start] / [end] 是**非对称**的：`expandKeypressArea` 让首尾键的触摸区变宽、内容只往一
  * 侧内缩（View 侧 `layoutMarginLeft/Right`）。
+ *
+ * [layoutStart] / [layoutEnd] 是 [start] / [end] 里属于 `expandKeypressArea` 的那一份
+ * （即 `KeyView.layoutMarginLeft/Right`），其余部分才是主题边距（`KeyView` 传给背景 drawable
+ * 的 `hMargin`）。两者的区别在 `KeyView` 里是**两层**：`appearanceView` 先按 layoutMargin
+ * 整体变窄（键面与键面内容都以它为坐标原点），背景 drawable 再在其中按主题边距内缩。
+ * 若把两者混为一谈，首/尾键（无扩展时的 A / L）的**字符会相对键面偏到屏幕外侧**。
+ *
+ * 因此**键面内容**要用 [contentInsets]（去掉 layout 那份，因为内容已经活在 `appearanceView`
+ * 里），只有键面绘制（`drawBehind`）才用完整的 [start] / [end]。
  */
 @Immutable
 data class KeyInsets(
@@ -148,9 +157,31 @@ data class KeyInsets(
     val end: Dp = 0.dp,
     val top: Dp = 0.dp,
     val bottom: Dp = 0.dp,
+    /** 对应 `KeyView.layoutMarginLeft`（父容器宽度的比例换算结果）。 */
+    val layoutStart: Dp = 0.dp,
+    /** 对应 `KeyView.layoutMarginRight`。 */
+    val layoutEnd: Dp = 0.dp,
 ) {
-    fun plusStart(extra: Dp) = copy(start = start + extra)
-    fun plusEnd(extra: Dp) = copy(end = end + extra)
+    /** 叠加单侧**布局**内缩：键面与键面内容一起内缩。 */
+    fun plusLayoutStart(extra: Dp) = copy(start = start + extra, layoutStart = layoutStart + extra)
+
+    /** 见 [plusLayoutStart]。 */
+    fun plusLayoutEnd(extra: Dp) = copy(end = end + extra, layoutEnd = layoutEnd + extra)
+
+    /**
+     * `appearanceView` **内部**的键面边距 = 主题边距（[start] / [end] 去掉 layout 那一份）。
+     *
+     * 供键面内容（主文本居中、副文本贴角）定位：它们已经活在按 layoutMargin 内缩过的
+     * `appearanceView` 里，若再吃一次 layout 边距，L 这类 `layoutEnd != 0` 的键的副文本
+     * （如 `)`）会被多缩半格、跑到键面左上。
+     */
+    val contentInsets: KeyInsets
+        get() = KeyInsets(
+            start = start - layoutStart,
+            end = end - layoutEnd,
+            top = top,
+            bottom = bottom,
+        )
 
     companion object {
         val Zero = KeyInsets()

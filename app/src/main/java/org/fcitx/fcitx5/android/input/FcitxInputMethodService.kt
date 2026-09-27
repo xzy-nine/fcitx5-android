@@ -66,10 +66,12 @@ import org.fcitx.fcitx5.android.core.ScancodeMapping
 import org.fcitx.fcitx5.android.core.SubtypeManager
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
+import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.InputFeedbacks
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
+import org.fcitx.fcitx5.android.data.quickphrase.EmailDomainDict
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.cursor.CursorRange
@@ -134,7 +136,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         if (isVirtualKeyboard) {
             hideStatusIcon()
         } else {
-            showStatusIcon(StatusIconMapping.fromEntry(fcitx.runImmediately { inputMethodEntryCached }))
+            showStatusIcon(StatusIconMapping.fromEntry(fcitx.peek { inputMethodEntryCached }))
         }
         window.window?.let {
             navbarMgr.evaluate(it, isVirtualKeyboard)
@@ -229,6 +231,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                         if (iv != null) {
                             iv.popup.PopupOverlayContent(Modifier.fillMaxSize())
                             iv.candidateActionMenu.OverlayContent(Modifier.fillMaxSize())
+                            // Custom: 键盘调校浮层（Compose IME 覆盖层，已迁出 keyboardView 子 View）
+                            iv.keyboardTune.OverlayContent(Modifier.fillMaxSize())
                         }
                     }
                 }
@@ -290,7 +294,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             jobs.consumeEach { it.join() }
         }
         lifecycleScope.launch {
-            fcitx.runImmediately { eventFlow }.collect {
+            fcitx.peek { eventFlow }.collect {
                 handleFcitxEvent(it)
             }
         }
@@ -525,6 +529,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 }
                 ic.finishComposingText()
             }
+            onEmailSuggestionTrigger(text)
             return
         }
         // committed text should replace composing (if any), replace selected range (if any),
@@ -542,6 +547,23 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 setSelection(target, target)
             }
         }
+        onEmailSuggestionTrigger(text)
+    }
+
+    /**
+     * custom：`@` 上屏后触发邮箱域名联想。
+     *
+     * 域名数据为标准 QuickPhrase 词库（内置 `email.mb` 预置域名 + 用户词库自学习，见
+     * [EmailDomainDict]）：词库条目 `@域名 域名`，键以 `@` 开头。触发 QuickPhrase
+     * 临时模式并预置缓冲 "@"，引擎按键前缀匹配词库提供域名候选，走完整候选词流程。
+     * 拼音输入法下 `@` 键由引擎的 `quickphraseTriggerRegex`（默认含 `(/|@)$`）在缓冲
+     * 非空时自动拦截进入临时模式（缓冲含 `@`，同样按键前缀匹配本词库）；本钩子只在
+     * `@` 被直接提交时生效。提交文本含 `@domain`（完整邮箱地址）时自学习写入用户词库。
+     */
+    private fun onEmailSuggestionTrigger(text: String) {
+        EmailDomainDict.selfLearn(text)
+        if (text != "@") return
+        fcitx.launchOnReady { it.triggerQuickPhraseWithBuffer("@") }
     }
 
     private fun sendDownKeyEvent(eventTime: Long, keyEventCode: Int, metaState: Int = 0) {
@@ -699,11 +721,17 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         if (inputDeviceMgr.isVirtualKeyboard) {
             inputView.value?.keyboardView?.getLocationInWindow(inputViewLocation)
             outInsets.apply {
-                // 预编辑栏已并入键盘体顶部，keyboardView 顶部 = 预编辑栏顶部；补偿「预编辑栏实际高度」
-                // （ComposePreeditComponent.heightPx）后即工具栏顶部 —— keyboardView 顶部本身已含
-                // 预编辑高度，补偿后正好抵消，故预编辑高度可变（贴合内容）也不影响 insets。
+                // keyboardView 顶部 = 键盘体圆角顶（顶部延伸带顶），其下依次是预编辑栏与工具栏；
+                // 这里把这两段「键盘体向上多长出来的、但不算入 IME 可见区」的高度加回去，
+                // 于是 contentTopInsets 恒等于**工具栏顶**：
+                //  - 预编辑栏高度可变（贴合内容）→ 顶部已含，补偿后抵消，insets 不随打字变化；
+                //  - 顶部延伸带（`IME_TOP_EXTENSION_DP` = 5dp，见 InputView.topExtensionPx）
+                //    恒定存在 → 补偿掉，使 app 内容区与改动前逐像素一致，圆角带只覆盖在
+                //    app 可视区之上遮住空隙。（不补偿的话 app 会跟着往上缩一截，
+                //    就变成「算入」而非「遮盖」。）
                 val topPx = inputViewLocation[1] +
-                    (inputView.value?.composePreedit?.heightPx?.value ?: 0)
+                    (inputView.value?.composePreedit?.heightPx?.value ?: 0) +
+                    (inputView.value?.topExtensionPx ?: 0)
                 contentTopInsets = topPx
                 visibleTopInsets = topPx
                 touchableInsets = Insets.TOUCHABLE_INSETS_VISIBLE
@@ -838,7 +866,14 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         capabilityFlags = flags
         // EditorInfo may change between onStartInput and onStartInputView
         inputDeviceMgr.notifyOnStartInput(attribute)
-        Timber.d("onStartInput: initialSel=${selection.current}, restarting=$restarting")
+        // 打上 pkg/fieldId/inputType：`restarting=true` 只可能由**客户端应用**发起
+        // （`InputMethodManager.restartInput()` / 输入连接被替换），IME 侧无法自造；
+        // 出问题时靠这三项定位是哪个应用/哪个输入框在重启输入连接。
+        Timber.d(
+            "onStartInput: initialSel=${selection.current}, restarting=$restarting, " +
+                "pkg=${attribute.packageName}, fieldId=${attribute.fieldId}, " +
+                "inputType=0x${attribute.inputType.toString(16)}"
+        )
         val isNullType = attribute.isTypeNull()
         // wait until InputContext created/activated
         postFcitxJob {
@@ -879,7 +914,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 // support monitoring CursorAnchorInfo
                 candidatesView?.updateCursorAnchor(contentSize)
             }
-            showStatusIcon(StatusIconMapping.fromEntry(fcitx.runImmediately { inputMethodEntryCached }))
+            showStatusIcon(StatusIconMapping.fromEntry(fcitx.peek { inputMethodEntryCached }))
         }
     }
 

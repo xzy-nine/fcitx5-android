@@ -4,7 +4,6 @@
  */
 package org.fcitx.fcitx5.android.input.status
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -70,7 +69,6 @@ fun StatusAreaGrid(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(MiuixTheme.colorScheme.background)
     ) {
         val rootWidthPx = constraints.maxWidth
         val rootHeightPx = constraints.maxHeight

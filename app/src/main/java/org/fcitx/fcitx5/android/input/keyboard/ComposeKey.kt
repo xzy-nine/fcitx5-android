@@ -100,7 +100,8 @@ fun ComposeKey(
     enabled: Boolean = true,
     /**
      * 视觉内缩。[KeyboardVisuals.defaultInsets] 是默认值；
-     * `expandKeypressArea` 让首尾键触摸区变宽时，由 [ComposeKeyRow] 额外叠加单侧内缩。
+     * `expandKeypressArea` 让首尾键触摸区变宽时，由 [ComposeKeyRow] 额外叠加单侧内缩
+     * （记录在 [KeyInsets.layoutStart] / [KeyInsets.layoutEnd]）。
      */
     insets: KeyInsets? = null,
     /** 键型专属滑行（空格移动光标 / 退格删除选区），由键盘容器传入，见 [ComposeKeySwipeSpec]。 */
@@ -200,31 +201,48 @@ fun ComposeKey(
             .alpha(if (enabled) 1f else disabledAlpha),
         contentAlignment = Alignment.Center,
     ) {
-        // 视觉层：手感区 = 整格（pointerInput 在 padding 之前），视觉区 = 内缩后（§4.5-①）
+        // 视觉层：手感区 = 整格（pointerInput 在 padding 之前）
+        // 内层结构逐层对应 View `KeyView`：`appearanceView`（按 layoutMargin 整体内缩，
+        // 键面与键面内容都以它为坐标原点）→ 背景 drawable（再按主题边距内缩）。
         val specialShape = visuals.usesSpecialKeyShape(def)
         val effectiveInsets = insets
             ?: if (specialShape) KeyInsets.Zero else visuals.defaultInsets(appearance.margin)
+        // 键面内的主题边距（已去掉 layoutMargin 那份）：键面绘制与键面内容都用它
+        val contentInsets = effectiveInsets.contentInsets
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(
-                    start = effectiveInsets.start,
-                    end = effectiveInsets.end,
-                    top = effectiveInsets.top,
-                    bottom = effectiveInsets.bottom,
-                )
-                .drawBehind {
-                    drawKeySkin(
-                        visuals = visuals,
-                        variant = appearance.variant,
-                        border = appearance.border,
-                        viewId = appearance.viewId,
-                        specialShape = specialShape,
-                        pressed = pressed.value,
+                    start = effectiveInsets.layoutStart,
+                    end = effectiveInsets.layoutEnd,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(
+                        start = contentInsets.start,
+                        end = contentInsets.end,
+                        top = contentInsets.top,
+                        bottom = contentInsets.bottom,
                     )
-                },
-        )
-        KeyContent(def, visuals, effectiveInsets, autoScale)
+                    .drawBehind {
+                        drawKeySkin(
+                            visuals = visuals,
+                            variant = appearance.variant,
+                            border = appearance.border,
+                            viewId = appearance.viewId,
+                            specialShape = specialShape,
+                            pressed = pressed.value,
+                        )
+                    },
+            )
+            // 键面内容的坐标原点是 appearanceView（View 侧它的 padding 来自背景 drawable，
+            // 不含 layoutMargin），故传 `contentInsets`：否则 L 这类 `layoutEnd != 0` 的键会把
+            // layout 边距再吃一次，副文本 `)` 被多缩半格跑到键面左上。
+            KeyContent(def, visuals, contentInsets, autoScale)
+        }
     }
 }
 

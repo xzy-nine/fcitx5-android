@@ -130,6 +130,7 @@ dependencies {
     implementation(libs.miuix.preference.android)
     implementation(libs.miuix.icons.android)
     implementation(libs.miuix.nav.android)
+    implementation(libs.miuix.blur.android)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.ui)

@@ -11,6 +11,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -73,6 +74,20 @@ class CandidateList(private val items: Array<CandidateWord>) {
     val lastIndex: Int get() = items.lastIndex
 
     operator fun get(index: Int): CandidateWord = items[index]
+
+    /**
+     * LazyList item key：候选词文本（同文本重复出现时追加出现序号保证唯一）。
+     * 在构造时一次性算好，避免每次重组在 Composable 侧用 `remember` 重建 HashMap。
+     */
+    val keys: Array<String> = run {
+        val seen = HashMap<String, Int>(items.size)
+        Array(items.size) { index ->
+            val text = items[index].text
+            val occurrence = (seen[text] ?: 0) + 1
+            seen[text] = occurrence
+            if (occurrence == 1) text else "$occurrence#$text"
+        }
+    }
 
     /** 追加（懒加载更多候选）；返回新实例，不修改原对象 */
     fun append(more: Array<CandidateWord>): CandidateList = CandidateList(items + more)
@@ -252,15 +267,8 @@ private fun CandidateRow(
 
     // item key 取候选词文本：击键后候选集整体位移时，内容未变的候选可复用原有组合节点；
     // 同一文本重复出现时追加出现序号，保证 key 在整表内唯一（LazyList 要求 key 唯一）。
-    val itemKeys = remember(candidates) {
-        val seen = HashMap<String, Int>(candidates.size)
-        Array(candidates.size) { index ->
-            val text = candidates[index].text
-            val occurrence = (seen[text] ?: 0) + 1
-            seen[text] = occurrence
-            if (occurrence == 1) text else "$occurrence#$text"
-        }
-    }
+    // keys 已在 CandidateList 构造时算好并缓存，这里直接引用，省掉每次重组的 remember + HashMap。
+    val itemKeys = candidates.keys
 
     BoxWithConstraints(modifier = modifier) {
         val containerWidth = maxWidth
@@ -338,10 +346,19 @@ private fun CandidateItem(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    // 最近一次按压点（本 item 局部坐标）
+    // 最近一次按压点（本 item 局部坐标）——从 interactionSource 的 Press 事件取，
+    // 省掉一个独立 pointerInput 手势节点（combinedClickable 已在处理按压）。
     val pressOffset = remember { mutableStateOf(Offset.Zero) }
-    // 本 item 自身的坐标，用于把「item 局部长按点」换算成窗口绝对坐标
-    val itemCoordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
+    // 本 item 左上角在窗口坐标系中的位置；仅在变化时写入，避免每帧布局都触发快照写。
+    val itemOrigin = remember { mutableStateOf(Offset.Zero) }
+
+    LaunchedEffect(interactionSource) {
+        interactionSource.interactions.collect { interaction ->
+            if (interaction is PressInteraction.Press) {
+                pressOffset.value = interaction.pressPosition
+            }
+        }
+    }
 
     Row(
         modifier = modifier
@@ -350,21 +367,17 @@ private fun CandidateItem(
                 if (isPressed) pressHighlightColor else Color.Transparent
             )
             .inputFeedback()
-            .onGloballyPositioned { itemCoordinates.value = it }
-            .pointerInput(candidate.text) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    pressOffset.value = down.position
-                }
+            .onGloballyPositioned { coords ->
+                val p = coords.positionInWindow()
+                if (p != itemOrigin.value) itemOrigin.value = p
             }
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,
                 onLongClick = {
-                    // 直接用 item 自身坐标换算，避免遗漏 item 在 LazyRow 内的偏移（含滚动）
-                    val origin = itemCoordinates.value?.positionInWindow() ?: Offset.Zero
-                    onLongClick(origin + pressOffset.value)
+                    // item 局部长按点 + item 在窗口中的原点 = 窗口绝对坐标
+                    onLongClick(itemOrigin.value + pressOffset.value)
                 },
             )
             .padding(horizontal = 8.dp, vertical = 4.dp),

@@ -53,11 +53,13 @@ fun RawConfigHostScreen(
     val fcitx: FcitxConnection = remember { FcitxDaemon.connect(connectionName) }
     val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
     val context = LocalContext.current
+    // localized label of the android-only entry appended to the table addon (legacy parity)
+    val manageTableImLabel = stringResource(R.string.manage_table_im)
 
     DisposableEffect(fcitx, connectionName) {
         scope.launch {
             try {
-                raw = fcitx.runOnReady { obtainConfig(this, route) }
+                raw = fcitx.runOnReady { obtainConfig(this, route, manageTableImLabel) }
                 errorText = null
             } catch (e: Exception) {
                 errorText = e.message
@@ -69,7 +71,9 @@ fun RawConfigHostScreen(
             // coroutine from onDispose used to deadlock the Compose dispatcher and trigger an ANR.
             raw?.let { r ->
                 runCatching {
-                    fcitx.runIfReady { saveConfig(this, route, r["cfg"]) }
+                    r.findByName("cfg")?.let { cfg ->
+                        fcitx.runIfReady { saveConfig(this, route, cfg) }
+                    }
                 }
             }
             FcitxDaemon.disconnect(connectionName)
@@ -85,16 +89,27 @@ fun RawConfigHostScreen(
                 onNavigate = onNavigate,
                 onBack = onBack,
                 onSave = {
-                    scope.launch {
-                        fcitx.runIfReady { saveConfig(this, route, loaded["cfg"]) }
+                    loaded.findByName("cfg")?.let { cfg ->
+                        scope.launch {
+                            fcitx.runIfReady { saveConfig(this, route, cfg) }
+                        }
                     }
                 },
                 // fcitx reports the global config top-level name in English ("Global Options"),
                 // mirror the legacy GlobalConfigFragment and use the localized string instead.
+                // Addon / input-method pages get the translated name from the list screen, like
+                // the legacy fragments did (topLevel.name would be the C++ class name).
                 titleOverride = when (route.kind) {
                     RawConfigHostType.GlobalConfig -> stringResource(R.string.global_options)
                     RawConfigHostType.PhysicalHotkey -> stringResource(R.string.hotkey)
-                    else -> null
+                    RawConfigHostType.AddonConfig, RawConfigHostType.InputMethodConfig ->
+                        route.name?.takeIf { it.isNotEmpty() }
+                },
+                // external (sub-config) rows must not navigate back into this very addon page
+                currentAddon = if (route.kind == RawConfigHostType.AddonConfig) {
+                    route.uniqueName
+                } else {
+                    null
                 },
             )
         }
@@ -111,7 +126,11 @@ fun RawConfigHostScreen(
     }
 }
 
-private suspend fun obtainConfig(fcitx: FcitxAPI, route: AppRoute.RawConfigHost): RawConfig =
+private suspend fun obtainConfig(
+    fcitx: FcitxAPI,
+    route: AppRoute.RawConfigHost,
+    manageTableImLabel: String,
+): RawConfig =
     when (route.kind) {
         RawConfigHostType.GlobalConfig -> splitHotkey(fcitx.getGlobalConfig()).first
         RawConfigHostType.PhysicalHotkey -> splitHotkey(fcitx.getGlobalConfig()).second
@@ -124,7 +143,7 @@ private suspend fun obtainConfig(fcitx: FcitxAPI, route: AppRoute.RawConfigHost)
                     it.subItems = (it.subItems ?: emptyArray()) + RawConfig(
                         "AndroidTable", subItems = arrayOf(
                             RawConfig("Type", "External"),
-                            RawConfig("Description", "Manage Table Input Methods")
+                            RawConfig("Description", manageTableImLabel)
                         )
                     )
                 }
