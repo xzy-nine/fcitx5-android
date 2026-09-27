@@ -7,6 +7,7 @@ package org.fcitx.fcitx5.android.core
 import android.content.Context
 import android.os.Build
 import androidx.annotation.Keep
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -159,6 +160,9 @@ class Fcitx(private val context: Context) : FcitxAPI, FcitxLifecycleOwner {
         withFcitxContext { setFcitxAddonState(name, state) }
 
     override suspend fun triggerQuickPhrase() = withFcitxContext { triggerQuickPhraseInput() }
+    
+    override suspend fun triggerQuickPhraseWithBuffer(text: String) =
+        withFcitxContext { triggerQuickPhraseInputWithBuffer(text) }
     override suspend fun triggerUnicode() = withFcitxContext { triggerUnicodeInput() }
     private suspend fun setClipboard(string: String, password: Boolean = false) =
         withFcitxContext { setFcitxClipboard(string, password) }
@@ -337,6 +341,9 @@ class Fcitx(private val context: Context) : FcitxAPI, FcitxLifecycleOwner {
 
         @JvmStatic
         external fun triggerQuickPhraseInput()
+
+        @JvmStatic
+        external fun triggerQuickPhraseInputWithBuffer(text: String)
 
         @JvmStatic
         external fun triggerUnicodeInput()

@@ -111,7 +111,7 @@ internal fun formatNumber(value: Float, decimals: Int): String =
     if (decimals <= 0) value.roundToInt().toString()
     else String.format(Locale.US, "%.${decimals}f", value)
 
-private fun roundToDecimals(value: Float, decimals: Int): Float {
+internal fun roundToDecimals(value: Float, decimals: Int): Float {
     if (decimals <= 0) return value.roundToInt().toFloat()
     var factor = 1f
     repeat(decimals) { factor *= 10f }

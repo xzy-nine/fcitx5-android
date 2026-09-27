@@ -12,17 +12,15 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -30,9 +28,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -41,6 +39,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.data.UserDataImportCompat
 import org.fcitx.fcitx5.android.data.UserDataManager
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
@@ -48,12 +47,11 @@ import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceCategory
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceUi
-import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.EditValueDialog
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleConfirmDialog
+import org.fcitx.fcitx5.android.ui.main.compose.screens.PageScaffold
 import org.fcitx.fcitx5.android.ui.main.settings.EditTextFloatUi
 import org.fcitx.fcitx5.android.utils.AppUtil
-import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import org.fcitx.fcitx5.android.utils.buildDocumentsProviderIntent
 import org.fcitx.fcitx5.android.utils.formatDateTime
 import org.fcitx.fcitx5.android.utils.importErrorDialog
@@ -62,18 +60,25 @@ import org.fcitx.fcitx5.android.utils.queryFileName
 import org.fcitx.fcitx5.android.utils.toast
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CardDefaults
-import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Backup
+import top.yukonga.miuix.kmp.icon.extended.Edit
+import top.yukonga.miuix.kmp.icon.extended.Folder
+import top.yukonga.miuix.kmp.icon.extended.Import
+import top.yukonga.miuix.kmp.icon.extended.Settings
+import top.yukonga.miuix.kmp.icon.extended.Timer
+import top.yukonga.miuix.kmp.icon.extended.Tune
+import top.yukonga.miuix.kmp.icon.extended.UploadCloud
+import top.yukonga.miuix.kmp.icon.extended.VerticalSplit
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Compose renderer for a [ManagedPreferenceCategory]. Consumes the shared preference metadata
@@ -87,7 +92,6 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 private fun uiTitleString(context: Context, ui: ManagedPreferenceUi<*>): String = when (ui) {
     is ManagedPreferenceUi.Switch -> context.getString(ui.title)
     is ManagedPreferenceUi.StringList<*> -> context.getString(ui.title)
-    is ManagedPreferenceUi.VoiceInputList -> context.getString(ui.title)
     is ManagedPreferenceUi.EditTextInt -> context.getString(ui.title)
     is EditTextFloatUi -> context.getString(ui.title)
     is ManagedPreferenceUi.SeekBarInt -> context.getString(ui.title)
@@ -106,8 +110,6 @@ fun ManagedPrefsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val isAdvanced = category === AppPrefs.getInstance().advanced
-    // 高级分类页专属：数据管理（浏览数据目录/导出/导入）需要 fcitx 连接与 SAF launcher。
-    // 这些动作原位于 legacy AdvancedSettingsFragment 页尾，现直接并入该分类页列表底部。
     val fcitx = if (isAdvanced) remember { FcitxDaemon.connect("compose-advanced-settings") } else null
     var version by remember { mutableIntStateOf(0) }
     var exportTime by remember { mutableLongStateOf(0L) }
@@ -163,7 +165,7 @@ fun ManagedPrefsScreen(
                 AppUtil.showRestartNotification(context)
                 context.toast(context.getString(R.string.user_data_imported, formatDateTime(metadata.exportTime)))
                 // delay exit to ensure Notification and Toast has been created
-                delay(400)
+                delay(400.milliseconds)
                 AppUtil.exit()
             } catch (e: Exception) {
                 FcitxDaemon.startFcitx()
@@ -172,136 +174,77 @@ fun ManagedPrefsScreen(
         }
     }
 
-    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val highlightColor = MiuixTheme.colorScheme.primary.copy(alpha = 0.15f)
+    val listState = rememberLazyListState()
+    var currentHighlight by remember { mutableStateOf(highlightKey) }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
-        LazyColumn(
-            contentPadding = PaddingValues(
-                top = (if (showTopBar) 64.dp else 12.dp) + topInset
-            ),
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            if (category.groups.isEmpty()) {
-                item {
-                    Card(
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        colors = CardDefaults.defaultColors(
-                            color = MiuixTheme.colorScheme.surfaceContainerHighest,
-                        ),
-                    ) {
-                        category.managedPreferencesUi.forEachIndexed { index, ui ->
-                            val isHighlight = uiTitleString(context, ui) == highlightKey
-                            Box(
-                                Modifier.background(
-                                    if (isHighlight) highlightColor else Color.Transparent
-                                ),
-                            ) {
-                                ManagedPrefRow(
-                                    ui,
-                                    category.managedPreferences,
-                                    version,
-                                    category::fireChange,
-                                )
-                            }
-                            if (index < category.managedPreferencesUi.lastIndex) HorizontalDivider()
-                        }
-                    }
-                }
-            } else {
-                val uiMap = category.managedPreferencesUi.associateBy { it.key }
-                category.groups.forEach { group ->
-                    item {
-                        SmallTitle(text = stringResource(group.title))
-                    }
-                    item {
-                        Card(
-                            modifier = Modifier.padding(horizontal = 12.dp),
-                            colors = CardDefaults.defaultColors(
-                                color = MiuixTheme.colorScheme.surfaceContainerHighest,
-                            ),
-                        ) {
-                            val keys = group.keys.filter { uiMap.containsKey(it) }
-                            keys.forEachIndexed { index, key ->
-                                val ui = uiMap.getValue(key)
-                                Box(
-                                    Modifier.background(
-                                        if (uiTitleString(context, ui) == highlightKey) highlightColor
-                                        else Color.Transparent
-                                    ),
-                                ) {
-                                    ManagedPrefRow(
-                                        ui,
-                                        category.managedPreferences,
-                                        version,
-                                        category::fireChange,
-                                    )
-                                }
-                                if (index < keys.lastIndex) HorizontalDivider()
-                            }
-                        }
-                    }
-                }
+    // Auto-scroll to the highlighted item and clear highlight after delay
+    LaunchedEffect(highlightKey) {
+        if (highlightKey != null) {
+            currentHighlight = highlightKey
+            delay(300.milliseconds) // Wait for layout to complete
+            val index = findHighlightIndex(context, category, highlightKey)
+            if (index >= 0) {
+                listState.animateScrollToItem(index)
             }
-            if (isAdvanced) {
-                item {
-                    SmallTitle(text = stringResource(R.string.data_management))
-                }
-                item {
-                    Card(
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        colors = CardDefaults.defaultColors(
-                            color = MiuixTheme.colorScheme.surfaceContainerHighest,
-                        ),
-                    ) {
-                        ArrowPreference(
-                            title = stringResource(R.string.browse_user_data_dir),
-                            summary = stringResource(R.string.data_browse_summary),
-                            onClick = {
-                                try {
-                                    context.startActivity(buildDocumentsProviderIntent())
-                                } catch (e: Exception) {
-                                    context.toast(e)
-                                }
-                            },
-                        )
-                        ArrowPreference(
-                            title = stringResource(R.string.export_user_data),
-                            summary = stringResource(R.string.data_export_summary),
-                            onClick = {
-                                scope.launch {
-                                    fcitx?.runOnReady { save() }
-                                    exportTime = System.currentTimeMillis()
-                                    exportLauncher.launch("fcitx5-android_${iso8601UTCDateTime(exportTime)}.zip")
-                                }
-                            },
-                        )
-                        ArrowPreference(
-                            title = stringResource(R.string.import_user_data),
-                            summary = stringResource(R.string.data_import_summary),
-                            onClick = { confirmImport = true },
-                        )
-                        if (onWebDavSync != null) {
-                            ArrowPreference(
-                                title = stringResource(R.string.webdav_settings_title),
-                                summary = stringResource(R.string.webdav_advanced_summary),
-                                onClick = onWebDavSync,
-                            )
-                        }
-                    }
-                }
-            }
+            // Clear highlight after 2 seconds
+            delay(2000.milliseconds)
+            currentHighlight = null
         }
-        if (showTopBar) {
-            SmallTopAppBar(
-                color = MiuixTheme.colorScheme.surfaceContainer,
-                title = stringResource(category.title),
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(MiuixIcons.Back, contentDescription = null, modifier = Modifier.size(24.dp))
-                    }
-                },
-                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+    }
+
+    // Shared LazyColumn/PageScaffold content so the showTopBar branches stay in sync
+    val uiMap = category.managedPreferencesUi.associateBy { it.key }
+    val settingsContent: LazyListScope.() -> Unit = {
+        renderSettingsContent(
+            category = category,
+            uiMap = uiMap,
+            prefs = category.managedPreferences,
+            version = version,
+            fireChange = category::fireChange,
+            currentHighlight = currentHighlight,
+            highlightColor = highlightColor,
+            isAdvanced = isAdvanced,
+            onBrowseData = {
+                try {
+                    context.startActivity(buildDocumentsProviderIntent())
+                } catch (e: Exception) {
+                    context.toast(e)
+                }
+            },
+            onExportData = {
+                scope.launch {
+                    fcitx?.runOnReady { save() }
+                    exportTime = System.currentTimeMillis()
+                    exportLauncher.launch("fcitx5-android_${iso8601UTCDateTime(exportTime)}.zip")
+                }
+            },
+            onImportClick = { confirmImport = true },
+            onWebDav = onWebDavSync,
+        )
+    }
+
+    if (showTopBar) {
+        PageScaffold(
+            title = stringResource(category.title),
+            onBack = onBack,
+            listState = listState,
+            content = settingsContent,
+        )
+    } else {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(MiuixTheme.colorScheme.surface)
+        ) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scrollEndHaptic()
+                    .overScrollVertical(),
+                overscrollEffect = null,
+                content = settingsContent,
             )
         }
     }
@@ -317,6 +260,156 @@ fun ManagedPrefsScreen(
             onDismiss = { confirmImport = false },
         )
     }
+}
+
+/**
+ * One grouped setting block: a [Card] that stacks the preference rows of a single group
+ * (or the whole flattened list when the category has no explicit groups), with no separator
+ * between rows. Matches KernelSU's "one Card per group" organization.
+ */
+@Composable
+private fun ManagedGroupCard(
+    items: List<ManagedPreferenceUi<*>>,
+    prefs: Map<String, ManagedPreference<*>>,
+    version: Int,
+    fireChange: (String) -> Unit,
+    currentHighlight: String?,
+    highlightColor: Color,
+) {
+    val context = LocalContext.current
+    Card(
+        modifier = Modifier.padding(horizontal = 12.dp),
+    ) {
+        items.forEach { ui ->
+            ManagedHighlightRow(
+                ui = ui,
+                prefs = prefs,
+                version = version,
+                fireChange = fireChange,
+                isHighlight = uiTitleString(context, ui) == currentHighlight,
+                highlightColor = highlightColor,
+            )
+        }
+    }
+}
+
+/**
+ * Wraps a single preference row with the search-highlight background.
+ */
+@Composable
+private fun ManagedHighlightRow(
+    ui: ManagedPreferenceUi<*>,
+    prefs: Map<String, ManagedPreference<*>>,
+    version: Int,
+    fireChange: (String) -> Unit,
+    isHighlight: Boolean,
+    highlightColor: Color,
+) {
+    Box(Modifier.background(if (isHighlight) highlightColor else Color.Transparent)) {
+        ManagedPrefRow(
+            ui = ui,
+            prefs = prefs,
+            version = version,
+            fireChange = fireChange,
+        )
+    }
+}
+
+/**
+ * Builds the [LazyListScope] content shared by [ManagedPrefsScreen]'s two render paths:
+ * grouped [SmallTitle] + [ManagedGroupCard] pairs, plus the Advanced data-management card.
+ */
+private fun LazyListScope.renderSettingsContent(
+    category: ManagedPreferenceCategory,
+    uiMap: Map<String, ManagedPreferenceUi<*>>,
+    prefs: Map<String, ManagedPreference<*>>,
+    version: Int,
+    fireChange: (String) -> Unit,
+    currentHighlight: String?,
+    highlightColor: Color,
+    isAdvanced: Boolean,
+    onBrowseData: () -> Unit,
+    onExportData: () -> Unit,
+    onImportClick: () -> Unit,
+    onWebDav: (() -> Unit)?,
+) {
+    if (category.groups.isEmpty()) {
+        item {
+            ManagedGroupCard(
+                items = category.managedPreferencesUi,
+                prefs = prefs,
+                version = version,
+                fireChange = fireChange,
+                currentHighlight = currentHighlight,
+                highlightColor = highlightColor,
+            )
+        }
+    } else {
+        category.groups.forEach { group ->
+            item {
+                SmallTitle(text = stringResource(group.title))
+            }
+            item {
+                ManagedGroupCard(
+                    items = group.keys.filter { uiMap.containsKey(it) }.map { uiMap.getValue(it) },
+                    prefs = prefs,
+                    version = version,
+                    fireChange = fireChange,
+                    currentHighlight = currentHighlight,
+                    highlightColor = highlightColor,
+                )
+            }
+        }
+    }
+    if (isAdvanced) {
+        item {
+            SmallTitle(text = stringResource(R.string.data_management))
+        }
+        item {
+            Card(
+                modifier = Modifier.padding(horizontal = 12.dp),
+            ) {
+                ArrowPreference(
+                    title = stringResource(R.string.browse_user_data_dir),
+                    summary = stringResource(R.string.data_browse_summary),
+                    onClick = onBrowseData,
+                    startAction = { managedPrefIcon(MiuixIcons.Folder) },
+                )
+                ArrowPreference(
+                    title = stringResource(R.string.export_user_data),
+                    summary = stringResource(R.string.data_export_summary),
+                    onClick = onExportData,
+                    startAction = { managedPrefIcon(MiuixIcons.UploadCloud) },
+                )
+                ArrowPreference(
+                    title = stringResource(R.string.import_user_data),
+                    summary = stringResource(R.string.data_import_summary),
+                    onClick = onImportClick,
+                    startAction = { managedPrefIcon(MiuixIcons.Import) },
+                )
+                if (onWebDav != null) {
+                    ArrowPreference(
+                        title = stringResource(R.string.webdav_settings_title),
+                        summary = stringResource(R.string.webdav_advanced_summary),
+                        onClick = onWebDav,
+                        startAction = { managedPrefIcon(MiuixIcons.Backup) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun managedPrefIcon(icon: ImageVector) {
+    Icon(
+        imageVector = icon,
+        contentDescription = null,
+        tint = MiuixTheme.colorScheme.onBackground,
+        modifier = Modifier
+            .padding(end = 12.dp)
+            .size(22.dp),
+    )
 }
 
 @Composable
@@ -341,6 +434,7 @@ private fun ManagedPrefRow(
                     fireChange(ui.key)
                 },
                 enabled = ui.isEnabled(),
+                startAction = { managedPrefIcon(MiuixIcons.Tune) },
             )
         }
 
@@ -355,29 +449,11 @@ private fun ManagedPrefRow(
                 selectedIndex = currentIndex,
                 title = stringResource(ui.title),
                 enabled = ui.isEnabled(),
+                startAction = { managedPrefIcon(MiuixIcons.Settings) },
                 onSelectedIndexChange = { index ->
                     @Suppress("UNCHECKED_CAST")
                     (pref as ManagedPreference.PStringLike<Any>)
                         .setValue(ui.entryValues[index])
-                    fireChange(ui.key)
-                },
-            )
-        }
-
-        is ManagedPreferenceUi.VoiceInputList -> {
-            val pref = prefs[ui.key] as? ManagedPreference.PString ?: return
-            val voiceInputMethods = InputMethodUtil.listVoiceInputMethods()
-            val labels = listOf(stringResource(R.string.system_default)) +
-                voiceInputMethods.map { it.first.loadLabel(context.packageManager).toString() }
-            val values = listOf("") + voiceInputMethods.map { it.first.id }
-            val currentIndex = values.indexOf(pref.getValue()).coerceAtLeast(0)
-            WindowDropdownPreference(
-                items = labels,
-                selectedIndex = currentIndex,
-                title = stringResource(ui.title),
-                enabled = ui.isEnabled(),
-                onSelectedIndexChange = { index ->
-                    pref.setValue(values[index])
                     fireChange(ui.key)
                 },
             )
@@ -388,7 +464,7 @@ private fun ManagedPrefRow(
             var showDialog by remember { mutableStateOf(false) }
             val hasRange = ui.min < ui.max && (ui.max.toLong() - ui.min.toLong()) <= 10000
             if (hasRange) {
-                ExpandableNumberPreference(
+                SimpleSliderPreference(
                     title = stringResource(ui.title),
                     value = pref.getValue(),
                     onValueChange = { newValue ->
@@ -400,6 +476,7 @@ private fun ManagedPrefRow(
                     step = 1,
                     suffix = ui.unit,
                     enabled = ui.isEnabled(),
+                    startAction = { managedPrefIcon(MiuixIcons.Edit) },
                 )
             } else {
                 ArrowPreference(
@@ -408,6 +485,7 @@ private fun ManagedPrefRow(
                     onClick = { showDialog = true },
                     holdDownState = showDialog,
                     enabled = ui.isEnabled(),
+                    startAction = { managedPrefIcon(MiuixIcons.Edit) },
                 )
             }
             if (showDialog) {
@@ -428,7 +506,7 @@ private fun ManagedPrefRow(
 
         is ManagedPreferenceUi.SeekBarInt -> {
             val pref = prefs[ui.key] as? ManagedPreference.PInt ?: return
-            ExpandableNumberPreference(
+            SimpleSliderPreference(
                 title = stringResource(ui.title),
                 value = pref.getValue(),
                 onValueChange = { newValue ->
@@ -442,6 +520,7 @@ private fun ManagedPrefRow(
                 step = ui.step,
                 suffix = ui.unit,
                 enabled = ui.isEnabled(),
+                startAction = { managedPrefIcon(MiuixIcons.Timer) },
             )
         }
 
@@ -455,10 +534,11 @@ private fun ManagedPrefRow(
                 onClick = { expanded = !expanded },
                 holdDownState = expanded,
                 enabled = ui.isEnabled(),
+                startAction = { managedPrefIcon(MiuixIcons.VerticalSplit) },
                 bottomAction = {
                     AnimatedVisibility(expanded && ui.isEnabled()) {
                         Column {
-                            ExpandableNumberPreference(
+                            SimpleSliderPreference(
                                 title = stringResource(ui.label),
                                 value = primaryPref.getValue(),
                                 onValueChange = { newValue ->
@@ -471,7 +551,7 @@ private fun ManagedPrefRow(
                                 suffix = ui.unit,
                                 enabled = ui.isEnabled(),
                             )
-                            ExpandableNumberPreference(
+                            SimpleSliderPreference(
                                 title = stringResource(ui.secondaryLabel),
                                 value = secondaryPref.getValue(),
                                 onValueChange = { newValue ->
@@ -495,7 +575,7 @@ private fun ManagedPrefRow(
             // unbounded / huge ranges have no meaningful slider -> keep the edit dialog
             val hasRange = ui.max > ui.min && (ui.max.toDouble() - ui.min.toDouble()) <= 100.0
             if (hasRange) {
-                ExpandableNumberPreference(
+                SimpleSliderPreference(
                     title = stringResource(ui.title),
                     value = pref.getValue(),
                     onValueChange = { newValue ->
@@ -508,6 +588,7 @@ private fun ManagedPrefRow(
                     decimals = ui.decimals,
                     suffix = ui.unit,
                     enabled = ui.isEnabled(),
+                    startAction = { managedPrefIcon(MiuixIcons.Edit) },
                 )
             } else {
                 var showDialog by remember { mutableStateOf(false) }
@@ -517,6 +598,7 @@ private fun ManagedPrefRow(
                     onClick = { showDialog = true },
                     holdDownState = showDialog,
                     enabled = ui.isEnabled(),
+                    startAction = { managedPrefIcon(MiuixIcons.Edit) },
                 )
                 if (showDialog) {
                     EditValueDialog(
@@ -535,4 +617,43 @@ private fun ManagedPrefRow(
             }
         }
     }
+}
+
+/**
+ * Find the LazyColumn item index that contains the highlighted preference.
+ * Returns the index to scroll to, or -1 if not found.
+ *
+ * LazyColumn structure:
+ * - For each group: 1 item for SmallTitle + 1 item for Card
+ * - For ungrouped: 1 item for Card
+ * - For advanced: 1 item for SmallTitle + 1 item for Card
+ */
+private fun findHighlightIndex(
+    context: Context,
+    category: ManagedPreferenceCategory,
+    highlightKey: String
+): Int {
+    var index = 0
+    if (category.groups.isEmpty()) {
+        // Ungrouped: single Card item at index 0
+        val hasHighlight = category.managedPreferencesUi.any {
+            uiTitleString(context, it) == highlightKey
+        }
+        return if (hasHighlight) 0 else -1
+    } else {
+        // Grouped: SmallTitle (index 0) + Card (index 1), then next group...
+        val uiMap = category.managedPreferencesUi.associateBy { it.key }
+        category.groups.forEach { group ->
+            index += 1 // SmallTitle item
+            val cardIndex = index
+            index += 1 // Card item
+            val keys = group.keys.filter { uiMap.containsKey(it) }
+            val hasHighlight = keys.any { key ->
+                val ui = uiMap.getValue(key)
+                uiTitleString(context, ui) == highlightKey
+            }
+            if (hasHighlight) return cardIndex
+        }
+    }
+    return -1
 }

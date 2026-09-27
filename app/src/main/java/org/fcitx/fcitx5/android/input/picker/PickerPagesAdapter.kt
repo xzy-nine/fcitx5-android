@@ -7,16 +7,21 @@ package org.fcitx.fcitx5.android.input.picker
 import android.annotation.SuppressLint
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
-import org.fcitx.fcitx5.android.data.RecentlyUsed
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.input.keyboard.KeyActionListener
 import org.fcitx.fcitx5.android.input.popup.PopupActionListener
 
+/**
+ * ViewPager2 的页 adapter。
+ *
+ * 分页/分类数据已抽到 [PickerPageModel]（View 与 Compose 版共用），本类只负责
+ * ViewHolder 生命周期与把数据绑到 [PickerPageUi]。
+ */
 class PickerPagesAdapter(
     val theme: Theme,
     private val keyActionListener: KeyActionListener,
     private val popupActionListener: PopupActionListener,
-    private val rawData: List<Pair<PickerData.Category, Array<String>>>,
+    rawData: List<Pair<PickerData.Category, Array<String>>>,
     private val density: PickerPageUi.Density,
     recentlyUsedFileName: String,
     private val bordered: Boolean,
@@ -25,77 +30,24 @@ class PickerPagesAdapter(
 
     class ViewHolder(val ui: PickerPageUi) : RecyclerView.ViewHolder(ui.root)
 
-    /**
-     * list<`Category` to `[start, end]`>, starting with empty "RecentlyUsed" category
-     */
-    private val categories: MutableList<Pair<PickerData.Category, IntRange>> = mutableListOf(
-        PickerData.RecentlyUsedCategory to IntRange(0, 0)
-    )
-
-    /**
-     * list<page of symbols>, starting with empty "RecentlyUsed" page
-     */
-    private val pages: MutableList<List<String>> = mutableListOf(listOf())
-
-    private fun buildCategories(data: List<Pair<PickerData.Category, Array<String>>>) {
-        data.forEach { (cat, arr) ->
-            val list = arr.filter(policy::filter)
-            val chunks = list.chunked(density.pageSize)
-            categories.add(cat to IntRange(pages.size, pages.size + chunks.size - 1))
-            pages.addAll(chunks)
-        }
-    }
-
-    init {
-        buildCategories(rawData)
-    }
-
-    private fun rebuildCategories() {
-        categories.clear()
-        // empty "RecentlyUsed" category
-        categories.add(PickerData.RecentlyUsedCategory to IntRange(0, 0))
-        pages.clear()
-        // empty "RecentlyUsed" page
-        pages.add(emptyList())
-        buildCategories(rawData)
-    }
-
-    private var lastInvalidateKey = policy.invalidateKey()
+    private val model = PickerPageModel(rawData, density, recentlyUsedFileName, policy)
 
     @SuppressLint("NotifyDataSetChanged")
     fun refreshIfNeeded() {
-        val newKey = policy.invalidateKey()
-        if (lastInvalidateKey != newKey) {
-            lastInvalidateKey = newKey
-            rebuildCategories()
-            notifyDataSetChanged()
-        }
+        if (model.refreshIfNeeded()) notifyDataSetChanged()
     }
 
-    private val recentlyUsed = RecentlyUsed(recentlyUsedFileName, density.pageSize)
+    fun insertRecent(text: String) = model.insertRecent(text)
 
-    fun insertRecent(text: String) {
-        if (text.length == 1 && text[0].code.let { it in Digit || it in FullWidthDigit }) return
-        recentlyUsed.insert(text)
-    }
+    fun getCategoryList(): List<PickerData.Category> = model.categoryList()
 
-    fun getCategoryList(): List<PickerData.Category> {
-        return categories.map { it.first }
-    }
+    fun getCategoryIndexOfPage(page: Int): Int = model.categoryIndexOfPage(page)
 
-    fun getCategoryIndexOfPage(page: Int): Int {
-        return categories.indexOfFirst { page in it.second }
-    }
+    fun getCategoryRangeOfPage(page: Int): IntRange = model.categoryRangeOfPage(page)
 
-    fun getCategoryRangeOfPage(page: Int): IntRange {
-        return categories.find { page in it.second }?.second ?: IntRange(0, 0)
-    }
+    fun getRangeOfCategoryIndex(cat: Int): IntRange = model.rangeOfCategoryIndex(cat)
 
-    fun getRangeOfCategoryIndex(cat: Int): IntRange {
-        return categories[cat].second
-    }
-
-    override fun getItemCount() = pages.size
+    override fun getItemCount() = model.pageCount
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         return ViewHolder(PickerPageUi(parent.context, theme, density, bordered))
@@ -104,9 +56,10 @@ class PickerPagesAdapter(
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         if (position == 0) {
             // RecentlyUsed content should be displayed as-is, without popups
-            holder.ui.setItems(recentlyUsed.items)
+            holder.ui.setItems(model.pageItems(position))
         } else {
-            holder.ui.setItems(pages[position], policy)
+            // 需要 policy 来做 transform / 长按弹层
+            holder.ui.setItems(model.pageItems(position), policy)
         }
     }
 
@@ -123,10 +76,5 @@ class PickerPagesAdapter(
     override fun onViewDetachedFromWindow(holder: ViewHolder) {
         holder.ui.keyActionListener = null
         holder.ui.popupActionListener = null
-    }
-
-    companion object {
-        private val Digit = IntRange('0'.code, '9'.code)
-        private val FullWidthDigit = IntRange('０'.code, '９'.code)
     }
 }

@@ -2,37 +2,35 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2021-2023 Fcitx5 for Android Contributors
  */
+
 package org.fcitx.fcitx5.android.input.clipboard
 
-import android.annotation.SuppressLint
 import android.content.Intent
 import android.view.View
-import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.PopupMenu
 import androidx.annotation.Keep
-import androidx.core.text.bold
-import androidx.core.text.buildSpannedString
-import androidx.core.text.color
-import androidx.core.view.updateLayoutParams
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.lifecycleScope
-import androidx.paging.Pager
-import androidx.paging.PagingConfig
-import androidx.recyclerview.widget.ItemTouchHelper
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.snackbar.BaseTransientBottomBar.BaseCallback
-import com.google.android.material.snackbar.Snackbar
-import com.google.android.material.snackbar.SnackbarContentLayout
+import androidx.paging.LoadState
+import androidx.paging.PagingData
+import androidx.paging.compose.collectAsLazyPagingItems
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
-import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.FcitxInputMethodService
+import org.fcitx.fcitx5.android.input.bar.ui.ToolButton
 import org.fcitx.fcitx5.android.input.clipboard.ClipboardStateMachine.BooleanKey.ClipboardDbEmpty
 import org.fcitx.fcitx5.android.input.clipboard.ClipboardStateMachine.BooleanKey.ClipboardListeningEnabled
 import org.fcitx.fcitx5.android.input.clipboard.ClipboardStateMachine.State.AddMore
@@ -43,28 +41,34 @@ import org.fcitx.fcitx5.android.input.clipboard.ClipboardStateMachine.Transition
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
 import org.fcitx.fcitx5.android.input.dependency.theme
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
+import org.fcitx.fcitx5.android.input.wm.ComposeWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
+import org.fcitx.fcitx5.android.input.wm.createComposeWindowView
 import org.fcitx.fcitx5.android.utils.EventStateMachine
-import org.fcitx.fcitx5.android.utils.item
-import org.fcitx.fcitx5.android.utils.styledColorOrDefault
 import org.mechdancer.dependency.manager.must
-import splitties.dimensions.dp
-import splitties.resources.styledColor
-import splitties.views.dsl.core.withTheme
+import top.yukonga.miuix.kmp.basic.Scaffold
+import kotlin.time.Duration.Companion.milliseconds
 
-class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>() {
+/**
+ * 剪贴板主页窗口（Compose 化）。
+ *
+ * 复用 [ClipboardStateMachine]（EnableListening / AddMore / Normal 三态）与
+ * [ClipboardTextAnalyzer]（分词实体提取）。列表以 Paging 3 分页消费
+ * [ClipboardManager.entriesPager]（内部复用 [ClipboardManager] 的 Room `PagingSource`），
+ * 其余状态（UI 态、待撤销 id）以 `MutableStateFlow` 驱动。
+ *
+ * 删除采用「软删除 + 限时撤销 + 到期物理清理」：软删除后立即调用 [invalidatePaging]
+ * 让分页重排，撤销或超时清理后再失效一次。
+ *
+ * 交互：点击条目上屏、长按出操作菜单（置顶/取消置顶/编辑/分享/删除）、
+ * 条目内实体气泡点击上屏片段、工具栏“删除全部”按钮经 Compose 确认层二次确认。
+ */
+class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), ComposeWindow {
 
     private val service: FcitxInputMethodService by manager.inputMethodService()
     private val windowManager: InputWindowManager by manager.must()
     private val theme by manager.theme()
-
-    private val snackbarCtx by lazy {
-        context.withTheme(R.style.InputViewSnackbarTheme)
-    }
-    private var snackbarInstance: Snackbar? = null
-
-    private lateinit var stateMachine: EventStateMachine<ClipboardStateMachine.State, ClipboardStateMachine.TransitionEvent, ClipboardStateMachine.BooleanKey>
 
     @Keep
     private val clipboardEnabledListener = ManagedPreference.OnChangeListener<Boolean> { _, it ->
@@ -79,218 +83,236 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>() {
     private val clipboardReturnAfterPaste by prefs.clipboardReturnAfterPaste
     private val clipboardMaskSensitive by prefs.clipboardMaskSensitive
 
-    private val clipboardEntryRadius by ThemeManager.prefs.clipboardEntryRadius
+    private val _uiState = MutableStateFlow<ClipboardStateMachine.State>(Normal)
+    private val _showDeleteAllDialog = MutableStateFlow(false)
+    private val _deleteAllLabel = MutableStateFlow("")
+    private val _pendingDeleteIds = MutableStateFlow<List<Int>>(emptyList())
 
-    private val clipboardEntriesPager by lazy {
-        Pager(PagingConfig(pageSize = 16)) { ClipboardManager.allEntries() }
-    }
-    private var adapterSubmitJob: Job? = null
+    /** 分页数据流：单例复用 [ClipboardManager.entriesPager]，不可在本窗口重复构造。 */
+    private val pagedEntries: Flow<PagingData<ClipboardEntry>> = ClipboardManager.entriesPager
 
-    private val adapter: ClipboardAdapter by lazy {
-        object : ClipboardAdapter(
-            theme,
-            context.dp(clipboardEntryRadius.toFloat()),
-            clipboardMaskSensitive
+    // 删除全部确认：skipPinned 由点击时 haveUnpinned() 决定
+    private var deleteAllSkipPinned = true
+    private var clearUndoJob: Job? = null
+
+    private lateinit var stateMachine: EventStateMachine<
+        ClipboardStateMachine.State,
+        ClipboardStateMachine.TransitionEvent,
+        ClipboardStateMachine.BooleanKey
+        >
+
+    override fun onCreateView(): View = createComposeWindowView(context) { Content() }
+
+    /**
+     * 窗口根：miuix [Scaffold]。
+     *
+     * 长按操作菜单改用 miuix Overlay 系列弹层（`OverlayListPopup`）。该弹层本身不依赖系统
+     * Dialog，但其宿主 `MiuixPopupHost` 必须由根 Scaffold 提供（Popup slot 最后 place，
+     * z 序最高且覆盖整个窗口），因此这里必须包一层 Scaffold，否则弹层无处渲染。
+     *
+     * 背景保持透明以沿用键盘主题底图（`InputView.customBackground`）；
+     * IME 窗口的 insets 已由 `InputView` 自行处理，故 `contentWindowInsets` 清零，
+     * 避免内容被系统栏 inset 二次顶开。
+     */
+    @Composable
+    override fun Content() {
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0),
         ) {
-            override fun onPin(id: Int) {
-                service.lifecycleScope.launch { ClipboardManager.pin(id) }
-            }
+            ClipboardContent()
+        }
+    }
 
-            override fun onUnpin(id: Int) {
-                service.lifecycleScope.launch { ClipboardManager.unpin(id) }
-            }
+    @Composable
+    private fun ClipboardContent() {
+        val uiState by _uiState.collectAsState()
+        val showDeleteAllDialog by _showDeleteAllDialog.collectAsState()
+        val deleteAllLabel by _deleteAllLabel.collectAsState()
+        val pendingDeleteIds by _pendingDeleteIds.collectAsState()
 
-            override fun onEdit(id: Int) {
-                windowManager.attachWindow(ClipboardEditWindow(id, returnToClipboard = true))
-            }
+        val pagingItems = pagedEntries.collectAsLazyPagingItems()
 
-            override fun onShare(entry: ClipboardEntry) {
-                val target = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, entry.text)
-                }
-                val chooser = Intent.createChooser(target, null).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                service.startActivity(chooser)
+        // 列表是否为空由分页加载状态推导（替代原先直接读 Flow 列表）：
+        // 首屏加载完成且无数据才算空，避免加载中误显示"复制内容后会自动出现"。
+        val loadState = pagingItems.loadState
+        val isEmpty = loadState.refresh is LoadState.NotLoading &&
+                loadState.append.endOfPaginationReached &&
+                pagingItems.itemCount < 1
+        LaunchedEffect(isEmpty) {
+            if (::stateMachine.isInitialized) {
+                stateMachine.push(ClipboardDbUpdated, ClipboardDbEmpty to isEmpty)
             }
+        }
 
-            override fun onDelete(id: Int) {
+        // callbacks 必须 remember：它是 data class，成员是 lambda（equals 按引用比较），
+        // 每次重组新建实例都会让下游（列表、每张卡片）收到「变化」的参数而无法 skip。
+        val callbacks = remember(service, windowManager) {
+            ClipboardCallbacks(
+                onPaste = { entry -> onPaste(entry.text) },
+                onPasteText = { text -> onPaste(text) },
+                onPin = { id -> service.lifecycleScope.launch { ClipboardManager.pin(id) } },
+                onUnpin = { id -> service.lifecycleScope.launch { ClipboardManager.unpin(id) } },
+                onEdit = { id ->
+                    windowManager.attachWindow(ClipboardEditWindow(id, returnToClipboard = true))
+                },
+                onShare = { entry ->
+                    val target = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, entry.text)
+                    }
+                    val chooser = Intent.createChooser(target, null).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    service.startActivity(chooser)
+                },
+                onDelete = ::onDelete,
+                onEnableListening = { clipboardEnabledPref.setValue(true) },
+            )
+        }
+
+        ClipboardListContent(
+            state = uiState,
+            entries = pagingItems,
+            maskSensitive = clipboardMaskSensitive,
+            callbacks = callbacks,
+            showDeleteAllDialog = showDeleteAllDialog,
+            deleteAllLabel = deleteAllLabel,
+            onConfirmDeleteAll = {
                 service.lifecycleScope.launch {
-                    ClipboardManager.delete(id)
-                    showUndoSnackbar(id)
+                    val ids = ClipboardManager.deleteAll(deleteAllSkipPinned)
+                    onDeleted(ids.toList())
                 }
-            }
+                _showDeleteAllDialog.value = false
+            },
+            onCancelDeleteAll = { _showDeleteAllDialog.value = false },
+            pendingDeleteIds = pendingDeleteIds,
+            onUndoDelete = ::undoDelete,
+            onRetry = { pagingItems.retry() },
+        )
+    }
 
-            override fun onPaste(entry: ClipboardEntry) {
-                service.commitText(entry.text)
-                if (clipboardReturnAfterPaste) windowManager.attachWindow(KeyboardWindow)
-            }
+    private fun onPaste(text: String) {
+        service.commitText(text)
+        if (clipboardReturnAfterPaste) windowManager.attachWindow(KeyboardWindow)
+    }
 
-            override fun onPasteText(text: String) {
-                service.commitText(text)
-                if (clipboardReturnAfterPaste) windowManager.attachWindow(KeyboardWindow)
+    /**
+     * 触发分页失效重查。
+     *
+     * Room 的 `PagingSource` 虽自带表变更检测，但软删除（`deleted=1`）与撤销
+     * 会在同一帧内连续改动，显式失效可让列表立即重排，避免已删除条目在分页
+     * 边界处短暂残留。
+     */
+    private fun invalidatePaging() {
+        ClipboardManager.invalidatePagingSource()
+    }
+
+    /**
+     * 删除条目（软删除）并开启撤销窗口。
+     *
+     * [ClipboardManager.delete] 仅置 `deleted=1`，条目本身仍在库中，因此撤销是可靠的。
+     * 撤销窗口结束后由 [onDeleted] 调度 [ClipboardManager.realDelete] 做物理清理。
+     */
+    private fun onDelete(id: Int) {
+        service.lifecycleScope.launch {
+            ClipboardManager.delete(id)
+            onDeleted(listOf(id))
+        }
+    }
+
+    private fun onDeleted(ids: Collection<Int>) {
+        if (ids.isEmpty()) return
+        _pendingDeleteIds.value = _pendingDeleteIds.value + ids
+        // 立即重排分页，避免软删除条目在分页边界处短暂残留
+        invalidatePaging()
+        restartClearUndoJob()
+    }
+
+    private fun undoDelete() {
+        val ids = _pendingDeleteIds.value
+        _pendingDeleteIds.value = emptyList()
+        clearUndoJob?.cancel()
+        if (ids.isEmpty()) return
+        service.lifecycleScope.launch {
+            ClipboardManager.undoDelete(*ids.toIntArray())
+            invalidatePaging()
+        }
+    }
+
+    /**
+     * 撤销窗口到期后清理软删除记录。
+     *
+     * 每次新的删除都会重置计时，与旧实现「连续删除时后一个 Snackbar 取代前一个、前一批 id 累积」
+     * 的语义一致：窗口内撤销会一并恢复全部待撤销条目，窗口结束则全部物理删除。
+     */
+    private fun restartClearUndoJob() {
+        clearUndoJob?.cancel()
+        clearUndoJob = service.lifecycleScope.launch {
+            delay(UNDO_WINDOW_MS.milliseconds)
+            if (_pendingDeleteIds.value.isNotEmpty()) {
+                _pendingDeleteIds.value = emptyList()
+                ClipboardManager.realDelete()
+                invalidatePaging()
             }
         }
     }
 
-    private val ui by lazy {
-        ClipboardUi(context, theme).apply {
-            recyclerView.apply {
-                layoutManager = LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false)
-                adapter = this@ClipboardWindow.adapter
-            }
-            ItemTouchHelper(object : ItemTouchHelper.Callback() {
-                override fun getMovementFlags(
-                    recyclerView: RecyclerView,
-                    viewHolder: RecyclerView.ViewHolder
-                ): Int {
-                    return makeMovementFlags(0, ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT)
-                }
-
-                override fun onMove(
-                    recyclerView: RecyclerView,
-                    viewHolder: RecyclerView.ViewHolder,
-                    target: RecyclerView.ViewHolder
-                ): Boolean {
-                    return false
-                }
-
-                override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
-                    val entry = adapter.getEntryAt(viewHolder.bindingAdapterPosition) ?: return
-                    service.lifecycleScope.launch {
-                        ClipboardManager.delete(entry.id)
-                        showUndoSnackbar(entry.id)
-                    }
-                }
-            }).attachToRecyclerView(recyclerView)
-            enableUi.enableButton.setOnClickListener {
-                clipboardEnabledPref.setValue(true)
-            }
-            deleteAllButton.setOnClickListener {
+    private val deleteAllButton by lazy {
+        ToolButton(context, R.drawable.ic_baseline_delete_sweep_24, theme).apply {
+            contentDescription = context.getString(R.string.delete_all)
+            setOnClickListener {
                 service.lifecycleScope.launch {
-                    promptDeleteAll(ClipboardManager.haveUnpinned())
+                    val skipPinned = ClipboardManager.haveUnpinned()
+                    deleteAllSkipPinned = skipPinned
+                    _deleteAllLabel.value = context.getString(
+                        if (skipPinned) R.string.delete_all_except_pinned
+                        else R.string.delete_all_pinned_items
+                    )
+                    _showDeleteAllDialog.value = true
                 }
             }
         }
     }
 
-    override fun onCreateView(): View = ui.root
-
-    private var promptMenu: PopupMenu? = null
-
-    private fun promptDeleteAll(skipPinned: Boolean) {
-        promptMenu?.dismiss()
-        promptMenu = PopupMenu(context, ui.deleteAllButton).apply {
-            menu.add(buildSpannedString {
-                bold {
-                    color(context.styledColorOrDefault(android.R.attr.colorAccent, theme.genericActiveForegroundColor)) {
-                        append(context.getString(if (skipPinned) R.string.delete_all_except_pinned else R.string.delete_all_pinned_items))
-                    }
-                }
-            }).isEnabled = false
-            menu.add(android.R.string.cancel)
-            menu.item(android.R.string.ok) {
-                service.lifecycleScope.launch {
-                    val ids = ClipboardManager.deleteAll(skipPinned)
-                    showUndoSnackbar(*ids)
-                }
-            }
-            setOnDismissListener {
-                if (it === promptMenu) promptMenu = null
-            }
-            show()
-        }
-    }
-
-    private val pendingDeleteIds = arrayListOf<Int>()
-
-    @SuppressLint("RestrictedApi")
-    private fun showUndoSnackbar(vararg id: Int) {
-        id.forEach { pendingDeleteIds.add(it) }
-        val str = context.resources.getString(R.string.num_items_deleted, pendingDeleteIds.size)
-        snackbarInstance = Snackbar.make(snackbarCtx, ui.root, str, Snackbar.LENGTH_LONG)
-            .setBackgroundTint(theme.popupBackgroundColor)
-            .setTextColor(theme.popupTextColor)
-            .setActionTextColor(theme.genericActiveBackgroundColor)
-            .setAction(R.string.undo) {
-                service.lifecycleScope.launch {
-                    ClipboardManager.undoDelete(*pendingDeleteIds.toIntArray())
-                    pendingDeleteIds.clear()
-                }
-            }
-            .addCallback(object : Snackbar.Callback() {
-                override fun onDismissed(transientBottomBar: Snackbar, event: Int) {
-                    if (snackbarInstance === transientBottomBar) {
-                        snackbarInstance = null
-                    }
-                    when (event) {
-                        BaseCallback.DISMISS_EVENT_SWIPE,
-                        BaseCallback.DISMISS_EVENT_MANUAL,
-                        BaseCallback.DISMISS_EVENT_TIMEOUT -> {
-                            service.lifecycleScope.launch {
-                                ClipboardManager.realDelete()
-                                pendingDeleteIds.clear()
-                            }
-                        }
-                        BaseCallback.DISMISS_EVENT_ACTION,
-                        BaseCallback.DISMISS_EVENT_CONSECUTIVE -> {
-                            // user clicked "undo" or deleted more items which makes a new snackbar
-                        }
-                    }
-                }
-            }).apply {
-                val hMargin = snackbarCtx.dp(24)
-                val vMargin = snackbarCtx.dp(16)
-                view.updateLayoutParams<ViewGroup.MarginLayoutParams> {
-                    leftMargin = hMargin
-                    rightMargin = hMargin
-                    bottomMargin = vMargin
-                }
-                ((view as FrameLayout).getChildAt(0) as SnackbarContentLayout).apply {
-                    messageView.letterSpacing = 0f
-                    actionView.letterSpacing = 0f
-                }
-                show()
-            }
-    }
+    override fun onCreateBarExtension(): View = deleteAllButton
 
     override fun onAttached() {
-        val isEmpty = ClipboardManager.itemCount == 0
         val isListening = clipboardEnabledPref.getValue()
+        // 空态初始值只能同步取一次（首帧尚无分页结果），随后由 Content() 内的
+        // LaunchedEffect 依据分页加载状态纠正为真实值。
+        val isEmpty = ClipboardManager.itemCount == 0
         val initialState = when {
             !isListening -> EnableListening
             isEmpty -> AddMore
             else -> Normal
         }
         stateMachine = ClipboardStateMachine.new(initialState, isEmpty, isListening) {
-            ui.switchUiByState(it)
+            _uiState.value = it
         }
-        // manually switch to initial ui
-        ui.switchUiByState(initialState)
-        adapter.addLoadStateListener {
-            val empty = it.append.endOfPaginationReached && adapter.itemCount < 1
-            stateMachine.push(ClipboardDbUpdated, ClipboardDbEmpty to empty)
-        }
-        adapterSubmitJob = service.lifecycleScope.launch {
-            clipboardEntriesPager.flow.collect {
-                adapter.submitData(it)
-            }
-        }
+        _uiState.value = initialState
+        // 每次挂载都从第一页重查，避免复用 cachedIn 缓存中的过期页
+        invalidatePaging()
         clipboardEnabledPref.registerOnChangeListener(clipboardEnabledListener)
     }
 
     override fun onDetached() {
         clipboardEnabledPref.unregisterOnChangeListener(clipboardEnabledListener)
-        adapter.onDetached()
-        adapterSubmitJob?.cancel()
-        promptMenu?.dismiss()
-        snackbarInstance?.dismiss()
+        _showDeleteAllDialog.value = false
+        // 窗口销毁即撤销窗口结束：已软删除的条目做物理清理
+        clearUndoJob?.cancel()
+        if (_pendingDeleteIds.value.isNotEmpty()) {
+            _pendingDeleteIds.value = emptyList()
+            service.lifecycleScope.launch { ClipboardManager.realDelete() }
+        }
     }
 
     override val title: String by lazy {
         context.getString(R.string.clipboard)
     }
 
-    override fun onCreateBarExtension(): View = ui.extension
+    private companion object {
+        /** 撤销窗口时长，与旧实现 Snackbar.LENGTH_LONG 的量级一致 */
+        const val UNDO_WINDOW_MS = 4000L
+    }
 }

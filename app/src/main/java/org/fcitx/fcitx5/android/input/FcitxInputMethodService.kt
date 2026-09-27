@@ -38,6 +38,14 @@ import androidx.autofill.inline.common.ImageViewStyle
 import androidx.autofill.inline.common.TextViewStyle
 import androidx.autofill.inline.common.ViewStyle
 import androidx.autofill.inline.v1.InlineSuggestionUi
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CoroutineStart
@@ -58,10 +66,12 @@ import org.fcitx.fcitx5.android.core.ScancodeMapping
 import org.fcitx.fcitx5.android.core.SubtypeManager
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
+import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.InputFeedbacks
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
+import org.fcitx.fcitx5.android.data.quickphrase.EmailDomainDict
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.cursor.CursorRange
@@ -81,6 +91,9 @@ import splitties.bitflags.hasFlag
 import splitties.dimensions.dp
 import splitties.resources.styledColor
 import timber.log.Timber
+import top.yukonga.miuix.kmp.theme.ColorSchemeMode
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.ThemeController
 import kotlin.math.max
 
 class FcitxInputMethodService : LifecycleInputMethodService() {
@@ -102,8 +115,17 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     private lateinit var decorView: View
     private lateinit var contentView: FrameLayout
-    private var inputView: InputView? = null
     private var candidatesView: CandidatesView? = null
+
+    // Compose host state: drives (re)composition of the InputView embedded via AndroidView.
+    // `themeState` mirrors the active theme; `recreateNonce` forces a full View rebuild on
+    // pref changes. Both are read inside the Compose tree, so writing them triggers recomposition.
+    private val themeState by lazy { mutableStateOf(ThemeManager.activeTheme) }
+    private val recreateNonce by lazy { mutableStateOf(0) }
+
+    // `inputView` 作为 Compose 状态：根组合的弹窗层 / 候选操作菜单覆盖层据此读取
+    // 当前 InputView 的组件；InputView 重建（themeState/recreateNonce 变化）时值更新驱动重组。
+    private val inputView = mutableStateOf<InputView?>(null)
 
     private val navbarMgr = NavigationBarManager()
     private val inputDeviceMgr = InputDeviceManager { isVirtualKeyboard ->
@@ -114,7 +136,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         if (isVirtualKeyboard) {
             hideStatusIcon()
         } else {
-            showStatusIcon(StatusIconMapping.fromEntry(fcitx.runImmediately { inputMethodEntryCached }))
+            showStatusIcon(StatusIconMapping.fromEntry(fcitx.peek { inputMethodEntryCached }))
         }
         window.window?.let {
             navbarMgr.evaluate(it, isVirtualKeyboard)
@@ -122,6 +144,20 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     private var capabilityFlags = CapabilityFlags.DefaultFlags
+
+    /**
+     * The ongoing input session, cached so that a recreated [InputView] (the Compose [key] remount
+     * triggered by a theme change or a recreate-pref) can be initialized with the very same state
+     * instead of starting blank — [InputView.startInput] is what feeds EditorInfo and
+     * [capabilityFlags] to the keyboard components and the return key drawable, and it is only
+     * dispatched from [onStartInputView].
+     *
+     * Cleared in [onFinishInputView], so a recreation after the session ended cannot replay a
+     * stale one. Only set when [onStartInputView] actually dispatched it to the live InputView,
+     * which keeps hardware-keyboard sessions (where InputView stays hidden) untouched.
+     */
+    private var currentEditorInfo: EditorInfo? = null
+    private var currentRestarting = false
 
     private val selection = CursorTracker()
 
@@ -150,12 +186,59 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         prefs.advanced.ignoreSystemWindowInsets,
     )
 
-    private fun replaceInputView(theme: Theme): InputView {
-        val newInputView = InputView(this, fcitx, theme)
-        setInputView(newInputView)
-        inputDeviceMgr.setInputView(newInputView)
-        inputView = newInputView
-        return newInputView
+    /**
+     * Builds the IME input view as a Compose host: a [ComposeView] root whose content embeds the
+     * existing [InputView] (a traditional Android View) via [AndroidView]. The View implementation
+     * is left untouched; wrapping it this way only establishes a Compose root so the IME can be
+     * progressively migrated to Compose later.
+     *
+     * Theme changes and pref-driven rebuilds are handled by updating [themeState]/[recreateNonce],
+     * which re-runs the [key] block and recreates the [InputView] — equivalent to the old
+     * `replaceInputView` behaviour, but without manually calling the IMS `setInputView`.
+     */
+    private fun createComposeInputView(): View {
+        val composeView = ComposeView(this).apply {
+            setContent {
+                MiuixTheme(controller = remember { ThemeController(ColorSchemeMode.System) }) {
+                    Box(Modifier.fillMaxSize()) {
+                        key(themeState.value, recreateNonce.value) {
+                            AndroidView(
+                                factory = { _ ->
+                                    InputView(this@FcitxInputMethodService, fcitx, themeState.value)
+                                        .also {
+                                            inputView.value = it
+                                            inputDeviceMgr.setInputView(it)
+                                            // A recreated InputView is blank: [InputView.startInput]
+                                            // only ever runs from onStartInputView, so replay the
+                                            // ongoing session here to feed EditorInfo/capFlags to the
+                                            // keyboard components and to the return key drawable.
+                                            currentEditorInfo?.let { info ->
+                                                it.startInput(info, capabilityFlags, currentRestarting)
+                                            }
+                                        }
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                                onRelease = { view ->
+                                    if (inputView.value === view) inputView.value = null
+                                    inputDeviceMgr.clearInputView(view)
+                                }
+                            )
+                        }
+                        // 按键弹窗层 / 候选操作菜单覆盖层：与 InputView 同处根单一 Composition。
+                        // 弹窗层 Box 无 pointer handler → 触摸穿透到下方 AndroidView(InputView)；
+                        // InputView 重建时 inputView.value 变化驱动这两层重组。
+                        val iv = inputView.value
+                        if (iv != null) {
+                            iv.popup.PopupOverlayContent(Modifier.fillMaxSize())
+                            iv.candidateActionMenu.OverlayContent(Modifier.fillMaxSize())
+                            // Custom: 键盘调校浮层（Compose IME 覆盖层，已迁出 keyboardView 子 View）
+                            iv.keyboardTune.OverlayContent(Modifier.fillMaxSize())
+                        }
+                    }
+                }
+            }
+        }
+        return composeView
     }
 
     private fun replaceCandidateView(theme: Theme): CandidatesView {
@@ -171,13 +254,13 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     private fun replaceInputViews(theme: Theme) {
         navbarMgr.evaluate(window.window!!, inputDeviceMgr.isVirtualKeyboard)
-        replaceInputView(theme)
+        themeState.value = theme
         replaceCandidateView(theme)
     }
 
     @Keep
     private val recreateInputViewListener = ManagedPreference.OnChangeListener<Any> { _, _ ->
-        replaceInputView(ThemeManager.activeTheme)
+        recreateNonce.value++
     }
 
     @Keep
@@ -211,7 +294,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             jobs.consumeEach { it.join() }
         }
         lifecycleScope.launch {
-            fcitx.runImmediately { eventFlow }.collect {
+            fcitx.peek { eventFlow }.collect {
                 handleFcitxEvent(it)
             }
         }
@@ -446,6 +529,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 }
                 ic.finishComposingText()
             }
+            onEmailSuggestionTrigger(text)
             return
         }
         // committed text should replace composing (if any), replace selected range (if any),
@@ -463,6 +547,23 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 setSelection(target, target)
             }
         }
+        onEmailSuggestionTrigger(text)
+    }
+
+    /**
+     * custom：`@` 上屏后触发邮箱域名联想。
+     *
+     * 域名数据为标准 QuickPhrase 词库（内置 `email.mb` 预置域名 + 用户词库自学习，见
+     * [EmailDomainDict]）：词库条目 `@域名 域名`，键以 `@` 开头。触发 QuickPhrase
+     * 临时模式并预置缓冲 "@"，引擎按键前缀匹配词库提供域名候选，走完整候选词流程。
+     * 拼音输入法下 `@` 键由引擎的 `quickphraseTriggerRegex`（默认含 `(/|@)$`）在缓冲
+     * 非空时自动拦截进入临时模式（缓冲含 `@`，同样按键前缀匹配本词库）；本钩子只在
+     * `@` 被直接提交时生效。提交文本含 `@domain`（完整邮箱地址）时自学习写入用户词库。
+     */
+    private fun onEmailSuggestionTrigger(text: String) {
+        EmailDomainDict.selfLearn(text)
+        if (text != "@") return
+        fcitx.launchOnReady { it.triggerQuickPhraseWithBuffer("@") }
     }
 
     private fun sendDownKeyEvent(eventTime: Long, keyEventCode: Int, metaState: Int = 0) {
@@ -580,9 +681,16 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onCreateInputView(): View? {
-        replaceInputViews(ThemeManager.activeTheme)
-        // We will call `setInputView` by ourselves. This is fine.
-        return null
+        navbarMgr.evaluate(window.window!!, inputDeviceMgr.isVirtualKeyboard)
+        // `themeState` is lazily initialized, so it may still hold a theme from before the very
+        // first composition. Read the active theme once and make both sides (Compose InputView
+        // and the View-based CandidatesView) agree on it.
+        val theme = ThemeManager.activeTheme
+        themeState.value = theme
+        replaceCandidateView(theme)
+        // Return a ComposeView root that embeds the existing InputView via AndroidView.
+        // The framework calls `setInputView(composeView)` for us afterwards.
+        return createComposeInputView()
     }
 
     override fun setInputView(view: View) {
@@ -611,10 +719,21 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onComputeInsets(outInsets: Insets) {
         if (inputDeviceMgr.isVirtualKeyboard) {
-            inputView?.keyboardView?.getLocationInWindow(inputViewLocation)
+            inputView.value?.keyboardView?.getLocationInWindow(inputViewLocation)
             outInsets.apply {
-                contentTopInsets = inputViewLocation[1]
-                visibleTopInsets = inputViewLocation[1]
+                // keyboardView 顶部 = 键盘体圆角顶（顶部延伸带顶），其下依次是预编辑栏与工具栏；
+                // 这里把这两段「键盘体向上多长出来的、但不算入 IME 可见区」的高度加回去，
+                // 于是 contentTopInsets 恒等于**工具栏顶**：
+                //  - 预编辑栏高度可变（贴合内容）→ 顶部已含，补偿后抵消，insets 不随打字变化；
+                //  - 顶部延伸带（`IME_TOP_EXTENSION_DP` = 5dp，见 InputView.topExtensionPx）
+                //    恒定存在 → 补偿掉，使 app 内容区与改动前逐像素一致，圆角带只覆盖在
+                //    app 可视区之上遮住空隙。（不补偿的话 app 会跟着往上缩一截，
+                //    就变成「算入」而非「遮盖」。）
+                val topPx = inputViewLocation[1] +
+                    (inputView.value?.composePreedit?.heightPx?.value ?: 0) +
+                    (inputView.value?.topExtensionPx ?: 0)
+                contentTopInsets = topPx
+                visibleTopInsets = topPx
                 touchableInsets = Insets.TOUCHABLE_INSETS_VISIBLE
             }
         } else {
@@ -747,7 +866,14 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         capabilityFlags = flags
         // EditorInfo may change between onStartInput and onStartInputView
         inputDeviceMgr.notifyOnStartInput(attribute)
-        Timber.d("onStartInput: initialSel=${selection.current}, restarting=$restarting")
+        // 打上 pkg/fieldId/inputType：`restarting=true` 只可能由**客户端应用**发起
+        // （`InputMethodManager.restartInput()` / 输入连接被替换），IME 侧无法自造；
+        // 出问题时靠这三项定位是哪个应用/哪个输入框在重启输入连接。
+        Timber.d(
+            "onStartInput: initialSel=${selection.current}, restarting=$restarting, " +
+                "pkg=${attribute.packageName}, fieldId=${attribute.fieldId}, " +
+                "inputType=0x${attribute.inputType.toString(16)}"
+        )
         val isNullType = attribute.isTypeNull()
         // wait until InputContext created/activated
         postFcitxJob {
@@ -776,7 +902,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         if (inputDeviceMgr.evaluateOnStartInputView(info, this)) {
             // because onStartInputView will always be called after onStartInput,
             // editorInfo and capFlags should be up-to-date
-            inputView?.startInput(info, capabilityFlags, restarting)
+            currentEditorInfo = info
+            currentRestarting = restarting
+            inputView.value?.startInput(info, capabilityFlags, restarting)
         } else {
             if (currentInputConnection?.monitorCursorAnchor() != true) {
                 if (!decorLocationUpdated) {
@@ -786,7 +914,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 // support monitoring CursorAnchorInfo
                 candidatesView?.updateCursorAnchor(contentSize)
             }
-            showStatusIcon(StatusIconMapping.fromEntry(fcitx.runImmediately { inputMethodEntryCached }))
+            showStatusIcon(StatusIconMapping.fromEntry(fcitx.peek { inputMethodEntryCached }))
         }
     }
 
@@ -808,7 +936,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             candidatesEnd,
             cursorUpdateIndex
         )
-        inputView?.updateSelection(newSelStart, newSelEnd)
+        inputView.value?.updateSelection(newSelStart, newSelEnd)
     }
 
     private val contentSize = floatArrayOf(0f, 0f)
@@ -1057,11 +1185,14 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     @RequiresApi(Build.VERSION_CODES.R)
     override fun onInlineSuggestionsResponse(response: InlineSuggestionsResponse): Boolean {
         if (!inlineSuggestions || !inputDeviceMgr.isVirtualKeyboard) return false
-        return inputView?.handleInlineSuggestions(response) == true
+        return inputView.value?.handleInlineSuggestions(response) == true
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         Timber.d("onFinishInputView: finishingInput=$finishingInput")
+        // the session is over — a later InputView recreation must not replay it
+        currentEditorInfo = null
+        currentRestarting = false
         AutoDictSync.setKeyboardVisible(false)
         decorLocationUpdated = false
         inputDeviceMgr.onFinishInputView()

@@ -8,15 +8,24 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import androidx.annotation.Keep
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.PagingSource
+import androidx.paging.cachedIn
 import androidx.room.Room
 import androidx.room.withTransaction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.fcitx.fcitx5.android.data.broadcast.BroadcastSecurityManager
+import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager.entriesPager
+import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager.invalidatePagingSource
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardDao
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardDatabase
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
@@ -25,7 +34,6 @@ import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.utils.WeakHashSet
 import org.fcitx.fcitx5.android.utils.appContext
 import org.fcitx.fcitx5.android.utils.clipboardManager
-import org.fcitx.fcitx5.android.data.broadcast.BroadcastSecurityManager
 import timber.log.Timber
 
 object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
@@ -105,6 +113,52 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
 
     fun allEntries() = clbDao.allEntries()
 
+    /**
+     * 分页加载剪贴板条目（供 Compose 的 `collectAsLazyPagingItems` 消费）。
+     *
+     * 复用 [ClipboardDao.allEntries] 的 [PagingSource]：Room 自带表变更检测，
+     * 条目增删改（含置顶导致的排序变化）会自动触发对应页失效并重查。
+     * 经 [cachedIn] 在本对象作用域内共享缓存，避免每次重组重建分页流。
+     *
+     * 该 Flow 只构造一次并对外复用（单例），调用方不要重复构造——每次都新建
+     * `Pager` + `cachedIn` 会在本对象作用域内累积无法释放的缓存流。需要立即
+     * 重查时请改用 [invalidatePagingSource]。
+     */
+    val entriesPager: Flow<PagingData<ClipboardEntry>> by lazy {
+        @Suppress("OPT_IN_USAGE")
+        Pager(
+            config = PagingConfig(
+                pageSize = CLIPBOARD_PAGE_SIZE,
+                // 预取一页，滚动到底前提前加载，减少可见的空白等待
+                prefetchDistance = CLIPBOARD_PAGE_SIZE,
+                enablePlaceholders = false,
+            ),
+            pagingSourceFactory = {
+                clbDao.allEntries().also { currentPagingSource = it }
+            },
+        ).flow.cachedIn(this)
+    }
+
+    /**
+     * 当前活跃的 [PagingSource]（由 [entriesPager] 的工厂创建，随刷新而更新）。
+     *
+     * 仅用于显式失效：软删除/撤销/物理清理会在同一帧内连续改动数据，Room 的
+     * 变更检测不保证及时重排，主动 `invalidate()` 可让分页立即从第一页重查。
+     * 工厂在分页协程中写入、[invalidatePagingSource] 可能从主线程读取，故用 `@Volatile`。
+     */
+    @Volatile
+    private var currentPagingSource: PagingSource<Int, ClipboardEntry>? = null
+
+    /**
+     * 主动失效当前分页源，触发已订阅的列表重查。
+     *
+     * 与重建 Flow 不同，`invalidate()` 复用同一 `cachedIn` 缓存，
+     * 不会在作用域内留下泄漏的缓存流。
+     */
+    fun invalidatePagingSource() {
+        currentPagingSource?.invalidate()
+    }
+
     suspend fun pin(id: Int) = clbDao.updatePinStatus(id, true)
 
     suspend fun unpin(id: Int) = clbDao.updatePinStatus(id, false)
@@ -157,17 +211,9 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
          * skip duplicate ClipData
          * https://developer.android.com/reference/android/content/ClipboardManager.OnPrimaryClipChangedListener#onPrimaryClipChanged()
          */
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val timestamp = clip.description.timestamp
-            if (timestamp == lastClipTimestamp) return
-            lastClipTimestamp = timestamp
-        } else {
-            val timestamp = System.currentTimeMillis()
-            val hash = clip.hashCode()
-            if (timestamp - lastClipTimestamp < 100L && hash == lastClipHash) return
-            lastClipTimestamp = timestamp
-            lastClipHash = hash
-        }
+        val timestamp = clip.description.timestamp
+        if (timestamp == lastClipTimestamp) return
+        lastClipTimestamp = timestamp
         // Skip clips marked as sensitive via EXTRA_IS_SENSITIVE
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val extras = clip.description.extras
@@ -216,5 +262,8 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
             clbDao.markUnpinnedAsDeletedEarlierThan(last?.timestamp ?: System.currentTimeMillis())
         }
     }
+
+    /** 剪贴板列表分页大小，沿用旧 View 实现的取值 */
+    private const val CLIPBOARD_PAGE_SIZE = 16
 
 }

@@ -53,23 +53,8 @@ class PickerPageUi(
     bordered: Boolean = false
 ) : Ui {
 
-    enum class Density(
-        val pageSize: Int,
-        val columnCount: Int,
-        val rowCount: Int,
-        val textSize: Float,
-        val autoScale: Boolean,
-        val showBackspace: Boolean
-    ) {
-        // symbol: 10/10/8, backspace on bottom right
-        High(28, 10, 3, 19f, false, true),
-
-        // emoji: 7/7/6, backspace on bottom right
-        Medium(20, 7, 3, 23.7f, false, true),
-
-        // emoticon: 4/4/4, no backspace
-        Low(12, 4, 3, 19f, true, false)
-    }
+    // 密度规格已抽离到 PickerDensity.kt（供 Compose 侧复用），此处保留类型别名兼容旧引用
+    typealias Density = PickerDensity
 
     private val popupOnKeyPress by AppPrefs.getInstance().keyboard.popupOnKeyPress
 

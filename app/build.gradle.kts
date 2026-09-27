@@ -75,7 +75,7 @@ ksp {
 }
 
 dependencies {
-    implementation(libs.androidx.runtime)
+    implementation(libs.androidx.compose.runtime)
     ksp(project(":codegen"))
     implementation(project(":lib:fcitx5"))
     implementation(project(":lib:fcitx5-lua"))
@@ -99,6 +99,7 @@ dependencies {
     implementation(libs.androidx.navigation.fragment)
     implementation(libs.androidx.navigation.ui)
     implementation(libs.androidx.paging)
+    implementation(libs.androidx.paging.compose)
     implementation(libs.androidx.preference)
     implementation(libs.androidx.recyclerview)
     ksp(libs.androidx.room.compiler)
@@ -129,8 +130,10 @@ dependencies {
     implementation(libs.miuix.preference.android)
     implementation(libs.miuix.icons.android)
     implementation(libs.miuix.nav.android)
+    implementation(libs.miuix.blur.android)
     implementation(libs.androidx.activity.compose)
-    implementation(libs.jetbrains.compose.foundation.android)
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.ui)
     implementation(libs.jieba.analysis)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)

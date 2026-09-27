@@ -16,19 +16,23 @@ import android.view.ViewOutlineProvider
 
 /**
  * Clip this view with rounded top corners (keyboard area effect).
+ *
+ * @param topInsetPx 顶部跳过的不绘制区域高度。用于让键盘背景只覆盖工具栏及以下区域，
+ *                   从而把键盘顶部圆角保持在工具栏顶部，同时让上方的预编辑栏保持透明。
  */
-fun View.applyTopRoundedCornerClip(cornerRadiusPx: Float) {
+fun View.applyTopRoundedCornerClip(cornerRadiusPx: Float, topInsetPx: Float = 0f) {
     outlineProvider = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) {
                 val path = android.graphics.Path().apply {
                     val r = cornerRadiusPx
+                    val top = topInsetPx.coerceAtMost(view.height.toFloat())
                     val w = view.width.toFloat()
                     val h = view.height.toFloat()
-                    moveTo(0f, r)
-                    quadTo(0f, 0f, r, 0f)
-                    lineTo(w - r, 0f)
-                    quadTo(w, 0f, w, r)
+                    moveTo(0f, top + r)
+                    quadTo(0f, top, r, top)
+                    lineTo(w - r, top)
+                    quadTo(w, top, w, top + r)
                     lineTo(w, h)
                     lineTo(0f, h)
                     close()
@@ -39,9 +43,11 @@ fun View.applyTopRoundedCornerClip(cornerRadiusPx: Float) {
     } else {
         object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) {
-                outline.setRoundRect(0, 0, view.width, view.height, cornerRadiusPx)
+                val top = topInsetPx.toInt().coerceAtMost(view.height)
+                outline.setRoundRect(0, top, view.width, view.height, cornerRadiusPx)
             }
         }
     }
     clipToOutline = true
+    invalidateOutline()
 }

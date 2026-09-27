@@ -7,17 +7,11 @@ package org.fcitx.fcitx5.android.ui.main.compose.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -48,12 +42,10 @@ import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
-import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -145,15 +137,21 @@ fun PinyinCustomPhraseScreen(onBack: () -> Unit) {
         return if (endIndex == s.length) s else s.take(endIndex) + "…"
     }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
-        Column(Modifier.fillMaxSize()) {
-            LazyColumn(
-                contentPadding = PaddingValues(
-                    top = 64.dp + WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
-                    bottom = 88.dp,
-                ),
-                modifier = Modifier.fillMaxSize(),
+    PageScaffold(
+        title = title,
+        onBack = onBack,
+        contentBottomPadding = 88.dp,
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = {
+                    editTarget = -1 to PinyinCustomPhrase("", 1, "")
+                    isNew = true
+                },
             ) {
+                Icon(MiuixIcons.Add, stringResource(R.string.add))
+            }
+        },
+    ) {
                 itemsIndexed(entries) { index, entry ->
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
@@ -197,27 +195,6 @@ fun PinyinCustomPhraseScreen(onBack: () -> Unit) {
                         }
                     }
                 }
-            }
-        }
-        FloatingActionButton(
-            onClick = {
-                editTarget = -1 to PinyinCustomPhrase("", 1, "")
-                isNew = true
-            },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-        ) {
-            Icon(MiuixIcons.Add, stringResource(R.string.add))
-        }
-        SmallTopAppBar(
-            color = MiuixTheme.colorScheme.surfaceContainer,
-            title = title,
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
-                }
-            },
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-        )
     }
 
     editTarget?.let { (index, entry) ->

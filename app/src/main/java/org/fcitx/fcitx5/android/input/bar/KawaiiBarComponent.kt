@@ -14,7 +14,6 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InlineSuggestion
 import android.view.inputmethod.InlineSuggestionsResponse
-import android.view.inputmethod.InputMethodSubtype
 import android.widget.FrameLayout
 import android.widget.ViewAnimator
 import android.widget.inline.InlineContentView
@@ -50,10 +49,9 @@ import org.fcitx.fcitx5.android.input.bar.ui.IdleUi
 import org.fcitx.fcitx5.android.input.bar.ui.TitleUi
 import org.fcitx.fcitx5.android.input.bar.ui.ToolButton
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
-import org.fcitx.fcitx5.android.input.candidates.expanded.ExpandedCandidateStyle
 import org.fcitx.fcitx5.android.input.candidates.expanded.window.FlexboxExpandedCandidateWindow
 import org.fcitx.fcitx5.android.input.candidates.expanded.window.GridExpandedCandidateWindow
-import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateComponent
+import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
 import org.fcitx.fcitx5.android.input.clipboard.ClipboardWindow
 import org.fcitx.fcitx5.android.input.dependency.UniqueViewComponent
 import org.fcitx.fcitx5.android.input.dependency.context
@@ -69,7 +67,6 @@ import org.fcitx.fcitx5.android.input.status.StatusAreaWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.input.clipboard.ClipboardEditWindow
-import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import org.mechdancer.dependency.DynamicScope
 import org.mechdancer.dependency.manager.must
 import splitties.bitflags.hasFlag
@@ -93,7 +90,9 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private val theme by manager.theme()
     private val service by manager.inputMethodService()
     private val windowManager: InputWindowManager by manager.must()
-    private val horizontalCandidate: HorizontalCandidateComponent by manager.must()
+    // Compose 实现的候选栏组件
+    // 旧 View 实现：private val horizontalCandidate: HorizontalCandidateComponent by manager.must()（已断开接线）
+    private val composeCandidate: ComposeCandidateComponent by manager.must()
     private val commonKeyActionListener: CommonKeyActionListener by manager.must()
     private val popup: PopupComponent by manager.must()
 
@@ -102,11 +101,8 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
     private val clipboardSuggestion = prefs.clipboard.clipboardSuggestion
     private val clipboardItemTimeout = prefs.clipboard.clipboardItemTimeout
     private val clipboardMaskSensitive by prefs.clipboard.clipboardMaskSensitive
-    private val expandedCandidateStyle by prefs.keyboard.expandedCandidateStyle
     private val expandToolbarByDefault by prefs.keyboard.expandToolbarByDefault
     private val toolbarNumRowOnPassword by prefs.keyboard.toolbarNumRowOnPassword
-    private val showVoiceInputButton by prefs.keyboard.showVoiceInputButton
-    private val preferredVoiceInput by prefs.keyboard.preferredVoiceInput
     private val splitKeyboardPref = prefs.keyboard.splitKeyboard
     private val themePrefs = ThemeManager.prefs
     private val keyboardPrefs = prefs.keyboard
@@ -278,13 +274,6 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         } else false
     }
 
-    private var voiceInputSubtype: Pair<String, InputMethodSubtype>? = null
-
-    private val switchToVoiceInputCallback = View.OnClickListener {
-        val (id, subtype) = voiceInputSubtype ?: return@OnClickListener
-        InputMethodUtil.switchInputMethod(service, id, subtype)
-    }
-
     private val idleUi: IdleUi by lazy {
         IdleUi(context, theme, popup, commonKeyActionListener).apply {
             menuButton.setOnClickListener {
@@ -369,8 +358,10 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         }
     }
 
+    // 候选栏 UI：ComposeCandidateComponent 已改为无 View 的纯 Composable（不再暴露 view），
+    // 本组件已断开接线、不会实例化，此处仅用一个占位 View 满足 CandidateUi 的形参。
     private val candidateUi by lazy {
-        CandidateUi(context, theme, horizontalCandidate.view).apply {
+        CandidateUi(context, theme, View(context)).apply {
             expandButton.apply {
                 swipeEnabled = true
                 swipeThresholdY = dp(HEIGHT.toFloat())
@@ -387,34 +378,31 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         switchUiByState(it)
     }
 
+    // 工具栏按钮固定为收起键盘功能，不再随展开窗口状态变化
     val expandButtonStateMachine = ExpandButtonStateMachine.new {
         when (it) {
             ClickToAttachWindow -> {
-                setExpandButtonToAttach()
+                setExpandButtonToHideKeyboard()
                 setExpandButtonEnabled(true)
             }
             ClickToDetachWindow -> {
-                setExpandButtonToDetach()
+                setExpandButtonToHideKeyboard()
                 setExpandButtonEnabled(true)
             }
             Hidden -> {
-                setExpandButtonEnabled(false)
+                setExpandButtonToHideKeyboard()
+                setExpandButtonEnabled(true)
             }
         }
     }
 
-    // set expand candidate button to create expand candidate
-    private fun setExpandButtonToAttach() {
+    // 设置展开按钮为收起键盘功能（固定图标，不切换）
+    private fun setExpandButtonToHideKeyboard() {
         candidateUi.expandButton.setOnClickListener {
-            windowManager.attachWindow(
-                when (expandedCandidateStyle) {
-                    ExpandedCandidateStyle.Grid -> GridExpandedCandidateWindow()
-                    ExpandedCandidateStyle.Flexbox -> FlexboxExpandedCandidateWindow()
-                }
-            )
+            service.requestHideSelf(0)
         }
-        candidateUi.expandButton.setIcon(R.drawable.ic_baseline_expand_more_24)
-        candidateUi.expandButton.contentDescription = context.getString(R.string.expand_candidates_list)
+        candidateUi.expandButton.setIcon(R.drawable.ic_baseline_arrow_drop_down_24)
+        candidateUi.expandButton.contentDescription = context.getString(R.string.hide_keyboard)
     }
 
     fun onKeyboardSizeChanged(width: Int, height: Int) {
@@ -434,16 +422,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         }
     }
 
-    // set expand candidate button to close expand candidate
-    private fun setExpandButtonToDetach() {
-        candidateUi.expandButton.setOnClickListener {
-            windowManager.attachWindow(KeyboardWindow)
-        }
-        candidateUi.expandButton.setIcon(R.drawable.ic_baseline_expand_less_24)
-        candidateUi.expandButton.contentDescription = context.getString(R.string.hide_candidates_list)
-    }
-
-    // should be used with setExpandButtonToAttach or setExpandButtonToDetach
+    // should be used with setExpandButtonToHideKeyboard
     private fun setExpandButtonEnabled(enabled: Boolean) {
         candidateUi.expandButton.visibility = if (enabled) View.VISIBLE else View.INVISIBLE
     }
@@ -494,13 +473,7 @@ class KawaiiBarComponent : UniqueViewComponent<KawaiiBarComponent, FrameLayout>(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             idleUi.inlineSuggestionsBar.clear()
         }
-        voiceInputSubtype = InputMethodUtil.findVoiceSubtype(preferredVoiceInput)
-        val shouldShowVoiceInput =
-            showVoiceInputButton && voiceInputSubtype != null && !capFlags.has(CapabilityFlag.Password)
-        idleUi.setHideKeyboardIsVoiceInput(
-            shouldShowVoiceInput,
-            if (shouldShowVoiceInput) switchToVoiceInputCallback else hideKeyboardCallback
-        )
+        idleUi.setHideKeyboardIsVoiceInput(false, hideKeyboardCallback)
         evalIdleUiState()
     }
 

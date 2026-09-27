@@ -18,9 +18,10 @@ import android.widget.TextView
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import kotlin.math.roundToInt
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.theme.Theme
+import org.fcitx.fcitx5.android.input.keyboard.RecentSymbolsView.Companion.CELL_HEIGHT_FACTOR
+import kotlin.math.roundToInt
 
 /**
  * 数字键盘横屏分体模式下左侧的历史符号面板视图。
@@ -33,6 +34,11 @@ import org.fcitx.fcitx5.android.data.theme.Theme
  *
  * 子按钮直接复用键盘按键视图 [TextKeyView]，因此其背景、圆角、波纹/按压高亮、震动与
  * 声音反馈均与键盘其他按键一致，并同样受到主题与按键反馈设置的控制。
+ *
+ * **状态：已被纯 Compose 版 `ComposeRecentSymbols.kt`（`ComposeRecentSymbolsPanel`）取代。**
+ * 生产路径（`KeyboardWindow` → `ComposeNumberKeyboard`）不再引用本文件，唯一引用者是同样
+ * 已断线的 `NumberKeyboard.buildSplitLayout`（保留供回退）。删除本文件时请同步去掉那处引用，
+ * 见 `Docs/View2Compose.md` §14 的「移除里程碑」。
  */
 @SuppressLint("ViewConstructor")
 class RecentSymbolsView(

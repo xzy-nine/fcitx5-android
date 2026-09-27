@@ -49,44 +49,13 @@ abstract class ClipboardAdapter(
         // Cache for analyzed chips by entry ID to avoid reprocessing on rebind
         private val chipsCache = mutableMapOf<Int, List<ClipboardTextAnalyzer.Entity>>()
 
-        /**
-         * excerpt text to show on ClipboardEntryUi, to reduce render time of very long text
-         * @param str text to excerpt
-         * @param mask mask text content with "•"
-         * @param lines max output lines
-         * @param chars max chars per output line
-         */
+        // 已抽离到 ClipboardTextUtils.kt 的 excerptClipboardText；此处保留委托兼容旧引用
         fun excerptText(
             str: String,
             mask: Boolean = false,
             lines: Int = 4,
             chars: Int = 128
-        ): String = buildString {
-            val length = str.length
-            var lineBreak = -1
-            for (i in 1..lines) {
-                val start = lineBreak + 1   // skip previous '\n'
-                val excerptEnd = min(start + chars, length)
-                lineBreak = str.indexOf('\n', start)
-                if (lineBreak < 0) {
-                    // no line breaks remaining, substring to end of text
-                    if (mask) {
-                        append(ClipboardEntry.BULLET.repeat(excerptEnd - start))
-                    } else {
-                        append(str.substring(start, excerptEnd))
-                    }
-                    break
-                } else {
-                    val end = min(excerptEnd, lineBreak)
-                    // append one line exactly
-                    if (mask) {
-                        append(ClipboardEntry.BULLET.repeat(end - start))
-                    } else {
-                        appendLine(str.substring(start, end))
-                    }
-                }
-            }
-        }
+        ): String = excerptClipboardText(str, mask, lines, chars)
     }
 
     private var popupMenu: PopupMenu? = null

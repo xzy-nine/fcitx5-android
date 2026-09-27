@@ -28,7 +28,7 @@ class TextKeyboard(
     enum class CapsState { None, Once, Lock }
 
     companion object {
-        const val Name = "Text"
+        const val Name = KeyboardLayoutNames.Text
 
         val Layout: List<List<KeyDef>> = listOf(
             listOf(
@@ -66,7 +66,7 @@ class TextKeyboard(
                 BackspaceKey()
             ),
             listOf(
-                LayoutSwitchKey("?123", NumberKeyboard.Name),
+                LayoutSwitchKey("?123", KeyboardLayoutNames.Number),
                 CommaKey(0.1f, KeyDef.Appearance.Variant.Alternative),
                 LanguageKey(),
                 SpaceKey(),

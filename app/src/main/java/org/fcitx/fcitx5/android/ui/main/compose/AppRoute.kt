@@ -97,7 +97,8 @@ sealed interface AppRoute : NavKey {
 enum class RawConfigHostType {
     GlobalConfig,
     InputMethodConfig,
-    AddonConfig;
+    AddonConfig,
+    PhysicalHotkey;
 }
 
 @Serializable

@@ -110,16 +110,20 @@ fun QuickPhraseListScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
-        Column(Modifier.fillMaxSize()) {
-            LazyColumn(
-                contentPadding = PaddingValues(
-                    top = 64.dp + WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
-                    bottom = 88.dp,
-                ),
-                modifier = Modifier.fillMaxSize(),
+    PageScaffold(
+        title = stringResource(R.string.quickphrase_editor),
+        onBack = onBack,
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showCreateDialog = true },
+                modifier = Modifier.padding(16.dp),
             ) {
-                itemsIndexed(entries, key = { _, e -> e.file.absolutePath }) { index, entry ->
+                Icon(MiuixIcons.Add, stringResource(R.string.add))
+            }
+        },
+        contentBottomPadding = 88.dp,
+    ) {
+        itemsIndexed(entries, key = { _, e -> e.file.absolutePath }) { index, entry ->
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
                         colors = CardDefaults.defaultColors(
@@ -139,24 +143,6 @@ fun QuickPhraseListScreen(
                         )
                     }
                 }
-            }
-        }
-        FloatingActionButton(
-            onClick = { showCreateDialog = true },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-        ) {
-            Icon(MiuixIcons.Add, stringResource(R.string.add))
-        }
-        SmallTopAppBar(
-            color = MiuixTheme.colorScheme.surfaceContainer,
-            title = stringResource(R.string.quickphrase_editor),
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
-                }
-            },
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-        )
     }
 
     if (showCreateDialog) {

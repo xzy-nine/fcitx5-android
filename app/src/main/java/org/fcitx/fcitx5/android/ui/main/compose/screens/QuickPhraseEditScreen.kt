@@ -117,16 +117,23 @@ fun QuickPhraseEditScreen(
         return
     }
 
-    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
-        Column(Modifier.fillMaxSize()) {
-            LazyColumn(
-                contentPadding = PaddingValues(
-                    top = 64.dp + WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
-                    bottom = 88.dp,
-                ),
-                modifier = Modifier.fillMaxSize(),
+    PageScaffold(
+        title = quickPhrase.name,
+        onBack = onBack,
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = {
+                    editTarget = -1 to QuickPhraseEntry("", "")
+                    isNew = true
+                },
+                modifier = Modifier.padding(16.dp),
             ) {
-                itemsIndexed(entries, key = { index, _ -> "$index-${entries[index].keyword}" }) { index, entry ->
+                Icon(MiuixIcons.Add, stringResource(R.string.add))
+            }
+        },
+        contentBottomPadding = 88.dp,
+    ) {
+        itemsIndexed(entries, key = { index, _ -> "$index-${entries[index].keyword}" }) { index, entry ->
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
                         colors = CardDefaults.defaultColors(
@@ -160,27 +167,6 @@ fun QuickPhraseEditScreen(
                         }
                     }
                 }
-            }
-        }
-        FloatingActionButton(
-            onClick = {
-                editTarget = -1 to QuickPhraseEntry("", "")
-                isNew = true
-            },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-        ) {
-            Icon(MiuixIcons.Add, stringResource(R.string.add))
-        }
-        SmallTopAppBar(
-            color = MiuixTheme.colorScheme.surfaceContainer,
-            title = quickPhrase.name,
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, stringResource(R.string.back), Modifier.size(24.dp))
-                }
-            },
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-        )
     }
 
     editTarget?.let { (index, entry) ->

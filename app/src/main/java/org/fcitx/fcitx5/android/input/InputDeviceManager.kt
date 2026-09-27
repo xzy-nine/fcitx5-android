@@ -56,6 +56,11 @@ class InputDeviceManager(private val onChange: (Boolean) -> Unit) {
         setupInputViewEvents(this.isVirtualKeyboard)
     }
 
+    fun clearInputView(inputView: InputView) {
+        if (this.inputView !== inputView) return
+        this.inputView = null
+    }
+
     fun setCandidatesView(candidatesView: CandidatesView) {
         this.candidatesView = candidatesView
         setupCandidatesViewEvents(this.isVirtualKeyboard)

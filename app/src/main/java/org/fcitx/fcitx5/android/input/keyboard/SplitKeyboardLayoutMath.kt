@@ -5,14 +5,26 @@
 package org.fcitx.fcitx5.android.input.keyboard
 
 import kotlin.math.absoluteValue
+import org.fcitx.fcitx5.android.R
 
 /**
  * Stateless math helpers for split keyboard layout, kept out of [BaseKeyboard] to minimize
  * merge conflicts with upstream changes in that file.
  */
 
+/**
+ * 是否是空格键。
+ *
+ * **按 `viewId` 判而不是按键类型**：Compose 侧的键面变换（caps / 标点 / 输入法名）会重建
+ * `KeyDef`，子类类型（`SpaceKey` / `MiniSpaceKey`）会丢失；而 `viewId` 在变换中被原样保留。
+ * 对 View 侧两者等价（`SpaceKey` / `MiniSpaceKey` 各自唯一占用这两个 id）。
+ */
+internal fun isSpaceKeyDef(def: KeyDef): Boolean =
+    def.appearance.viewId == R.id.button_space ||
+            def.appearance.viewId == R.id.button_mini_space
+
 internal fun rowContainsSpaceKey(row: List<KeyDef>): Boolean {
-    return row.any { it is SpaceKey || it is MiniSpaceKey }
+    return row.any(::isSpaceKeyDef)
 }
 
 /**
@@ -46,7 +58,7 @@ internal fun computeRowGroupPercents(keyLayout: List<List<KeyDef>>, gapRatio: Fl
 internal fun splitRowWidthPercent(row: List<KeyDef>): Float {
     var total = 0f
     row.forEach { def ->
-        if (def is SpaceKey || def is MiniSpaceKey) return@forEach
+        if (isSpaceKeyDef(def)) return@forEach
         val width = def.appearance.percentWidth
         if (width > 0f) {
             total += width
@@ -59,7 +71,7 @@ internal fun isStandardWidthRow(row: List<KeyDef>): Boolean {
     val standard = 0.1f
     val eps = 1e-4f
     return row.all { def ->
-        if (def is SpaceKey || def is MiniSpaceKey) true
+        if (isSpaceKeyDef(def)) true
         else (def.appearance.percentWidth - standard).absoluteValue <= eps
     }
 }

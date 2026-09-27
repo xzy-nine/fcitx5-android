@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -52,11 +53,13 @@ fun RawConfigHostScreen(
     val fcitx: FcitxConnection = remember { FcitxDaemon.connect(connectionName) }
     val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
     val context = LocalContext.current
+    // localized label of the android-only entry appended to the table addon (legacy parity)
+    val manageTableImLabel = stringResource(R.string.manage_table_im)
 
     DisposableEffect(fcitx, connectionName) {
         scope.launch {
             try {
-                raw = fcitx.runOnReady { obtainConfig(this, route) }
+                raw = fcitx.runOnReady { obtainConfig(this, route, manageTableImLabel) }
                 errorText = null
             } catch (e: Exception) {
                 errorText = e.message
@@ -68,7 +71,9 @@ fun RawConfigHostScreen(
             // coroutine from onDispose used to deadlock the Compose dispatcher and trigger an ANR.
             raw?.let { r ->
                 runCatching {
-                    fcitx.runIfReady { saveConfig(this, route, r["cfg"]) }
+                    r.findByName("cfg")?.let { cfg ->
+                        fcitx.runIfReady { saveConfig(this, route, cfg) }
+                    }
                 }
             }
             FcitxDaemon.disconnect(connectionName)
@@ -84,15 +89,28 @@ fun RawConfigHostScreen(
                 onNavigate = onNavigate,
                 onBack = onBack,
                 onSave = {
-                    scope.launch {
-                        fcitx.runIfReady { saveConfig(this, route, loaded["cfg"]) }
+                    loaded.findByName("cfg")?.let { cfg ->
+                        scope.launch {
+                            fcitx.runIfReady { saveConfig(this, route, cfg) }
+                        }
                     }
                 },
                 // fcitx reports the global config top-level name in English ("Global Options"),
                 // mirror the legacy GlobalConfigFragment and use the localized string instead.
-                titleOverride = if (route.kind == RawConfigHostType.GlobalConfig) {
-                    context.getString(R.string.global_options)
-                } else null,
+                // Addon / input-method pages get the translated name from the list screen, like
+                // the legacy fragments did (topLevel.name would be the C++ class name).
+                titleOverride = when (route.kind) {
+                    RawConfigHostType.GlobalConfig -> stringResource(R.string.global_options)
+                    RawConfigHostType.PhysicalHotkey -> stringResource(R.string.hotkey)
+                    RawConfigHostType.AddonConfig, RawConfigHostType.InputMethodConfig ->
+                        route.name?.takeIf { it.isNotEmpty() }
+                },
+                // external (sub-config) rows must not navigate back into this very addon page
+                currentAddon = if (route.kind == RawConfigHostType.AddonConfig) {
+                    route.uniqueName
+                } else {
+                    null
+                },
             )
         }
         errorText != null -> {
@@ -108,9 +126,14 @@ fun RawConfigHostScreen(
     }
 }
 
-private suspend fun obtainConfig(fcitx: FcitxAPI, route: AppRoute.RawConfigHost): RawConfig =
+private suspend fun obtainConfig(
+    fcitx: FcitxAPI,
+    route: AppRoute.RawConfigHost,
+    manageTableImLabel: String,
+): RawConfig =
     when (route.kind) {
-        RawConfigHostType.GlobalConfig -> fcitx.getGlobalConfig()
+        RawConfigHostType.GlobalConfig -> splitHotkey(fcitx.getGlobalConfig()).first
+        RawConfigHostType.PhysicalHotkey -> splitHotkey(fcitx.getGlobalConfig()).second
         RawConfigHostType.InputMethodConfig -> fcitx.getImConfig(route.uniqueName.orEmpty())
         RawConfigHostType.AddonConfig -> {
             val addon = route.uniqueName.orEmpty()
@@ -120,7 +143,7 @@ private suspend fun obtainConfig(fcitx: FcitxAPI, route: AppRoute.RawConfigHost)
                     it.subItems = (it.subItems ?: emptyArray()) + RawConfig(
                         "AndroidTable", subItems = arrayOf(
                             RawConfig("Type", "External"),
-                            RawConfig("Description", "Manage Table Input Methods")
+                            RawConfig("Description", manageTableImLabel)
                         )
                     )
                 }
@@ -132,6 +155,57 @@ private suspend fun obtainConfig(fcitx: FcitxAPI, route: AppRoute.RawConfigHost)
 private suspend fun saveConfig(fcitx: FcitxAPI, route: AppRoute.RawConfigHost, newConfig: RawConfig) =
     when (route.kind) {
         RawConfigHostType.GlobalConfig -> fcitx.setGlobalConfig(newConfig)
+        RawConfigHostType.PhysicalHotkey -> fcitx.setGlobalConfig(newConfig)
         RawConfigHostType.InputMethodConfig -> fcitx.setImConfig(route.uniqueName.orEmpty(), newConfig)
         RawConfigHostType.AddonConfig -> fcitx.setAddonConfig(route.uniqueName.orEmpty(), newConfig)
     }
+
+/**
+ * Splits the fcitx global config into two **real, independent** configs at the data layer:
+ *  - [first]  = the global config with the physical-hotkey group (`Hotkey`) removed;
+ *  - [second] = a standalone config containing only the `Hotkey` group.
+ *
+ * Both keep the full `cfg`/`desc` wrapper expected by [org.fcitx.fcitx5.android.ui.main.compose.settings.RawConfigScreen],
+ * so each can be rendered and saved on its own. Saving goes through fcitx's partial `load`, therefore
+ * editing one half never clobbers the other (`load` simply leaves the absent group untouched).
+ */
+private fun splitHotkey(global: RawConfig): Pair<RawConfig, RawConfig> {
+    val cfg = global["cfg"]
+    val desc = global["desc"]
+    val topDef = desc.subItems?.firstOrNull()            // GlobalConfig container
+    val customDefs = desc.subItems?.drop(1) ?: emptyList()
+    val isHotkey: (RawConfig) -> Boolean = { it.name.equals("Hotkey", ignoreCase = true) }
+
+    val hotkeyCfgGroup = cfg.subItems?.firstOrNull(isHotkey)
+    val hotkeyDescGroup = topDef?.subItems?.firstOrNull(isHotkey)
+
+    val globalCfg = RawConfig(
+        "cfg",
+        subItems = (cfg.subItems?.filter { !isHotkey(it) } ?: emptyList()).toTypedArray()
+    )
+    val globalTopDef = RawConfig(
+        topDef?.name ?: "GlobalConfig",
+        subItems = (topDef?.subItems?.filter { !isHotkey(it) } ?: emptyList()).toTypedArray()
+    )
+    val globalDesc = RawConfig(
+        desc.name,
+        subItems = (listOf(globalTopDef) + customDefs).toTypedArray()
+    )
+    val globalConfig = RawConfig("", subItems = arrayOf(globalCfg, globalDesc))
+
+    val hotkeyCfg = RawConfig(
+        "cfg",
+        subItems = (hotkeyCfgGroup?.let { listOf(it) } ?: emptyList()).toTypedArray()
+    )
+    val hotkeyTopDef = RawConfig(
+        topDef?.name ?: "GlobalConfig",
+        subItems = (hotkeyDescGroup?.let { listOf(it) } ?: emptyList()).toTypedArray()
+    )
+    val hotkeyDesc = RawConfig(
+        desc.name,
+        subItems = (listOf(hotkeyTopDef) + customDefs).toTypedArray()
+    )
+    val hotkeyConfig = RawConfig("", subItems = arrayOf(hotkeyCfg, hotkeyDesc))
+
+    return globalConfig to hotkeyConfig
+}

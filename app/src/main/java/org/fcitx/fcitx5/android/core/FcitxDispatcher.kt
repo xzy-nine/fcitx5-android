@@ -58,6 +58,19 @@ class FcitxDispatcher(private val controller: FcitxController) : CoroutineDispat
     private val isRunning = AtomicBoolean(false)
 
     /**
+     * 由 fcitx 线程在即将阻塞于 `nativeLoopOnce()` 之前置位、返回后清零。
+     * `dispatch()` 仅在该标志为真时才调用 `nativeScheduleEmpty()`——
+     * 线程正在排空队列时本轮 `poll()` 即可取到刚入队的任务，无需额外 JNI 唤醒。
+     *
+     * 无漏唤醒证明：dispatch 的顺序是 `offer` → 读标志。
+     *  - 读到 true ⇒ fcitx 线程已置位，正阻塞或即将阻塞 ⇒ 唤醒它。
+     *  - 读到 false ⇒ 线程在排空或即将回到循环顶；置位发生在循环顶，
+     *    而置位后紧跟一次 `queue.isNotEmpty()` 复查，若期间有任务入队复查必命中、
+     *    直接排空而不阻塞。故「offer 未被本轮 poll 取到」与「标志为 false」不会同时成立。
+     */
+    private val wakeupNeeded = AtomicBoolean(false)
+
+    /**
      * Start the dispatcher
      * This function returns immediately
      */
@@ -69,8 +82,16 @@ class FcitxDispatcher(private val controller: FcitxController) : CoroutineDispat
                     Timber.d("nativeStartup()")
                     controller.nativeStartup()
                     while (isActive && isRunning.get()) {
-                        // blocking...
-                        controller.nativeLoopOnce()
+                        // 标记即将阻塞，让并发 dispatch 能据此决定是否唤醒。
+                        wakeupNeeded.set(true)
+                        // 复查队列：若置位与 offer 之间有任务入队，直接排空，避免漏唤醒。
+                        if (queue.isNotEmpty()) {
+                            wakeupNeeded.set(false)
+                        } else {
+                            // blocking...
+                            controller.nativeLoopOnce()
+                            wakeupNeeded.set(false)
+                        }
                         // do scheduled jobs
                         while (true) {
                             val block = queue.poll() ?: break
@@ -107,9 +128,11 @@ class FcitxDispatcher(private val controller: FcitxController) : CoroutineDispat
             throw IllegalStateException("Dispatcher is not in running state!")
         }
         queue.offer(WrappedRunnable(block))
-        // always call `nativeScheduleEmpty()` to prevent `nativeLoopOnce()` from blocking
-        // the thread when we have something to run
-        controller.nativeScheduleEmpty()
+        // 仅当 fcitx 线程正阻塞在 nativeLoopOnce 时才需要唤醒；
+        // 它正在排空队列时本轮 poll 会取到刚入队的任务，无需额外的 JNI 唤醒。
+        if (wakeupNeeded.get()) {
+            controller.nativeScheduleEmpty()
+        }
     }
 
     companion object {

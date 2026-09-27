@@ -5,7 +5,6 @@
 
 package org.fcitx.fcitx5.android.ui.main.compose.dialog
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,12 +27,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.Key
+import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
-import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -132,16 +131,12 @@ fun RawConfigListEditDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text(
-                                text = display(value),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(vertical = 12.dp)
-                                    .then(
-                                        if (mode == RawListEditMode.Key) {
-                                            Modifier.clickable { keyEditIndex = index }
-                                        } else Modifier
-                                    ),
+                            BasicComponent(
+                                title = display(value),
+                                modifier = Modifier.weight(1f),
+                                onClick = if (mode == RawListEditMode.Key) {
+                                    { keyEditIndex = index }
+                                } else null,
                             )
                             IconButton(
                                 onClick = {

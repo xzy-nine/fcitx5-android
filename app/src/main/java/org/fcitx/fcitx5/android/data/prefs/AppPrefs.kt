@@ -12,7 +12,6 @@ import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.InputFeedbacks.InputFeedbackMode
-import org.fcitx.fcitx5.android.input.candidates.expanded.ExpandedCandidateStyle
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesMode
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesOrientation
 import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateMode
@@ -148,13 +147,10 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             true
         )
 
-        val showVoiceInputButton =
-            switch(R.string.show_voice_input_button, "show_voice_input_button", false)
         val preferredVoiceInput = voiceInputPreference(
             R.string.preferred_voice_input, "preferred_voice_input", ""
         ) {
-            showVoiceInputButton.getValue() ||
-                spaceKeyLongPressBehavior.getValue() == SpaceLongPressBehavior.VoiceInput
+            spaceKeyLongPressBehavior.getValue() == SpaceLongPressBehavior.VoiceInput
         }
 
         val expandKeypressArea =
@@ -313,14 +309,9 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             "horizontal_candidate_swipe",
             true
         )
-        val expandedCandidateStyle = enumList(
-            R.string.expanded_candidate_style,
-            "expanded_candidate_style",
-            ExpandedCandidateStyle.Grid
-        )
-
         val expandedCandidateGridSpanCount: ManagedPreference.PInt
         val expandedCandidateGridSpanCountLandscape: ManagedPreference.PInt
+        val candidateDivider: ManagedPreference.PBool
 
         init {
             val (primary, secondary) = twinInt(
@@ -336,6 +327,11 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             )
             expandedCandidateGridSpanCount = primary
             expandedCandidateGridSpanCountLandscape = secondary
+            candidateDivider = switch(
+                R.string.candidate_divider,
+                "candidate_divider",
+                false
+            )
         }
 
         init {
@@ -383,15 +379,12 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                     longPressDelay.key,
                     spaceKeyLongPressBehavior.key,
                     spaceSwipeMoveCursor.key,
-                )),
-                SubGroup(R.string.group_voice, listOf(
-                    showVoiceInputButton.key,
                     preferredVoiceInput.key,
                 )),
                 SubGroup(R.string.group_candidate_style, listOf(
                     horizontalCandidateStyle.key,
                     horizontalCandidateSwipe.key,
-                    expandedCandidateStyle.key,
+                    candidateDivider.key,
                     expandedCandidateGridSpanCount.key,
                     expandedCandidateGridSpanCountLandscape.key,
                 )),
