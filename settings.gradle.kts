@@ -26,6 +26,8 @@ include(":lib:fcitx5-chinese-addons")
 include(":codegen")
 include(":app")
 include(":webdav")
+// custom: 在线 ASR 的 Lua 插件框架（移植自 Xime，GPL-3.0-or-later，见 NOTICE.md）
+include(":plugin-core")
 include(":lib:plugin-base")
 include(":plugin:anthy")
 include(":plugin:clipboard-filter")

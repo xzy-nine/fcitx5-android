@@ -38,6 +38,18 @@ val extractOnnxRuntime = tasks.register<Sync>("extractOnnxRuntime") {
     }
 }
 
+// ---------------------------------------------------------------------------
+// custom: 把仓库根 `plugins/` 下的 Lua 在线 ASR 插件打包进 assets/plugins/<id>/
+// （与 Xime 同布局：源码在仓库根 plugins/，运行时由 PluginManager 从 assets 安装）
+// ---------------------------------------------------------------------------
+val luaPluginsAssetsDir = layout.buildDirectory.dir("luaPluginsAssets").get().asFile
+val copyLuaPluginsToAssets = tasks.register<Sync>("copyLuaPluginsToAssets") {
+    description = "Copy bundled Lua ASR plugins into assets/plugins"
+    group = "custom"
+    from(rootProject.file("plugins")) { into("plugins") }
+    into(luaPluginsAssetsDir)
+}
+
 // CMake configure 与打包都必须在抽取完成之后
 tasks.configureEach {
     if (name != extractOnnxRuntime.name &&
@@ -48,6 +60,11 @@ tasks.configureEach {
                 name == "preBuild")
     ) {
         dependsOn(extractOnnxRuntime)
+    }
+    if (name.startsWith("merge") && name.endsWith("Assets") ||
+        name == "preBuild" || name == "generateDebugLintReportModel"
+    ) {
+        dependsOn(copyLuaPluginsToAssets)
     }
 }
 
@@ -87,6 +104,8 @@ android {
     // IMPORTED 库，必须额外挂进 jniLibs（这也是 Xime 需要放两份 .so 的原因）
     sourceSets.getByName("main") {
         jniLibs.directories.add(onnxRuntimeJniDir.absolutePath)
+        // Lua 在线 ASR 插件（仓库根 plugins/ → assets/plugins/）
+        assets.directories.add(luaPluginsAssetsDir.absolutePath)
     }
 
     buildFeatures {
