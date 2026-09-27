@@ -51,6 +51,10 @@ object VoiceModelRepository {
     private val _downloadingId = MutableStateFlow<String?>(null)
     val downloadingId: StateFlow<String?> = _downloadingId.asStateFlow()
 
+    /** 最近一次下载失败的原因（供页面显示）。 */
+    private val _lastError = MutableStateFlow<String?>(null)
+    val lastError: StateFlow<String?> = _lastError.asStateFlow()
+
     private var downloadJob: Job? = null
 
     /** 加载/刷新远程索引；失败时保留上一次成功结果。 */
@@ -80,6 +84,7 @@ object VoiceModelRepository {
     fun downloadModel(context: Context, model: ModelInfo) {
         if (downloadJob?.isActive == true) return
         val appContext = context.applicationContext
+        _lastError.value = null
         _downloadingId.value = model.id
         _downloadState.value = ModelDownloadState.Downloading(0f, 0L, 0L)
         downloadJob = scope.launch {
@@ -87,11 +92,17 @@ object VoiceModelRepository {
                 ModelManager.downloadModel(appContext, model, onProgress = { state ->
                     _downloadState.value = state
                 })
+                // 失败时保留 downloadingId，使模型卡片继续显示错误与「重新下载」
+                if (_downloadState.value is ModelDownloadState.Error) {
+                    _lastError.value =
+                        (_downloadState.value as ModelDownloadState.Error).message
+                } else {
+                    _downloadingId.value = null
+                }
             } catch (e: Exception) {
                 Timber.e(e, "voice model download failed")
                 _downloadState.value = ModelDownloadState.Error(e.message ?: "download failed")
-            } finally {
-                _downloadingId.value = null
+                _lastError.value = e.message ?: "download failed"
             }
         }
     }

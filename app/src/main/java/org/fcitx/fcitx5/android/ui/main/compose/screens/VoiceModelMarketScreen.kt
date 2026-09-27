@@ -56,6 +56,7 @@ fun VoiceModelMarketScreen(
     val indexError by VoiceModelRepository.indexError.collectAsState()
     val downloadState by VoiceModelRepository.downloadState.collectAsState()
     val downloadingId by VoiceModelRepository.downloadingId.collectAsState()
+    val lastError by VoiceModelRepository.lastError.collectAsState()
     val selectedModelId = prefs.voiceAsrModelId.getValue()
     val mirror = AsrModelManager(context).getSelectedModelId()
 
@@ -104,9 +105,20 @@ fun VoiceModelMarketScreen(
         if (indexError != null) {
             item {
                 Text(
-                    text = stringResource(R.string.voice_index_failed),
+                    text = stringResource(R.string.voice_index_failed) +
+                            ": " + stringResource(R.string.voice_index_using_builtin),
                     color = MiuixTheme.colorScheme.primary,
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
+                )
+            }
+        }
+        // 下载失败要显式留在页面上（否则用户只会看到「点了没反应」）
+        lastError?.let { message ->
+            item {
+                Text(
+                    text = stringResource(R.string.voice_download_failed) + "：" + message,
+                    color = MiuixTheme.colorScheme.primary,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
         }
@@ -202,14 +214,22 @@ fun VoiceModelMarketScreen(
 
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        val failed = isTarget && downloadState is ModelDownloadState.Error
                         if (!downloaded) {
                             TextButton(
                                 text = stringResource(
-                                    if (isTarget) R.string.voice_download_cancel else R.string.voice_download
+                                    when {
+                                        failed -> R.string.voice_download_retry
+                                        isTarget -> R.string.voice_download_cancel
+                                        else -> R.string.voice_download
+                                    }
                                 ),
                                 onClick = {
-                                    if (isTarget) VoiceModelRepository.cancelDownload()
-                                    else VoiceModelRepository.downloadModel(context, model)
+                                    when {
+                                        failed -> VoiceModelRepository.downloadModel(context, model)
+                                        isTarget -> VoiceModelRepository.cancelDownload()
+                                        else -> VoiceModelRepository.downloadModel(context, model)
+                                    }
                                 },
                             )
                         } else {

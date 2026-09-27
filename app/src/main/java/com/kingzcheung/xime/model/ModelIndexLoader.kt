@@ -36,8 +36,7 @@ object ModelIndexLoader {
 
     suspend fun loadFromRemote(context: Context): List<ModelInfo> = withContext(Dispatchers.IO) {
         val cfg = KeysConfigHelper.loadXimeIndexConfig(context)
-        // 本移植：允许在应用设置里用偏好 voice_index_url 覆盖索引地址（例如指向自建镜像），
-        // 留空则用 xime.yaml 的 xime_index.base_urls（默认 Xime 官方索引）。
+        // 偏好 voice_index_url 非空时覆盖 xime.yaml 的 xime_index.base_urls
         val override = runCatching {
             org.fcitx.fcitx5.android.data.prefs.AppPrefs.getInstance()
                 .voice.voiceIndexUrl.getValue()

@@ -42,10 +42,10 @@ object VoicePluginBootstrap {
 
     private const val TAG = "VoicePluginBootstrap"
 
-    /** 随包内置的 Lua 插件 assets 目录（Gradle 由仓库根 plugins/ 同步而来）。 */
+    /** 内置 Lua 插件的 assets 路径（.xipk 归档）。 */
     private val BUNDLED_PLUGINS = listOf(
-        "plugins/funasr-asr",
-        "plugins/volc-asr",
+        "plugins/funasr-asr.xipk",
+        "plugins/volc-asr.xipk",
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -90,10 +90,18 @@ object VoicePluginBootstrap {
 
     private suspend fun installBundledPlugins(context: Context) {
         BUNDLED_PLUGINS.forEach { path ->
-            try {
+            val ok = try {
                 PluginManager.installPluginFromAssets(path)
             } catch (e: Exception) {
-                Timber.w(e, "install bundled plugin failed: %s", path)
+                Timber.e(e, "install bundled plugin failed: %s", path)
+                false
+            }
+            if (ok) {
+                Timber.i("bundled plugin installed: %s", path)
+            } else {
+                Timber.w(
+                    "bundled plugin NOT installed: %s (asset missing or archive invalid?)", path
+                )
             }
         }
     }

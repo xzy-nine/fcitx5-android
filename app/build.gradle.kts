@@ -39,15 +39,25 @@ val extractOnnxRuntime = tasks.register<Sync>("extractOnnxRuntime") {
 }
 
 // ---------------------------------------------------------------------------
-// custom: 把仓库根 `plugins/` 下的 Lua 在线 ASR 插件打包进 assets/plugins/<id>/
-// （与 Xime 同布局：源码在仓库根 plugins/，运行时由 PluginManager 从 assets 安装）
-// ---------------------------------------------------------------------------
 val luaPluginsAssetsDir = layout.buildDirectory.dir("luaPluginsAssets").get().asFile
-val copyLuaPluginsToAssets = tasks.register<Sync>("copyLuaPluginsToAssets") {
-    description = "Copy bundled Lua ASR plugins into assets/plugins"
+val luaPluginsSourceDir = rootProject.file("plugins")
+val luaPluginDirs = luaPluginsSourceDir
+    .listFiles { f -> f.isDirectory && File(f, "manifest.yaml").exists() }
+    ?.sortedBy { it.name }
+    .orEmpty()
+val zipLuaPluginTasks = luaPluginDirs.map { dir ->
+    tasks.register<Zip>("zipLuaPlugin${dir.name.replace("-", "")}") {
+        description = "Pack Lua plugin ${dir.name} into a .xipk archive"
+        group = "custom"
+        from(dir)
+        archiveFileName.set("${dir.name}.xipk")
+        destinationDirectory.set(File(luaPluginsAssetsDir, "plugins"))
+    }
+}
+val copyLuaPluginsToAssets = tasks.register("copyLuaPluginsToAssets") {
+    description = "Pack bundled Lua ASR plugins into assets/plugins/*.xipk"
     group = "custom"
-    from(rootProject.file("plugins")) { into("plugins") }
-    into(luaPluginsAssetsDir)
+    dependsOn(zipLuaPluginTasks)
 }
 
 // CMake configure 与打包都必须在抽取完成之后
