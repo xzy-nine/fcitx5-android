@@ -10,6 +10,7 @@ import androidx.annotation.Keep
 import androidx.annotation.RequiresApi
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
+import com.kingzcheung.xime.speech.AsrModelManager
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.InputFeedbacks.InputFeedbackMode
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesMode
@@ -503,6 +504,91 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         )
     }
 
+    /**
+     * custom: 语音输入。
+     *
+     * 内核移植自 Xime（GPL-3.0-or-later，见仓库根 NOTICE.md），页面结构参考 whisperIME。
+     * 这些偏好同时被 IME 内的语音面板与应用内「语音输入」设置页读取；
+     * [com.kingzcheung.xime.settings.SettingsPreferences] 这个 Xime 兼容门面也委托到这里。
+     *
+     * 注意：本地离线 ASR 的模型推理跑在独立 `:asr` 进程，该进程不初始化 AppPrefs，
+     * 因此 `:asr` 侧只通过 AIDL 接收 modelDir，不读这些偏好。
+     */
+    inner class Voice : ManagedPreferenceCategory(R.string.voice_input, sharedPreferences) {
+        val voiceInputEnabled = switch(
+            R.string.voice_input_enabled,
+            "voice_input_enabled",
+            false,
+            summary = R.string.voice_input_enabled_summary
+        )
+
+        val voiceUseLocal = switch(
+            R.string.voice_use_local,
+            "voice_use_local",
+            true,
+            summary = R.string.voice_use_local_summary
+        ) { voiceInputEnabled.getValue() }
+
+        val voiceSimpleChinese =
+            switch(R.string.voice_simple_chinese, "voice_simple_chinese", true) {
+                voiceInputEnabled.getValue()
+            }
+
+        val voiceMuteDuringRecording = switch(
+            R.string.voice_mute_during_recording,
+            "voice_mute_during_recording",
+            false
+        ) { voiceInputEnabled.getValue() }
+
+        val voiceAutoMode = switch(
+            R.string.voice_auto_mode,
+            "voice_auto_mode",
+            false,
+            summary = R.string.voice_auto_mode_summary
+        ) { voiceInputEnabled.getValue() }
+
+        /**
+         * 当前选中的在线 ASR 插件 id（空 = 未选择，走第一个已启用插件或内置兜底）。
+         * 原名 `stt_online_plugin_id`（Xime），此处追加 `voice_` 前缀以免与上游 key 冲突。
+         */
+        val voiceOnlinePluginId =
+            ManagedPreference.PString(sharedPreferences, "voice_online_plugin_id", "")
+                .apply { register() }
+
+        /** 当前选中的本地模型 id（模型市场索引里的 id）。 */
+        val voiceAsrModelId = ManagedPreference.PString(
+            sharedPreferences, "voice_asr_model_id", AsrModelManager.DEFAULT_ID
+        ).apply { register() }
+
+        /** 模型市场索引地址覆盖（空 = 用 xime.yaml 里的 xime_index.base_urls）。 */
+        val voiceIndexUrl = ManagedPreference.PString(sharedPreferences, "voice_index_url", "")
+            .apply { register() }
+
+        /** 调试：把语音识别期间的录音落盘。 */
+        val voiceDebugRecord = ManagedPreference.PBool(
+            sharedPreferences, "voice_debug_record", false
+        ).apply { register() }
+
+        init {
+            groups = listOf(
+                SubGroup(
+                    R.string.group_voice,
+                    listOf(
+                        voiceInputEnabled.key,
+                        voiceUseLocal.key,
+                        voiceOnlinePluginId.key,
+                        voiceSimpleChinese.key,
+                        voiceMuteDuringRecording.key,
+                        voiceAutoMode.key,
+                        voiceAsrModelId.key,
+                        voiceIndexUrl.key,
+                        voiceDebugRecord.key
+                    )
+                )
+            )
+        }
+    }
+
     private val providers = mutableListOf<ManagedPreferenceProvider>()
 
     fun <T : ManagedPreferenceProvider> registerProvider(
@@ -524,6 +610,8 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
     val broadcast = Broadcast().register()
     val symbols = Symbols().register()
     val advanced = Advanced().register()
+    // custom: 语音输入（Xime 核心移植）
+    val voice = Voice().register()
 
     @Keep
     private val onSharedPreferenceChangeListener =

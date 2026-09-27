@@ -188,6 +188,12 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.ui)
     implementation(libs.jieba.analysis)
+    // custom: 语音输入（Xime 核心移植）—— 在线 ASR 插件、模型索引/下载、简繁转换
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.sse)
+    implementation(libs.kaml)
+    implementation(libs.commons.compress)
+    implementation(libs.opencc4j)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)
