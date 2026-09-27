@@ -83,8 +83,15 @@ private const val REPEAT_INTERVAL_MS = 50L
 /** × 按钮直径 / 删除键方形边长：只保证**位置**左右对称，尺寸各自独立。 */
 private const val SIDE_BUTTON_SIZE_DP = 40
 private const val DELETE_BUTTON_SIZE_DP = 56
+
+/** 两侧按钮与麦克风的水平间距（共同决定对称位置，越大越靠两侧）。 */
+private const val SIDE_BUTTON_GAP_DP = 48
+
+/** 删除键的上移量（相对麦克风底边中心）。 */
 private const val SIDE_BUTTON_OFFSET_Y_DP = 62
-private const val SIDE_BUTTON_GAP_DP = 30
+
+/** × 在此基础上再上移一点，平衡视觉重心（只有 × 上移，位置对称性不受影响）。 */
+private const val CLOSE_BUTTON_EXTRA_UP_DP = 16
 
 /**
  * custom: IME 语音面板的覆盖层宿主。
@@ -259,7 +266,7 @@ fun ComposeVoicePanel(
                         .align(Alignment.BottomCenter)
                         .offset(
                             x = (-(MIC_SIZE_DP / 2 + SIDE_BUTTON_GAP_DP)).dp,
-                            y = (-SIDE_BUTTON_OFFSET_Y_DP).dp,
+                            y = (-(SIDE_BUTTON_OFFSET_Y_DP + CLOSE_BUTTON_EXTRA_UP_DP)).dp,
                         ),
                 ) {
                     Icon(
