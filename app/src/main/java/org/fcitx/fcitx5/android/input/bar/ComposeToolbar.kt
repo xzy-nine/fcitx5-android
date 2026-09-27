@@ -352,6 +352,15 @@ private fun ToolbarButtonsRow(
             iconColor = visuals.iconColor,
             contentDescription = "Tune",
         )
+        // custom: 内置语音输入（未启用时 onVoiceInput 为 null，不显示）
+        callbacks.onVoiceInput?.let { onVoiceInput ->
+            ToolbarIconButton(
+                onClick = onVoiceInput,
+                iconRes = R.drawable.ic_baseline_keyboard_voice_24,
+                iconColor = visuals.iconColor,
+                contentDescription = "Voice input",
+            )
+        }
     }
 }
 

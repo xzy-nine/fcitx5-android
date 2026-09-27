@@ -59,6 +59,7 @@ import org.fcitx.fcitx5.android.input.picker.emoticonPicker
 import org.fcitx.fcitx5.android.input.picker.symbolPicker
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
 import org.fcitx.fcitx5.android.input.preedit.ComposePreeditComponent
+import org.fcitx.fcitx5.android.input.voice.VoiceInputComponent
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.unset
 import org.fcitx.fcitx5.android.utils.windowManager
@@ -142,6 +143,8 @@ class InputView(
     private val symbolPicker = symbolPicker()
     private val emojiPicker = emojiPicker()
     private val emoticonPicker = emoticonPicker()
+    // custom: 内置语音输入（Xime 核心移植）的会话组件
+    internal val voiceInput = VoiceInputComponent()
 
     /**
      * 工具栏 Compose 容器：预编辑栏、顶部延伸带与工具栏合并后的单一 Composition。
@@ -240,6 +243,8 @@ class InputView(
         scope += composeCandidate
         scope += candidateActionMenu
         scope += keyboardTune
+        // custom: 语音输入会话组件（面板/工具栏/空格长按都通过它）
+        scope += voiceInput
         broadcaster.onScopeSetupFinished(scope)
     }
 

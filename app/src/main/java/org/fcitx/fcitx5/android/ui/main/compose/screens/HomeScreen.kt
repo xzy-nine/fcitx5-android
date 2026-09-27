@@ -23,6 +23,7 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.AppRecording
 import top.yukonga.miuix.kmp.icon.extended.Copy
 import top.yukonga.miuix.kmp.icon.extended.GridView
 import top.yukonga.miuix.kmp.icon.extended.Help
@@ -149,5 +150,7 @@ private val homeAndroidItems = listOf(
     HomeDestination(R.string.emoji_and_symbols, MiuixIcons.Messages, AppRoute.Prefs(PrefCategory.Symbols)),
     HomeDestination(R.string.plugins, MiuixIcons.Layers, AppRoute.PluginList),
     HomeDestination(R.string.webdav_settings_title, MiuixIcons.UploadCloud, AppRoute.WebDavSync),
+    // custom: 内置语音输入（移植自 Xime，页面结构参考 whisperIME）
+    HomeDestination(R.string.voice_input, MiuixIcons.AppRecording, AppRoute.VoiceInputSettings),
     HomeDestination(R.string.advanced, MiuixIcons.More, AppRoute.Prefs(PrefCategory.Advanced)),
 )

@@ -91,6 +91,14 @@ sealed interface AppRoute : NavKey {
 
     @Serializable
     data object Theme : AppRoute
+
+    /** custom: 语音输入设置页（移植自 whisperIME 的语音设置页，内容为 Xime 引擎能力） */
+    @Serializable
+    data object VoiceInputSettings : AppRoute
+
+    /** custom: 语音模型市场（远程模型索引 + 下载/删除） */
+    @Serializable
+    data object VoiceModelMarket : AppRoute
 }
 
 @Serializable

@@ -57,6 +57,8 @@ class CommonKeyActionListener :
     // 旧 View 实现：private val horizontalCandidate: HorizontalCandidateComponent by manager.must()（已断开接线）
     private val composeCandidate: ComposeCandidateComponent by manager.must()
     private val windowManager: InputWindowManager by manager.must()
+    // custom: 内置语音输入入口
+    private val voiceInput: org.fcitx.fcitx5.android.input.voice.VoiceInputComponent by manager.must()
 
     private var lastPickerType by AppPrefs.getInstance().internal.lastPickerType
 
@@ -184,12 +186,9 @@ class CommonKeyActionListener :
                         }
                         SpaceLongPressBehavior.ShowPicker -> showInputMethodPicker()
                         SpaceLongPressBehavior.VoiceInput -> {
-                            val preferredId = kbdPrefs.preferredVoiceInput.getValue()
-                            val voiceSubtype = InputMethodUtil.findVoiceSubtype(preferredId)
-                            if (voiceSubtype != null) {
-                                val (id, subtype) = voiceSubtype
-                                InputMethodUtil.switchInputMethod(service, id, subtype)
-                            }
+                            // custom: 内置语音输入优先；未启用或引擎未就绪时由
+                            // VoiceInputComponent 自行回落到外部语音输入法（保持既有行为）
+                            voiceInput.onVoiceEntryClicked()
                         }
                     }
                 }

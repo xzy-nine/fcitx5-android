@@ -103,6 +103,8 @@ class ComposeKawaiiBarComponent :
     private val composeCandidate: ComposeCandidateComponent by manager.must()
     private val commonKeyActionListener: CommonKeyActionListener by manager.must()
     private val popup: PopupComponent by manager.must()
+    // custom: 内置语音输入入口（工具栏麦克风按钮）
+    private val voiceInput: org.fcitx.fcitx5.android.input.voice.VoiceInputComponent by manager.must()
     private val inputView by manager.inputView()
 
     private val prefs = AppPrefs.getInstance()
@@ -375,6 +377,9 @@ class ComposeKawaiiBarComponent :
                 evalIdleUiState(fromUser = true)
             },
             splitKeyboardEnabled = splitKeyboardPref.getValue(),
+            onVoiceInput = if (AppPrefs.getInstance().voice.voiceInputEnabled.getValue()) {
+                { voiceInput.onVoiceEntryClicked() }
+            } else null,
         )
     }
 
