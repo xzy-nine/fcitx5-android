@@ -69,6 +69,34 @@ class VoiceAsrService : Service() {
             return ok
         }
 
+        override fun prepareAsr(
+            encoder: String,
+            decoder: String,
+            joiner: String,
+            tokens: String,
+            cb: IVoiceAsrCallback?,
+        ): Boolean {
+            cancelIdleRelease()
+            if (synchronized(lock) { recognizer } != null) {
+                runCatching { cb?.onEngineReady(true, "") }
+                return true
+            }
+            // 后台线程加载：不占 binder 线程，app 侧的 push/finish 不会被加载阻塞
+            Thread({
+                val ok = try {
+                    synchronized(lock) {
+                        recognizer != null || createEngine(encoder, decoder, joiner, tokens)
+                    }
+                } catch (e: Throwable) {
+                    Log.e(TAG, "prepareAsr failed", e)
+                    false
+                }
+                runCatching { cb?.onEngineReady(ok, if (ok) "" else "模型加载失败") }
+                if (!ok) scheduleIdleRelease()
+            }, "voice-asr-prepare").start()
+            return true
+        }
+
         override fun pushAudio(samples: FloatArray?): String {
             if (samples == null || samples.isEmpty()) return ""
             val text = synchronized(lock) {

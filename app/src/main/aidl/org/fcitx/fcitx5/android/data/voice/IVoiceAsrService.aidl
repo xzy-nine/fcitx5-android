@@ -27,6 +27,21 @@ interface IVoiceAsrService {
         in IVoiceAsrCallback callback
     );
 
+    /**
+     * 预加载模型（面板打开时预热）。
+     *
+     * 立即返回；加载在服务自己的后台线程上进行，完成后经
+     * [IVoiceAsrCallback.onEngineReady] 回执 —— 加载不占 binder 线程，
+     * 因此后续 push/finish 不会被它阻塞。
+     */
+    boolean prepareAsr(
+        in String encoder,
+        in String decoder,
+        in String joiner,
+        in String tokens,
+        in IVoiceAsrCallback callback
+    );
+
     /** 送入一段 16kHz 单声道 PCM（float，[-1,1]）。返回当前部分结果（可空串）。 */
     String pushAudio(in float[] samples);
 

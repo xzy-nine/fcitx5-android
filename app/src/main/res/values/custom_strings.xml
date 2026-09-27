@@ -201,8 +201,6 @@
     <string name="voice_provider_not_configured">Not configured</string>
     <string name="voice_simple_chinese">Simplified Chinese output</string>
     <string name="voice_mute_during_recording">Mute media during recording</string>
-    <string name="voice_auto_mode">Automatic mode</string>
-    <string name="voice_auto_mode_summary">Tap the microphone once to start and once to stop</string>
     <string name="voice_external_ime">External voice input method</string>
     <string name="voice_external_ime_summary">Used when on-device recognition is unavailable</string>
     <string name="voice_models">Models</string>
@@ -222,11 +220,11 @@
     <string name="voice_record_permission_missing">Microphone permission is required for voice input</string>
     <string name="voice_grant_permission">Grant permission</string>
     <string name="voice_state_idle">Tap or hold the microphone to speak</string>
+    <string name="voice_state_preparing">Loading model…</string>
+    <string name="voice_stop_discard">Stop and discard</string>
     <string name="voice_state_listening">Listening…</string>
     <string name="voice_state_processing">Recognizing…</string>
     <string name="voice_state_error">Recognition failed</string>
-    <string name="voice_back_to_keyboard">Back to keyboard</string>
-    <string name="voice_open_settings">Voice input settings</string>
     <string name="voice_partial_hint">Recognized text is inserted as you speak</string>
     <string name="voice_index_url">Index source URL</string>
     <string name="voice_in_use">In use</string>

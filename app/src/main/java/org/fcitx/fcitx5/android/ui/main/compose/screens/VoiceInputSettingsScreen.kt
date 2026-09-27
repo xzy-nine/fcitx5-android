@@ -79,7 +79,6 @@ fun VoiceInputSettingsScreen(
     val useLocal = remember(version) { prefs.voiceUseLocal.getValue() }
     val simpleChinese = remember(version) { prefs.voiceSimpleChinese.getValue() }
     val muteDuringRecording = remember(version) { prefs.voiceMuteDuringRecording.getValue() }
-    val autoMode = remember(version) { prefs.voiceAutoMode.getValue() }
     val modelId = remember(version) { prefs.voiceAsrModelId.getValue() }
     val permissionGranted by VoicePermissionState.granted.collectAsState()
 
@@ -205,13 +204,6 @@ fun VoiceInputSettingsScreen(
                     checked = simpleChinese,
                     enabled = enabled,
                     onCheckedChange = { prefs.voiceSimpleChinese.setValue(it) },
-                )
-                SwitchPreference(
-                    title = stringResource(R.string.voice_auto_mode),
-                    summary = stringResource(R.string.voice_auto_mode_summary),
-                    checked = autoMode,
-                    enabled = enabled,
-                    onCheckedChange = { prefs.voiceAutoMode.setValue(it) },
                 )
                 SwitchPreference(
                     title = stringResource(R.string.voice_mute_during_recording),

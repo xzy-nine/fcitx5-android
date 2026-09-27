@@ -197,8 +197,6 @@
     <string name="voice_provider_not_configured">未配置</string>
     <string name="voice_simple_chinese">输出简体中文</string>
     <string name="voice_mute_during_recording">录音时静音媒体音量</string>
-    <string name="voice_auto_mode">自动模式</string>
-    <string name="voice_auto_mode_summary">点一下麦克风开始，再点一下结束</string>
     <string name="voice_external_ime">外部语音输入法</string>
     <string name="voice_external_ime_summary">本地识别不可用时回落使用</string>
     <string name="voice_models">模型</string>
@@ -218,11 +216,11 @@
     <string name="voice_record_permission_missing">语音输入需要录音权限</string>
     <string name="voice_grant_permission">授予权限</string>
     <string name="voice_state_idle">点按或按住麦克风说话</string>
+    <string name="voice_state_preparing">正在加载模型…</string>
+    <string name="voice_stop_discard">停止并丢弃</string>
     <string name="voice_state_listening">正在聆听…</string>
     <string name="voice_state_processing">正在识别…</string>
     <string name="voice_state_error">识别失败</string>
-    <string name="voice_back_to_keyboard">返回键盘</string>
-    <string name="voice_open_settings">语音输入设置</string>
     <string name="voice_partial_hint">说话过程中识别结果会实时写入输入框</string>
     <string name="voice_index_url">索引地址（留空使用内置）</string>
     <string name="voice_in_use">使用中</string>

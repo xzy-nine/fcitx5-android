@@ -88,8 +88,6 @@
     <string name="voice_provider_not_configured">未設定</string>
     <string name="voice_simple_chinese">輸出簡體中文</string>
     <string name="voice_mute_during_recording">錄音時靜音媒體音量</string>
-    <string name="voice_auto_mode">自動模式</string>
-    <string name="voice_auto_mode_summary">點一下麥克風開始，再點一下結束</string>
     <string name="voice_external_ime">外部語音輸入法</string>
     <string name="voice_external_ime_summary">本機辨識無法使用時改用</string>
     <string name="voice_models">模型</string>
@@ -109,11 +107,11 @@
     <string name="voice_record_permission_missing">語音輸入需要錄音權限</string>
     <string name="voice_grant_permission">授予權限</string>
     <string name="voice_state_idle">點按或按住麥克風說話</string>
+    <string name="voice_state_preparing">正在載入模型…</string>
+    <string name="voice_stop_discard">停止並捨棄</string>
     <string name="voice_state_listening">正在聆聽…</string>
     <string name="voice_state_processing">正在辨識…</string>
     <string name="voice_state_error">辨識失敗</string>
-    <string name="voice_back_to_keyboard">返回鍵盤</string>
-    <string name="voice_open_settings">語音輸入設定</string>
     <string name="voice_partial_hint">說話過程中辨識結果會即時寫入輸入框</string>
     <string name="voice_index_url">索引位址（留空使用內建）</string>
     <string name="voice_in_use">使用中</string>

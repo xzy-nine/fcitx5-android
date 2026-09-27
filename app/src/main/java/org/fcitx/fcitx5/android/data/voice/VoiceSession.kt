@@ -49,6 +49,9 @@ class VoiceSession(
 
         /** 在线平台既没成功也没失败时，多久判定超时。 */
         private const val ONLINE_RESULT_TIMEOUT_MS = 30_000L
+
+        /** 已停止采集后等待最终结果的上限；超过即视为异常并回到可再次识别的状态。 */
+        private const val PROCESSING_TIMEOUT_MS = 3_000L
     }
 
     interface Callbacks {
@@ -104,10 +107,42 @@ class VoiceSession(
 
     // ---- 生命周期 ----
 
-    /** 预绑定 :asr 服务（面板打开时调用；失败不影响后续 start 时重试）。 */
+    /** 引擎是否已在 :asr 加载完成（预热成功后为 true）。 */
+    @Volatile
+    private var enginePrepared = false
+
+    /**
+     * 面板打开时预热引擎：绑定 :asr 服务并让它**在后台线程**加载模型。
+     *
+     * 加载期间状态为 [VoiceRecognitionState.PREPARING]（面板显示"正在加载模型…"），
+     * 加载完成回到 IDLE；这样后续 startRecognition 不必等模型加载，
+     * 避免「停止后仍显示正在识别」（finish 排在加载后面）。
+     */
     fun warmUp() {
         if (!isUsingLocalEngine) return
-        scope.launch { runCatching { client().ensureBound() } }
+        if (enginePrepared) return
+        val files = VoiceModelStore.resolve(context, prefs.voiceAsrModelId.getValue())
+        if (files == null) return   // 模型缺失由 startRecognition 报错引导
+        updateState {
+            it.copy(
+                engineName = LOCAL_ENGINE_NAME,
+                recognitionState = if (running) it.recognitionState
+                else VoiceRecognitionState.PREPARING,
+            )
+        }
+        scope.launch {
+            val bound = runCatching { client().ensureBound() }.getOrDefault(false)
+            if (!bound) return@launch
+            val ok = runCatching { client().prepare(files) }.getOrDefault(false)
+            enginePrepared = ok
+            mainHandler.post {
+                if (!running && _state.value.recognitionState == VoiceRecognitionState.PREPARING) {
+                    updateState {
+                        it.copy(recognitionState = VoiceRecognitionState.IDLE)
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -128,12 +163,15 @@ class VoiceSession(
 
         val seq = sessionSeq.incrementAndGet()
         lastPartial = ""
+        sessionFinished = false
         running = true
         updateState {
             it.copy(
                 isVoiceMode = true,
                 engineName = LOCAL_ENGINE_NAME,
-                recognitionState = VoiceRecognitionState.LISTENING,
+                // 模型尚未加载完成时先显示"正在加载模型"，加载完再进入聆听
+                recognitionState = if (enginePrepared) VoiceRecognitionState.LISTENING
+                else VoiceRecognitionState.PREPARING,
                 recognizedText = "",
                 error = null,
             )
@@ -163,6 +201,7 @@ class VoiceSession(
                     publishError(message)
                 }
             })
+            enginePrepared = started
             if (!started) {
                 if (seq == sessionSeq.get()) {
                     running = false
@@ -171,21 +210,35 @@ class VoiceSession(
                 return@launch
             }
             mainHandler.post {
-                if (seq != sessionSeq.get()) return@post
+                // 启动过程中用户已松手（stopRecognition 置 running=false）→ 不要再开采集
+                if (seq != sessionSeq.get() || !running) return@post
+                updateState { it.copy(recognitionState = VoiceRecognitionState.LISTENING) }
                 startCapture(seq)
             }
         }
         return true
     }
 
-    /** 松手/再次点击：停止采集并提交最终结果。 */
+    /**
+     * 松手/再次点击：停止采集并提交最终结果。
+     *
+     * 注意：这里**不做 `running` 早退**——采集启动失败、或引擎还没起来就松手时，
+     * 早退会把界面永远留在 LISTENING/PROCESSING（实测「按了停止还显示正在识别」）。
+     */
     fun stopRecognition() {
-        if (!running) return
-        running = false
         val seq = sessionSeq.get()
+        val wasRunning = running
+        running = false
         capture?.stop()
         capture?.release()
         capture = null
+        if (!wasRunning &&
+            _state.value.recognitionState != VoiceRecognitionState.LISTENING &&
+            _state.value.recognitionState != VoiceRecognitionState.PREPARING
+        ) {
+            // 既没在采集也没在准备：没有可结束的会话，直接回到终态
+            return
+        }
         updateState { it.copy(recognitionState = VoiceRecognitionState.PROCESSING) }
         if (isUsingLocalEngine) {
             scope.launch {
@@ -201,6 +254,14 @@ class VoiceSession(
                     if (seq == sessionSeq.get()) finishSession()
                 }
             }
+            // 看门狗：采集已停但最终结果迟迟不来（:asr 卡住/加载未完成）时给用户明确结果
+            mainHandler.postDelayed({
+                if (seq == sessionSeq.get() && _state.value.recognitionState ==
+                    VoiceRecognitionState.PROCESSING
+                ) {
+                    publishError("识别超时，请重试")
+                }
+            }, PROCESSING_TIMEOUT_MS)
         } else {
             // 在线：流式平台在此发尾包，批次平台（MiMo）在此整段上传；结果由 provider 回调
             runCatching { providerSession?.finish() }

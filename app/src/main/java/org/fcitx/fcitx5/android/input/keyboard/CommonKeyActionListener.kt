@@ -93,7 +93,24 @@ class CommonKeyActionListener :
     }
 
     val listener by lazy {
-        KeyActionListener { action, _ ->
+        // 用匿名对象而不是 SAM 简写：需要同时覆写 onKeyActionRelease（空格长按的物理松手）
+        object : KeyActionListener {
+            override fun onKeyActionRelease(action: KeyAction, source: KeyActionListener.Source) {
+                if (action is SpaceLongPressAction &&
+                    spaceKeyLongPressBehavior == SpaceLongPressBehavior.VoiceInput
+                ) {
+                    // 空格长按进入语音面板后，手指抬起即停止识别（"按住说话"语义）
+                    voiceInput.stopRecognition()
+                }
+            }
+
+            override fun onKeyAction(action: KeyAction, source: KeyActionListener.Source) {
+                handleKeyAction(action)
+            }
+        }
+    }
+
+    private fun handleKeyAction(action: KeyAction) {
             when (action) {
                 is FcitxKeyAction -> service.postFcitxJob {
                     sendKey(action.act, action.states.states, action.code)
@@ -195,6 +212,5 @@ class CommonKeyActionListener :
                 }
                 else -> {}
             }
-        }
     }
 }

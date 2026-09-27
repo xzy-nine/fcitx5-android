@@ -7,7 +7,6 @@ package org.fcitx.fcitx5.android.input.voice
 import android.content.Context
 import android.media.AudioManager
 import android.text.InputType
-import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,40 +20,37 @@ import org.fcitx.fcitx5.android.data.voice.online.OnlineAsrRegistry
 import org.fcitx.fcitx5.android.input.FcitxInputMethodService
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
-import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
-import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import org.mechdancer.dependency.Dependent
 import org.mechdancer.dependency.UniqueComponent
 import org.mechdancer.dependency.manager.ManagedHandler
 import org.mechdancer.dependency.manager.managedHandler
-import org.mechdancer.dependency.manager.must
 import timber.log.Timber
 
 /**
  * custom: 内置语音输入的会话组件。
  *
  * 职责：
- * - 持有 Xime 移植过来的 [VoiceRecognitionHandler]（音频采集 + 引擎装配 + 部分/最终结果）；
+ * - 持有 [VoiceSession]（音频采集 + 引擎装配 + 部分/最终结果）；
  * - 把识别状态、频谱以 [StateFlow] 暴露给 IME 内的 Compose 面板；
  * - 把「部分结果 → composing 文本」「最终结果 → 上屏」接到 [FcitxInputMethodService]，
- *   从而复用 fcitx 自己的 composing/选区状态机（不自行写 InputConnection）；
+ *   复用 fcitx 自己的 composing/选区状态机（不自行写 InputConnection）；
  * - 语音入口的路由（内置面板 vs 回落外部语音输入法）。
  *
- * 生命周期：随 InputView 的 scope 存活（面板关闭后 handler 仍复用，
- * 但每次离开面板都会 `abandonSession()` 丢弃未结束的会话）。
+ * **面板不再是独立 InputWindow**：改为 [panelVisible] 驱动的覆盖层（见 [VoiceInputCoverHost]），
+ * 键盘窗口保持 attach —— 这样工具栏可见可用、空格长按的手势也不会被窗口切换打断
+ * （「物理松手停止」靠键盘侧对长按动作补的 release 回调）。
  */
 class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
     ManagedHandler by managedHandler() {
 
     companion object {
-        /** 可视化条数（与 SpectrumAnalyzer 的频段数一致）。 */
+        /** 可视化条数（与 VoiceSpectrum 的频段数一致）。 */
         const val SPECTRUM_BARS = 16
     }
 
     private val context by manager.context()
     private val service by manager.inputMethodService()
-    private val windowManager: InputWindowManager by manager.must()
 
     private val prefs = AppPrefs.getInstance().voice
     private val kbdPrefs = AppPrefs.getInstance().keyboard
@@ -64,6 +60,12 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
 
     private val _spectrum = MutableStateFlow(FloatArray(SPECTRUM_BARS))
     val spectrum: StateFlow<FloatArray> = _spectrum.asStateFlow()
+
+    /** 面板是否显示（覆盖层可见性）。 */
+    private val _panelVisible = MutableStateFlow(false)
+    val panelVisible: StateFlow<Boolean> = _panelVisible.asStateFlow()
+
+    var panelVisibleListener: ((Boolean) -> Unit)? = null
 
     private var session: VoiceSession? = null
     private var savedMediaVolume = -1
@@ -77,13 +79,10 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
     /** 语音输入总开关。 */
     val isEnabled: Boolean get() = prefs.voiceInputEnabled.getValue()
 
-    val isAutoMode: Boolean get() = prefs.voiceAutoMode.getValue()
-
-    fun setAutoMode(enabled: Boolean) {
-        prefs.voiceAutoMode.setValue(enabled)
-    }
-
     fun isPermissionGranted(): Boolean = VoicePermissionState.has(context)
+
+    /** 当前编辑框的识别状态（面板文案用）。 */
+    fun recognitionState(): VoiceRecognitionState = _state.value.recognitionState
 
     /** 当前编辑器是否为密码框（密码框不提供语音输入）。 */
     private fun isPasswordField(): Boolean {
@@ -110,8 +109,8 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
     /**
      * 语音入口被触发。
      *
-     * @param returnToKeyboardOnCommit 提交出文本后自动回到主键盘（空格长按进入时为 true，
-     *   工具栏麦克风进入时为 false —— 后者留在语音页方便连续说话）。
+     * @param returnToKeyboardOnCommit 提交出文本后自动收起面板回键盘（空格长按进入时为 true，
+     *   工具栏麦克风进入时为 false —— 后者留在面板方便连续说话）。
      */
     fun onVoiceEntryClicked(returnToKeyboardOnCommit: Boolean) {
         if (isPasswordField()) {
@@ -125,11 +124,32 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
         }
     }
 
+    /**
+     * 打开语音面板。
+     *
+     * @param returnToKeyboardOnCommit 见 [onVoiceEntryClicked]；
+     *   **true（空格长按）时面板打开即开始录音**——继承空格的长按状态，物理松手由键盘侧回调停止；
+     *   false（工具栏麦克风）时不自动开录，等用户点按/长按麦克风。
+     */
     fun openPanel(returnToKeyboardOnCommit: Boolean = false) {
         autoReturnOnCommit = returnToKeyboardOnCommit
-        ContextCompat.getMainExecutor(service).execute {
-            windowManager.attachWindow(VoiceInputWindow())
-        }
+        committedThisSession = false
+        _panelVisible.value = true
+        panelVisibleListener?.invoke(true)
+        VoicePermissionState.refresh(context)
+        _state.value = _state.value.copy(isVoiceMode = true)
+        session().warmUp()
+        if (returnToKeyboardOnCommit && canAutoStart()) startRecognition()
+    }
+
+    /** 收起面板（回到键盘）：丢弃未结束的会话，迟到结果不得上屏。 */
+    fun closePanel() {
+        if (!_panelVisible.value) return
+        _panelVisible.value = false
+        panelVisibleListener?.invoke(false)
+        autoReturnOnCommit = false
+        committedThisSession = false
+        onPanelHidden()
     }
 
     private fun switchToExternalVoiceIme() {
@@ -160,14 +180,10 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
 
             override fun onSessionComplete() {
                 _spectrum.value = FloatArray(SPECTRUM_BARS)
-                // 空格长按进入：出字后自动回主键盘（未出字，例如识别失败/无语音，则留在面板）
+                // 空格长按进入：出字后自动收起面板回键盘（未出字，例如识别失败/无语音，则留在面板）
                 if (autoReturnOnCommit && committedThisSession) {
-                    autoReturnOnCommit = false
-                    committedThisSession = false
                     service.finishComposing()
-                    ContextCompat.getMainExecutor(service).execute {
-                        windowManager.attachWindow(KeyboardWindow)
-                    }
+                    closePanel()
                 }
             }
 
@@ -185,14 +201,14 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
         },
     ).also { session = it }
 
-    /** 按下麦克风：开始识别。 */
+    /** 按下麦克风/空格长按进入：开始识别。 */
     fun startRecognition() {
         if (prefs.voiceMuteDuringRecording.getValue()) muteMedia()
         session().startRecognition()
         _state.value = _state.value.copy(isVoiceMode = true)
     }
 
-    /** 抬起/再次点击麦克风：先提交已识别的部分，再停止。 */
+    /** 抬起/再次点击麦克风/物理松手：先提交已识别的部分，再停止。 */
     fun stopRecognition() {
         val s = session
         s?.commitPendingOnRelease()
@@ -200,7 +216,7 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
         unmuteMedia()
     }
 
-    /** 取消本次会话（丢弃已识别文本）。 */
+    /** 取消本次会话（停止识别并丢弃尚未上屏的文本），面板保留。 */
     fun cancelSession() {
         val s = session
         s?.cancelPreStart()
@@ -208,7 +224,7 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
         service.finishComposing()
         unmuteMedia()
         _state.value = _state.value.copy(
-            isVoiceMode = false,
+            isVoiceMode = true,
             recognizedText = "",
             recognitionState = VoiceRecognitionState.IDLE,
             error = null,
@@ -216,22 +232,13 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
         _spectrum.value = FloatArray(SPECTRUM_BARS)
     }
 
-    /** 面板显示：刷新权限缓存，并在引擎可用时自动开始识别（进入语音页即录音，无需手动点麦克风）。 */
-    fun onPanelShown() {
-        VoicePermissionState.refresh(context)
-        _state.value = _state.value.copy(isVoiceMode = true)
-        committedThisSession = false
-        session().warmUp()
-        if (canAutoStart()) startRecognition()
-    }
-
-    /** 当前选中的引擎是否已就绪（本地模型已下载 / 在线平台已配置）且已获录音权限。 */
+    /** 当前引擎是否可用（本地模型已下载 / 在线平台已配置）且已获录音权限。 */
     fun canAutoStart(): Boolean {
         if (!VoicePermissionState.has(context)) return false
         return session().isEngineReady()
     }
 
-    /** 面板隐藏（切走窗口/输入框失焦）：丢弃未结束的会话，迟到结果不得上屏。 */
+    /** 面板隐藏相关收尾（收起面板、输入框切换、IME 退出）。 */
     fun onPanelHidden() {
         val s = session
         s?.cancelPreStart()

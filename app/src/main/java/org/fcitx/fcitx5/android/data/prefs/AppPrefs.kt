@@ -540,13 +540,6 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             false
         ) { voiceInputEnabled.getValue() }
 
-        val voiceAutoMode = switch(
-            R.string.voice_auto_mode,
-            "voice_auto_mode",
-            false,
-            summary = R.string.voice_auto_mode_summary
-        ) { voiceInputEnabled.getValue() }
-
         /**
          * 当前选中的在线识别平台 id（空 = 未选择，走第一个已配置的平台）。
          *
@@ -607,7 +600,6 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                         voiceUseLocal.key,
                         voiceSimpleChinese.key,
                         voiceMuteDuringRecording.key,
-                        voiceAutoMode.key,
                         voiceAsrModelId.key,
                         voiceIndexUrl.key,
                         voiceDebugRecord.key

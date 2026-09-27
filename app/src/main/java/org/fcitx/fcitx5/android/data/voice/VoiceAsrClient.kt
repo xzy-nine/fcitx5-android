@@ -56,6 +56,9 @@ class VoiceAsrClient(private val context: Context) {
         override fun onError(message: String) {
             target?.onError(message)
         }
+
+        /** 预加载回执由 [prepare] 内部的临时回调处理，会话回调不关心。 */
+        override fun onEngineReady(ok: Boolean, message: String) = Unit
     }
 
     private val connection = object : ServiceConnection {
@@ -108,6 +111,42 @@ class VoiceAsrClient(private val context: Context) {
         }
 
     /** 送入一段 16kHz 单声道采样（[-1,1]），返回当前部分结果。 */
+    /**
+     * 预加载模型（面板打开时预热）：服务端在后台线程加载，这里等它的回执。
+     *
+     * 阻塞在 IO 线程上可接受（UI 由 PREPARING 状态提示），换来后续 start/finish
+     * 不会排在模型加载后面。
+     */
+    suspend fun prepare(files: VoiceModelFiles, timeoutSeconds: Long = 60L): Boolean =
+        withContext(Dispatchers.IO) {
+            if (!ensureBound()) return@withContext false
+            val svc = service ?: return@withContext false
+            val latch = CountDownLatch(1)
+            var ok = false
+            val stub = object : IVoiceAsrCallback.Stub() {
+                override fun onPartial(text: String) = Unit
+
+                override fun onError(message: String) {
+                    Timber.w("$TAG: prepare error: $message")
+                    latch.countDown()
+                }
+
+                override fun onEngineReady(ready: Boolean, message: String) {
+                    ok = ready
+                    if (!ready) Timber.w("$TAG: prepare failed: $message")
+                    latch.countDown()
+                }
+            }
+            try {
+                svc.prepareAsr(files.encoder, files.decoder, files.joiner, files.tokens, stub)
+                latch.await(timeoutSeconds, TimeUnit.SECONDS)
+            } catch (e: Exception) {
+                Timber.e(e, "$TAG: prepare failed")
+                return@withContext false
+            }
+            ok
+        }
+
     fun push(samples: FloatArray): String = try {
         service?.pushAudio(samples) ?: ""
     } catch (e: Exception) {

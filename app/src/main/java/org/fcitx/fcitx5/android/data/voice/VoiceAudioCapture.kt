@@ -118,8 +118,14 @@ class VoiceAudioCapture(
     /** 释放设备（会话结束/组件销毁）。 */
     fun release() {
         stop()
-        thread?.join(500)
+        val t = thread
         thread = null
+        if (t != null) {
+            // 读线程通常在下一次 read 返回后退出（分块 100ms）；卡在 push 时超时也照样释放设备，
+            // 让它的下一次 read 自然失败退出，避免原生录音会话残留
+            t.join(200)
+            if (t.isAlive) Timber.w("$TAG: capture thread still alive after stop, releasing anyway")
+        }
         record?.release()
         record = null
     }
@@ -184,6 +190,14 @@ class VoiceAudioCapture(
         } finally {
             // 读线程退出前把残余的语音前缓冲交出去，避免丢掉最后一段开头
             if (!speechDetected) flush(preRoll)
+            // 录音设备由**读线程自己**收尾：stop()/release() 从别的线程调用时，
+            // 可能正好卡在 read() 里，导致原生录音会话残留（日志里 audioRecordData 继续累加）
+            try {
+                if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) recorder.stop()
+            } catch (e: Exception) {
+                Timber.w(e, "$TAG: stop in loop failed")
+            }
+            Timber.i("$TAG: capture loop exited (chunks=$chunks)")
         }
     }
 

@@ -10,6 +10,9 @@ enum class VoiceRecognitionState {
     /** 未开始/已结束。 */
     IDLE,
 
+    /** 引擎正在加载（首次使用或空闲释放后重新加载，130MB 级模型要 1–3 秒）。 */
+    PREPARING,
+
     /** 正在采集（可能同时已有部分结果）。 */
     LISTENING,
 
