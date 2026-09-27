@@ -4,7 +4,10 @@ kotlin = "2.4.10"
 ksp = "2.3.10"
 compileSdk = "37"
 minSdk = "26"
-okhttp = "4.12.0"
+# custom: 与 Xime 语音输入核心保持一致（Xime 用 okhttp 5.4.0）。
+# 不能停在 4.12.0：OkHttp 5 默认启用 fastFallback（多地址快速回退），
+# 4.x 只能逐个地址各等满 connectTimeout，遇到某个 IP 不通就会整段超时。
+okhttp = "5.4.0"
 jsoup = "1.17.2"
 hutool = "5.8.27"
 lifecycle = "2.11.0"

@@ -13,9 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -133,25 +131,20 @@ fun VoicePluginConfigScreen(
             }
         },
     ) {
-        item {
-            if (plugin == null || schema.isEmpty()) {
+        if (plugin == null || schema.isEmpty()) {
+            item {
                 Text(
                     text = stringResource(R.string.voice_plugin_config_summary),
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                 )
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 12.dp),
-                ) {
-                    schema.forEach { node ->
+            }
+        } else {
+            schema.forEach { node ->
+                item(key = "${node.type}:${node.key ?: node.label}") {
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
                         when (node.type) {
-                            UiNodeType.SECTION -> {
-                                SmallTitle(node.label ?: "")
-                            }
+                            UiNodeType.SECTION -> SmallTitle(node.label ?: "")
 
                             UiNodeType.TEXT, UiNodeType.TEXTAREA, UiNodeType.NUMBER ->
                                 ConfigTextField(
@@ -218,9 +211,9 @@ fun VoicePluginConfigScreen(
                             )
                         }
                     }
-                    Spacer(Modifier.height(24.dp))
                 }
             }
+            item { Spacer(Modifier.height(24.dp)) }
         }
     }
 }

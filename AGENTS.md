@@ -77,6 +77,7 @@
 - **`libonnxruntime.so` 不入库，头文件入库**：`.so` 由 `:app:extractOnnxRuntime` 从 Maven Central 的官方 AAR（`com.microsoft.onnxruntime:onnxruntime-android:1.28.0`）抽到 `build/onnxruntime/aar/jni`，C++ 头随仓库放在 `app/src/main/cpp/asr/onnxruntime/include/`。**CMake 的 `IMPORTED` 库不会被 AGP 自动打包**，所以 `sourceSets.main.jniLibs.directories` 必须同时挂上该目录（也是 `-DONNXRUNTIME_LIB_DIR` 的来源）。升级 ORT 时头文件与 `.so` 必须同版本，否则 `OrtGetApiBase()->GetApi(ORT_API_VERSION)` 拿不到 API。
 - **`plugins/` 是内置 Lua 在线 ASR 插件的唯一源**：Gradle `copyLuaPluginsToAssets` 同步进 `assets/plugins/`，运行期由 `PluginManager.installPluginFromAssets` 安装；`:plugin-core:testDebugUnitTest` 也按 `../plugins/<id>` 读同一份源（移动/删除会同时破坏打包与单测）。
 - **输入法服务无法申请运行时权限**：`FcitxInputMethodService` 是 Service，录音权限必须经透明中转的 `VoicePermissionActivity`（结果写 `VoicePermissionState` 这个同进程 StateFlow，IME 面板据此刷新），不要在 IME 里直接 `requestPermissions`。
+- **OkHttp 必须是 5.x（`libs.okhttp = 5.4.0`），不能退回 4.12.0**：移植的语音/插件网络代码与 Xime 同源，Xime 用 okhttp 5.4.0。OkHttp 5 默认启用 `fastFallback`（多地址 Happy-Eyeballs 式快速回退），4.x 没有这个开关（`OkHttpClient.Builder` 无 `fastFallback`），只能**逐个解析地址各等满 `connectTimeout`** —— 遇到同域名的某个 IP/IPv6 不可达时，表现为 `SocketTimeoutException: failed to connect to <host>/<ip> (port 443) ... after 30000ms`，而同时设备上用 `curl` 访问同一 URL 却秒开（curl 本身就做快速回退），极容易被误判成"设备网络问题"。`webdav` 模块与 `plugin-core` 在 5.4.0 下均已验证可编译。
 - `.trae/hooks.json` 是本地 Trae IDE 的命令拦截钩子配置，与项目无关，勿删勿改。
 - 上游 README 描述的是官方功能集；custom 分支额外能力以上方特性表为准。
 - 新增的页面除了IME外其他的均应该使用compose界面而不是view
