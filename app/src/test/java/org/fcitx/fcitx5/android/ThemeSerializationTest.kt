@@ -66,7 +66,8 @@ class ThemeSerializationTest {
 
     @Test
     fun version2() {
-        // Version 2.0
+        // Version 2.0 —— 上一版格式。CURRENT_VERSION 已升至 2.1（新增 candidate* 颜色），
+        // 因此解码 2.0 主题必定触发一次迁移；「当前版本不迁移」由 preservation() 覆盖。
         val raw = """
             {
                "name":"",
@@ -98,7 +99,7 @@ class ThemeSerializationTest {
             }
         """.trimIndent()
         val (decoded, migrated) = raw.toCustomTheme()
-        Assert.assertEquals("Migration shouldn't happen", false, migrated)
+        Assert.assertEquals("Migration should happen (2.0 -> 2.1)", true, migrated)
         Assert.assertEquals("Round trip", decoded, decoded.toJson().toCustomTheme().first)
     }
 }
