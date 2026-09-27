@@ -51,7 +51,8 @@ object EmailDomainDict {
     private val DOMAIN_REGEX = Regex("""@([A-Za-z0-9.-]+\.[A-Za-z]{2,6})\b""")
 
     private val FULL_DOMAIN_REGEX = Regex("""^[A-Za-z0-9.-]+\.[A-Za-z]{2,6}$""")
-fLearn(text: String) {
+
+    fun selfLearn(text: String) {
         if (text.isEmpty()) return
         val domains = if (text.contains("@")) {
             extractDomains(text)
