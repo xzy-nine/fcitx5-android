@@ -216,6 +216,7 @@
     <string name="voice_record_permission_missing">语音输入需要录音权限</string>
     <string name="voice_grant_permission">授予权限</string>
     <string name="voice_state_idle">点按或按住麦克风说话</string>
+    <string name="voice_delete">删除</string>
     <string name="voice_state_preparing">正在加载模型…</string>
     <string name="voice_stop_discard">停止并丢弃</string>
     <string name="voice_state_listening">正在聆听…</string>

@@ -14,20 +14,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,16 +44,23 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.data.InputFeedbacks
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.voice.VoicePermissionHelper
 import org.fcitx.fcitx5.android.data.voice.VoicePermissionState
 import org.fcitx.fcitx5.android.data.voice.VoiceRecognitionState
 import org.fcitx.fcitx5.android.data.voice.VoiceUiState
 import org.fcitx.fcitx5.android.input.keyboard.BackspaceKey
-import org.fcitx.fcitx5.android.input.keyboard.ComposeKey
+import org.fcitx.fcitx5.android.input.keyboard.ComposeKeyGestureEvent
 import org.fcitx.fcitx5.android.input.keyboard.KeyActionListener
+import org.fcitx.fcitx5.android.input.keyboard.KeyDef
+import org.fcitx.fcitx5.android.input.keyboard.KeySwipeThresholds
+import org.fcitx.fcitx5.android.input.keyboard.SwipeAccumulator
 import org.fcitx.fcitx5.android.input.keyboard.preferenceState
 import org.fcitx.fcitx5.android.input.keyboard.spaceAndBackspaceGestureListener
 import org.fcitx.fcitx5.android.input.keyboard.spaceAndBackspaceSwipeSpec
@@ -70,11 +77,14 @@ private const val MIC_SIZE_DP = 96
 /** 点按/长按判定阈值：按下不超过它抬起＝点按切换，超过＝按住说话。 */
 private const val HOLD_THRESHOLD_MS = 280L
 
-/** 右侧删除键列宽度。 */
-private val DELETE_COLUMN_WIDTH = 56.dp
+/** 长按连发间隔（与 ComposeKey 的 RepeatInterval 一致）。 */
+private const val REPEAT_INTERVAL_MS = 50L
 
-/** 删除键的稳定 keyId（与键盘/Picker 的 id 空间错开）。 */
-private const val VOICE_PANEL_BACKSPACE_KEY_ID = -0x2000
+/** × 按钮直径 / 删除键方形边长：只保证**位置**左右对称，尺寸各自独立。 */
+private const val SIDE_BUTTON_SIZE_DP = 40
+private const val DELETE_BUTTON_SIZE_DP = 56
+private const val SIDE_BUTTON_OFFSET_Y_DP = 62
+private const val SIDE_BUTTON_GAP_DP = 30
 
 /**
  * custom: IME 语音面板的覆盖层宿主。
@@ -137,18 +147,13 @@ fun ComposeVoicePanel(
     val processing = state.recognitionState == VoiceRecognitionState.PROCESSING
     val busy = preparing || processing
 
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(colors.background),
+            .background(colors.background)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
             // 状态行：引擎名 + 状态
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -237,7 +242,7 @@ fun ComposeVoicePanel(
 
             Spacer(Modifier.height(10.dp))
 
-            // 主操作区：大麦克风居中偏下；× 在其左侧略上方（停止并丢弃未上屏文本）
+            // 主操作区：大麦克风居中偏下；×（左）与删除键（右）对称地浮在麦克风两侧略上方
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -248,12 +253,14 @@ fun ComposeVoicePanel(
                     onClick = onStopDiscard,
                     backgroundColor = colors.secondaryContainer,
                     cornerRadius = 20.dp,
-                    minWidth = 40.dp,
-                    minHeight = 40.dp,
+                    minWidth = SIDE_BUTTON_SIZE_DP.dp,
+                    minHeight = SIDE_BUTTON_SIZE_DP.dp,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        // 麦克风左侧、略高于其中心（随麦克风一并下移）
-                        .offset(x = (-(MIC_SIZE_DP / 2 + 30)).dp, y = (-62).dp),
+                        .offset(
+                            x = (-(MIC_SIZE_DP / 2 + SIDE_BUTTON_GAP_DP)).dp,
+                            y = (-SIDE_BUTTON_OFFSET_Y_DP).dp,
+                        ),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_baseline_close_24),
@@ -262,6 +269,17 @@ fun ComposeVoicePanel(
                         modifier = Modifier.size(20.dp),
                     )
                 }
+
+                // 删除键：普通按钮外观，功能与键盘删除键同源（按下删除 / 长按连发 / 横滑移光标与删选区）
+                VoiceDeleteButton(
+                    keyActionListener = keyActionListener,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .offset(
+                            x = ((MIC_SIZE_DP / 2 + SIDE_BUTTON_GAP_DP)).dp,
+                            y = (-SIDE_BUTTON_OFFSET_Y_DP).dp,
+                        ),
+                )
 
                 MicButton(
                     listening = listening,
@@ -272,41 +290,38 @@ fun ComposeVoicePanel(
                     onHoldEnd = onMicStop,
                 )
             }
-        }
-
-        // 右侧标准删除键
-        VoiceDeleteKey(
-            keyActionListener = keyActionListener,
-            modifier = Modifier
-                .width(DELETE_COLUMN_WIDTH)
-                .fillMaxHeight()
-                .padding(vertical = 8.dp, horizontal = 4.dp),
-        )
     }
 }
 
 /**
- * 面板右侧的**标准删除键**。
+ * 面板上的**删除键**（方形按钮，与 × 仅位置左右对称、尺寸独立）。
  *
- * 直接复用主键盘的键型配置与手势监听器（[BackspaceKey] + [spaceAndBackspaceSwipeSpec] +
- * [spaceAndBackspaceGestureListener]），因此按下删除、长按连发、横向滑动移动光标 /
- * 删除选区的行为与键盘、Picker 右栏完全一致；按键动作经主键盘的 [KeyActionListener] 下发。
+ * 功能与键盘删除键同源，不另写一套语义：
+ * - 短按删除一个字符：直接用 [BackspaceKey] 的 `Behavior.Press` 动作，与键盘一致在抬手时触发；
+ * - 长按连发：沿用键盘 `longPressDelay` 偏好 + [REPEAT_INTERVAL_MS]（`ComposeKey.RepeatInterval`）；
+ * - 横滑移动光标 / 抬手删除选区：复用 [spaceAndBackspaceSwipeSpec] 阈值与
+ *   [spaceAndBackspaceGestureListener]（与主键盘、Picker 右栏同一份实现）。
  */
 @Composable
-private fun VoiceDeleteKey(
+private fun VoiceDeleteButton(
     keyActionListener: KeyActionListener?,
     modifier: Modifier = Modifier,
 ) {
+    val colors = MiuixTheme.colorScheme
     val view = LocalView.current
+    val scope = rememberCoroutineScope()
     val prefs = remember { AppPrefs.getInstance().keyboard }
     val hapticOnRepeat = prefs.hapticOnRepeat.preferenceState()
+    val longPressDelay = prefs.longPressDelay.preferenceState()
     val spaceSwipeMoveCursor = prefs.spaceSwipeMoveCursor.preferenceState()
 
     val backspaceKey = remember { BackspaceKey() }
-    val listenerState = rememberUpdatedState(keyActionListener)
-    val swipeSpec = remember(backspaceKey, spaceSwipeMoveCursor) {
-        backspaceKey.spaceAndBackspaceSwipeSpec(spaceSwipeMoveCursor)
+    // 键型定义里的按下动作：与键盘删除键完全同一个动作对象
+    val pressAction = remember(backspaceKey) {
+        backspaceKey.behaviors.filterIsInstance<KeyDef.Behavior.Press>()
+            .firstOrNull()?.action
     }
+    val listenerState = rememberUpdatedState(keyActionListener)
     val gestureListener = remember(backspaceKey, hapticOnRepeat) {
         backspaceKey.spaceAndBackspaceGestureListener(
             view = view,
@@ -316,15 +331,90 @@ private fun VoiceDeleteKey(
             hapticOnRepeat = hapticOnRepeat,
         )
     }
+    val swipeSpec = remember(backspaceKey, spaceSwipeMoveCursor) {
+        backspaceKey.spaceAndBackspaceSwipeSpec(spaceSwipeMoveCursor)
+    }
 
-    ComposeKey(
-        def = backspaceKey,
-        keyId = VOICE_PANEL_BACKSPACE_KEY_ID,
-        modifier = modifier,
-        keyActionListener = listenerState.value,
-        swipeSpec = swipeSpec,
-        onSwipeGesture = gestureListener,
-    )
+    fun sendBackspace() {
+        pressAction?.let {
+            listenerState.value?.onKeyAction(it, KeyActionListener.Source.Keyboard)
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .size(DELETE_BUTTON_SIZE_DP.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.secondaryContainer)
+            .pointerInput(gestureListener, swipeSpec, longPressDelay, pressAction) {
+                val thresholdX =
+                    (swipeSpec?.thresholdX ?: KeySwipeThresholds.Selection).toPx()
+                val thresholdY =
+                    (swipeSpec?.thresholdY ?: KeySwipeThresholds.Disabled).toPx()
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    down.consume()
+                    InputFeedbacks.hapticFeedback(view)
+                    val accumulator = SwipeAccumulator(thresholdX, thresholdY)
+                    accumulator.start(down.position.x, down.position.y)
+                    var repeatStarted = false
+                    var swipeTriggered = false
+                    val repeatJob = scope.launch {
+                        delay(longPressDelay.toLong())
+                        repeatStarted = true
+                        while (isActive) {
+                            sendBackspace()
+                            if (hapticOnRepeat) InputFeedbacks.hapticFeedback(view)
+                            delay(REPEAT_INTERVAL_MS)
+                        }
+                    }
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        val position = change.position
+                        if (!change.pressed) {
+                            change.consume()
+                            repeatJob.cancel()
+                            if (accumulator.totalX != 0) {
+                                gestureListener?.onGesture(
+                                    ComposeKeyGestureEvent(
+                                        ComposeKeyGestureEvent.Type.Up, false,
+                                        position.x, position.y, 0, 0,
+                                        accumulator.totalX, 0,
+                                    )
+                                )
+                            } else if (!repeatStarted) {
+                                // 短按：抬手删除（与键盘 keyClick 一致）
+                                sendBackspace()
+                            }
+                            break
+                        }
+                        val countX = accumulator.consumeX(position.x)
+                        if (countX != 0) {
+                            // 滑行生效：抑制长按/重复与抬手删除（与键盘 swipeRepeatEnabled 一致）
+                            swipeTriggered = true
+                            repeatJob.cancel()
+                            gestureListener?.onGesture(
+                                ComposeKeyGestureEvent(
+                                    ComposeKeyGestureEvent.Type.Move, false,
+                                    position.x, position.y, countX, 0,
+                                    accumulator.totalX, 0,
+                                )
+                            )
+                        }
+                        if (swipeTriggered) change.consume()
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_baseline_backspace_24),
+            contentDescription = stringResource(R.string.voice_delete),
+            tint = colors.onSecondaryContainer,
+            modifier = Modifier.size(24.dp),
+        )
+    }
 }
 
 /**

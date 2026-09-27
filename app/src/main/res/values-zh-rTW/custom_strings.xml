@@ -107,6 +107,7 @@
     <string name="voice_record_permission_missing">語音輸入需要錄音權限</string>
     <string name="voice_grant_permission">授予權限</string>
     <string name="voice_state_idle">點按或按住麥克風說話</string>
+    <string name="voice_delete">刪除</string>
     <string name="voice_state_preparing">正在載入模型…</string>
     <string name="voice_stop_discard">停止並捨棄</string>
     <string name="voice_state_listening">正在聆聽…</string>
