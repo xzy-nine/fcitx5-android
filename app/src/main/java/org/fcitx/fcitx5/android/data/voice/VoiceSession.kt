@@ -232,11 +232,8 @@ class VoiceSession(
         capture?.stop()
         capture?.release()
         capture = null
-        if (!wasRunning &&
-            _state.value.recognitionState != VoiceRecognitionState.LISTENING &&
-            _state.value.recognitionState != VoiceRecognitionState.PREPARING
-        ) {
-            // 既没在采集也没在准备：没有可结束的会话，直接回到终态
+        if (!wasRunning && !isSessionActive()) {
+            finishSession()
             return
         }
         updateState { it.copy(recognitionState = VoiceRecognitionState.PROCESSING) }
@@ -254,12 +251,12 @@ class VoiceSession(
                     if (seq == sessionSeq.get()) finishSession()
                 }
             }
-            // 看门狗：采集已停但最终结果迟迟不来（:asr 卡住/加载未完成）时给用户明确结果
             mainHandler.postDelayed({
                 if (seq == sessionSeq.get() && _state.value.recognitionState ==
                     VoiceRecognitionState.PROCESSING
                 ) {
-                    publishError("识别超时，请重试")
+                    Timber.w("$TAG: final result timeout, forcing idle")
+                    finishSession()
                 }
             }, PROCESSING_TIMEOUT_MS)
         } else {
@@ -273,6 +270,15 @@ class VoiceSession(
                 }
             }, ONLINE_RESULT_TIMEOUT_MS)
         }
+    }
+
+    /** 是否有正在进行的会话（采集/加载/等待结果）；点按切换、停止都用它判断，避免只看 running。 */
+    fun isSessionActive(): Boolean = running || when (_state.value.recognitionState) {
+        VoiceRecognitionState.LISTENING,
+        VoiceRecognitionState.PREPARING,
+        VoiceRecognitionState.PROCESSING -> true
+
+        else -> false
     }
 
     /** 松手时兜底提交：正常路径由最终结果统一提交，这里只在引擎没给最终结果时补交最后一次部分结果。 */

@@ -8,7 +8,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +34,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
@@ -122,6 +123,8 @@ fun VoicePanelHost(
         spectrum = spectrum,
         permissionGranted = permissionGranted,
         keyActionListener = keyActionListener,
+        // 点按切换由组件按**真实会话状态**判断（PREPARING/PROCESSING 时点按＝结束）
+        onMicToggle = { voice.toggleRecognition() },
         onMicStart = { voice.startRecognition() },
         onMicStop = { voice.stopRecognition() },
         onStopDiscard = { voice.cancelSession() },
@@ -143,6 +146,7 @@ fun ComposeVoicePanel(
     spectrum: FloatArray,
     permissionGranted: Boolean,
     keyActionListener: KeyActionListener?,
+    onMicToggle: () -> Unit,
     onMicStart: () -> Unit,
     onMicStop: () -> Unit,
     onStopDiscard: () -> Unit,
@@ -292,7 +296,7 @@ fun ComposeVoicePanel(
                     listening = listening,
                     // 加载中也可点：第二次点按/再次松手即停止（stopRecognition 自身保证终态）
                     enabled = permissionGranted,
-                    onTapToggle = { if (listening) onMicStop() else onMicStart() },
+                    onTapToggle = onMicToggle,
                     onHoldStart = onMicStart,
                     onHoldEnd = onMicStop,
                 )
@@ -427,8 +431,10 @@ private fun VoiceDeleteButton(
 /**
  * 大号麦克风按钮：**点按切换 + 长按说话**。
  *
- * - 按下后在 [HOLD_THRESHOLD_MS] 内抬起 = 点按：启动/结束切换；
- * - 超过阈值仍按住 = 长按：立即开始，抬起（或手势被取消）即结束。
+ * 判定完全确定化（不用 `waitForUpOrCancellation`，它的"取消"返回值会与超时混淆）：
+ * - 消费 DOWN 后最多等 [HOLD_THRESHOLD_MS]：
+ *   - 期间抬起 → 点按：切换开始/结束（判定在组件侧按真实会话状态做）；
+ *   - 超时仍按住 → 长按：立即开始，**一直等到抬起（或手势取消）才结束**。
  */
 @Composable
 private fun MicButton(
@@ -448,16 +454,17 @@ private fun MicButton(
             .clip(CircleShape)
             .background(background)
             .then(
-                if (!enabled) Modifier else Modifier.pointerInput(listening) {
+                if (!enabled) Modifier else Modifier.pointerInput(enabled) {
                     awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false)
-                        val released = withTimeoutOrNull(HOLD_THRESHOLD_MS) {
-                            waitForUpOrCancellation()
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        down.consume()
+                        val releasedEarly = withTimeoutOrNull(HOLD_THRESHOLD_MS) {
+                            awaitUpOrCancel(down.id)
                         }
-                        if (released == null) {
-                            // 长按：按住说话，抬起（或取消）停止
+                        if (releasedEarly == null) {
+                            // 长按：按住说话，抬起/取消即结束（保证一定会走到 onHoldEnd）
                             onHoldStart()
-                            waitForUpOrCancellation()
+                            awaitUpOrCancel(down.id)
                             onHoldEnd()
                         } else {
                             onTapToggle()
@@ -473,6 +480,15 @@ private fun MicButton(
             tint = content,
             modifier = Modifier.size(40.dp),
         )
+    }
+}
+
+/** 等待指定指针抬起或手势取消（返回 true=抬起，false=取消/指针消失）。 */
+private suspend fun AwaitPointerEventScope.awaitUpOrCancel(pointerId: PointerId): Boolean {
+    while (true) {
+        val event = awaitPointerEvent()
+        val change = event.changes.firstOrNull { it.id == pointerId } ?: return false
+        if (!change.pressed) return true
     }
 }
 

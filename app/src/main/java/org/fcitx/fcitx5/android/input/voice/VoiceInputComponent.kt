@@ -211,9 +211,23 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
     /** 抬起/再次点击麦克风/物理松手：先提交已识别的部分，再停止。 */
     fun stopRecognition() {
         val s = session
-        s?.commitPendingOnRelease()
-        s?.stopRecognition()
+        if (s == null) {
+            unmuteMedia()
+            return
+        }
+        if (!s.isSessionActive()) s.commitPendingOnRelease()
+        s.stopRecognition()
         unmuteMedia()
+    }
+
+    /**
+     * 麦克风**点按切换**：按真实会话状态决定开始还是结束。
+     *
+     */
+    fun toggleRecognition() {
+        val active = session?.isSessionActive() == true
+        Timber.d("voice toggle: active=$active, state=${_state.value.recognitionState}")
+        if (active) stopRecognition() else startRecognition()
     }
 
     /** 取消本次会话（停止识别并丢弃尚未上屏的文本），面板保留。 */
