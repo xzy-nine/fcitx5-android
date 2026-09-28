@@ -37,6 +37,8 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -85,9 +87,22 @@ fun ComposeToolbar(
     titleExtensionContent: @Composable (() -> Unit)? = null,
 ) {
     CompositionLocalProvider(LocalToolbarHeight provides toolbarHeight) {
+        // custom(临时诊断)：密度用于把实测 px 换算回 dp，判断是否与偏好值一致
+        val density = LocalDensity.current
         Box(
             modifier = modifier
                 .fillMaxWidth()
+                // custom(临时诊断)：记录工具栏实测高度与密度，用于对齐「候选栏被挤压」的首次布局。
+                // onSizeChanged 只在尺寸变化时才回调，天然不刷屏。
+                .onSizeChanged {
+                    ToolbarHeightTrace.logChange(
+                        key = "toolbarRootMeasure",
+                        dedupeKey = "${it.width}x${it.height}",
+                        detail = "heightPx=${it.height} heightDp=${it.height / density.density} " +
+                                "widthPx=${it.width} toolbarHeight=${toolbarHeight} barState=$barState " +
+                                "candidateVisible=$candidateVisible"
+                    )
+                }
                 // 四角裁圆：
                 //  · 上两角与父级 keyboardView 的 outline 圆角重合（ViewOutlineExt.applyTopRoundedCornerClip），
                 //    这里一并写上是为了不依赖父级裁剪，将来父级不再裁也不塌；

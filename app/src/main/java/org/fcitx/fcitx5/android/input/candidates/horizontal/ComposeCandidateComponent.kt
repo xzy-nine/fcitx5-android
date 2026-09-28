@@ -252,6 +252,13 @@ class ComposeCandidateComponent :
             _state.value = CandidateBarState.from(candidates, total)
         }
 
+        // custom(临时诊断)：候选内容到达时机 / 是否复用滚动位置
+        org.fcitx.fcitx5.android.input.bar.ToolbarHeightTrace.log(
+            "applyCandidates",
+            "count=${candidates.size} total=$total keepScroll=$keepScroll " +
+                    "prevCount=${prevData.candidates.size} resetToken=${_candidateResetToken.value}"
+        )
+
         loadingMore = false
         noMoreData = false
         _candidateGeneration++
