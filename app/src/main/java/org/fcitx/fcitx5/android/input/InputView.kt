@@ -213,9 +213,13 @@ class InputView(
                     val preeditVisible = composePreedit.preeditVisible.collectAsState().value
                     val candidateReceived = composeKawaiiBar.candidateReceived.collectAsState().value
                     Column(
-                        // custom(临时诊断)：记录顶部容器实测高度。故障态下 preeditHeight 涨到 58
-                        // 而 keyboardView 顶不动，这里可区分「Column 没长高」还是「长了但容器没跟上」
+                        // custom：Compose 内容高度变化后核对宿主 ComposeView 是否跟上，
+                        // 滞后则异步补发布局请求。修 AndroidView 互操作宿主在 measure 期间
+                        // 触发 requestLayout 被吞、导致 View 层遍历停摆、内容被旧高度裁切的 bug
+                        // （见 HostLayoutRecovery.kt）。
                         modifier = Modifier.onSizeChanged { size ->
+                            composeTopView.recoverHostLayoutIfStale(size.height)
+                            // custom(临时诊断)：记录顶部容器实测高度
                             ToolbarHeightTrace.logChange(
                                 key = "imeTopColumn",
                                 dedupeKey = "${size.height}/$preeditHeightPx/" +
