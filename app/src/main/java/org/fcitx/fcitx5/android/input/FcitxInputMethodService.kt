@@ -733,41 +733,6 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 val topPx = inputViewLocation[1] +
                     (inputView.value?.composePreedit?.heightPx?.value ?: 0) +
                     (inputView.value?.topExtensionPx ?: 0)
-                // custom(临时诊断)：insets 由「keyboardView 顶 + 预编辑高 + 延伸带」推导，
-                // 冷启动时 keyboardView 尚未布局则 inputViewLocation[1] 可能为 0。
-                // onComputeInsets 每次布局都会回调，故按三个分量去重，仅变化时输出。
-                // 另打印 keyboardView 实测高度与顶部容器高度：故障态下 preedit 涨高而
-                // keyboardViewTop 不动，这两个值可定位是「容器没长高」还是「insets 补偿错」。
-                val kv = inputView.value?.keyboardView
-                val kbHeight = kv?.height ?: -1
-                val iv = inputView.value
-                val topViewHeight = iv?.composeTopViewHeightPx ?: -1
-                val topViewMeasured = iv?.composeTopViewMeasuredHeightPx ?: -1
-                val topViewChild = iv?.composeTopViewChildHeightPx ?: -1
-                val topViewRequested = iv?.composeTopViewLayoutRequested
-                org.fcitx.fcitx5.android.input.bar.ToolbarHeightTrace.logChange(
-                    key = "onComputeInsets",
-                    dedupeKey = "${inputViewLocation[1]}/" +
-                            "${inputView.value?.composePreedit?.heightPx?.value ?: -1}/" +
-                            "${inputView.value?.topExtensionPx ?: -1}/$topPx/$kbHeight/" +
-                            "$topViewHeight/$topViewMeasured/$topViewChild/$topViewRequested/" +
-                            // custom(临时诊断)：窗口/可见性状态也在去重键里 —— 故障时
-                            // 几何可能完全不变，但「窗口变不可见」才是根因，必须能打出来
-                            "${iv?.windowVisibility}/${iv?.visibility}/${iv?.isShown}/" +
-                            // custom(临时诊断)：布局请求计数与父链状态同为判据，必须参与去重
-                            "${iv?.layoutRequestDebug}/${iv?.layoutChainKey}",
-                    detail = "keyboardViewTop=${inputViewLocation[1]} " +
-                            "preeditHeight=${inputView.value?.composePreedit?.heightPx?.value ?: -1} " +
-                            "topExtension=${inputView.value?.topExtensionPx ?: -1} topPx=$topPx " +
-                            "keyboardViewHeight=$kbHeight " +
-                            "topView[laidOut=$topViewHeight measured=$topViewMeasured " +
-                            "child=$topViewChild layoutRequested=$topViewRequested] " +
-                            "windowVis=${iv?.windowVisibility} vis=${iv?.visibility} " +
-                            "shown=${iv?.isShown} attached=${iv?.isAttachedToWindow} " +
-                            "${iv?.layoutRequestDebug} " +
-                            // custom(临时诊断)：父链逐级 req —— 定位 requestLayout 传播断了哪一级
-                            "chain=${iv?.layoutChainDetail}"
-                )
                 contentTopInsets = topPx
                 visibleTopInsets = topPx
                 touchableInsets = Insets.TOUCHABLE_INSETS_VISIBLE

@@ -42,7 +42,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -200,19 +199,6 @@ fun ComposeCandidateBar(
         modifier = modifier
             .fillMaxWidth()
             .height(barHeight)
-            // custom(临时诊断)：候选栏实测高度（barHeight 来自 LocalToolbarHeight）。
-            // 去重维度只取几何尺寸；候选数/状态变化不产生新行，故「被挤压」那一刻的
-            // 尺寸变化在日志里是最醒目的一行。
-            .onSizeChanged {
-                org.fcitx.fcitx5.android.input.bar.ToolbarHeightTrace.logChange(
-                    key = "candidateBarMeasure",
-                    dedupeKey = "${it.width}x${it.height}/$barHeight",
-                    detail = "heightPx=${it.height} widthPx=${it.width} barHeight=$barHeight " +
-                            "state=${state::class.simpleName} " +
-                            "size=${(state as? CandidateBarState.Active)?.candidates?.size ?: 0} " +
-                            "fillMode=$fillMode maxSpanCount=$maxSpanCount showDivider=$showDivider"
-                )
-            }
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

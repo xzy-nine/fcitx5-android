@@ -185,23 +185,13 @@ class ComposeKawaiiBarComponent :
         get() {
             val orientation = context.resources.configuration.orientation
             val key = _toolbarHeightVersion.value to orientation
-            val cacheHit = key == cachedHeightKey
-            if (!cacheHit) {
+            if (key != cachedHeightKey) {
                 cachedHeightKey = key
                 cachedHeightValue = if (orientation == Configuration.ORIENTATION_LANDSCAPE)
                     keyboardPrefs.toolbarHeightLandscape.getValue()
                 else
                     keyboardPrefs.toolbarHeight.getValue()
             }
-            // custom(临时诊断)：候选栏与工具栏共用同一高度真源，冷启动首次取值需可见。
-            // 本 getter 每次组合被读十余次，故按「值 + 版本 + 方向」去重，同值不重复刷屏。
-            ToolbarHeightTrace.logChange(
-                key = "toolbarHeight",
-                dedupeKey = "$cachedHeightValue/${_toolbarHeightVersion.value}/$orientation",
-                detail = "value=${cachedHeightValue}dp cacheHit=$cacheHit " +
-                        "version=${_toolbarHeightVersion.value} orientation=$orientation " +
-                        "densityDpi=${context.resources.displayMetrics.densityDpi}"
-            )
             return cachedHeightValue
         }
 

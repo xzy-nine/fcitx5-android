@@ -42,7 +42,6 @@ import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
-import org.fcitx.fcitx5.android.input.bar.ToolbarHeightTrace
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcaster
 import org.fcitx.fcitx5.android.input.broadcast.PreeditEmptyStateComponent
 import org.fcitx.fcitx5.android.input.broadcast.PunctuationComponent
@@ -168,15 +167,7 @@ class InputView(
             // 默认不消费事件，会穿透到下层键盘（实测能点到下面的键）
             isClickable = true
             isVisible = false
-            voiceInput.panelVisibleListener = { visible ->
-                isVisible = visible
-                // custom(临时诊断)：语音面板是「从语音输入回来后触发挤压」的边界事件，
-                // 记录开合瞬间，用于把日志时间线与语音往返对齐
-                ToolbarHeightTrace.log(
-                    "voicePanel",
-                    "visible=$visible"
-                )
-            }
+            voiceInput.panelVisibleListener = { visible -> isVisible = visible }
         }
     }
 
@@ -208,10 +199,6 @@ class InputView(
                             preeditHeightPx.toFloat()
                         )
                     }
-                    // custom(临时诊断)：预编辑可见性与候选到达门控上提到 Column 之外，
-                    // 供下面的 onSizeChanged 日志一并打印
-                    val preeditVisible = composePreedit.preeditVisible.collectAsState().value
-                    val candidateReceived = composeKawaiiBar.candidateReceived.collectAsState().value
                     Column(
                         // custom：Compose 内容高度变化后核对宿主 ComposeView 是否跟上，
                         // 滞后则异步补发布局请求。修 AndroidView 互操作宿主在 measure 期间
@@ -219,16 +206,6 @@ class InputView(
                         // （见 HostLayoutRecovery.kt）。
                         modifier = Modifier.onSizeChanged { size ->
                             composeTopView.recoverHostLayoutIfStale(size.height)
-                            // custom(临时诊断)：记录顶部容器实测高度
-                            ToolbarHeightTrace.logChange(
-                                key = "imeTopColumn",
-                                dedupeKey = "${size.height}/$preeditHeightPx/" +
-                                        "$preeditVisible/$candidateReceived",
-                                detail = "columnHeightPx=${size.height} " +
-                                        "preeditHeightPx=$preeditHeightPx " +
-                                        "preeditVisible=$preeditVisible " +
-                                        "candidateReceived=$candidateReceived"
-                            )
                         }
                     ) {
                         // 预编辑栏在上（贴合内容高度），键盘体顶部延伸带居中，工具栏在下
@@ -239,6 +216,8 @@ class InputView(
                         // 仅当候选事件已到达才让预编辑栏可见，两者同帧出现，消除闪烁。
                         // AnimatedVisibility 做展开/收起过渡动画，onSizeChanged 上报动画中间高度，
                         // 背景裁剪随之平滑跟进。
+                        val preeditVisible = composePreedit.preeditVisible.collectAsState().value
+                        val candidateReceived = composeKawaiiBar.candidateReceived.collectAsState().value
                         androidx.compose.animation.AnimatedVisibility(
                             visible = preeditVisible && candidateReceived,
                             enter = androidx.compose.animation.expandVertically(
@@ -276,269 +255,6 @@ class InputView(
      * app 的内容区与改动前逐像素一致，带子只是盖在 app 可视区之上遮住空隙。
      */
     val topExtensionPx: Int get() = dp(IME_TOP_EXTENSION_DP)
-
-    /**
-     * custom(临时诊断)：顶部容器（[composeTopView]）的 View 实测高度（px）。
-     *
-     * 故障态下预编辑高度涨到 58 而 `keyboardViewTop` 不动 —— 该值可直接区分
-     * 「Compose Column 没长高」与「Column 长了但 ConstraintLayout/insets 没跟上」。
-     */
-    val composeTopViewHeightPx: Int
-        get() = if (composeTopView.isLaidOut) composeTopView.height else -1
-
-    /**
-     * custom(临时诊断)：顶部容器的**已测量**高度（px）。
-     *
-     * 与 [composeTopViewHeightPx]（已布局高度）对照即可判定故障卡在哪一级：
-     *  - `measured=168` 而 `height=110` → 测量已按新内容跑过，**布局没把新尺寸写下去**；
-     *  - `measured` 也停在 `110` → 测量本身就没跟上内容增长。
-     */
-    val composeTopViewMeasuredHeightPx: Int
-        get() = if (composeTopView.measuredHeight > 0) composeTopView.measuredHeight else -1
-
-    /** custom(临时诊断)：顶部容器当前是否挂着待处理的 layout 请求。 */
-    val composeTopViewLayoutRequested: Boolean
-        get() = composeTopView.isLayoutRequested
-
-    /**
-     * custom(临时诊断)：ComposeView 内部 `AndroidComposeView` 的实测高度（px）。
-     * 它反映 Compose 侧真正布局出来的尺寸，用于和 [composeTopViewMeasuredHeightPx] 对照。
-     */
-    val composeTopViewChildHeightPx: Int
-        get() = composeTopView.getChildAt(0)?.let { if (it.height > 0) it.height else -1 } ?: -1
-
-    /**
-     * custom(临时诊断)：一帧内把三级容器的「已布局 / 已测量 / 是否挂着 layout 请求」一起打出来。
-     *
-     * 这是本轮排查的核心读数：
-     *  - `topView`（[composeTopView]，ComposeView）的 `m`（measuredHeight）若停在空闲值 110，
-     *    说明它没被父级重新测量过；
-     *  - `keyboardView` 的 `m`/`h` 同步不变，说明它也没重量；
-     *  - `req=true` 长期挂着 = `requestLayout()` 发出后没被消费。
-     */
-    private fun traceTreeState(): String =
-        "topView[h=${composeTopView.height} m=${composeTopView.measuredHeight} " +
-                "childH=${composeTopView.getChildAt(0)?.height ?: -1} " +
-                "req=${composeTopView.isLayoutRequested}] " +
-                "keyboardView[h=${keyboardView.height} m=${keyboardView.measuredHeight} " +
-                "req=${keyboardView.isLayoutRequested}] " +
-                "selfReq=$isLayoutRequested preedit=${composePreedit.heightPx.value} " +
-                "attached=$isAttachedToWindow windowVis=$windowVisibility " +
-                "vis=$visibility shown=$isShown vtoAlive=${viewTreeObserver.isAlive} " +
-                // custom(临时诊断)：isInLayout 是公开 API，能证明「遍历正卡在 layout 阶段」
-                "inLayout=$isInLayout"
-
-    /**
-     * custom(临时诊断)：窗口可见性变化。
-     *
-     * 故障态的现象是「ViewRootImpl 不再遍历」；若 `windowVis` 从 VISIBLE 变成别的值后
-     * 再没回到 VISIBLE，就说明遍历被系统按「窗口不可见」跳过，与 Compose 侧无关。
-     */
-    override fun onWindowVisibilityChanged(visibility: Int) {
-        super.onWindowVisibilityChanged(visibility)
-        ToolbarHeightTrace.log(
-            "inputViewWindowVis",
-            "windowVisibility=$visibility ${traceTreeState()}"
-        )
-    }
-
-    /** custom(临时诊断)：本 View 自身的可见性变化。 */
-    override fun onVisibilityChanged(changedView: View, visibility: Int) {
-        super.onVisibilityChanged(changedView, visibility)
-        ToolbarHeightTrace.log(
-            "inputViewVisibility",
-            "changed=${changedView.javaClass.simpleName} visibility=$visibility"
-        )
-    }
-
-    /**
-     * custom(临时诊断)：`InputView`（根 ConstraintLayout）的 layout 遍历累计次数。
-     * 故障态下 Compose 内容已长到 168 而 ComposeView 仍卡在 110，靠它区分
-     * 「遍历根本没跑」与「跑了但写了旧值」。
-     */
-    private var layoutTraversalCount = 0
-
-    /** custom(临时诊断)：`InputView` 的 measure 遍历累计次数。 */
-    private var measureTraversalCount = 0
-
-    /** custom(临时诊断)：窗口级 layout 完成（`onGlobalLayout`）累计次数。 */
-    private var globalLayoutCount = 0
-
-    /**
-     * custom(临时诊断)：**每次** measure 遍历都打印（刻意不去重）。
-     *
-     * 上一轮把 `dedupeKey` 设为「已测高度」，结果故障态下三个值恒定 →
-     * 遍历即使真在跑也被去重成 0 行，无法判定遍历是否推进。
-     * 这里的 `n=` 计数就是判据本身，故必须逐次输出。
-     */
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-        measureTraversalCount++
-        lastTraversalAtMs = android.os.SystemClock.uptimeMillis()
-        ToolbarHeightTrace.log(
-            "inputViewOnMeasure",
-            "n=$measureTraversalCount self=${measuredWidth}x${measuredHeight} " +
-                    "${traceTreeState()} " +
-                    "spec=${android.view.View.MeasureSpec.toString(heightMeasureSpec)}"
-        )
-    }
-
-    /**
-     * custom(临时诊断)：**每次** layout 遍历都打印（刻意不去重）。
-     * 判据是 `n=`（`traversals`）是否推进 —— 同上，去重会把判据本身吃掉。
-     */
-    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-        super.onLayout(changed, left, top, right, bottom)
-        layoutTraversalCount++
-        ToolbarHeightTrace.log(
-            "inputViewOnLayout",
-            "n=$layoutTraversalCount changed=$changed ${traceTreeState()}"
-        )
-    }
-
-    private val onGlobalLayoutListener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
-        globalLayoutCount++
-        ToolbarHeightTrace.log(
-            "inputViewGlobalLayout",
-            "n=$globalLayoutCount ${traceTreeState()}"
-        )
-    }
-
-    /**
-     * custom(临时诊断)：窗口级 layout 完成监听。
-     *
-     * `onMeasure`/`onLayout` 只证明**本 View** 的遍历；`onGlobalLayout` 证明
-     * **ViewRootImpl 级别**的遍历仍在调度。故障时若它继续推进而 `topView.m` 不变，
-     * 说明遍历在跑但没把新尺寸算进去；若它也停住，说明整棵树不再被遍历。
-     */
-    override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
-        ToolbarHeightTrace.log("inputViewGlobalLayout", "listener attached")
-        viewTreeObserver.addOnGlobalLayoutListener(onGlobalLayoutListener)
-        postDelayed(stuckWatchdog, STUCK_POLL_MS)
-    }
-
-    /**
-     * custom(临时诊断)：`requestLayout()` 调用计数与最近一次调用来源。
-     *
-     * 故障态下 View 遍历停摆，本计数用来判定是哪一种：
-     *  - **计数不再增长** → 没人请求布局（或请求路径不经过本 View）；
-     *  - **计数持续增长但遍历仍不发生** → 请求发了、ViewRootImpl 不执行。
-     */
-    private var requestLayoutCount = 0
-    private var lastRequestLayoutCaller = "-"
-
-    override fun requestLayout() {
-        super.requestLayout()
-        requestLayoutCount++
-        // 仅取 1..3 帧，够定位来源且避免吞掉整个栈
-        lastRequestLayoutCaller = Throwable().stackTrace
-            .drop(1)
-            .take(3)
-            .joinToString(">") { "${it.className.substringAfterLast('.')}.${it.methodName}" }
-    }
-
-    /** custom(临时诊断)：最近一次完成遍历（measure/layout/globalLayout）的时刻。 */
-    private var lastTraversalAtMs = 0L
-
-    /**
-     * custom(临时诊断)：布局停摆周期监测 —— 本轮最关键探针（第 3 版）。
-     *
-     * **前两版都失败了**，教训值得记录：
-     *  - 第 1 版绑在 [requestLayout] 上：停摆后不再有请求，回调永不触发；
-     *  - 第 2 版判据用 `InputView.isLayoutRequested`：实测停摆时该值为 **false**，
-     *    真正卡住的是 `composeTopView`，于是看门狗一次都没触发。
-     *
-     * 第 3 版改为**独立周期轮询**（不依赖任何回调），并同时监视两个 View 的
-     * `isLayoutRequested`。判据：某个 View 挂着 FORCE_LAYOUT 而整棵树已超过阈值无遍历。
-     * 这能同时覆盖 `forceLayout()`（只置标志、不向上传播、不调度）与 `requestLayout()` 两种路径。
-     *
-     * 恢复后自动复位去重，故反复停摆/恢复都能各留一行。
-     */
-    private val stuckWatchdog = object : Runnable {
-        override fun run() {
-            if (!isAttachedToWindow) {
-                // 未附着时不停摆判定（冷启动早期本就没有遍历）
-                postDelayed(this, STUCK_POLL_MS)
-                return
-            }
-            val sinceTraversal = android.os.SystemClock.uptimeMillis() - lastTraversalAtMs
-            val topStuck = composeTopView.isLayoutRequested
-            val selfStuck = isLayoutRequested
-            if ((topStuck || selfStuck) && sinceTraversal > STUCK_THRESHOLD_MS) {
-                ToolbarHeightTrace.logChange(
-                    key = "layoutStall",
-                    // 按「两个标志 + 遍历计数」去重：状态不变则只留一行，恢复后再停摆会再留一行
-                    dedupeKey = "$topStuck/$selfStuck/$measureTraversalCount/$layoutTraversalCount",
-                    detail = "布局停摆 ${sinceTraversal}ms 无遍历 " +
-                            "topViewForced=$topStuck selfForced=$selfStuck " +
-                            "measureN=$measureTraversalCount layoutN=$layoutTraversalCount " +
-                            "globalN=$globalLayoutCount inLayout=$isInLayout " +
-                            "reqCalls=$requestLayoutCount lastReqFrom=$lastRequestLayoutCaller " +
-                            "${traceTreeState()} chain=${traceLayoutChain().second}"
-                )
-            } else {
-                // 健康：清掉去重，下次停摆必定重新输出
-                ToolbarHeightTrace.reset("layoutStall")
-            }
-            postDelayed(this, STUCK_POLL_MS)
-        }
-    }
-
-    /** custom(临时诊断)：判定「标志挂着却迟迟无遍历」的阈值。 */
-    private companion object {
-        const val STUCK_THRESHOLD_MS = 600L
-
-        /** 轮询周期：够密集以捕获停摆当刻，又不足以造成日志噪声（仅在异常时输出）。 */
-        const val STUCK_POLL_MS = 300L
-    }
-
-    /** custom(临时诊断)：供 `onComputeInsets` 输出的布局请求读数。 */
-    val layoutRequestDebug: String
-        get() = "reqCalls=$requestLayoutCount lastReqFrom=$lastRequestLayoutCaller"
-
-    /**
-     * custom(临时诊断)：从本 View 向上遍历父链，逐级取 `isLayoutRequested` / 可见性 / 尺寸。
-     *
-     * 返回 (去重键, 详情)：去重键只含「类名:是否请求布局」，尺寸变化不会造成新行。
-     * 用途是定位 `requestLayout()` 在**哪一级停止向上传播** ——
-     * 若本 View 为 true 而某级父 View 为 false，问题就在该父级；
-     * 若整条链到顶都是 true，则问题在 ViewRootImpl 不调度。
-     */
-    private fun traceLayoutChain(): Pair<String, String> {
-        val key = StringBuilder()
-        val detail = StringBuilder()
-        var v: View? = this
-        var depth = 0
-        while (true) {
-            if (v == null) {
-                detail.append(" <- ViewRootImpl")
-                break
-            }
-            if (depth >= 16) {
-                detail.append(" <- ...")
-                break
-            }
-            if (depth > 0) {
-                key.append('<')
-                detail.append(" <- ")
-            }
-            key.append("${v.javaClass.simpleName}:${v.isLayoutRequested}")
-            detail.append(
-                "${v.javaClass.simpleName}[req=${v.isLayoutRequested} " +
-                        "vis=${v.visibility} ${v.width}x${v.height}]"
-            )
-            v = v.parent as? View
-            depth++
-        }
-        return key.toString() to detail.toString()
-    }
-
-    /** custom(临时诊断)：父链上各级的布局请求状态（去重键）。 */
-    val layoutChainKey: String get() = traceLayoutChain().first
-
-    /** custom(临时诊断)：父链上各级的布局请求状态（可读详情）。 */
-    val layoutChainDetail: String get() = traceLayoutChain().second
 
     private fun setupScope() {
         scope += this@InputView.wrapToUniqueComponent()
@@ -947,11 +663,6 @@ class InputView(
     }
 
     override fun onDetachedFromWindow() {
-        // custom(临时诊断)：移除 global layout 监听（见上面的注册处）
-        if (viewTreeObserver.isAlive) {
-            viewTreeObserver.removeOnGlobalLayoutListener(onGlobalLayoutListener)
-        }
-        ToolbarHeightTrace.log("inputViewGlobalLayout", "listener detached")
         advancedPrefs.unregisterOnChangeListener(onKeyboardSizeChangeListener)
         keyboardPrefs.unregisterOnChangeListener(onKeyboardSizeChangeListener)
         // clear DynamicScope, implies that InputView should not be attached again after detached.
