@@ -134,6 +134,9 @@ fun HandwritingKeyboardLayout(
 
     var lastStrokeEndMs by remember { mutableLongStateOf(0L) }
     val view = LocalView.current
+    // 手势协程在首个指针事件时启动、重组不会重启，块内直接读参数会取到启动时的旧值，
+    // 故用 State 读取最新状态
+    val modelReadyState = rememberUpdatedState(modelReady)
     val keyboardPrefs = remember { AppPrefs.getInstance().keyboard }
     val hapticOnRepeat = keyboardPrefs.hapticOnRepeat.preferenceState()
     val spaceSwipeMoveCursor = keyboardPrefs.spaceSwipeMoveCursor.preferenceState()
@@ -324,7 +327,7 @@ fun HandwritingKeyboardLayout(
                     .fillMaxSize()
                     .pointerInput(Unit) {
                         awaitEachGesture {
-                            if (!modelReady) return@awaitEachGesture
+                            if (!modelReadyState.value) return@awaitEachGesture
                             val down = awaitFirstDown(requireUnconsumed = false)
                             val startX = down.position.x
                             val startY = down.position.y

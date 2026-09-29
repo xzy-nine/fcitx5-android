@@ -259,6 +259,13 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
             InputType.TYPE_CLASS_PHONE -> KeyboardLayoutNames.Number
             else -> KeyboardLayoutNames.Text
         }
+        // 手写布局由用户显式选择：普通文本字段（含应用 resync 重启输入连接）保持当前布局，
+        // 只有数字/电话字段才切到数字键盘
+        if (currentLayout.value == KeyboardLayoutNames.Handwriting &&
+            targetLayout == KeyboardLayoutNames.Text
+        ) {
+            return
+        }
         switchLayout(targetLayout)
     }
 
