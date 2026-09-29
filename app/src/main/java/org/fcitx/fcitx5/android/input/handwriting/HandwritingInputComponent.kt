@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingCandidate
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngine
+import org.fcitx.fcitx5.android.data.handwriting.HandwritingMarketCategory
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingModelStore
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingSegmenter
 import org.fcitx.fcitx5.android.data.handwriting.StrokePoint
