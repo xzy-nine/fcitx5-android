@@ -4,7 +4,9 @@
  *
  * custom: 手写输入作为**第三种键盘布局**（与文本/数字并列）。
  *
- * - 布局：状态行 → 手写画布 → 底部键行（复用项目既有 `KeyDef` 与 `ComposeKeyRow`）；
+ * - 镜像 L 布局：左侧画布 + 右侧固定宽竖列（删除 / 符号 / 回车），底部键行
+ *   （返回 ABC / 123 / 符号页 / 空格），竖列与底行由 `ComposeKeyColumn` / `ComposeKeyRow` 渲染；
+ * - 右侧列的符号键单独填充且不可自定义，键值与主键盘同口径（由引擎按全半角/标点设置转换）；
  * - 候选由 `HandwritingInputComponent` 推给候选栏，不绘制在本布局；
  * - 识别窗口：每落一笔全窗重新识别；停顿只把笔画变淡，
  *   继续闲置 [HW_CLEAR_IDLE_MS] 才清空窗口（墨迹同步消失）并回调 `onFinalize`；
@@ -22,10 +24,13 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,6 +59,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.core.KeySym
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngine
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingSegmenter
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingStrokeFx
@@ -61,17 +67,22 @@ import org.fcitx.fcitx5.android.data.handwriting.StrokePoint
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.keyboard.BackspaceKey
 import org.fcitx.fcitx5.android.input.keyboard.ComposeKey
+import org.fcitx.fcitx5.android.input.keyboard.ComposeKeyColumn
 import org.fcitx.fcitx5.android.input.keyboard.ComposeKeyRow
+import org.fcitx.fcitx5.android.input.keyboard.ComposeSymbolSlider
+import org.fcitx.fcitx5.android.input.keyboard.KeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyActionListener
+import org.fcitx.fcitx5.android.input.keyboard.KeyDef
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardLayoutNames
-import org.fcitx.fcitx5.android.input.keyboard.preferenceState
 import org.fcitx.fcitx5.android.input.keyboard.LayoutSwitchKey
 import org.fcitx.fcitx5.android.input.keyboard.ReturnKey
 import org.fcitx.fcitx5.android.input.keyboard.SpaceKey
+import org.fcitx.fcitx5.android.input.keyboard.preferenceState
 import org.fcitx.fcitx5.android.input.keyboard.spaceAndBackspaceGestureListener
 import org.fcitx.fcitx5.android.input.keyboard.spaceAndBackspaceSwipeSpec
+import org.fcitx.fcitx5.android.input.keyboard.rememberKeyboardVisuals
+import org.fcitx.fcitx5.android.input.picker.PickerWindow
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.max
 import kotlin.math.sqrt
 
@@ -86,9 +97,30 @@ private const val HW_CLEAR_IDLE_MS = 300L
 /** 单次识别任务里最多连续固化的轮数。 */
 private const val MAX_SETTLE_ROUNDS = 8
 
+/** 底栏小键（ABC / 123 / 符号 / 回车）与右侧竖列的宽度占键盘宽比例。 */
+private const val HW_SIDE_KEY_WIDTH_FRACTION = 0.15f
+
+/** 右侧列删除键的高度（dp）。 */
+private val HW_SIDE_KEY_HEIGHT = 48.dp
+
+/** 底部键行高度（dp）。 */
+private val HW_BOTTOM_ROW_HEIGHT = 48.dp
+
 /** 字迹粗细范围（px）。 */
 private const val STROKE_MIN_WIDTH = 8f
 private const val STROKE_MAX_WIDTH = 22f
+
+/** 右侧列符号滑块的符号（固定填充、不可自定义）：显示 ASCII 标签，发出的键值走引擎标点/全半角设置。 */
+private val HandwritingSymbolSyms: Map<String, Int> = linkedMapOf(
+    "." to 0x2e,
+    "," to 0x2c,
+    ";" to 0x3b,
+    "?" to 0x3f,
+    "!" to 0x21,
+    "\"" to 0x22,
+)
+
+private val HandwritingSymbolLabels: List<String> = HandwritingSymbolSyms.keys.toList()
 
 /**
  * 手写键盘。
@@ -96,11 +128,13 @@ private const val STROKE_MAX_WIDTH = 22f
  * @param modelReady 模型是否就绪（false 时画布不接收笔画，只显示提示）
  * @param statusText 状态文案（加载中 / 识别中 / 空闲 / 错误）
  * @param clearSignal 外部清空请求（固化/上屏失败时递增；本布局清笔画并重置段缓存）
+ * @param onFinalize 本布局已自行清窗（超长闲置）：会话组件固化活动区
+ * @param onFinalizeWindow 删除/回车/空格/符号键按下：会话组件固化活动区并请布局清窗
+ * @param onSpace 空格键按下：返回 true 表示已被候选词消费（不上屏空格）
  * @param onRecognition 识别结果（时间序；最后一段=当前正在写的字）
  * @param onSegmentSettled 最早段被固化出窗（文本已上屏，参数为固化的文本）
- * @param onUndoActive 撤销到窗口为空：屏上活动区文本应一并撤销
  * @param onRecognizing 识别忙闲（状态行用）
- * @param keyActionListener 底部键行的按键出口
+ * @param keyActionListener 底部键行与右侧列的按键出口
  */
 @Composable
 fun HandwritingKeyboardLayout(
@@ -108,14 +142,15 @@ fun HandwritingKeyboardLayout(
     statusText: String,
     clearSignal: Int,
     onFinalize: () -> Unit,
+    onFinalizeWindow: () -> Unit,
+    onSpace: () -> Boolean,
     onRecognition: (List<HandwritingSegmenter.Segment>) -> Unit,
     onSegmentSettled: (String) -> Unit,
-    onUndoActive: () -> Unit,
     onRecognizing: (Boolean) -> Unit,
     keyActionListener: KeyActionListener?,
     modifier: Modifier = Modifier,
 ) {
-    val colors = MiuixTheme.colorScheme
+    val visuals = rememberKeyboardVisuals()
     val strokes = remember { mutableStateListOf<List<StrokePoint>>() }
     var currentStroke by remember { mutableStateOf<List<StrokePoint>>(emptyList()) }
     var strokeCount by remember { mutableIntStateOf(0) }
@@ -134,6 +169,9 @@ fun HandwritingKeyboardLayout(
     val keyboardPrefs = remember { AppPrefs.getInstance().keyboard }
     val hapticOnRepeat = keyboardPrefs.hapticOnRepeat.preferenceState()
     val spaceSwipeMoveCursor = keyboardPrefs.spaceSwipeMoveCursor.preferenceState()
+    // 符号滑块外显段数：与数字键盘共用同一偏好
+    val symbolSliderVisibleCount =
+        remember { AppPrefs.getInstance().symbols }.symbolSliderVisibleCount.preferenceState()
     val scope = rememberCoroutineScope()
 
     // 段缓存随组合存活（离开布局即释放）
@@ -141,6 +179,61 @@ fun HandwritingKeyboardLayout(
         HandwritingSegmenter { s, k -> HandwritingEngine.predict(s, k) }
     }
     var recognizeJob by remember { mutableStateOf<Job?>(null) }
+
+    // 空格：有候选词时点选首选、不上屏空格
+    val spaceState = rememberUpdatedState(onSpace)
+    val spaceListener = remember(keyActionListener) {
+        object : KeyActionListener {
+            override fun onKeyAction(action: KeyAction, source: KeyActionListener.Source) {
+                if (spaceState.value()) return
+                keyActionListener?.onKeyAction(action, source)
+            }
+
+            override fun onKeyActionRelease(action: KeyAction, source: KeyActionListener.Source) {
+                keyActionListener?.onKeyActionRelease(action, source)
+            }
+        }
+    }
+
+    // 回车改动宿主文本：先固化活动区并清窗
+    val finalizeWindowState = rememberUpdatedState(onFinalizeWindow)
+    val finalizeListener = remember(keyActionListener) {
+        object : KeyActionListener {
+            override fun onKeyAction(action: KeyAction, source: KeyActionListener.Source) {
+                finalizeWindowState.value()
+                keyActionListener?.onKeyAction(action, source)
+            }
+
+            override fun onKeyActionRelease(action: KeyAction, source: KeyActionListener.Source) {
+                keyActionListener?.onKeyActionRelease(action, source)
+            }
+        }
+    }
+
+    val deleteKey = remember { BackspaceKey() }
+    // 底栏：ABC / 123 / 空格（占剩余宽，左右各两键使其居中）/ 符号页 / 回车，四个小键等宽
+    val bottomRow = remember {
+        listOf(
+            LayoutSwitchKey(
+                displayText = "ABC",
+                to = KeyboardLayoutNames.Text,
+                percentWidth = HW_SIDE_KEY_WIDTH_FRACTION,
+            ),
+            LayoutSwitchKey(
+                displayText = "123",
+                to = KeyboardLayoutNames.Number,
+                percentWidth = HW_SIDE_KEY_WIDTH_FRACTION,
+            ),
+            SpaceKey(),
+            LayoutSwitchKey(
+                displayText = "!?#",
+                to = PickerWindow.Key.Symbol.name,
+                percentWidth = HW_SIDE_KEY_WIDTH_FRACTION,
+                variant = KeyDef.Appearance.Variant.AltForeground,
+            ),
+            ReturnKey(percentWidth = HW_SIDE_KEY_WIDTH_FRACTION),
+        )
+    }
 
     /** 变淡范围起点：停顿提示时是整窗，否则是已完成前缀。 */
     val fadeStart = if (idleHidden) strokes.size else donePrefix
@@ -244,153 +337,153 @@ fun HandwritingKeyboardLayout(
         scheduleRecognition()
     }
 
-    fun undoLastStroke() {
-        if (strokes.isEmpty()) {
-            onUndoActive()
-            return
-        }
-        strokes.removeAt(strokes.size - 1)
-        strokeCount = strokes.size
-        idleHidden = false
-        if (donePrefix > strokes.size) donePrefix = strokes.size
-        if (strokes.isEmpty()) {
-            lastStrokeEndMs = 0L
-            recognizer.reset()
-            onUndoActive()
-        } else {
-            lastStrokeEndMs = System.currentTimeMillis()
-            scheduleRecognition()
-        }
-    }
+    // 不画整体背景：沿用键盘主题底（`InputView.customBackground`），键区另画「非按键底」色带
+    Column(modifier = modifier.fillMaxSize()) {
 
-    Column(modifier = modifier.fillMaxSize().background(colors.background)) {
+        Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
 
-        // 状态行：状态文案 + 「撤销一笔」小按钮（候选交给真正的候选栏）
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 2.dp),
-        ) {
-            Text(
-                text = statusText,
-                color = colors.onSurfaceVariantSummary,
-                fontSize = 12.sp,
-                maxLines = 1,
-                modifier = Modifier.align(Alignment.CenterStart),
-            )
-            Text(
-                text = stringResource(R.string.handwriting_undo_stroke),
-                color = colors.primary,
-                fontSize = 12.sp,
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            awaitFirstDown(requireUnconsumed = false)
-                            undoLastStroke()
-                        }
-                    },
-            )
-        }
-
-        // 画布
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .padding(horizontal = 8.dp),
-        ) {
-            Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            if (!modelReadyState.value) return@awaitEachGesture
-                            val down = awaitFirstDown(requireUnconsumed = false)
-                            val startX = down.position.x
-                            val startY = down.position.y
-                            val startedAt = System.currentTimeMillis()
-                            var drawing = false
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull() ?: break
-                                if (change.pressed) {
-                                    change.consume()
-                                    val distance = (change.position - down.position).getDistance()
-                                    if (!drawing && distance > STROKE_START_THRESHOLD_PX) {
-                                        drawing = true
-                                        // 起笔即取消停顿提示（长笔画写到一半不应让整窗墨迹变淡）
-                                        lastStrokeEndMs = 0L
-                                        currentStroke = listOf(
-                                            StrokePoint(startX, startY, startedAt)
-                                        )
+            // 画布区：状态行 + 手写画布
+            Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                Text(
+                    text = statusText,
+                    color = visuals.keyTextColor.copy(alpha = 0.6f),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 2.dp),
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(horizontal = 8.dp),
+                ) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(Unit) {
+                                awaitEachGesture {
+                                    if (!modelReadyState.value) return@awaitEachGesture
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    val startX = down.position.x
+                                    val startY = down.position.y
+                                    val startedAt = System.currentTimeMillis()
+                                    var drawing = false
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull() ?: break
+                                        if (change.pressed) {
+                                            change.consume()
+                                            val distance =
+                                                (change.position - down.position).getDistance()
+                                            if (!drawing && distance > STROKE_START_THRESHOLD_PX) {
+                                                drawing = true
+                                                // 起笔即取消停顿提示（长笔画写到一半不应让整窗墨迹变淡）
+                                                lastStrokeEndMs = 0L
+                                                currentStroke = listOf(
+                                                    StrokePoint(startX, startY, startedAt)
+                                                )
+                                            }
+                                            if (drawing) {
+                                                currentStroke = currentStroke + StrokePoint(
+                                                    change.position.x,
+                                                    change.position.y,
+                                                    System.currentTimeMillis(),
+                                                )
+                                            }
+                                        } else {
+                                            change.consume()
+                                            if (drawing && currentStroke.size >= 2) {
+                                                val finished = currentStroke
+                                                currentStroke = emptyList()
+                                                commitStroke(finished)
+                                            } else {
+                                                currentStroke = emptyList()
+                                            }
+                                            break
+                                        }
                                     }
-                                    if (drawing) {
-                                        currentStroke = currentStroke + StrokePoint(
-                                            change.position.x,
-                                            change.position.y,
-                                            System.currentTimeMillis(),
-                                        )
-                                    }
-                                } else {
-                                    change.consume()
-                                    if (drawing && currentStroke.size >= 2) {
-                                        val finished = currentStroke
-                                        currentStroke = emptyList()
-                                        commitStroke(finished)
-                                    } else {
-                                        currentStroke = emptyList()
-                                    }
-                                    break
                                 }
+                            },
+                    ) {
+                        // 渲染：[0,fade) 变淡、[fade,end) 正常；笔画离开识别窗口（固化/清窗）时墨迹同步消失。
+                        // 正在书写的笔画无条件渲染（它尚未进入 strokes）。
+                        val fade = fadeStart.coerceIn(0, strokes.size)
+                        if (fade > 0) {
+                            strokes.subList(0, fade).forEach {
+                                drawStroke(it, visuals.keyTextColor.copy(alpha = 0.3f))
                             }
                         }
-                    },
-            ) {
-                // 渲染：[0,fade) 变淡、[fade,end) 正常；笔画离开识别窗口（固化/清窗）时墨迹同步消失。
-                // 正在书写的笔画无条件渲染（它尚未进入 strokes）。
-                val fade = fadeStart.coerceIn(0, strokes.size)
-                if (fade > 0) {
-                    strokes.subList(0, fade).forEach {
-                        drawStroke(it, colors.onSurface.copy(alpha = 0.3f))
+                        strokes.drop(fade).forEach { drawStroke(it, visuals.keyTextColor) }
+                        if (currentStroke.size >= 2) drawStroke(currentStroke, visuals.keyTextColor)
+                    }
+                    if (!modelReady) {
+                        Text(
+                            text = stringResource(R.string.handwriting_model_missing),
+                            color = visuals.keyTextColor,
+                            fontSize = 13.sp,
+                            modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                        )
                     }
                 }
-                strokes.drop(fade).forEach { drawStroke(it, colors.onSurface) }
-                if (currentStroke.size >= 2) drawStroke(currentStroke, colors.onSurface)
             }
-            if (!modelReady) {
-                Text(
-                    text = stringResource(R.string.handwriting_model_missing),
-                    color = colors.primary,
-                    fontSize = 13.sp,
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
+
+            // 右侧竖列（镜像 L 的竖臂，宽度与底栏小键一致）：删除 → 滚动符号列（固定填充、不可自定义）
+            Column(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(HW_SIDE_KEY_WIDTH_FRACTION)
+                    .background(visuals.backgroundColor)
+                    .padding(horizontal = 2.dp, vertical = 2.dp),
+            ) {
+                ComposeKeyColumn(
+                    keys = remember(deleteKey) { listOf(deleteKey) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(HW_SIDE_KEY_HEIGHT),
+                    keyIdBase = HW_SIDE_DELETE_KEY_ID,
+                    keyActionListener = keyActionListener,
+                    // 删除会改动宿主文本：先固化活动区并清窗
+                    onBeforeKeyAction = { onFinalizeWindow() },
+                )
+                ComposeSymbolSlider(
+                    symbols = HandwritingSymbolLabels,
+                    // 外显段数与数字键盘滑块同口径（符号数多于它即需滚动，不会一次显示完）
+                    visibleCount = symbolSliderVisibleCount,
+                    onSymbolInput = { label ->
+                        onFinalizeWindow()
+                        val sym = HandwritingSymbolSyms[label] ?: return@ComposeSymbolSlider
+                        keyActionListener?.onKeyAction(
+                            KeyAction.SymAction(KeySym(sym)),
+                            KeyActionListener.Source.Keyboard,
+                        )
+                    },
+                    // 不可自定义：无编辑按钮
+                    onEditClick = null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
                 )
             }
         }
 
-        // 底部键行：复用 KeyDef + ComposeKeyRow，手势语义与主键盘一致
-        //（退格：按下删除/长按连发/横滑移光标；空格：长按语音）
+        // 底部键行（镜像 L 的横臂）：ABC / 123 / 空格 / 符号页 / 回车
         val listenerState = rememberUpdatedState(keyActionListener)
-        val row = remember {
-            listOf(
-                BackspaceKey(percentWidth = 0.20f),
-                LayoutSwitchKey(
-                    displayText = "ABC",
-                    to = KeyboardLayoutNames.Text,
-                    percentWidth = 0.14f
-                ),
-                SpaceKey(),
-                ReturnKey(percentWidth = 0.20f),
-            )
-        }
         ComposeKeyRow(
-            row = row,
+            row = bottomRow,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp)
+                .height(HW_BOTTOM_ROW_HEIGHT)
+                .background(visuals.backgroundColor)
                 .padding(horizontal = 4.dp),
-            keyIdBase = 900,
+            keyIdBase = HW_BOTTOM_ROW_KEY_ID_BASE,
         ) { keyId, def, insets, keyModifier ->
+            val listener = when {
+                def is SpaceKey -> spaceListener
+                def is ReturnKey -> finalizeListener
+                else -> listenerState.value
+            }
             val swipeSpec = def.spaceAndBackspaceSwipeSpec(spaceSwipeMoveCursor)
             val gestureListener = remember(def, hapticOnRepeat) {
                 def.spaceAndBackspaceGestureListener(
@@ -406,13 +499,19 @@ fun HandwritingKeyboardLayout(
                 keyId = keyId,
                 modifier = keyModifier,
                 insets = insets,
-                keyActionListener = listenerState.value,
+                keyActionListener = listener,
                 swipeSpec = swipeSpec,
                 onSwipeGesture = gestureListener,
             )
         }
     }
 }
+
+/** 右侧列删除键 id。 */
+private const val HW_SIDE_DELETE_KEY_ID = 900
+
+/** 底部行键 id 基址。 */
+private const val HW_BOTTOM_ROW_KEY_ID_BASE = 950
 
 /** 按速度插值笔宽（快写细、慢写粗）。 */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStroke(

@@ -267,31 +267,43 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
         active = if (active.length >= text.length) active.drop(text.length) else ""
     }
 
-    /** 画布撤到空：撤销屏上活动区文本。需在主线程调用。 */
-    fun onUndoActive() {
-        val count = active.length
-        active = ""
-        lastSegText = ""
-        if (count <= 0) return
-        service.deleteBeforeCursor(count)
-    }
-
     /**
      * 布局清窗（超长闲置）后回调：活动文本退出可替换区，不回传 [clearSignal]。
+     *
+     * 保留 [lastSegText]：候选栏还留着时点选候选仍应替换刚上屏的那个字，而不是追加。
      * 候选栏按自身存活计时清空。需在主线程调用。
      */
     fun finalizeActive() {
         active = ""
-        lastSegText = ""
     }
 
     /**
-     * 外部动作（空格/回车/退格/离开布局）后的固化：活动区不再可替换，并请布局清窗。
-     * 需在主线程调用。
+     * 外部动作（删除/回车/空格/符号键）后的固化：活动区与最后上屏的字都不再可替换、
+     * 清空候选栏，并请布局清窗。需在主线程调用。
      */
     fun finalizeWindow() {
-        finalizeActive()
+        active = ""
+        lastSegText = ""
+        HandwritingCandidateFeed.set(emptyList(), active = true)
+        candidatesClearJob?.cancel()
         requestClear()
+    }
+
+    /**
+     * 空格键按下。需在主线程调用。
+     *
+     * - 有候选词：点选首选（[pickCandidate]）并清空候选栏，返回 true（不上屏空格）；
+     * - 无候选词：固化活动区并清窗，返回 false（照常上屏空格）。
+     */
+    fun onSpacePressed(): Boolean {
+        if (HandwritingCandidateFeed.candidates.isEmpty()) {
+            finalizeWindow()
+            return false
+        }
+        pickCandidate(0)
+        HandwritingCandidateFeed.set(emptyList(), active = true)
+        candidatesClearJob?.cancel()
+        return true
     }
 
     /**
@@ -299,7 +311,7 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
      *
      * 手写候选不在 fcitx 引擎候选表里，`fcitx.select(index)` 选不到，必须在这里替换式上屏：
      * - 开着「边写边上屏」：`index == 0` 只固化（首选已自动上屏）；否则把最后一段的字
-     *   （活动区里最后一个字，或已固化的最后一个字）换成点选字；
+     *   （活动区里最后一个字，或[lastSegText]：识别窗口已清空时仍指向刚上屏的那个字）换成点选字；
      * - 未开启：点选即上屏（活动区为空，直接追加）。
      *
      * 点选只清空识别窗口（画布 + 段缓存）；候选栏保留，按自身存活计时或下次识别推送更新。

@@ -172,36 +172,17 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
                         hs.recognizing -> stringResource(R.string.handwriting_state_recognizing)
                         else -> stringResource(R.string.handwriting_state_idle)
                     }
-                    // 底部键行按下（空格/回车/退格等）即固化活动区：画布清空、活动文本不再可替换，
-                    // 否则这些字会被下一轮识别当成活动区重复上屏。布局切换交给 switchLayout → onLeave。
-                    val handwritingKeyListener = remember(keyActionListener) {
-                        object : KeyActionListener {
-                            override fun onKeyAction(
-                                action: KeyAction,
-                                source: KeyActionListener.Source,
-                            ) {
-                                if (action !is KeyAction.LayoutSwitchAction) handwriting.finalizeWindow()
-                                keyActionListener.onKeyAction(action, source)
-                            }
-
-                            override fun onKeyActionRelease(
-                                action: KeyAction,
-                                source: KeyActionListener.Source,
-                            ) {
-                                keyActionListener.onKeyActionRelease(action, source)
-                            }
-                        }
-                    }
                     HandwritingKeyboardLayout(
                         modelReady = hs.modelReady,
                         statusText = hs.error ?: status,
                         clearSignal = handwritingClearSignal,
                         onFinalize = handwriting::finalizeActive,
+                        onFinalizeWindow = handwriting::finalizeWindow,
+                        onSpace = handwriting::onSpacePressed,
                         onRecognition = handwriting::onRecognition,
                         onSegmentSettled = handwriting::onSegmentSettled,
-                        onUndoActive = handwriting::onUndoActive,
                         onRecognizing = handwriting::onRecognizing,
-                        keyActionListener = handwritingKeyListener,
+                        keyActionListener = keyActionListener,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
