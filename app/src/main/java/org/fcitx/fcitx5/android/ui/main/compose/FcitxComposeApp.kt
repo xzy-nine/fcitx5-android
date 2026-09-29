@@ -109,7 +109,7 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                             }
 
                             org.fcitx.fcitx5.android.data.voice.VoiceRoutes.MODELS -> {
-                                navigateTo(AppRoute.VoiceModelMarket)
+                                navigateTo(AppRoute.ModelMarket(MarketCategories.ASR))
                                 return@collect
                             }
 

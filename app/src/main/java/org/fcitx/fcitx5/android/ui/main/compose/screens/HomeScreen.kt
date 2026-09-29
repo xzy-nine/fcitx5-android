@@ -162,7 +162,11 @@ private val homeAndroidItems = listOf(
 /** custom: 分支特有功能（上游没有的能力集中在这里，避免混进上游分组） */
 private val homeCustomItems = listOf(
     HomeDestination(R.string.voice_input, MiuixIcons.AppRecording, AppRoute.VoiceInputSettings),
-    HomeDestination(R.string.voice_model_market, MiuixIcons.Store, AppRoute.VoiceModelMarket),
+    HomeDestination(R.string.handwriting_input, MiuixIcons.Edit, AppRoute.HandwritingSettings),    HomeDestination(
+        R.string.voice_model_market,
+        MiuixIcons.Store,
+        AppRoute.ModelMarket(MarketCategories.ASR),
+    ),
     HomeDestination(R.string.webdav_settings_title, MiuixIcons.UploadCloud, AppRoute.WebDavSync),
     HomeDestination(R.string.broadcast_settings, MiuixIcons.Promotions, AppRoute.Prefs(PrefCategory.Broadcast)),
 )
