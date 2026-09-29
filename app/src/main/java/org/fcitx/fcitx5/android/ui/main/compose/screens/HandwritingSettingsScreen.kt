@@ -4,16 +4,18 @@
  *
  * custom: 手写输入设置页（独立输入方案）。
  *
- * 结构对齐 [VoiceInputSettingsScreen]：开关 + 边写边上屏 + 模型入口 + 模型市场。
- * 模型本身走 IME 覆盖层面板，本页不提供画布。
+ * 结构对齐 [VoiceInputSettingsScreen]：开关 + 边写边上屏 + 模型入口 + 索引地址覆盖。
+ * 模型本身在 IME 覆盖层面板里使用，本页不提供画布。
  */
 package org.fcitx.fcitx5.android.ui.main.compose.screens
 
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -27,6 +29,7 @@ import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -104,26 +107,21 @@ fun HandwritingSettingsScreen(
             }
         }
 
-        item { SmallTitle(text = stringResource(R.string.voice_index_url)) }
+        item { SmallTitle(text = stringResource(R.string.handwriting_index_url)) }
         item {
             var indexUrl by remember { mutableStateOf(prefs.handwritingIndexUrl.getValue()) }
-            top.yukonga.miuix.kmp.basic.TextField(
+            TextField(
                 value = indexUrl,
                 onValueChange = {
                     indexUrl = it
                     prefs.handwritingIndexUrl.setValue(it.trim())
                 },
                 label = stringResource(R.string.handwriting_index_url),
-                modifier = Modifier
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
-                    .fillMaxWidthCompat(),
                 singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
             )
         }
     }
 }
-
-/** `fillMaxWidth` 的小包装，避免与 miuix 的修饰符语义混淆。 */
-private fun Modifier.fillMaxWidthCompat(): Modifier = this.then(
-    androidx.compose.foundation.layout.fillMaxWidth()
-)

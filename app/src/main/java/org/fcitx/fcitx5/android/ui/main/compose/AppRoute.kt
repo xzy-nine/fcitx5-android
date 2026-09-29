@@ -103,6 +103,14 @@ sealed interface AppRoute : NavKey {
     /** custom: 在线 ASR 平台的声明式配置表单（按平台 id） */
     @Serializable
     data class VoiceProviderConfig(val providerId: String) : AppRoute
+
+    /** custom: 手写输入设置页（独立输入方案） */
+    @Serializable
+    data object HandwritingSettings : AppRoute
+
+    /** custom: 手写模型市场（与语音共用远程索引，按 category: handwriting 分流） */
+    @Serializable
+    data object HandwritingModelMarket : AppRoute
 }
 
 @Serializable

@@ -40,6 +40,8 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.ThemeScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WebDavSyncScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceInputSettingsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceModelMarketScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingSettingsScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingModelMarketScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceProviderConfigScreen
 import org.fcitx.fcitx5.android.ui.main.compose.settings.ManagedPrefsScreen
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
@@ -300,6 +302,16 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         providerId = route.providerId,
                         onBack = { backStack.removeLastOrNull() },
                     )
+                }
+                // custom: 手写输入设置页 / 模型市场（与语音同一套市场，按 category 分流）
+                entry<AppRoute.HandwritingSettings> {
+                    HandwritingSettingsScreen(
+                        onBack = { backStack.removeLastOrNull() },
+                        onOpenModels = { navigateTo(AppRoute.HandwritingModelMarket) },
+                    )
+                }
+                entry<AppRoute.HandwritingModelMarket> {
+                    HandwritingModelMarketScreen(onBack = { backStack.removeLastOrNull() })
                 }
                 entry<AppRoute.RawConfigHost> { route ->
                     RawConfigHostScreen(

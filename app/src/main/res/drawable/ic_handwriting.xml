@@ -1,0 +1,27 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+    <!--
+      custom: 手写输入入口图标（「手写」二字的极简笔画表达）。
+      项目依赖里没有 Compose Material Icons（androidx.compose.material 未引入），
+      故用自绘矢量图，而不是 Icons.TwoTone.Gesture。
+    -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M5.2,3.2h13.6v1.9H5.2z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M5.2,7.6h1.9v13.2H5.2z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M16.9,7.6h1.9v13.2h-1.9z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M6.7,12.2h10.6v1.9H6.7z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M7.6,17.2h8.8v1.9H7.6z" />
+</vector>

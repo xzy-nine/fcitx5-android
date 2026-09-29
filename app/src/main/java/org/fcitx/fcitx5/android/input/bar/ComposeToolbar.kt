@@ -40,9 +40,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.twotone.Gesture
-import androidx.compose.ui.graphics.vector.ImageVector
 import org.fcitx.fcitx5.android.R
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -488,36 +485,6 @@ private fun ToolbarIconButton(
     ) {
         Icon(
             painter = painterResource(iconRes),
-            contentDescription = contentDescription,
-            tint = iconColor,
-            modifier = Modifier.size(24.dp),
-        )
-    }
-}
-
-/**
- * custom: 使用 `ImageVector` 的工具栏按钮变体（手写入口复用 Material 的 Gesture 图标，
- * 与 `MarketHubScreen` 里手写分类的图标保持一致）。
- */
-@Composable
-private fun ToolbarIconButton(
-    onClick: () -> Unit,
-    imageVector: ImageVector,
-    iconColor: Color,
-    modifier: Modifier = Modifier,
-    contentDescription: String? = null,
-) {
-    IconButton(
-        onClick = onClick,
-        modifier = modifier
-            .size(LocalToolbarHeight.current)
-            .inputFeedback(),
-        cornerRadius = LocalToolbarHeight.current / 2,
-        minWidth = LocalToolbarHeight.current,
-        minHeight = LocalToolbarHeight.current,
-    ) {
-        Icon(
-            imageVector = imageVector,
             contentDescription = contentDescription,
             tint = iconColor,
             modifier = Modifier.size(24.dp),
