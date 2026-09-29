@@ -18,6 +18,16 @@ miuix = "0.9.4-rc01"
 compose = "1.12.0"
 kaml = "0.104.0"
 commonsCompress = "1.28.0"
+# custom: 手写识别推理（方案 A：官方 ONNX Runtime Java API 加载 ochwpro.onnx）。
+#
+# 打包结果（已实测）：`pickFirsts` 让**本地文件依赖胜出** —— 包内只有 sherpa-onnx AAR
+# 内置的那份 `libonnxruntime.so`（版本字符串 1.13.8），本 artifact 自带的同名 .so 被丢弃，
+# 只保留 `libonnxruntime4j_jni.so`（Java 绑定，仅本 artifact 提供）。
+#
+# 因此这里存在一个已知的跨版本组合：ORT4J 1.28 的 JNI 调 1.13.8 的 native runtime。
+# 可行性依据是 ORT C API 向后兼容，且候选版本（1.13.1）在本机拉不下来（Maven Central
+# TLS 握手失败，本地缓存只有 1.28.0）。**若真机上语音或手写报 UnsatisfiedLinkError /
+# 找不到 ORT 符号，第一件事就是把这里降到与 sherpa AAR 内置 ORT 同版本线（1.13.x）。**
 onnxruntimeAndroid = "1.28.0"
 
 [libraries]

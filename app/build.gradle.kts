@@ -65,13 +65,20 @@ android {
         generateLocaleConfig = true
     }
 
-    // custom: 手写识别用官方 ONNX Runtime Java API，但 native 运行时仍用 sherpa-onnx AAR
-    // 内置的那份 libonnxruntime.so（两者同名）。这里排除 onnxruntime-android 自带的 .so，
-    // 避免打包期重复文件冲突；libonnxruntime4j_jni.so（Java 绑定）保留。
-    // 注意：语音与手写因此共用同一份 native runtime，改动后需回归一次语音。
+    // custom: 手写识别用官方 ONNX Runtime Java API（`ai.onnxruntime`），native 运行时与
+    // 语音（sherpa-onnx AAR 内置）**共用同一份** `libonnxruntime.so`。
+    //
+    // 两个依赖都带同名 .so，必须留一份：
+    // - 不能用 `excludes`：它不区分来源，会把 sherpa AAR 那份也排掉，导致运行时一个都不剩
+    //   （实测 APK 里 `libonnxruntime.so` 为 0 份，语音/手写都会 UnsatisfiedLinkError）；
+    // - 用 `pickFirsts`：两者择一保留，`libonnxruntime4j_jni.so`（Java 绑定，只有
+    //   onnxruntime-android 提供）不受影响。
+    //
+    // 因此**改动 ONNX Runtime 版本 / 打包规则后，必须回归一次离线语音**，并用
+    // `unzip -l app-debug.apk | grep libonnxruntime` 确认包内确实有一份 runtime。
     packaging {
         jniLibs {
-            excludes += "**/libonnxruntime.so"
+            pickFirsts += "**/libonnxruntime.so"
         }
     }
 }

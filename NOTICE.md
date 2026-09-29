@@ -43,7 +43,7 @@
 | 模型来源 | [ximeiorg/ochwpro](https://github.com/ximeiorg/ochwpro)（**MIT**，其 `model.py`/`dataset.py`/`export_onnx.py` 为训练侧参考实现）；权重托管于 ModelScope `bikeand/ochwpro` |
 | 本仓库用法 | **仅使用成品权重**，不复制 Xime（GPL-3.0）的任何运行时代码：JNI 推理、叠写切分、Compose 画布均为本仓库按公开契约独立实现（LGPL-2.1-or-later） |
 | 模型分发 | 运行时由模型市场按 `category: handwriting` 下载（`https://index.ximei.me/models/index.yaml` 或用户自填索引），**不随 APK 分发** |
-| 推理运行时 | `com.microsoft.onnxruntime:onnxruntime-android`（**MIT**，见 [`LICENSES/MIT-onnxruntime.txt`](LICENSES/MIT-onnxruntime.txt)）；其自带的 `libonnxruntime.so` 在打包期被排除，实际使用 sherpa-onnx AAR 内置的那一份（§1） |
+| 推理运行时 | `com.microsoft.onnxruntime:onnxruntime-android`（**MIT**，见 [`LICENSES/MIT-onnxruntime.txt`](LICENSES/MIT-onnxruntime.txt)）只取其 **Java 绑定**（`libonnxruntime4j_jni.so`）；native 运行时由 `packaging.jniLibs.pickFirsts` 保留 sherpa-onnx AAR 内置的那一份 `libonnxruntime.so`（§1），因此包内仅一份 runtime、且为 1.13.x 版本线 |
 | 训练数据 | 上游权重基于 CASIA-OLHWDB（学术申请制数据集），**本仓库不再训练、不再分发该数据集**；若后续改为自训权重，需重新评估数据授权 |
 
 > 权重与索引的许可状态：ximeiorg/ochwpro 的**代码**为 MIT，但其**权重**仓库（ModelScope）未声明许可，
