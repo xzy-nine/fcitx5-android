@@ -16,4 +16,7 @@ package org.fcitx.fcitx5.android.input.keyboard
 object KeyboardLayoutNames {
     const val Text = "Text"
     const val Number = "Number"
+
+    /** custom: 手写布局（第三种布局，候选走真正的候选栏）。 */
+    const val Handwriting = "Handwriting"
 }

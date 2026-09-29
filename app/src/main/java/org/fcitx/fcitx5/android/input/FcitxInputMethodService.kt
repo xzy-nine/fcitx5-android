@@ -1263,8 +1263,6 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         Timber.d("onFinishInputView: finishingInput=$finishingInput")
         // custom: 收起语音面板覆盖层并释放麦克风（IME 隐藏时不能继续录音）
         inputView.value?.voiceInput?.closePanel()
-        // custom: 收起手写面板覆盖层（IME 隐藏时活动字固化、识别任务取消）
-        inputView.value?.handwritingInput?.closePanel()
         // the session is over — a later InputView recreation must not replay it
         currentEditorInfo = null
         currentRestarting = false

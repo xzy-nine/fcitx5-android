@@ -2,21 +2,20 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  *
- * custom: 手写输入的会话组件（独立输入方案）。
+ * custom: 手写输入的会话组件（**第三种键盘布局**，不是覆盖层面板）。
  *
- * 结构对齐 [org.fcitx.fcitx5.android.input.voice.VoiceInputComponent]：
- * - 面板不是独立 `InputWindow`，而是 [panelVisible] 驱动的**覆盖层**（键盘窗口保持 attach，
- *   工具栏可见可用、物理手势不被窗口切换打断）；
- * - 与引擎/模型的交互全部在后台协程，UI 只读 [state]；
- * - 上屏走 [FcitxInputMethodService]：活动字**替换式**上屏（`replaceBeforeCursor`），
- *   点选候选则固化活动字并直接提交该候选。
+ * 结构对齐项目里其它 `UniqueComponent`（如 `VoiceInputComponent`）：由 `KeyboardWindow`
+ * 在切到手写布局时持有并驱动，只负责「模型加载 / 叠写识别调度 / 文本上屏 / 候选投喂」，
+ * 完全不碰 UI 布局；画布与底部键行见 `HandwritingKeyboardLayout`。
  *
- * 笔画数据由 Compose 画布持有（逐点变化的每笔都进状态机会造成高频重组），
- * 画布每完成一笔调用 [onStrokesChanged] 触发一次叠写识别。
+ * 候选去向：**真正的候选栏**。识别结果经 [HandwritingCandidateFeed] 推给 `InputView`，
+ * 由后者转成 `CandidateListEvent` 走既有广播链路（`ComposeCandidateComponent` → 候选栏），
+ * 因此候选栏的样式、滑动、展开页、点选回调全部复用，不必手写自己画一份。
+ *
+ * 上屏走 [FcitxInputMethodService]：活动字**替换式**上屏（`replaceBeforeCursor`）。
  */
 package org.fcitx.fcitx5.android.input.handwriting
 
-import android.content.Context
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.fcitx.fcitx5.android.core.CandidateWord
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingCandidate
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngine
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingMarketCategory
@@ -42,17 +42,77 @@ import org.mechdancer.dependency.manager.ManagedHandler
 import org.mechdancer.dependency.manager.managedHandler
 import timber.log.Timber
 
-/** 手写面板的展示态。 */
+/**
+ * 手写候选的投喂点：把手写识别候选交给**真正的候选栏**。
+ *
+ * 做成进程级单例而不是组件成员，是因为消费方 `InputView` 与生产方 `KeyboardWindow`
+ * 分属不同组件层级，用单例避免为了传一个状态再建一条依赖边。
+ * [words] 与 [candidates] 一一对应，点选时按下标取回语义候选。
+ */
+object HandwritingCandidateFeed {
+
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    @Volatile
+    var isActive: Boolean = false
+        private set
+
+    @Volatile
+    var candidates: List<HandwritingCandidate> = emptyList()
+        private set
+
+    /** 当前应当展示给候选栏的候选词；空数组表示手写暂无候选。 */
+    @Volatile
+    var words: Array<CandidateWord> = emptyArray()
+        private set
+
+    /**
+     * 候选栏投喂器：由 `InputView` 在初始化时挂上（把 [words] 经既有广播链推给
+     * `ComposeCandidateComponent`）。**只 set 状态不会让候选栏刷新**，必须调 [publish]。
+     */
+    @Volatile
+    var emitter: ((Array<CandidateWord>) -> Unit)? = null
+
+    /**
+     * 把手写候选推给候选栏（每次 [set]/[clear] 之后都会自动调用）。
+     *
+     * 识别跑在 IO 协程里，而候选栏状态更新应发生在主线程，这里统一投递到主线程。
+     */
+    fun publish() {
+        val sink = emitter ?: return
+        val payload = words
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            sink(payload)
+        } else {
+            mainHandler.post { sink(payload) }
+        }
+    }
+
+    fun set(candidates: List<HandwritingCandidate>, active: Boolean) {
+        val newWords = candidates
+            .map { CandidateWord(label = it.char, text = it.char, comment = "") }
+            .toTypedArray()
+        if (active == isActive && newWords.contentEquals(words)) return
+        isActive = active
+        this.candidates = candidates
+        words = newWords
+        publish()
+    }
+
+    fun clear() {
+        if (!isActive && words.isEmpty()) return
+        isActive = false
+        candidates = emptyList()
+        words = emptyArray()
+        publish()
+    }
+}
+
+/** 手写键盘的展示态。 */
 data class HandwritingUiState(
-    /** 模型是否已加载完成（false 时画布只显示「正在加载模型…」）。 */
     val modelReady: Boolean = false,
-    /** 模型文件缺失（需要用户去模型市场下载）。 */
     val modelMissing: Boolean = false,
-    /** 正在识别。 */
     val recognizing: Boolean = false,
-    /** 当前活动字的候选（首选已上屏时也保留，供点选替换）。 */
-    val candidates: List<HandwritingCandidate> = emptyList(),
-    /** 一次性错误提示（如替换失败/模型损坏）。 */
     val error: String? = null,
 )
 
@@ -66,18 +126,14 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
 
     private val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, throwable ->
+            // 兜底：协程里未捕获的异常（含 native 层 Error）若逃逸会杀掉 IME 进程，
+            // 手写出问题只应表现为「识别不可用」。
             Timber.e(throwable, "handwriting: uncaught coroutine exception")
         }
     )
 
-    private val _panelVisible = MutableStateFlow(false)
-    val panelVisible: StateFlow<Boolean> = _panelVisible.asStateFlow()
-
     private val _state = MutableStateFlow(HandwritingUiState())
     val state: StateFlow<HandwritingUiState> = _state.asStateFlow()
-
-    /** 供 `InputView` 直接翻转覆盖层宿主 View 的可见性。 */
-    var panelVisibleListener: ((Boolean) -> Unit)? = null
 
     private val _segmenter = HandwritingSegmenter { strokes, topK ->
         HandwritingEngine.predict(strokes, topK)
@@ -100,29 +156,24 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
         HandwritingMarketCategory.isReady(context, prefs.handwritingModelId.getValue())
 
     // ------------------------------------------------------------------
-    // 面板开关
+    // 布局进入 / 离开
     // ------------------------------------------------------------------
 
-    fun openPanel() {
-        _panelVisible.value = true
-        panelVisibleListener?.invoke(true)
+    /** 切到本布局时调用：接管候选栏并确保模型已加载。 */
+    fun onEnter() {
+        HandwritingCandidateFeed.set(emptyList(), active = true)
         ensureModelLoaded()
     }
 
-    fun closePanel() {
+    /** 离开本布局（切回文本/数字键盘）时调用：交还候选栏。 */
+    fun onLeave() {
         recognizeJob?.cancel()
         pending = ""
         _segmenter.reset()
-        _panelVisible.value = false
-        panelVisibleListener?.invoke(false)
-        _state.value = _state.value.copy(candidates = emptyList(), recognizing = false)
+        HandwritingCandidateFeed.clear()
+        _state.value = _state.value.copy(recognizing = false)
     }
 
-    fun togglePanel() {
-        if (_panelVisible.value) closePanel() else openPanel()
-    }
-
-    /** 模型加载（幂等；面板打开时调用）。 */
     private fun ensureModelLoaded() {
         if (loadJob?.isActive == true) return
         val modelId = prefs.handwritingModelId.getValue()
@@ -131,8 +182,8 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
             return
         }
         loadJob = scope.launch {
-            val modelReady = HandwritingMarketCategory.isReady(context, modelId)
-            if (!modelReady) {
+            val ready = HandwritingMarketCategory.isReady(context, modelId)
+            if (!ready) {
                 _state.value = _state.value.copy(modelReady = false, modelMissing = true)
                 return@launch
             }
@@ -148,6 +199,7 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
         loadJob?.cancel()
         pending = ""
         _segmenter.reset()
+        HandwritingCandidateFeed.clear()
         HandwritingEngine.release()
     }
 
@@ -167,7 +219,8 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
     ) {
         recognizeJob?.cancel()
         if (strokes.isEmpty()) {
-            _state.value = _state.value.copy(candidates = emptyList(), recognizing = false)
+            HandwritingCandidateFeed.set(emptyList(), active = true)
+            _state.value = _state.value.copy(recognizing = false)
             return
         }
         recognizeJob = scope.launch {
@@ -175,7 +228,8 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
             val result = _segmenter.recognize(strokes, gaps)
             val segments = result.segments
             if (segments.isEmpty()) {
-                _state.value = _state.value.copy(recognizing = false, candidates = emptyList())
+                HandwritingCandidateFeed.set(emptyList(), active = true)
+                _state.value = _state.value.copy(recognizing = false)
                 return@launch
             }
             val active = segments.last().candidates
@@ -187,9 +241,9 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
             } else {
                 false
             }
+            HandwritingCandidateFeed.set(active, active = true)
             _state.value = _state.value.copy(
                 recognizing = false,
-                candidates = active,
                 error = if (prefs.handwritingAutoCommit.getValue() && !applied) {
                     "上屏失败：光标位置已变化"
                 } else {
@@ -213,34 +267,26 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
     /** 画布清空（停顿定型/手动清空）：活动字固化，不再参与替换。 */
     fun finalizeActive() {
         pending = ""
+        HandwritingCandidateFeed.set(emptyList(), active = true)
     }
 
     /** 撤销一笔后的回滚：当前活动字整段撤销。 */
     fun undoActive() {
         val count = pending.length
         pending = ""
+        HandwritingCandidateFeed.set(emptyList(), active = true)
         if (count <= 0) return
         scope.launch { withContext(Dispatchers.Main) { service.deleteBeforeCursor(count) } }
     }
 
-    /** 点选候选：固化当前活动字，并把选中候选直接上屏。 */
-    fun selectCandidate(candidate: HandwritingCandidate) {
+    /**
+     * 候选被点选：固化当前活动字。
+     *
+     * 候选内容的上屏由候选栏既有链路完成（`onCandidateSelect` → `commitText`），
+     * 这里只负责结束「可替换」状态（`index == 0` 时首选已自动上屏，同样只需固化）。
+     */
+    fun onCandidatePicked() {
         pending = ""
-        scope.launch {
-            withContext(Dispatchers.Main) { service.commitText(candidate.char) }
-        }
-        _state.value = _state.value.copy(candidates = emptyList())
+        HandwritingCandidateFeed.set(emptyList(), active = true)
     }
-
-    /** 清除错误提示。 */
-    fun clearError() {
-        if (_state.value.error != null) _state.value = _state.value.copy(error = null)
-    }
-
-    /** 面板可见性联动（供宿主 View 使用）。 */
-    fun attachVisibility(listener: (Boolean) -> Unit) {
-        panelVisibleListener = listener
-    }
-
-    private val serviceRef: FcitxInputMethodService get() = service
 }

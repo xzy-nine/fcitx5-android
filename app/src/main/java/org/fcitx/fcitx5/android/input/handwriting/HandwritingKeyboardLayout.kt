@@ -2,13 +2,14 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  *
- * custom: 手写画布 + 候选行 + 功能键（IME 内覆盖层内容）。
+ * custom: 手写输入作为**第三种键盘布局**（与文本/数字并列，不是覆盖层面板）。
  *
- * 交互与 Xime 的手写键盘同源但独立实现：
- * - 画布吃全部指针事件：位移超过阈值才算「起笔」，抬手且点数 ≥2 才记为一笔；
- * - 每完成一笔触发一次叠写识别（[onStrokesChanged]）；停顿后画布变淡并清空（视觉提示），
- *   清空同时固化活动字（[onFinalize]）；
- * - 行内放宽的「一笔」判定避免误点成笔。
+ * - 布局：状态行 → 手写画布 → 底部键行（复用项目既有 `KeyDef` 与 `ComposeKeyRow`，
+ *   因此长按连发、横向滑移光标等语义与主键盘完全一致）；
+ * - **候选不画在这里**，而是由 `HandwritingInputComponent` 推给真正的候选栏
+ *   （见 `InputView` 的接管逻辑）；
+ * - ⚠️ `Canvas` 的 `pointerInput` **绝不能**挂 `key(...)`：每个采样点都会重建手势节点并
+ *   CANCEL 当前笔画（症状：笔画只能写出一小截）。
  */
 package org.fcitx.fcitx5.android.input.handwriting
 
@@ -16,17 +17,12 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,23 +30,33 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import org.fcitx.fcitx5.android.R
-import org.fcitx.fcitx5.android.data.handwriting.HandwritingCandidate
 import org.fcitx.fcitx5.android.data.handwriting.StrokePoint
+import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.input.keyboard.BackspaceKey
+import org.fcitx.fcitx5.android.input.keyboard.ComposeKey
+import org.fcitx.fcitx5.android.input.keyboard.ComposeKeyRow
+import org.fcitx.fcitx5.android.input.keyboard.KeyActionListener
+import org.fcitx.fcitx5.android.input.keyboard.KeyboardLayoutNames
+import org.fcitx.fcitx5.android.input.keyboard.preferenceState
+import org.fcitx.fcitx5.android.input.keyboard.LayoutSwitchKey
+import org.fcitx.fcitx5.android.input.keyboard.ReturnKey
+import org.fcitx.fcitx5.android.input.keyboard.SpaceKey
+import org.fcitx.fcitx5.android.input.keyboard.spaceAndBackspaceGestureListener
+import org.fcitx.fcitx5.android.input.keyboard.spaceAndBackspaceSwipeSpec
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.max
@@ -76,31 +82,26 @@ private const val STROKE_MIN_WIDTH = 8f
 private const val STROKE_MAX_WIDTH = 22f
 
 private fun pauseThresholdMs(strokeCount: Int): Long =
-    (PAUSE_BASE_MS - (strokeCount - 1).coerceAtLeast(0) * PAUSE_STEP_MS).coerceAtLeast(PAUSE_MIN_MS)
+    (PAUSE_BASE_MS - (strokeCount - 1).coerceAtLeast(0) * PAUSE_STEP_MS)
+        .coerceAtLeast(PAUSE_MIN_MS)
 
 /**
- * 手写面板内容。
+ * 手写键盘。
  *
- * @param modelReady 模型是否就绪（false 时画布只显示提示，不接收笔画）
- * @param statusText 状态文案（加载中 / 识别中 / 空闲）
- * @param candidates 当前活动字的候选
+ * @param modelReady 模型是否就绪（false 时画布不接收笔画，只显示提示）
+ * @param statusText 状态文案（加载中 / 识别中 / 空闲 / 错误）
  * @param onStrokesChanged 笔画变化（每完成一笔触发一次叠写识别）
- * @param onFinalize 活动字固化（停顿清空画布）
+ * @param onFinalize 活动字固化（停顿清窗）
  * @param onUndoActive 撤销一笔导致活动字整段回滚
- * @param onSelectCandidate 点选候选
- * @param onClear 手动清空画布
  */
 @Composable
-fun ComposeHandwritingPanel(
+fun HandwritingKeyboardLayout(
     modelReady: Boolean,
     statusText: String,
-    candidates: List<HandwritingCandidate>,
     onStrokesChanged: (List<List<StrokePoint>>, List<Long>) -> Unit,
     onFinalize: () -> Unit,
     onUndoActive: () -> Unit,
-    onSelectCandidate: (HandwritingCandidate) -> Unit,
-    onClear: () -> Unit,
-    onBackToKeyboard: () -> Unit,
+    keyActionListener: KeyActionListener?,
     modifier: Modifier = Modifier,
 ) {
     val colors = MiuixTheme.colorScheme
@@ -108,6 +109,10 @@ fun ComposeHandwritingPanel(
     var currentStroke by remember { mutableStateOf<List<StrokePoint>>(emptyList()) }
     var strokeCount by remember { mutableIntStateOf(0) }
     var fading by remember { mutableStateOf(false) }
+    val view = LocalView.current
+    val keyboardPrefs = remember { AppPrefs.getInstance().keyboard }
+    val hapticOnRepeat = keyboardPrefs.hapticOnRepeat.preferenceState()
+    val spaceSwipeMoveCursor = keyboardPrefs.spaceSwipeMoveCursor.preferenceState()
 
     fun commitStroke(stroke: List<StrokePoint>) {
         strokes.add(stroke)
@@ -133,47 +138,45 @@ fun ComposeHandwritingPanel(
         if (strokes.size == strokeCount) clearAll(finalize = true)
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize().background(colors.background)) {
 
-        // 状态行：状态文案 + 候选
-        Row(
+        // 状态行：状态文案 + 「撤销一笔」小按钮（候选交给真正的候选栏）
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(34.dp)
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(horizontal = 12.dp, vertical = 2.dp),
         ) {
             Text(
                 text = statusText,
                 color = colors.onSurfaceVariantSummary,
                 fontSize = 12.sp,
                 maxLines = 1,
+                modifier = Modifier.align(Alignment.CenterStart),
             )
-            Spacer(Modifier.width(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                candidates.take(8).forEachIndexed { index, candidate ->
-                    Text(
-                        text = candidate.char,
-                        color = if (index == 0) colors.primary else colors.onSurface,
-                        fontSize = 18.sp,
-                        fontWeight = if (index == 0) FontWeight.Medium else FontWeight.Normal,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (index == 0) colors.secondaryContainer else Color.Transparent)
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                            .pointerInput(candidate) {
-                                awaitEachGesture {
-                                    awaitFirstDown(requireUnconsumed = false)
-                                    onSelectCandidate(candidate)
-                                }
-                            },
-                    )
-                }
-            }
+            Text(
+                text = stringResource(R.string.handwriting_undo_stroke),
+                color = colors.primary,
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            if (strokes.isNotEmpty()) {
+                                strokes.removeAt(strokes.size - 1)
+                                strokeCount = strokes.size
+                                fading = false
+                                if (strokes.isEmpty()) onUndoActive()
+                                else onStrokesChanged(strokes.toList(), gapsOf(strokes))
+                            } else {
+                                onUndoActive()
+                            }
+                        }
+                    },
+            )
         }
+
+        // 画布
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -225,7 +228,8 @@ fun ComposeHandwritingPanel(
                         }
                     },
             ) {
-                val color = if (fading) colors.onSurface.copy(alpha = 0.3f) else colors.onSurface
+                val color =
+                    if (fading) colors.onSurface.copy(alpha = 0.3f) else colors.onSurface
                 strokes.forEach { drawStroke(it, color) }
                 if (currentStroke.size >= 2) drawStroke(currentStroke, color)
             }
@@ -234,96 +238,54 @@ fun ComposeHandwritingPanel(
                     text = stringResource(R.string.handwriting_model_missing),
                     color = colors.primary,
                     fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
                     modifier = Modifier.align(Alignment.Center).padding(24.dp),
                 )
             }
         }
 
-        // 功能键行
-        Row(
+        // 底部键行：复用 KeyDef + ComposeKeyRow，手势语义与主键盘一致
+        //（退格：按下删除/长按连发/横滑移光标；空格：长按语音）
+        val listenerState = rememberUpdatedState(keyActionListener)
+        val row = remember {
+            listOf(
+                BackspaceKey(percentWidth = 0.20f),
+                LayoutSwitchKey(
+                    displayText = "ABC",
+                    to = KeyboardLayoutNames.Text,
+                    percentWidth = 0.14f
+                ),
+                SpaceKey(),
+                ReturnKey(percentWidth = 0.20f),
+            )
+        }
+        ComposeKeyRow(
+            row = row,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp)
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            PanelKey(
-                text = stringResource(R.string.handwriting_undo_stroke),
-                onClick = {
-                    if (strokes.isNotEmpty()) {
-                        strokes.removeAt(strokes.size - 1)
-                        strokeCount = strokes.size
-                        fading = false
-                        if (strokes.isEmpty()) {
-                            // 撤销到空 → 屏上活动字整段回滚
-                            onUndoActive()
-                        } else {
-                            onStrokesChanged(strokes.toList(), gapsOf(strokes))
-                        }
-                    } else {
-                        onUndoActive()
-                    }
-                },
-                modifier = Modifier.weight(1.4f),
-            )
-            PanelKey(
-                text = stringResource(R.string.handwriting_clear),
-                onClick = { clearAll(finalize = true); onClear() },
-                modifier = Modifier.weight(1f),
-            )
-            PanelKey(
-                text = stringResource(R.string.handwriting_candidates),
-                onClick = { },
-                enabled = false,
-                modifier = Modifier.weight(1f),
-            )
-            PanelKey(
-                text = stringResource(R.string.handwriting_back_to_keyboard),
-                onClick = onBackToKeyboard,
-                modifier = Modifier.weight(1.6f),
-                emphasized = true,
+                .padding(horizontal = 4.dp),
+            keyIdBase = 900,
+        ) { keyId, def, insets, keyModifier ->
+            val swipeSpec = def.spaceAndBackspaceSwipeSpec(spaceSwipeMoveCursor)
+            val gestureListener = remember(def, hapticOnRepeat) {
+                def.spaceAndBackspaceGestureListener(
+                    view = view,
+                    onAction = { action ->
+                        listenerState.value?.onKeyAction(action, KeyActionListener.Source.Keyboard)
+                    },
+                    hapticOnRepeat = hapticOnRepeat,
+                )
+            }
+            ComposeKey(
+                def = def,
+                keyId = keyId,
+                modifier = keyModifier,
+                insets = insets,
+                keyActionListener = listenerState.value,
+                swipeSpec = swipeSpec,
+                onSwipeGesture = gestureListener,
             )
         }
-    }
-}
-
-/** 面板功能键：统一的圆角块（与语音面板的删除键同一视觉语言）。 */
-@Composable
-private fun PanelKey(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    emphasized: Boolean = false,
-) {
-    val colors = MiuixTheme.colorScheme
-    val background = when {
-        !enabled -> colors.secondaryContainer.copy(alpha = 0.4f)
-        emphasized -> colors.secondaryContainer
-        else -> colors.secondaryContainer.copy(alpha = 0.7f)
-    }
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .clip(RoundedCornerShape(10.dp))
-            .background(background)
-            .pointerInput(text, enabled) {
-                if (!enabled) return@pointerInput
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
-                    onClick()
-                }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = text,
-            color = colors.onSecondaryContainer,
-            fontSize = 13.sp,
-            textAlign = TextAlign.Center,
-        )
     }
 }
 
@@ -334,7 +296,7 @@ private fun gapsOf(strokes: List<List<StrokePoint>>): List<Long> =
         else stroke.first().timeMs - strokes[index - 1].last().timeMs
     }
 
-/** 按速度插值笔宽（与 Xime 手写键盘同一观感：快写细、慢写粗）。 */
+/** 按速度插值笔宽（快写细、慢写粗）。 */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStroke(
     stroke: List<StrokePoint>,
     color: Color,
@@ -351,7 +313,6 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStroke(
         val dy = p1.y - p0.y
         val distance = sqrt(dx * dx + dy * dy)
         val dt = max((p1.timeMs - p0.timeMs).toFloat() / 1000f, 0.001f)
-        // 归一化速度：约 100 px 对应 1.0
         val speed = distance / dt / 100f
         val raw = when {
             speed >= 3f -> STROKE_MIN_WIDTH

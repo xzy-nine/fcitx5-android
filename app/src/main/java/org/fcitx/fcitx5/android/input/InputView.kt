@@ -64,7 +64,6 @@ import androidx.core.view.isVisible
 import org.fcitx.fcitx5.android.input.voice.VoiceInputComponent
 import org.fcitx.fcitx5.android.input.voice.VoicePanelHost
 import org.fcitx.fcitx5.android.input.handwriting.HandwritingInputComponent
-import org.fcitx.fcitx5.android.input.handwriting.HandwritingPanelHost
 import org.fcitx.fcitx5.android.input.wm.createComposeWindowView
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.unset
@@ -145,7 +144,8 @@ class InputView(
     // 键盘调音覆盖层（custom 特色：拖拽调键盘高度/边距/间隙，模糊键盘背景）：
     // 根组合（createComposeInputView）经 OverlayContent 渲染，故需对外可见
     internal val keyboardTune = KeyboardTuneCompose({ keyboardTuneMetrics() }) { setKeyboardTuneBlur(false) }
-    private val keyboardWindow = KeyboardWindow()
+    // custom: 供工具栏把布局切到手写（见 ComposeKawaiiBarComponent.onHandwritingInput）
+    internal val keyboardWindow = KeyboardWindow()
     private val symbolPicker = symbolPicker()
     private val emojiPicker = emojiPicker()
     private val emoticonPicker = emoticonPicker()
@@ -172,27 +172,6 @@ class InputView(
             isClickable = true
             isVisible = false
             voiceInput.panelVisibleListener = { visible -> isVisible = visible }
-        }
-    }
-
-    /**
-     * custom: 手写面板覆盖层宿主（与语音面板同构，见 [voicePanelView]）。
-     * 键盘窗口保持 attach，工具栏可用；画布自身消费全部触摸，不会穿透到下层键盘。
-     */
-    private val handwritingPanelView: View by lazy {
-        createComposeWindowView(themedContext) {
-            HandwritingPanelHost(
-                handwriting = handwritingInput,
-                onBackToKeyboard = {
-                    handwritingInput.closePanel()
-                    windowManager.attachWindow(KeyboardWindow)
-                },
-            )
-        }.apply {
-            elevation = 1f
-            isClickable = true
-            isVisible = false
-            handwritingInput.panelVisibleListener = { visible -> isVisible = visible }
         }
     }
 
@@ -305,6 +284,18 @@ class InputView(
         scope += voiceInput
         // custom: 手写输入会话组件（独立输入方案，覆盖层与语音同构）
         scope += handwritingInput
+        // custom: 手写候选的投喂器：手写侧 set/publish 时经既有广播链刷新候选栏
+        org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed.emitter = { words ->
+            broadcaster.onCandidateUpdate(
+                FcitxEvent.CandidateListEvent.Data(total = -1, candidates = words)
+            )
+        }
+        // custom: 手写候选被点选时固化活动字（候选内容的上屏仍走 fcitx.select 既有链路）
+        composeCandidate.onCandidatePicked = {
+            if (org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed.isActive) {
+                handwritingInput.onCandidatePicked()
+            }
+        }
         broadcaster.onScopeSetupFinished(scope)
     }
 
@@ -472,13 +463,6 @@ class InputView(
             // 不会因布局切换被 CANCEL，物理松手才能被键盘侧收到（见 VoicePanelHost 注释）。
             // elevation 保证之后 attachWindow 追加的窗口 View 不会盖住它。
             windowManager.view.add(
-                handwritingPanelView,
-                FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT
-                )
-            )
-            windowManager.view.add(
                 voicePanelView,
                 FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
@@ -642,7 +626,6 @@ class InputView(
         if (!restarting || (focusChangeResetKeyboard && !sameEditor)) {
             // 收起语音/手写面板覆盖层（若有）：会话丢弃、资源释放
             voiceInput.closePanel()
-            handwritingInput.closePanel()
             windowManager.attachWindow(KeyboardWindow)
         }
     }
@@ -667,7 +650,19 @@ class InputView(
     override fun handleFcitxEvent(it: FcitxEvent<*>) {
         when (it) {
             is FcitxEvent.CandidateListEvent -> {
-                broadcaster.onCandidateUpdate(it.data)
+                // custom: 手写布局期间候选栏归手写（识别候选），不让 fcitx 的候选覆盖；
+                // 离开手写布局时 feed.clear()，自动恢复 fcitx 候选。
+                val feed = org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed
+                if (feed.isActive) {
+                    broadcaster.onCandidateUpdate(
+                        FcitxEvent.CandidateListEvent.Data(
+                            total = -1,
+                            candidates = feed.words,
+                        )
+                    )
+                } else {
+                    broadcaster.onCandidateUpdate(it.data)
+                }
             }
             is FcitxEvent.ClientPreeditEvent -> {
                 preeditEmptyState.updatePreeditEmptyState(clientPreedit = it.data)

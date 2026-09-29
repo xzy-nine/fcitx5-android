@@ -12,6 +12,7 @@ import android.view.inputmethod.EditorInfo
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -19,8 +20,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.transition.Slide
+import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CapabilityFlags
 import org.fcitx.fcitx5.android.core.InputMethodEntry
 import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
@@ -28,6 +31,7 @@ import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
 import org.fcitx.fcitx5.android.input.dependency.fcitx
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
+import org.fcitx.fcitx5.android.input.handwriting.HandwritingKeyboardLayout
 import org.fcitx.fcitx5.android.input.picker.PickerWindow
 import org.fcitx.fcitx5.android.input.popup.PopupActionListener
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
@@ -66,13 +70,16 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
     private val popup: PopupComponent by manager.must()
     private val bar: ComposeKawaiiBarComponent by manager.must()
     private val returnKeyDrawable: ReturnKeyDrawableComponent by manager.must()
+    // custom: 手写输入会话（第三种键盘布局）
+    private val handwriting: org.fcitx.fcitx5.android.input.handwriting.HandwritingInputComponent
+            by manager.must()
 
     companion object : EssentialWindow.Key
 
     override val key: EssentialWindow.Key
         get() = KeyboardWindow
 
-    /** 当前布局（Compose 状态）：[KeyboardLayoutNames.Text] 或 [KeyboardLayoutNames.Number]。 */
+    /** 当前布局（Compose 状态）：Text / Number / Handwriting。 */
     private val currentLayout = mutableStateOf(KeyboardLayoutNames.Text)
 
     /** 文本键盘状态层（跨布局切换与重组存活）。 */
@@ -155,6 +162,25 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
                     isSplitAllowedByRatio(widthPx, heightPx, splitThreshold)
 
             when (layout) {
+                KeyboardLayoutNames.Handwriting -> {
+                    val hs = handwriting.state.collectAsState().value
+                    val status = when {
+                        hs.modelMissing -> stringResource(R.string.handwriting_model_missing)
+                        !hs.modelReady -> stringResource(R.string.handwriting_state_loading)
+                        hs.recognizing -> stringResource(R.string.handwriting_state_recognizing)
+                        else -> stringResource(R.string.handwriting_state_idle)
+                    }
+                    HandwritingKeyboardLayout(
+                        modelReady = hs.modelReady,
+                        statusText = hs.error ?: status,
+                        onStrokesChanged = handwriting::onStrokesChanged,
+                        onFinalize = handwriting::finalizeActive,
+                        onUndoActive = handwriting::undoActive,
+                        keyActionListener = keyActionListener,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+
                 KeyboardLayoutNames.Number -> ComposeNumberKeyboard(
                     state = numberKeyboardState,
                     keyActionListener = keyActionListener,
@@ -182,9 +208,17 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
 
     fun switchLayout(to: String) {
         ContextCompat.getMainExecutor(service).execute {
-            if (to == KeyboardLayoutNames.Text || to == KeyboardLayoutNames.Number) {
+            if (to == KeyboardLayoutNames.Text || to == KeyboardLayoutNames.Number ||
+                to == KeyboardLayoutNames.Handwriting
+            ) {
                 if (to == currentLayout.value) return@execute
+                if (currentLayout.value == KeyboardLayoutNames.Handwriting &&
+                    to != KeyboardLayoutNames.Handwriting
+                ) {
+                    handwriting.onLeave()
+                }
                 currentLayout.value = to
+                if (to == KeyboardLayoutNames.Handwriting) handwriting.onEnter()
                 if (windowManager.isAttached(this)) {
                     notifyBarLayoutChanged()
                 }
@@ -236,6 +270,8 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
 
     override fun onDetached() {
         popup.dismissAll()
+        // custom: 离开手写布局时交还候选栏，避免手写候选残留
+        if (currentLayout.value == KeyboardLayoutNames.Handwriting) handwriting.onLeave()
     }
 
     // Call this when

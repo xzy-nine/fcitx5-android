@@ -143,6 +143,9 @@ class ComposeCandidateComponent :
 
     private var lastCandidateData = FcitxEvent.CandidateListEvent.Data()
 
+    /** custom: 候选被点选时的外部钩子（手写用它固化活动字）。 */
+    var onCandidatePicked: ((Int) -> Unit)? = null
+
     private val loadMoreBatch by lazy {
         maxSpanCountPref.getValue().coerceAtLeast(LOAD_MORE_BATCH_MIN)
     }
@@ -328,6 +331,9 @@ class ComposeCandidateComponent :
             visuals = getVisuals(),
             callbacks = CandidateBarCallbacks(
                 onCandidateSelect = { index ->
+                    // custom: 手写布局期间候选来自手写（HandwritingCandidateFeed），
+                    // 先让手写侧固化活动字，再走既有 commit 链路。
+                    onCandidatePicked?.invoke(index)
                     fcitx.launchOnReady { it.select(index) }
                 },
                 onCandidateLongClick = { index, candidate, windowOffset ->
