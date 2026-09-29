@@ -28,7 +28,7 @@ object HandwritingMarketCategory :
         HandwritingModelStore.modelDir(context, model.id)
 
     override fun isReady(context: Context, modelId: String): Boolean =
-        HandwritingModelStore.resolve(context, modelId) != null
+        HandwritingModelStore.isReady(context, modelId)
 
     override fun selectedModelId(context: Context): String =
         AppPrefs.getInstance().handwriting.handwritingModelId.getValue()
