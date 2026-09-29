@@ -41,11 +41,12 @@ class HandwritingPreprocessTest {
         assertEquals(0f, seq.data[8], 1e-6f)
         assertEquals(0f, seq.data[9], 1e-6f)
 
-        // 点 2：第二笔起点 (0,1)，笔间增量归零
+        // 点 2：第二笔起点 (0,1)。delta 是**相邻采样点**之差（跨笔时按上一笔末点与
+        // 起笔点的位移算，不归零），笔内 pen_down=1
         assertEquals(0f, seq.data[10], 1e-6f)
         assertEquals(1f, seq.data[11], 1e-6f)
-        assertEquals(0f, seq.data[12], 1e-6f)
-        assertEquals(0f, seq.data[13], 1e-6f)
+        assertEquals(-1f, seq.data[12], 1e-6f)
+        assertEquals(1f, seq.data[13], 1e-6f)
         assertEquals(1f, seq.data[14], 1e-6f)
 
         // 点 3：第二笔末点 (1,1)，pen_down=0
@@ -61,7 +62,9 @@ class HandwritingPreprocessTest {
         assertEquals(0f, seq.data[0], 1e-6f)
         assertEquals(0f, seq.data[1], 1e-6f)
         assertEquals(0f, seq.data[2], 1e-6f)
-        assertEquals(1f, seq.data[4], 1e-6f)
+        assertEquals(0f, seq.data[3], 1e-6f)
+        // 单点笔是「一笔的末点」→ pen_down=0（抬笔）
+        assertEquals(0f, seq.data[4], 1e-6f)
     }
 
     @Test

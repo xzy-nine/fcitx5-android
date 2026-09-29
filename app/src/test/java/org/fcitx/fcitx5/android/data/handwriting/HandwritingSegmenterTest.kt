@@ -65,10 +65,10 @@ class HandwritingSegmenterTest {
     fun `cursive multi character without pause keeps dp split when merged score is low`() = runBlocking {
         // 连笔写两个字：整段识别分数很低，不应被「一个字先验」吞掉
         val seg = segmenter { segment ->
-            when {
-                segment.size >= 4 -> listOf(HandwritingCandidate("?", 0.02f))
-                segment.size == 2 -> listOf(HandwritingCandidate("你", 0.9f))
-                else -> listOf(HandwritingCandidate("好", 0.9f))
+            when (segment.size) {
+                2 -> listOf(HandwritingCandidate("你", 0.9f))
+                1 -> listOf(HandwritingCandidate("好", 0.9f))
+                else -> listOf(HandwritingCandidate("?", 0.02f))
             }
         }
         val result = seg.recognize(strokes(4), listOf(0L, 30L, 30L, 30L))
@@ -78,20 +78,26 @@ class HandwritingSegmenterTest {
 
     @Test
     fun `segment results are cached across appended strokes`() = runBlocking {
-        var calls = 0
-        val seg = segmenter { segment ->
-            calls += 1
-            listOf(HandwritingCandidate("字", 0.9f / segment.size))
+        val requested = mutableListOf<Pair<Int, Int>>()
+        val seg = HandwritingSegmenter { strokeList, _ ->
+            requested += 0 to strokeList.size
+            listOf(HandwritingCandidate("字", 0.9f / strokeList.size))
         }
-        seg.recognize(strokes(2), listOf(0L, 30L))
-        val firstRound = calls
-        assertTrue("首轮应发生推理", firstRound > 0)
+        val two = strokes(2)
+        seg.recognize(two, listOf(0L, 30L))
+        // 首轮已覆盖「前两笔」的所有子段
+        assertTrue("首轮应已推理 (0,2)", requested.contains(0 to 2))
 
-        // 追加两笔：已算过的 (0,2) 等段不应重新推理
-        calls = 0
-        seg.recognize(strokes(4), listOf(0L, 30L, 30L, 30L))
-        val secondRound = calls
-        assertTrue("追加笔画后只应新增少量推理（实际 $secondRound）", secondRound < 4)
+        // 追加两笔：已覆盖的子段（0..2 范围内）**不得重新推理**，只允许新增涉及第 3/4 笔的段
+        requested.clear()
+        val four = strokes(4)
+        seg.recognize(four, listOf(0L, 30L, 30L, 30L))
+        val recomputed = requested.filter { it.second <= 2 }
+        assertTrue(
+            "已缓存子段被重复推理：$recomputed（本轮全部：$requested）",
+            recomputed.isEmpty(),
+        )
+        assertTrue("追加笔画后应确实新增了推理：$requested", requested.isNotEmpty())
     }
 
     @Test
