@@ -2,14 +2,17 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  *
- * custom: 手写输入作为**第三种键盘布局**（与文本/数字并列，不是覆盖层面板）。
+ * custom: 手写输入作为**第三种键盘布局**（与文本/数字并列）。
  *
- * - 布局：状态行 → 手写画布 → 底部键行（复用项目既有 `KeyDef` 与 `ComposeKeyRow`，
- *   因此长按连发、横向滑移光标等语义与主键盘完全一致）；
- * - **候选不画在这里**，而是由 `HandwritingInputComponent` 推给真正的候选栏
- *   （见 `InputView` 的接管逻辑）；
- * - ⚠️ `Canvas` 的 `pointerInput` **绝不能**挂 `key(...)`：每个采样点都会重建手势节点并
- *   CANCEL 当前笔画（症状：笔画只能写出一小截）。
+ * - 布局：状态行 → 手写画布 → 底部键行（复用项目既有 `KeyDef` 与 `ComposeKeyRow`）；
+ * - 候选由 `HandwritingInputComponent` 推给候选栏，不绘制在本布局；
+ * - 识别窗口：每落一笔全窗重新识别；停顿只推进视觉前缀（变淡 → 隐藏），
+ *   超长闲置（变淡后 [HW_CLEAR_IDLE_MS]）清空窗口并回调 [HandwritingKeyboardLayout] 的 `onFinalize`；
+ * - 三段式渲染：`[0,gone)` 不画、`[gone,fade)` 变淡、`[fade,end)` 正常；
+ * - 固化：窗口笔画数超过 `HW_RECOGNIZE_WINDOW_LIMIT`，或段数饱和且存在已完成前缀时，
+ *   把最早段移出窗口并回调 `onSegmentSettled`；
+ * - ⚠️ `Canvas` 的 `pointerInput` 不挂 `key(...)`：否则每个采样点都会重建手势节点并
+ *   CANCEL 当前笔画。
  */
 package org.fcitx.fcitx5.android.input.handwriting
 
@@ -27,9 +30,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,8 +47,16 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngine
+import org.fcitx.fcitx5.android.data.handwriting.HandwritingSegmenter
+import org.fcitx.fcitx5.android.data.handwriting.HandwritingStrokeFx
 import org.fcitx.fcitx5.android.data.handwriting.StrokePoint
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.keyboard.BackspaceKey
@@ -65,42 +78,43 @@ import kotlin.math.sqrt
 /** 起笔判定阈值（px）：小于它视为点击而不是笔画。 */
 private const val STROKE_START_THRESHOLD_PX = 12f
 
-/** 每多一笔，停顿阈值递减量（ms）。 */
-private const val PAUSE_STEP_MS = 50L
+/** 变淡后推进「隐藏」前缀的延时（ms）。 */
+private const val HW_FADE_OUT_MS = 450L
 
-/** 停顿阈值下限（ms）。 */
-private const val PAUSE_MIN_MS = 500L
+/**
+ * 超长闲置（ms）：停顿变淡后仍无新笔画达到此时长，才真正清空识别窗口。
+ */
+private const val HW_CLEAR_IDLE_MS = 3000L
 
-/** 停顿阈值上限（ms，起笔阶段保守）。 */
-private const val PAUSE_BASE_MS = 700L
-
-/** 停顿后仍无新笔画的清空延时（ms）。 */
-private const val IDLE_CLEAR_MS = 2500L
+/** 单次识别任务里最多连续固化的轮数。 */
+private const val MAX_SETTLE_ROUNDS = 8
 
 /** 字迹粗细范围（px）。 */
 private const val STROKE_MIN_WIDTH = 8f
 private const val STROKE_MAX_WIDTH = 22f
-
-private fun pauseThresholdMs(strokeCount: Int): Long =
-    (PAUSE_BASE_MS - (strokeCount - 1).coerceAtLeast(0) * PAUSE_STEP_MS)
-        .coerceAtLeast(PAUSE_MIN_MS)
 
 /**
  * 手写键盘。
  *
  * @param modelReady 模型是否就绪（false 时画布不接收笔画，只显示提示）
  * @param statusText 状态文案（加载中 / 识别中 / 空闲 / 错误）
- * @param onStrokesChanged 笔画变化（每完成一笔触发一次叠写识别）
- * @param onFinalize 活动字固化（停顿清窗）
- * @param onUndoActive 撤销一笔导致活动字整段回滚
+ * @param clearSignal 外部清空请求（固化/上屏失败时递增；本布局清笔画并重置段缓存）
+ * @param onRecognition 识别结果（时间序；最后一段=当前正在写的字）
+ * @param onSegmentSettled 最早段被固化出窗（文本已上屏，参数为固化的文本）
+ * @param onUndoActive 撤销到窗口为空：屏上活动区文本应一并撤销
+ * @param onRecognizing 识别忙闲（状态行用）
+ * @param keyActionListener 底部键行的按键出口
  */
 @Composable
 fun HandwritingKeyboardLayout(
     modelReady: Boolean,
     statusText: String,
-    onStrokesChanged: (List<List<StrokePoint>>, List<Long>) -> Unit,
+    clearSignal: Int,
     onFinalize: () -> Unit,
+    onRecognition: (List<HandwritingSegmenter.Segment>) -> Unit,
+    onSegmentSettled: (String) -> Unit,
     onUndoActive: () -> Unit,
+    onRecognizing: (Boolean) -> Unit,
     keyActionListener: KeyActionListener?,
     modifier: Modifier = Modifier,
 ) {
@@ -108,34 +122,164 @@ fun HandwritingKeyboardLayout(
     val strokes = remember { mutableStateListOf<List<StrokePoint>>() }
     var currentStroke by remember { mutableStateOf<List<StrokePoint>>(emptyList()) }
     var strokeCount by remember { mutableIntStateOf(0) }
-    var fading by remember { mutableStateOf(false) }
+
+    /** 已完成前缀（段边界间隔 ≥ [HW_FADE_GAP_MS] 之前），仅影响渲染。 */
+    var donePrefix by remember { mutableIntStateOf(0) }
+
+    /** 已隐藏（不画）的前缀：变淡 [HW_FADE_OUT_MS] 后推进。 */
+    var gonePrefix by remember { mutableIntStateOf(0) }
+
+    /** 停顿提示：整窗变淡/隐藏（不清笔画）。 */
+    var idleHidden by remember { mutableStateOf(false) }
+
+    var lastStrokeEndMs by remember { mutableLongStateOf(0L) }
     val view = LocalView.current
     val keyboardPrefs = remember { AppPrefs.getInstance().keyboard }
     val hapticOnRepeat = keyboardPrefs.hapticOnRepeat.preferenceState()
     val spaceSwipeMoveCursor = keyboardPrefs.spaceSwipeMoveCursor.preferenceState()
+    val scope = rememberCoroutineScope()
+
+    // 段缓存随组合存活（离开布局即释放）
+    val recognizer = remember {
+        HandwritingSegmenter { s, k -> HandwritingEngine.predict(s, k) }
+    }
+    var recognizeJob by remember { mutableStateOf<Job?>(null) }
+
+    /** 变淡范围起点：停顿提示时是整窗，否则是已完成前缀。 */
+    val fadeStart = if (idleHidden) strokes.size else donePrefix
+
+    // 变淡后推进「隐藏」前缀（只影响渲染）
+    LaunchedEffect(fadeStart) {
+        if (fadeStart > 0) {
+            delay(HW_FADE_OUT_MS)
+            gonePrefix = fadeStart
+        }
+    }
+
+    // 停顿达阈值后整窗变淡；继续闲置 HW_CLEAR_IDLE_MS 则清空窗口并固化活动区
+    LaunchedEffect(lastStrokeEndMs, strokeCount) {
+        if (lastStrokeEndMs <= 0L || strokeCount <= 0) return@LaunchedEffect
+        delay(HandwritingStrokeFx.splitPauseMs(strokeCount))
+        if (lastStrokeEndMs <= 0L) return@LaunchedEffect
+        idleHidden = true
+        delay(HW_CLEAR_IDLE_MS)
+        if (lastStrokeEndMs <= 0L) return@LaunchedEffect
+        recognizeJob?.cancel()
+        strokes.clear()
+        currentStroke = emptyList()
+        strokeCount = 0
+        donePrefix = 0
+        gonePrefix = 0
+        idleHidden = false
+        lastStrokeEndMs = 0L
+        recognizer.reset()
+        onFinalize()
+    }
+
+    // 外部清空请求：清笔画并重置段缓存
+    LaunchedEffect(clearSignal) {
+        if (clearSignal <= 0) return@LaunchedEffect
+        recognizeJob?.cancel()
+        recognizeJob = null
+        strokes.clear()
+        currentStroke = emptyList()
+        strokeCount = 0
+        donePrefix = 0
+        gonePrefix = 0
+        idleHidden = false
+        lastStrokeEndMs = 0L
+        recognizer.reset()
+        onRecognizing(false)
+    }
+
+    fun scheduleRecognition() {
+        recognizeJob?.cancel()
+        recognizeJob = scope.launch {
+            val self = coroutineContext[Job]
+            onRecognizing(true)
+            try {
+                var round = 0
+                while (isActive && round++ < MAX_SETTLE_ROUNDS) {
+                    val window = strokes.toList()
+                    if (window.isEmpty()) {
+                        onRecognition(emptyList())
+                        return@launch
+                    }
+                    val gaps = HandwritingStrokeFx.windowGaps(window)
+                    val result = withContext(Dispatchers.Default) {
+                        recognizer.recognize(window, gaps)
+                    }
+                    if (!isActive) return@launch
+                    val segments = result.segments
+                    if (segments.isEmpty()) {
+                        onRecognition(emptyList())
+                        return@launch
+                    }
+                    onRecognition(segments)
+
+                    // 已完成前缀只做视觉变淡
+                    val done = HandwritingStrokeFx.settledStrokesBeforeCurrent(segments, gaps)
+                    donePrefix = done
+                    if (gonePrefix > done) gonePrefix = done
+
+                    // 固化：窗口超限，或段数饱和且有已完成前缀
+                    val over = HandwritingStrokeFx.isWindowOverLimit(window.size)
+                    val saturated = HandwritingStrokeFx.needsSettleOnSaturation(segments.size, done)
+                    if (!over && !saturated) return@launch
+                    val settleStrokes = if (over) segments.first().strokeCount else done
+                    if (settleStrokes <= 0) return@launch
+                    val settledText = segments
+                        .filter { it.startStroke + it.strokeCount <= settleStrokes }
+                        .mapNotNull { it.candidates.firstOrNull()?.char }
+                        .joinToString("")
+                    onSegmentSettled(settledText)
+                    withContext(Dispatchers.Main) {
+                        repeat(settleStrokes) { if (strokes.isNotEmpty()) strokes.removeAt(0) }
+                        strokeCount = strokes.size
+                        donePrefix = 0
+                        gonePrefix = 0
+                        recognizer.onStrokesTrimmed(settleStrokes)
+                    }
+                }
+            } finally {
+                if (recognizeJob === self) {
+                    recognizeJob = null
+                    onRecognizing(false)
+                }
+            }
+        }
+    }
 
     fun commitStroke(stroke: List<StrokePoint>) {
         strokes.add(stroke)
         strokeCount = strokes.size
-        fading = false
-        onStrokesChanged(strokes.toList(), gapsOf(strokes))
+        // 新笔画落下：取消停顿提示并显示整窗，随后由识别结果更新已完成前缀
+        if (idleHidden) {
+            idleHidden = false
+            gonePrefix = 0
+        }
+        lastStrokeEndMs = System.currentTimeMillis()
+        scheduleRecognition()
     }
 
-    fun clearAll(finalize: Boolean) {
-        strokes.clear()
-        currentStroke = emptyList()
-        strokeCount = 0
-        fading = false
-        if (finalize) onFinalize()
-    }
-
-    // 停顿 → 字迹变淡提示「已识别上屏」；再等 IDLE_CLEAR_MS 无新笔画才真正清空（固化活动字）
-    LaunchedEffect(strokeCount) {
-        if (strokeCount <= 0) return@LaunchedEffect
-        delay(pauseThresholdMs(strokeCount))
-        fading = true
-        delay(IDLE_CLEAR_MS)
-        if (strokes.size == strokeCount) clearAll(finalize = true)
+    fun undoLastStroke() {
+        if (strokes.isEmpty()) {
+            onUndoActive()
+            return
+        }
+        strokes.removeAt(strokes.size - 1)
+        strokeCount = strokes.size
+        idleHidden = false
+        if (donePrefix > strokes.size) donePrefix = strokes.size
+        if (gonePrefix > strokes.size) gonePrefix = strokes.size
+        if (strokes.isEmpty()) {
+            lastStrokeEndMs = 0L
+            recognizer.reset()
+            onUndoActive()
+        } else {
+            lastStrokeEndMs = System.currentTimeMillis()
+            scheduleRecognition()
+        }
     }
 
     Column(modifier = modifier.fillMaxSize().background(colors.background)) {
@@ -162,15 +306,7 @@ fun HandwritingKeyboardLayout(
                     .pointerInput(Unit) {
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false)
-                            if (strokes.isNotEmpty()) {
-                                strokes.removeAt(strokes.size - 1)
-                                strokeCount = strokes.size
-                                fading = false
-                                if (strokes.isEmpty()) onUndoActive()
-                                else onStrokesChanged(strokes.toList(), gapsOf(strokes))
-                            } else {
-                                onUndoActive()
-                            }
+                            undoLastStroke()
                         }
                     },
             )
@@ -202,6 +338,8 @@ fun HandwritingKeyboardLayout(
                                     val distance = (change.position - down.position).getDistance()
                                     if (!drawing && distance > STROKE_START_THRESHOLD_PX) {
                                         drawing = true
+                                        // 起笔即取消停顿提示（长笔画写到一半不应让整窗墨迹变淡）
+                                        lastStrokeEndMs = 0L
                                         currentStroke = listOf(
                                             StrokePoint(startX, startY, startedAt)
                                         )
@@ -228,9 +366,18 @@ fun HandwritingKeyboardLayout(
                         }
                     },
             ) {
+                // 三段渲染：[0,gone) 不画；[gone,fade) 变淡；[fade,end) 正常。
+                // 正在书写的笔画无条件渲染（它尚未进入 strokes）。
+                val fade = fadeStart.coerceIn(0, strokes.size)
+                val gone = gonePrefix.coerceIn(0, fade)
                 val color =
-                    if (fading) colors.onSurface.copy(alpha = 0.3f) else colors.onSurface
-                strokes.forEach { drawStroke(it, color) }
+                    if (idleHidden) colors.onSurface.copy(alpha = 0.3f) else colors.onSurface
+                if (gone < fade) {
+                    strokes.subList(gone, fade).forEach {
+                        drawStroke(it, color.copy(alpha = 0.3f))
+                    }
+                }
+                strokes.drop(fade).forEach { drawStroke(it, color) }
                 if (currentStroke.size >= 2) drawStroke(currentStroke, color)
             }
             if (!modelReady) {
@@ -288,13 +435,6 @@ fun HandwritingKeyboardLayout(
         }
     }
 }
-
-/** 笔间时间间隔：gaps[j] = 第 j 笔起笔与上一笔收笔的间隔（gaps[0] 恒为 0）。 */
-private fun gapsOf(strokes: List<List<StrokePoint>>): List<Long> =
-    strokes.mapIndexed { index, stroke ->
-        if (index == 0) 0L
-        else stroke.first().timeMs - strokes[index - 1].last().timeMs
-    }
 
 /** 按速度插值笔宽（快写细、慢写粗）。 */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStroke(

@@ -12,10 +12,13 @@
  * - 「一个字」先验：DP 切出多段但没有**显著换字停顿**时，若整段单字识别分数够高，
  *   按单字处理 —— 专治「部位成字」（写「张」中途被切成 [弓][卜]）。
  *
- * 段推理结果按 (start,end) 缓存；笔画只允许尾部追加，故追加一笔只新增少量推理。
+ * 段推理结果按 (start,end) 缓存，**并用该段笔画内容做校验**：手写画布停顿清窗、
+ * 撤销重画之后，笔画下标会从头开始或换成别的笔画，只按下标命中会把上一个字的
+ * 识别结果当成新字结果（症状：写完一个字后，后面写什么都是同一个字）。
  */
 package org.fcitx.fcitx5.android.data.handwriting
 
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 
 class HandwritingSegmenter(
@@ -40,7 +43,21 @@ class HandwritingSegmenter(
         val avgScore: Float,
     )
 
-    private val segmentCache = HashMap<Long, List<HandwritingCandidate>>()
+    private val segmentCache = ConcurrentHashMap<Long, CachedSegment>()
+
+    /**
+     * 段缓存条目：除候选外还记下该段的**笔画内容**，命中时必须内容一致。
+     *
+     * 只按 (start,end) 下标缓存是不够的：画布停顿清窗/撤销重画后笔画下标会从头开始，
+     * 此时上一个字的缓存会被当成新字的推理结果 —— 症状就是「写完一个字后，
+     * 后面写 a/b/c/d 全部是第一个字（或贴近它）的输出」。
+     */
+    private class CachedSegment(
+        val strokes: List<List<StrokePoint>>,
+        val candidates: List<HandwritingCandidate>,
+    )
+
+    private fun keyOf(start: Int, end: Int): Long = start.toLong() * 1000L + end
 
     /**
      * 对笔画序列做叠写切分识别。
@@ -121,13 +138,12 @@ class HandwritingSegmenter(
     /** 窗口滑窗：头部裁掉 [k] 笔后段缓存 key 平移（无需重新推理）。 */
     fun onStrokesTrimmed(k: Int) {
         if (k <= 0) return
-        val shifted = HashMap<Long, List<HandwritingCandidate>>()
-        for ((key, candidates) in segmentCache) {
+        val shifted = HashMap<Long, CachedSegment>()
+        for ((key, cached) in segmentCache) {
             val start = (key / 1000L).toInt()
             val end = (key % 1000L).toInt()
-            if (end > k) {
-                shifted[(start - k).toLong() * 1000L + (end - k)] = candidates
-            }
+            // 起点被裁掉的段已不在新窗口里，直接丢弃（不要平移到负下标）
+            if (start >= k) shifted[keyOf(start - k, end - k)] = cached
         }
         segmentCache.clear()
         segmentCache.putAll(shifted)
@@ -138,12 +154,15 @@ class HandwritingSegmenter(
         i: Int,
         strokes: List<List<StrokePoint>>,
     ): List<HandwritingCandidate> {
-        val key = j.toLong() * 1000L + i
-        segmentCache[key]?.let { return it }
+        val key = keyOf(j, i)
         val segment = strokes.subList(j, i)
+        // 命中要求「下标 + 内容」都一致：画布清窗后下标会复用，但内容不同
+        segmentCache[key]?.let { cached ->
+            if (cached.strokes == segment) return cached.candidates
+        }
         val candidates = predictFn(segment, SEGMENT_TOP_K).take(SEGMENT_TOP_K)
         // 空结果也缓存，避免写不出字的段被反复推理
-        segmentCache[key] = candidates
+        segmentCache[key] = CachedSegment(segment.toList(), candidates)
         return candidates
     }
 

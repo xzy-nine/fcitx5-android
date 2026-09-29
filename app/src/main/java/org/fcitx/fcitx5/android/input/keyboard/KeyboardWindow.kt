@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
@@ -164,19 +165,43 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
             when (layout) {
                 KeyboardLayoutNames.Handwriting -> {
                     val hs = handwriting.state.collectAsState().value
+                    val handwritingClearSignal by handwriting.clearSignal.collectAsState()
                     val status = when {
                         hs.modelMissing -> stringResource(R.string.handwriting_model_missing)
                         !hs.modelReady -> stringResource(R.string.handwriting_state_loading)
                         hs.recognizing -> stringResource(R.string.handwriting_state_recognizing)
                         else -> stringResource(R.string.handwriting_state_idle)
                     }
+                    // 底部键行按下（空格/回车/退格等）即固化活动区：画布清空、活动文本不再可替换，
+                    // 否则这些字会被下一轮识别当成活动区重复上屏。布局切换交给 switchLayout → onLeave。
+                    val handwritingKeyListener = remember(keyActionListener) {
+                        object : KeyActionListener {
+                            override fun onKeyAction(
+                                action: KeyAction,
+                                source: KeyActionListener.Source,
+                            ) {
+                                if (action !is KeyAction.LayoutSwitchAction) handwriting.finalizeWindow()
+                                keyActionListener.onKeyAction(action, source)
+                            }
+
+                            override fun onKeyActionRelease(
+                                action: KeyAction,
+                                source: KeyActionListener.Source,
+                            ) {
+                                keyActionListener.onKeyActionRelease(action, source)
+                            }
+                        }
+                    }
                     HandwritingKeyboardLayout(
                         modelReady = hs.modelReady,
                         statusText = hs.error ?: status,
-                        onStrokesChanged = handwriting::onStrokesChanged,
+                        clearSignal = handwritingClearSignal,
                         onFinalize = handwriting::finalizeActive,
-                        onUndoActive = handwriting::undoActive,
-                        keyActionListener = keyActionListener,
+                        onRecognition = handwriting::onRecognition,
+                        onSegmentSettled = handwriting::onSegmentSettled,
+                        onUndoActive = handwriting::onUndoActive,
+                        onRecognizing = handwriting::onRecognizing,
+                        keyActionListener = handwritingKeyListener,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }

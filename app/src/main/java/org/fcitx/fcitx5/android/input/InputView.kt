@@ -290,10 +290,10 @@ class InputView(
                 FcitxEvent.CandidateListEvent.Data(total = -1, candidates = words)
             )
         }
-        // custom: 手写候选被点选时固化活动字（候选内容的上屏仍走 fcitx.select 既有链路）
-        composeCandidate.onCandidatePicked = {
+        // custom: 手写候选被点选时替换式上屏（候选不在引擎候选表里，不能走 fcitx.select）
+        composeCandidate.onCandidatePicked = { index ->
             if (org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed.isActive) {
-                handwritingInput.onCandidatePicked()
+                handwritingInput.pickCandidate(index)
             }
         }
         broadcaster.onScopeSetupFinished(scope)

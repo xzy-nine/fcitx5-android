@@ -23,6 +23,19 @@ class HandwritingSegmenterTest {
             )
         }
 
+    /** 指定 y 的一组笔画（内容不同即代表写了不同的字）。 */
+    private fun strokesAt(vararg ys: Float): List<List<StrokePoint>> =
+        ys.map { y ->
+            listOf(
+                StrokePoint(0f, y, 0L),
+                StrokePoint(10f, y, 10L),
+            )
+        }
+
+    /** 假模型：输出只取决于笔画内容，因此可以据「结果是否符合当前笔画」判断是否命中脏缓存。 */
+    private fun label(segment: List<List<StrokePoint>>): String =
+        segment.flatMap { it }.joinToString("") { it.y.toInt().toString() }
+
     private fun segmenter(
         predict: suspend (List<List<StrokePoint>>) -> List<HandwritingCandidate>,
     ) = HandwritingSegmenter { segment, _ -> predict(segment) }
@@ -130,13 +143,77 @@ class HandwritingSegmenterTest {
             calls += 1
             listOf(HandwritingCandidate("字", 0.5f))
         }
-        // 先算 (0,3) 这段
-        seg.recognize(strokes(3), listOf(0L, 30L, 30L))
-        // 头部裁掉 1 笔后，原 (1,3) 应平移为 (0,2) 命中缓存
-        seg.onStrokesTrimmed(1)
+        // 先算整窗，再按「头部裁掉 1 笔」滑窗
+        val all = strokes(3)
+        seg.recognize(all, listOf(0L, 30L, 30L))
         calls = 0
-        seg.recognize(strokes(2), listOf(0L, 30L))
+        seg.onStrokesTrimmed(1)
+        // 裁剪后窗口里留下的是原第 2、3 笔：原 (1,3) 应平移为 (0,2) 命中缓存
+        seg.recognize(all.drop(1), listOf(0L, 30L))
         assertTrue("裁剪后应命中平移缓存（实际推理 $calls 次）", calls < 3)
+    }
+
+    // ------------------------------------------------------------------
+    // 回归：画布清窗/撤销后段缓存不得跨窗口复用（「写完一个字后写什么都是同一个字」）
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `new window after canvas clear does not reuse previous inference`() = runBlocking {
+        // 假模型输出仅取决于笔画内容，因此「结果是否对应当前笔画」即可判定缓存是否串字
+        val seg = segmenter { segment -> listOf(HandwritingCandidate(label(segment), 0.9f)) }
+
+        // 第一个字：两笔（y=0,1）
+        val first = seg.recognize(strokesAt(0f, 1f), listOf(0L, 30L))
+        assertEquals("0011", first.segments[0].candidates[0].char)
+
+        // 画布停顿清窗后写第二个字：两笔，下标与上一个字完全相同，但内容不同（y=5,6）
+        val second = seg.recognize(strokesAt(5f, 6f), listOf(0L, 30L))
+        assertEquals("5566", second.segments[0].candidates[0].char)
+    }
+
+    @Test
+    fun `new single stroke window after canvas clear is re-inferred`() = runBlocking {
+        val seg = segmenter { segment -> listOf(HandwritingCandidate(label(segment), 0.9f)) }
+
+        val first = seg.recognize(strokesAt(0f), listOf(0L))
+        assertEquals("00", first.segments[0].candidates[0].char)
+
+        // 单笔窗口：key (0,1) 与上一个字相同，若只按下标命中就会一直返回上一个字
+        val second = seg.recognize(strokesAt(7f), listOf(0L))
+        assertEquals("77", second.segments[0].candidates[0].char)
+    }
+
+    @Test
+    fun `undo then redraw a different stroke is re-inferred`() = runBlocking {
+        val seg = segmenter { segment -> listOf(HandwritingCandidate(label(segment), 0.9f)) }
+
+        seg.recognize(strokesAt(0f, 1f), listOf(0L, 30L))
+        // 撤销第二笔后重画成另一笔：下标仍是 (1,2)，内容由 y=1 变成 y=4
+        val redrawn = seg.recognize(strokesAt(0f, 4f), listOf(0L, 30L))
+        assertEquals("0044", redrawn.segments[0].candidates[0].char)
+    }
+
+    @Test
+    fun `appending strokes still reuses cached segments`() = runBlocking {
+        val computed = mutableListOf<String>()
+        val seg = segmenter { segment ->
+            computed += label(segment)
+            listOf(HandwritingCandidate("字", 0.5f))
+        }
+        val all = strokesAt(0f, 1f)
+        seg.recognize(all, listOf(0L, 30L))
+        val firstRound = cacheKeys(seg)
+        assertEquals(listOf("00", "0011", "11"), computed)
+
+        // 尾部追加一笔（y=9）：只有涉及新笔的段需要重新推理
+        computed.clear()
+        seg.recognize(all + strokesAt(9f), listOf(0L, 30L, 30L))
+        assertEquals(
+            "已有段应命中内容校验缓存，只推理含新笔的段",
+            listOf("001199", "1199", "99"),
+            computed,
+        )
+        assertTrue("首轮缓存键应保留：$firstRound", cacheKeys(seg).containsAll(firstRound))
     }
 
     @Test

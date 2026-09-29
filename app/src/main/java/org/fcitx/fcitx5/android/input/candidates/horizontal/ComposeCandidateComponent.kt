@@ -331,10 +331,13 @@ class ComposeCandidateComponent :
             visuals = getVisuals(),
             callbacks = CandidateBarCallbacks(
                 onCandidateSelect = { index ->
-                    // custom: 手写布局期间候选来自手写（HandwritingCandidateFeed），
-                    // 先让手写侧固化活动字，再走既有 commit 链路。
+                    // custom: 手写布局期间候选来自手写（HandwritingCandidateFeed）。
+                    // 手写候选是识别结果本地构造的，**不在 fcitx 引擎候选表里**，
+                    // `select(index)` 会选到引擎的（无关/过期）候选，必须由手写侧替换式上屏。
                     onCandidatePicked?.invoke(index)
-                    fcitx.launchOnReady { it.select(index) }
+                    if (!org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed.isActive) {
+                        fcitx.launchOnReady { it.select(index) }
+                    }
                 },
                 onCandidateLongClick = { index, candidate, windowOffset ->
                     // windowOffset 已是「窗口绝对坐标」（由 CandidateItem 用自身
