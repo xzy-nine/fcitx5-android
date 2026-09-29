@@ -30,7 +30,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -107,7 +106,6 @@ fun ComposeHandwritingPanel(
     val colors = MiuixTheme.colorScheme
     val strokes = remember { mutableStateListOf<List<StrokePoint>>() }
     var currentStroke by remember { mutableStateOf<List<StrokePoint>>(emptyList()) }
-    var dragVersion by remember { mutableIntStateOf(0) }
     var strokeCount by remember { mutableIntStateOf(0) }
     var fading by remember { mutableStateOf(false) }
 
@@ -115,7 +113,6 @@ fun ComposeHandwritingPanel(
         strokes.add(stroke)
         strokeCount = strokes.size
         fading = false
-        dragVersion++
         onStrokesChanged(strokes.toList(), gapsOf(strokes))
     }
 
@@ -124,7 +121,6 @@ fun ComposeHandwritingPanel(
         currentStroke = emptyList()
         strokeCount = 0
         fading = false
-        dragVersion++
         if (finalize) onFinalize()
     }
 
@@ -133,7 +129,6 @@ fun ComposeHandwritingPanel(
         if (strokeCount <= 0) return@LaunchedEffect
         delay(pauseThresholdMs(strokeCount))
         fading = true
-        dragVersion++
         delay(IDLE_CLEAR_MS)
         if (strokes.size == strokeCount) clearAll(finalize = true)
     }
@@ -179,64 +174,60 @@ fun ComposeHandwritingPanel(
                 }
             }
         }
-
-        // 画布
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
                 .padding(horizontal = 8.dp),
         ) {
-            key(dragVersion) {
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(modelReady) {
-                            if (!modelReady) return@pointerInput
-                            awaitEachGesture {
-                                val down = awaitFirstDown(requireUnconsumed = false)
-                                val startX = down.position.x
-                                val startY = down.position.y
-                                val startedAt = System.currentTimeMillis()
-                                var drawing = false
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    val change = event.changes.firstOrNull() ?: break
-                                    if (change.pressed) {
-                                        change.consume()
-                                        val distance = (change.position - down.position).getDistance()
-                                        if (!drawing && distance > STROKE_START_THRESHOLD_PX) {
-                                            drawing = true
-                                            currentStroke = listOf(
-                                                StrokePoint(startX, startY, startedAt)
-                                            )
-                                            dragVersion++
-                                        }
-                                        if (drawing) {
-                                            currentStroke = currentStroke + StrokePoint(
-                                                change.position.x,
-                                                change.position.y,
-                                                System.currentTimeMillis(),
-                                            )
-                                            dragVersion++
-                                        }
-                                    } else {
-                                        change.consume()
-                                        if (drawing && currentStroke.size >= 2) {
-                                            commitStroke(currentStroke)
-                                        }
-                                        currentStroke = emptyList()
-                                        dragVersion++
-                                        break
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            if (!modelReady) return@awaitEachGesture
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val startX = down.position.x
+                            val startY = down.position.y
+                            val startedAt = System.currentTimeMillis()
+                            var drawing = false
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull() ?: break
+                                if (change.pressed) {
+                                    change.consume()
+                                    val distance = (change.position - down.position).getDistance()
+                                    if (!drawing && distance > STROKE_START_THRESHOLD_PX) {
+                                        drawing = true
+                                        currentStroke = listOf(
+                                            StrokePoint(startX, startY, startedAt)
+                                        )
                                     }
+                                    if (drawing) {
+                                        currentStroke = currentStroke + StrokePoint(
+                                            change.position.x,
+                                            change.position.y,
+                                            System.currentTimeMillis(),
+                                        )
+                                    }
+                                } else {
+                                    change.consume()
+                                    if (drawing && currentStroke.size >= 2) {
+                                        val finished = currentStroke
+                                        currentStroke = emptyList()
+                                        commitStroke(finished)
+                                    } else {
+                                        currentStroke = emptyList()
+                                    }
+                                    break
                                 }
                             }
-                        },
-                ) {
-                    val color = if (fading) colors.onSurface.copy(alpha = 0.3f) else colors.onSurface
-                    strokes.forEach { drawStroke(it, color) }
-                    if (currentStroke.size >= 2) drawStroke(currentStroke, color)
-                }
+                        }
+                    },
+            ) {
+                val color = if (fading) colors.onSurface.copy(alpha = 0.3f) else colors.onSurface
+                strokes.forEach { drawStroke(it, color) }
+                if (currentStroke.size >= 2) drawStroke(currentStroke, color)
             }
             if (!modelReady) {
                 Text(
@@ -265,7 +256,6 @@ fun ComposeHandwritingPanel(
                         strokes.removeAt(strokes.size - 1)
                         strokeCount = strokes.size
                         fading = false
-                        dragVersion++
                         if (strokes.isEmpty()) {
                             // 撤销到空 → 屏上活动字整段回滚
                             onUndoActive()
