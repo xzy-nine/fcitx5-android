@@ -2,14 +2,9 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  *
- * custom: 手写识别推理引擎（方案 A：官方 ONNX Runtime Java API）。
+ * custom: 手写识别推理引擎（官方 ONNX Runtime Java 绑定）。
  *
- * 模型 = ochwpro（StrokeTransformer，输入 (T,5) + mask，输出 num_classes 个 logits，
- * 单字分类，不是 CTC）。加载时校验「输出维度 == char_index 条数」，避免模型与字符索引
- * 版本不匹配时静默串字。
- *
- * 线程模型：`OrtSession` 不做并发保护，这里用 [Mutex] 串行化推理；调用方应放在
- * 后台协程（IME 面板已经这么做）。
+ * 模型 = ochwpro（StrokeTransformer，输入 (T,5) + mask，输出 num_classes 个 logits
  */
 package org.fcitx.fcitx5.android.data.handwriting
 
@@ -27,7 +22,6 @@ import timber.log.Timber
 import java.io.File
 import java.nio.FloatBuffer
 import kotlin.math.exp
-import kotlin.math.max
 import kotlin.math.min
 
 object HandwritingEngine {
@@ -52,7 +46,7 @@ object HandwritingEngine {
     @Volatile
     private var loadedModelId: String? = null
 
-    /** 运行期探测到的输入名（data / mask），避免模型改名后需要改代码。 */
+    /** 运行期探测到的输入名（约定名优先），避免模型改名后需要改代码。 */
     @Volatile
     private var inputDataName: String = DEFAULT_INPUT_DATA
 
@@ -61,6 +55,9 @@ object HandwritingEngine {
 
     /** 是否已就绪（模型与字符索引都已加载）。 */
     val isReady: Boolean get() = session != null && chars.isNotEmpty()
+
+    /** 当前加载的模型 id（设置页/日志用）。 */
+    fun loadedModel(): String? = loadedModelId
 
     /**
      * 加载/切换模型。同一模型重复调用直接返回；不同模型会释放旧会话。
@@ -113,8 +110,12 @@ object HandwritingEngine {
                     ?: names.getOrNull(1) ?: DEFAULT_INPUT_MASK
                 Timber.i("$TAG: loaded $modelId, classes=$numClasses, inputs=[${names.joinToString()}]")
                 true
-            } catch (e: Exception) {
-                Timber.e(e, "$TAG: load failed for $modelId")
+            } catch (t: Throwable) {
+                // 必须捕获 Throwable：native 库缺失/不匹配时抛的是 UnsatisfiedLinkError 与
+                // ExceptionInInitializerError（都是 Error），只 catch Exception 会漏掉，
+                // 协程会把它当未捕获异常 → **整个 IME 进程被 SIGKILL**（实测过）。
+                // 手写是可选能力，任何失败都只应表现为「模型不可用」。
+                Timber.e(t, "$TAG: load failed for $modelId")
                 false
             }
         }
@@ -160,10 +161,7 @@ object HandwritingEngine {
                         HandwritingPreprocess.FEATURE_DIM.toLong(),
                     ),
                 )
-                val maskTensor = OnnxTensor.createTensor(
-                    envRef,
-                    arrayOf(mask),
-                )
+                val maskTensor = OnnxTensor.createTensor(envRef, arrayOf(mask))
                 val logits = dataTensor.use { d ->
                     maskTensor.use { m ->
                         ortSession.run(mapOf(inputDataName to d, inputMaskName to m)).use { result ->
@@ -187,8 +185,9 @@ object HandwritingEngine {
                     out.add(HandwritingCandidate(ch, probabilities[i]))
                 }
                 out
-            } catch (e: Exception) {
-                Timber.e(e, "$TAG: predict failed")
+            } catch (t: Throwable) {
+                // 同 load：native 层异常是 Error 且绝不能逃逸（会杀 IME 进程）
+                Timber.e(t, "$TAG: predict failed")
                 emptyList()
             }
         }
@@ -244,7 +243,4 @@ object HandwritingEngine {
     /** 模型输入名（ochwpro 导出时的约定名；运行期探测失败时作为兜底）。 */
     private const val DEFAULT_INPUT_DATA = "data"
     private const val DEFAULT_INPUT_MASK = "mask"
-
-    /** 供设置页展示：当前加载的模型 id。 */
-    fun loadedModel(): String? = loadedModelId
 }

@@ -4,19 +4,15 @@ plugins {
     id("org.fcitx.fcitx5.android.build-metadata")
     id("org.fcitx.fcitx5.android.data-descriptor")
     id("org.fcitx.fcitx5.android.fcitx-component")
+    // custom: 构建期对齐 sherpa AAR 的 ONNX Runtime 符号版本（见文件头说明）
+    id("org.fcitx.fcitx5.android.sherpa-ort-align")
     alias(libs.plugins.kotlin.parcelize)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
 
-// ---------------------------------------------------------------------------
-// custom: 离线语音识别引擎 = 官方 sherpa-onnx AAR（Apache-2.0）
-//
-// 见 dependencies 里的 implementation(files("libs/sherpa-onnx-1.13.8.aar"))：
-// AAR 自带官方 Kotlin/JNI 适配器与各 ABI 的 .so（含其内置的 ONNX Runtime），
-// 因此不再自己抽 ONNX Runtime、也不再需要本地 C++ ASR 目标。
-// ---------------------------------------------------------------------------
+val sherpaAlignedDir = layout.buildDirectory.dir("generated/sherpa-ort-align")
 
 android {
     namespace = "org.fcitx.fcitx5.android"
@@ -65,22 +61,33 @@ android {
         generateLocaleConfig = true
     }
 
-    // custom: 手写识别用官方 ONNX Runtime Java API（`ai.onnxruntime`），native 运行时与
-    // 语音（sherpa-onnx AAR 内置）**共用同一份** `libonnxruntime.so`。
-    //
-    // 两个依赖都带同名 .so，必须留一份：
-    // - 不能用 `excludes`：它不区分来源，会把 sherpa AAR 那份也排掉，导致运行时一个都不剩
-    //   （实测 APK 里 `libonnxruntime.so` 为 0 份，语音/手写都会 UnsatisfiedLinkError）；
-    // - 用 `pickFirsts`：两者择一保留，`libonnxruntime4j_jni.so`（Java 绑定，只有
-    //   onnxruntime-android 提供）不受影响。
-    //
-    // 因此**改动 ONNX Runtime 版本 / 打包规则后，必须回归一次离线语音**，并用
-    // `unzip -l app-debug.apk | grep libonnxruntime` 确认包内确实有一份 runtime。
     packaging {
         jniLibs {
+            // 仅剩 ai.onnxruntime 自带的那一份 runtime（sherpa 副本里已摘除）
             pickFirsts += "**/libonnxruntime.so"
         }
     }
+}
+
+// custom: 把「构建期打过补丁」的 jniLibs 目录挂进主源集
+//（由 sherpa-ort-align 插件产出：libsherpa-onnx-{jni,c-api}.so 的 ONNX Runtime
+//  符号版本要求已对齐到 1.28.0；sherpa AAR 依赖被换成摘掉自带 runtime 的副本，
+//  因此包内不会出现两份同名 .so）。
+//
+// 用确定路径 + 显式任务依赖：AGP 默认拒绝给 SourceSet 传 Provider
+//（故 gradle.properties 里 `android.sourceset.disallowProvider=false`），
+// 而该开关**不会自动带任务依赖**，所以下面手动挂。
+afterEvaluate {
+    android.sourceSets.getByName("main").jniLibs.srcDir(
+        sherpaAlignedDir.map { it.dir("jniLibs") }
+    )
+    // AGP 消费该目录的任务是 `merge<Variant>JniLibFolders`（**不是** `*NativeLibs`），
+    // 两者都覆盖，否则 Gradle 校验会报
+    // "uses this output of task ':app:patchSherpaOrtVersion' without declaring an explicit dependency"。
+    tasks.matching {
+        it.name.startsWith("merge") &&
+                (it.name.endsWith("JniLibFolders") || it.name.endsWith("NativeLibs"))
+    }.configureEach { dependsOn("patchSherpaOrtVersion") }
 }
 
 fcitxComponent {
@@ -103,7 +110,11 @@ ksp {
 
 dependencies {
     implementation(libs.androidx.compose.runtime)
-    implementation(files("libs/sherpa-onnx-1.13.8.aar"))
+    // custom: 离线语音引擎。用**构建期生成的「摘掉自带 libonnxruntime.so」副本**
+    //（`sherpa-ort-align` 插件产出），避免它与 ai.onnxruntime 的 runtime 争夺同一个文件名。
+    implementation(
+        files(sherpaAlignedDir.map { it.file("sherpa-onnx-1.13.8-stripped.aar") })
+    )
     ksp(project(":codegen"))
     implementation(project(":lib:fcitx5"))
     implementation(project(":lib:fcitx5-lua"))
@@ -168,7 +179,7 @@ dependencies {
     implementation(libs.okhttp.sse)
     implementation(libs.kaml)
     implementation(libs.commons.compress)
-    // custom: 手写识别 —— 官方 ONNX Runtime Java API（native 运行时复用 sherpa AAR 内置的那份）
+    // custom: 手写识别 —— 官方 ONNX Runtime Java 绑定（native runtime 同版本，见上方 packaging 说明）
     implementation(libs.onnxruntime.android)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)

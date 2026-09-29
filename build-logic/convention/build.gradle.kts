@@ -65,6 +65,10 @@ gradlePlugin {
             id = "org.fcitx.fcitx5.android.native-lib-convention"
             implementationClass = "NativeLibConventionPlugin"
         }
+        register("sherpaOrtAlign") {
+            id = "org.fcitx.fcitx5.android.sherpa-ort-align"
+            implementationClass = "SherpaOrtAlignPlugin"
+        }
     }
 }
 

@@ -17,6 +17,7 @@
 package org.fcitx.fcitx5.android.input.handwriting
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -63,7 +64,11 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
 
     private val prefs = AppPrefs.getInstance().handwriting
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, throwable ->
+            Timber.e(throwable, "handwriting: uncaught coroutine exception")
+        }
+    )
 
     private val _panelVisible = MutableStateFlow(false)
     val panelVisible: StateFlow<Boolean> = _panelVisible.asStateFlow()
