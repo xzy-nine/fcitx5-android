@@ -29,7 +29,6 @@ import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingCandidate
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngine
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingMarketCategory
-import org.fcitx.fcitx5.android.data.handwriting.HandwritingModelStore
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingSegmenter
 import org.fcitx.fcitx5.android.data.handwriting.StrokePoint
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
@@ -93,7 +92,7 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
 
     /** 模型是否已就绪（模型市场下载完成）。 */
     fun isModelReady(): Boolean =
-        HandwritingModelStore.isReady(context, prefs.handwritingModelId.getValue())
+        HandwritingMarketCategory.isReady(context, prefs.handwritingModelId.getValue())
 
     // ------------------------------------------------------------------
     // 面板开关
@@ -127,7 +126,7 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
             return
         }
         loadJob = scope.launch {
-            val modelReady = HandwritingModelStore.isReady(context, modelId)
+            val modelReady = HandwritingMarketCategory.isReady(context, modelId)
             if (!modelReady) {
                 _state.value = _state.value.copy(modelReady = false, modelMissing = true)
                 return@launch

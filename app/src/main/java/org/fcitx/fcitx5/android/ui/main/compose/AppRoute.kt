@@ -96,9 +96,9 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object VoiceInputSettings : AppRoute
 
-    /** custom: 语音模型市场（远程模型索引 + 下载/删除） */
+    /** custom: 模型市场（**公共组件**：语音 `asr` / 手写 `handwriting` 只是不同 category） */
     @Serializable
-    data object VoiceModelMarket : AppRoute
+    data class ModelMarket(val category: String) : AppRoute
 
     /** custom: 在线 ASR 平台的声明式配置表单（按平台 id） */
     @Serializable
@@ -107,10 +107,6 @@ sealed interface AppRoute : NavKey {
     /** custom: 手写输入设置页（独立输入方案） */
     @Serializable
     data object HandwritingSettings : AppRoute
-
-    /** custom: 手写模型市场（与语音共用远程索引，按 category: handwriting 分流） */
-    @Serializable
-    data object HandwritingModelMarket : AppRoute
 }
 
 @Serializable

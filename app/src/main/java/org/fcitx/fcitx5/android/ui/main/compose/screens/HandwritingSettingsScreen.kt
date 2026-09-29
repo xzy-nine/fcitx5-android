@@ -23,7 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import org.fcitx.fcitx5.android.R
-import org.fcitx.fcitx5.android.data.handwriting.HandwritingModelStore
+import org.fcitx.fcitx5.android.data.handwriting.HandwritingMarketCategory
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import top.yukonga.miuix.kmp.basic.Card
@@ -57,7 +57,7 @@ fun HandwritingSettingsScreen(
     val enabled = remember(version) { prefs.handwritingInputEnabled.getValue() }
     val autoCommit = remember(version) { prefs.handwritingAutoCommit.getValue() }
     val modelId = remember(version) { prefs.handwritingModelId.getValue() }
-    val modelReady = HandwritingModelStore.isReady(context, modelId)
+    val modelReady = HandwritingMarketCategory.isReady(context, modelId)
 
     PageScaffold(
         title = stringResource(R.string.handwriting_input),

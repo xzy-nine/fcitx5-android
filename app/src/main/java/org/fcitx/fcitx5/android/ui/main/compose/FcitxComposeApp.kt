@@ -39,9 +39,9 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.TableInputMethodsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.ThemeScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WebDavSyncScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceInputSettingsScreen
-import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceModelMarketScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.ModelMarketScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingSettingsScreen
-import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingModelMarketScreen
+import org.fcitx.fcitx5.android.data.market.MarketCategories
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceProviderConfigScreen
 import org.fcitx.fcitx5.android.ui.main.compose.settings.ManagedPrefsScreen
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
@@ -287,15 +287,21 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 entry<AppRoute.WebDavSync> {
                     WebDavSyncScreen(onBack = { backStack.removeLastOrNull() })
                 }
-                // custom: 语音输入设置页 / 模型市场
+                // custom: 语音输入设置页
                 entry<AppRoute.VoiceInputSettings> {
                     VoiceInputSettingsScreen(
                         onBack = { backStack.removeLastOrNull() },
-                        onOpenModels = { navigateTo(AppRoute.VoiceModelMarket) },
+                        onOpenModels = {
+                            navigateTo(AppRoute.ModelMarket(MarketCategories.ASR))
+                        },
                     )
                 }
-                entry<AppRoute.VoiceModelMarket> {
-                    VoiceModelMarketScreen(onBack = { backStack.removeLastOrNull() })
+                // custom: 模型市场（公共组件：语音 asr / 手写 handwriting 只是不同 category）
+                entry<AppRoute.ModelMarket> { route ->
+                    ModelMarketScreen(
+                        category = MarketCategories.of(route.category),
+                        onBack = { backStack.removeLastOrNull() },
+                    )
                 }
                 entry<AppRoute.VoiceProviderConfig> { route ->
                     VoiceProviderConfigScreen(
@@ -303,15 +309,16 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }
-                // custom: 手写输入设置页 / 模型市场（与语音同一套市场，按 category 分流）
+                // custom: 手写输入设置页（模型市场与语音共用同一个公共市场页，按 category 分流）
                 entry<AppRoute.HandwritingSettings> {
                     HandwritingSettingsScreen(
                         onBack = { backStack.removeLastOrNull() },
-                        onOpenModels = { navigateTo(AppRoute.HandwritingModelMarket) },
+                        onOpenModels = {
+                            navigateTo(
+                                AppRoute.ModelMarket(MarketCategories.HANDWRITING)
+                            )
+                        },
                     )
-                }
-                entry<AppRoute.HandwritingModelMarket> {
-                    HandwritingModelMarketScreen(onBack = { backStack.removeLastOrNull() })
                 }
                 entry<AppRoute.RawConfigHost> { route ->
                     RawConfigHostScreen(
