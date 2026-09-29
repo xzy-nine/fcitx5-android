@@ -20,22 +20,30 @@ class HandwritingStrokeFxTest {
     private fun segment(start: Int, count: Int) =
         HandwritingSegmenter.Segment(start, count, listOf(HandwritingCandidate("字", 0.9f)))
 
+    private fun boxStroke(x0: Float, y0: Float, x1: Float, y1: Float): List<StrokePoint> =
+        listOf(StrokePoint(x0, y0, 0L), StrokePoint(x1, y1, 10L))
+
     @Test
-    fun `split pause is a V curve around the median stroke count`() {
-        // 中位数处最快，0 笔（y(0)）与 2×中位数处同为 750ms
-        assertEquals(
-            HW_SPLIT_PAUSE_MIN_MS,
-            HandwritingStrokeFx.splitPauseMs(HW_SPLIT_PAUSE_MEDIAN_STROKES),
+    fun `box gap is zero for overlapping boxes and measures separation`() {
+        val a = HandwritingStrokeFx.boxOf(boxStroke(0f, 0f, 10f, 10f))
+        val overlapping = HandwritingStrokeFx.boxOf(boxStroke(5f, 5f, 15f, 15f))
+        val apart = HandwritingStrokeFx.boxOf(boxStroke(13f, 0f, 20f, 10f))
+        assertEquals(0f, HandwritingStrokeFx.boxGap(a, overlapping), 0.001f)
+        assertEquals(3f, HandwritingStrokeFx.boxGap(a, apart), 0.001f)
+    }
+
+    @Test
+    fun `spatial boundary marks only clearly separated strokes`() {
+        val near = HandwritingStrokeFx.spatialBoundaries(
+            listOf(boxStroke(0f, 0f, 10f, 10f), boxStroke(11f, 0f, 21f, 10f)),
         )
-        assertEquals(750L, HandwritingStrokeFx.splitPauseMs(0))
-        assertEquals(750L, HandwritingStrokeFx.splitPauseMs(2 * HW_SPLIT_PAUSE_MEDIAN_STROKES))
-        // 关于中位数对称
-        assertEquals(
-            HandwritingStrokeFx.splitPauseMs(4),
-            HandwritingStrokeFx.splitPauseMs(HW_SPLIT_PAUSE_MEDIAN_STROKES * 2 - 4),
+        assertFalse("同字内相邻笔画不算换字", near[1])
+
+        val far = HandwritingStrokeFx.spatialBoundaries(
+            listOf(boxStroke(0f, 0f, 10f, 10f), boxStroke(100f, 0f, 110f, 10f)),
         )
-        // 偏离足够远时封顶
-        assertEquals(HW_SPLIT_PAUSE_MAX_MS, HandwritingStrokeFx.splitPauseMs(50))
+        assertTrue("明显分开的两截算换字", far[1])
+        assertFalse("第一笔之前没有边界", far[0])
     }
 
     @Test

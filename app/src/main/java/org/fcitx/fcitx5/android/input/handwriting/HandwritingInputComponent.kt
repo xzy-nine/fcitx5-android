@@ -22,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -144,6 +145,9 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
 
     private var loadJob: Job? = null
 
+    /** 候选栏存活计时：每次识别推送后重置，到点清空候选栏。 */
+    private var candidatesClearJob: Job? = null
+
     /**
      * 屏上「活动区」文本（光标本位置紧邻其左侧）：下一次识别会用最新结果整体替换它。
      *
@@ -177,6 +181,7 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
     fun onLeave() {
         active = ""
         lastSegText = ""
+        candidatesClearJob?.cancel()
         HandwritingCandidateFeed.clear()
         _state.value = _state.value.copy(recognizing = false, error = null)
     }
@@ -203,6 +208,7 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
     /** IME 销毁时释放会话。 */
     fun release() {
         loadJob?.cancel()
+        candidatesClearJob?.cancel()
         active = ""
         lastSegText = ""
         HandwritingCandidateFeed.clear()
@@ -221,9 +227,10 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
     /**
      * 识别结果上报（时间序；最后一段=当前正在写的字）。需在主线程调用。
      *
-     * 活动区整体重写为各段首选字的拼接，候选栏取最后一段的候选。
+     * 活动区整体重写为各段首选字的拼接，候选栏取最后一段的候选，并重置候选栏存活计时。
      */
     fun onRecognition(segments: List<HandwritingSegmenter.Segment>) {
+        scheduleCandidatesClear()
         if (segments.isEmpty()) {
             HandwritingCandidateFeed.set(emptyList(), active = true)
             return
@@ -242,6 +249,15 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
         }
     }
 
+    /** 候选栏在下次识别推送时被替换，否则推送后 [CANDIDATES_LINGER_MS] 自动清空。 */
+    private fun scheduleCandidatesClear() {
+        candidatesClearJob?.cancel()
+        candidatesClearJob = scope.launch {
+            delay(CANDIDATES_LINGER_MS)
+            HandwritingCandidateFeed.set(emptyList(), active = true)
+        }
+    }
+
     /**
      * 最早段固化出窗（滑窗）：其文本已在屏上、退出可替换区。
      * 需在主线程调用（布局侧识别循环里切主线程派发）。
@@ -256,19 +272,17 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
         val count = active.length
         active = ""
         lastSegText = ""
-        HandwritingCandidateFeed.set(emptyList(), active = true)
         if (count <= 0) return
         service.deleteBeforeCursor(count)
     }
 
     /**
-     * 布局清窗（超长闲置）后回调：活动文本退出可替换区并清空候选栏，不回传 [clearSignal]。
-     * 需在主线程调用。
+     * 布局清窗（超长闲置）后回调：活动文本退出可替换区，不回传 [clearSignal]。
+     * 候选栏按自身存活计时清空。需在主线程调用。
      */
     fun finalizeActive() {
         active = ""
         lastSegText = ""
-        HandwritingCandidateFeed.set(emptyList(), active = true)
     }
 
     /**
@@ -288,8 +302,7 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
      *   （活动区里最后一个字，或已固化的最后一个字）换成点选字；
      * - 未开启：点选即上屏（活动区为空，直接追加）。
      *
-     * 点选后**清空候选栏 + 清空识别窗口**（[finalizeWindow]）：字已按用户点选上屏，
-     * 不需要继续改选，也不该让旧笔画在下一轮识别里把旧字重复上屏。
+     * 点选只清空识别窗口（画布 + 段缓存）；候选栏保留，按自身存活计时或下次识别推送更新。
      */
     fun pickCandidate(index: Int) {
         val picked = HandwritingCandidateFeed.candidates.getOrNull(index)?.char
@@ -302,21 +315,25 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
                 index <= 0 -> Unit // 首选已自动上屏，点选只固化
                 active.isNotEmpty() && lastSegText.isNotEmpty() &&
                         active.length >= lastSegText.length -> {
-                    applyActive(active.dropLast(lastSegText.length) + picked)
+                    if (applyActive(active.dropLast(lastSegText.length) + picked)) lastSegText = picked
                 }
 
                 lastSegText.isNotEmpty() -> {
                     // 活动区已固化：直接替换屏上最后一个字
-                    service.replaceBeforeCursor(lastSegText, picked)
+                    if (service.replaceBeforeCursor(lastSegText, picked)) lastSegText = picked
                 }
 
-                else -> applyActive(active + picked)
+                else -> {
+                    if (applyActive(active + picked)) lastSegText = picked
+                }
             }
         } else {
             // 未开启边写边上屏：点选即上屏
             service.replaceBeforeCursor(active, active + picked)
+            lastSegText = picked
         }
-        finalizeWindow()
+        active = ""
+        requestClear()
     }
 
     // ------------------------------------------------------------------
@@ -346,5 +363,8 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
 
     private companion object {
         const val REPLACE_FAILED = "上屏失败：光标位置已变化"
+
+        /** 候选栏推送后的存活时长（ms）。 */
+        const val CANDIDATES_LINGER_MS = 3000L
     }
 }

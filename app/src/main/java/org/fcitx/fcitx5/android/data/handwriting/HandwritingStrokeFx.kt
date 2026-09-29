@@ -9,7 +9,9 @@
  */
 package org.fcitx.fcitx5.android.data.handwriting
 
+import kotlin.math.max
 import kotlin.math.roundToLong
+import kotlin.math.sqrt
 
 /** 停顿分割阈值在笔画数 = 中位数处取到下限（ms），见 [HandwritingStrokeFx.splitPauseMs]。 */
 const val HW_SPLIT_PAUSE_MIN_MS = 500L
@@ -38,6 +40,12 @@ const val HW_RECOGNIZE_WINDOW_LIMIT = 25
  */
 const val HW_FADE_GAP_MS = 400L
 
+/**
+ * 相邻笔画包围盒间距达到「两笔尺寸均值 × 该比例」时，视为两个字之间的空间硬边界，
+ * 见 [HandwritingStrokeFx.spatialBoundaries]。
+ */
+const val HW_SPATIAL_SPLIT_RATIO = 0.5f
+
 object HandwritingStrokeFx {
 
     /**
@@ -54,6 +62,58 @@ object HandwritingStrokeFx {
         return (HW_SPLIT_PAUSE_MIN_MS + rise)
             .coerceAtMost(HW_SPLIT_PAUSE_MAX_MS.toDouble())
             .roundToLong()
+    }
+
+    /** 笔画包围盒。 */
+    data class Box(
+        val minX: Float,
+        val maxX: Float,
+        val minY: Float,
+        val maxY: Float,
+    ) {
+        val width: Float get() = maxX - minX
+        val height: Float get() = maxY - minY
+
+        /** 尺寸代理：宽高较大者（至少 1，避免退化笔画除零）。 */
+        val size: Float get() = max(max(width, height), 1f)
+    }
+
+    /** 笔画包围盒（空笔画退化为原点）。 */
+    fun boxOf(stroke: List<StrokePoint>): Box {
+        if (stroke.isEmpty()) return Box(0f, 0f, 0f, 0f)
+        var minX = Float.MAX_VALUE
+        var maxX = -Float.MAX_VALUE
+        var minY = Float.MAX_VALUE
+        var maxY = -Float.MAX_VALUE
+        for (point in stroke) {
+            if (point.x < minX) minX = point.x
+            if (point.x > maxX) maxX = point.x
+            if (point.y < minY) minY = point.y
+            if (point.y > maxY) maxY = point.y
+        }
+        return Box(minX, maxX, minY, maxY)
+    }
+
+    /** 两包围盒的空间间距：两轴分离量的欧氏距离，相交/相接为 0。 */
+    fun boxGap(a: Box, b: Box): Float {
+        val dx = max(max(a.minX - b.maxX, b.minX - a.maxX), 0f)
+        val dy = max(max(a.minY - b.maxY, b.minY - a.maxY), 0f)
+        return sqrt(dx * dx + dy * dy)
+    }
+
+    /**
+     * 空间硬边界：[i] 为 true 表示第 i 笔与第 i-1 笔之间是两个字的分界
+     * （盒间距 ≥ 两笔尺寸均值 × [HW_SPATIAL_SPLIT_RATIO]）。长度与 [strokes] 一致，`[0]` 恒 false。
+     */
+    fun spatialBoundaries(strokes: List<List<StrokePoint>>): BooleanArray {
+        val boundaries = BooleanArray(strokes.size)
+        for (i in 1 until strokes.size) {
+            val previous = boxOf(strokes[i - 1])
+            val current = boxOf(strokes[i])
+            val limit = (previous.size + current.size) / 2f * HW_SPATIAL_SPLIT_RATIO
+            boundaries[i] = boxGap(previous, current) >= limit
+        }
+        return boundaries
     }
 
     /** 窗口的笔间时间间隔（gaps[j] = 第 j 笔起笔与上一笔收笔的间隔，gaps[0] = 0）。 */

@@ -73,6 +73,17 @@ class HandwritingSegmenter(
 
         val n = strokes.size
         val neg = Float.NEGATIVE_INFINITY
+
+        // 空间硬边界：两截在画布上明显分开时视为两个字，禁止跨边界合并
+        // （`lastHardBefore[i]` = i 之前最近的硬边界下标，段 (j, i) 必须满足 j ≥ 它）
+        val spatialBoundaries = HandwritingStrokeFx.spatialBoundaries(strokes)
+        val hasSpatialBoundary = spatialBoundaries.any { it }
+        val lastHardBefore = IntArray(n + 1)
+        for (i in 1..n) {
+            lastHardBefore[i] =
+                if (spatialBoundaries[i - 1]) i - 1 else lastHardBefore[i - 1]
+        }
+
         // best[k][i]：前 i 笔切成 k 段的最大总分
         val best = Array(maxSegments + 1) { FloatArray(n + 1) { neg } }
         val back = Array(maxSegments + 1) { IntArray(n + 1) { -1 } }
@@ -81,7 +92,7 @@ class HandwritingSegmenter(
         for (k in 1..maxSegments) {
             for (i in 1..n) {
                 val minJ = (i - maxStrokesPerSegment).coerceAtLeast(0)
-                for (j in minJ until i) {
+                for (j in max(minJ, lastHardBefore[i]) until i) {
                     val prev = best[k - 1][j]
                     if (prev == neg) continue
                     val candidates = candidatesOf(j, i, strokes)
@@ -112,8 +123,8 @@ class HandwritingSegmenter(
         }
         if (bestK <= 0) return Result(emptyList(), 0f, 0f)
 
-        // 「一个字」先验：没有显著换字停顿时，整段单字分数够高就按单字处理
-        if (bestK >= 2 && !hasPauseBoundary(gaps)) {
+        // 「一个字」先验：没有显著换字停顿、也没有空间硬边界时，整段单字分数够高就按单字处理
+        if (bestK >= 2 && !hasSpatialBoundary && !hasPauseBoundary(gaps)) {
             val merged = candidatesOf(0, n, strokes)
             val mergedScore = merged.firstOrNull()?.score ?: 0f
             if (mergedScore >= MERGED_CHAR_MIN_SCORE) {

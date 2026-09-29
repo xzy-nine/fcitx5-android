@@ -205,15 +205,31 @@ class HandwritingSegmenterTest {
         val firstRound = cacheKeys(seg)
         assertEquals(listOf("00", "0011", "11"), computed)
 
-        // 尾部追加一笔（y=9）：只有涉及新笔的段需要重新推理
+        // 尾部追加一笔（y=4，仍在同一空间邻域内）：已有段应命中内容校验缓存
         computed.clear()
-        seg.recognize(all + strokesAt(9f), listOf(0L, 30L, 30L))
+        seg.recognize(all + strokesAt(4f), listOf(0L, 30L, 30L))
         assertEquals(
             "已有段应命中内容校验缓存，只推理含新笔的段",
-            listOf("001199", "1199", "99"),
+            listOf("001144", "1144", "44"),
             computed,
         )
         assertTrue("首轮缓存键应保留：$firstRound", cacheKeys(seg).containsAll(firstRound))
+    }
+
+    @Test
+    fun `spatially separated strokes are recognized as separate characters`() = runBlocking {
+        // 两截在画布上明显分开（间距 90px、笔尺寸 10px）：必须切成两段、分别送识别，
+        // 即使假模型给整段极高分也不合并
+        val calls = mutableListOf<Int>()
+        val seg = HandwritingSegmenter { segment, _ ->
+            calls += segment.size
+            listOf(HandwritingCandidate("字", 0.99f))
+        }
+        val left = listOf(StrokePoint(0f, 0f, 0L), StrokePoint(10f, 10f, 10L))
+        val right = listOf(StrokePoint(100f, 0f, 20L), StrokePoint(110f, 10f, 30L))
+        val result = seg.recognize(listOf(left, right), listOf(0L, 20L))
+        assertEquals(2, result.segments.size)
+        assertEquals(listOf(1, 1), calls)
     }
 
     @Test
