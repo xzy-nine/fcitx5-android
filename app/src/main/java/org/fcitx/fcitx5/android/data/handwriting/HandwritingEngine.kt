@@ -71,15 +71,16 @@ object HandwritingEngine {
         mutex.withLock {
             if (session != null && loadedModelId == modelId) return@withLock true
 
-            val files = HandwritingModelStore.resolve(context, modelId)
-            if (files == null) {
+            if (!HandwritingModelStore.isReady(context, modelId)) {
                 Timber.w("$TAG: model files not found for $modelId")
                 return@withLock false
             }
+            val charIndex = HandwritingModelStore.charIndexFile(context, modelId)
+            val modelPath = HandwritingModelStore.modelFile(context, modelId).absolutePath
             try {
-                val index = parseCharIndex(File(files.charIndex))
+                val index = parseCharIndex(charIndex)
                 if (index.isEmpty()) {
-                    Timber.e("$TAG: char index is empty: ${files.charIndex}")
+                    Timber.e("$TAG: char index is empty: ${charIndex.absolutePath}")
                     return@withLock false
                 }
                 val ortEnv = env ?: OrtEnvironment.getEnvironment().also { env = it }
@@ -87,7 +88,7 @@ object HandwritingEngine {
                     setIntraOpNumThreads(2)
                     setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
                 }
-                val newSession = ortEnv.createSession(files.model, options)
+                val newSession = ortEnv.createSession(modelPath, options)
 
                 // 维度一致性校验：模型输出类别数必须与 char_index 条数一致，
                 // 否则第 N 个 logit 对应的字是错的（换模型/换索引时最常见的静默错误）
