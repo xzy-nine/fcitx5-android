@@ -63,6 +63,8 @@ import org.fcitx.fcitx5.android.input.preedit.ComposePreeditComponent
 import androidx.core.view.isVisible
 import org.fcitx.fcitx5.android.input.voice.VoiceInputComponent
 import org.fcitx.fcitx5.android.input.voice.VoicePanelHost
+import org.fcitx.fcitx5.android.input.handwriting.HandwritingInputComponent
+import org.fcitx.fcitx5.android.input.handwriting.HandwritingPanelHost
 import org.fcitx.fcitx5.android.input.wm.createComposeWindowView
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.unset
@@ -149,6 +151,8 @@ class InputView(
     private val emoticonPicker = emoticonPicker()
     // custom: 内置语音输入的会话组件
     internal val voiceInput = VoiceInputComponent()
+    // custom: 手写输入的会话组件（独立输入方案）
+    internal val handwritingInput = HandwritingInputComponent()
 
     /**
      * custom: 语音面板覆盖层宿主（挂在 [InputWindowManager.view] 里、当前窗口之上）。
@@ -168,6 +172,27 @@ class InputView(
             isClickable = true
             isVisible = false
             voiceInput.panelVisibleListener = { visible -> isVisible = visible }
+        }
+    }
+
+    /**
+     * custom: 手写面板覆盖层宿主（与语音面板同构，见 [voicePanelView]）。
+     * 键盘窗口保持 attach，工具栏可用；画布自身消费全部触摸，不会穿透到下层键盘。
+     */
+    private val handwritingPanelView: View by lazy {
+        createComposeWindowView(themedContext) {
+            HandwritingPanelHost(
+                handwriting = handwritingInput,
+                onBackToKeyboard = {
+                    handwritingInput.closePanel()
+                    windowManager.attachWindow(KeyboardWindow)
+                },
+            )
+        }.apply {
+            elevation = 1f
+            isClickable = true
+            isVisible = false
+            handwritingInput.panelVisibleListener = { visible -> isVisible = visible }
         }
     }
 
@@ -278,6 +303,8 @@ class InputView(
         scope += keyboardTune
         // custom: 语音输入会话组件（面板/工具栏/空格长按都通过它）
         scope += voiceInput
+        // custom: 手写输入会话组件（独立输入方案，覆盖层与语音同构）
+        scope += handwritingInput
         broadcaster.onScopeSetupFinished(scope)
     }
 
@@ -445,6 +472,13 @@ class InputView(
             // 不会因布局切换被 CANCEL，物理松手才能被键盘侧收到（见 VoicePanelHost 注释）。
             // elevation 保证之后 attachWindow 追加的窗口 View 不会盖住它。
             windowManager.view.add(
+                handwritingPanelView,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            )
+            windowManager.view.add(
                 voicePanelView,
                 FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
@@ -606,8 +640,9 @@ class InputView(
         lastEditorKey = editorKey
         Timber.d("startInput: restarting=$restarting, sameEditor=$sameEditor, key=$editorKey")
         if (!restarting || (focusChangeResetKeyboard && !sameEditor)) {
-            // 收起语音面板覆盖层（若有）：会话丢弃、麦克风释放
+            // 收起语音/手写面板覆盖层（若有）：会话丢弃、资源释放
             voiceInput.closePanel()
+            handwritingInput.closePanel()
             windowManager.attachWindow(KeyboardWindow)
         }
     }

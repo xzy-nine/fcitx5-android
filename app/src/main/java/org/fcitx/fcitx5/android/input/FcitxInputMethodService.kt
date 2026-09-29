@@ -552,6 +552,54 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     /**
+     * custom: 手写「替换式上屏」原语。
+     *
+     * 手写识别是高频替换上屏（每次落笔都可能重写屏上活动字），因此：
+     * - 先**只读**校验光标前文本是否等于 [expected]，对不上就什么都不做 ——
+     *   用户中途移动光标/退格后旧文本已失效，此时必须放弃本次替换而不是误删内容；
+     * - 命中时在同一 batchEdit 里删除旧文本并提交新文本，随后把本服务的 selection
+     *   预测同步到新光标位置（否则下一次 `onUpdateSelection` 会给出错位的光标）。
+     *
+     * 需在主线程调用，返回是否完成替换。
+     */
+    internal fun replaceBeforeCursor(expected: String, replacement: String): Boolean {
+        val ic = currentInputConnection ?: return false
+        // 手写与 fcitx 预编辑互斥：先结束可能存在的 composing，避免替换落在预编辑区间内
+        if (composing.isNotEmpty()) resetComposingState()
+        val before = runCatching {
+            ic.getTextBeforeCursor(expected.length, 0)?.toString()
+        }.getOrNull()
+        if (before != expected) return false
+        val target = selection.latest.start - expected.length + replacement.length
+        selection.predict(target)
+        ic.withBatchEdit {
+            if (expected.isNotEmpty()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    deleteSurroundingTextInCodePoints(expected.length, 0)
+                } else {
+                    deleteSurroundingText(expected.length, 0)
+                }
+            }
+            if (replacement.isNotEmpty()) commitText(replacement, 1)
+        }
+        return true
+    }
+
+    /**
+     * custom: 删除光标前 [count] 个字符（手写撤销活动字用）。
+     *
+     * 走删除键同一条路径（[sendDownUpKeyEvents] + [handleBackspaceKey]），
+     * 因此宿主输入框、内部编辑器、私有 IME 选项下的行为都与手按删除键一致。
+     * 需在主线程调用。
+     */
+    internal fun deleteBeforeCursor(count: Int) {
+        if (count <= 0) return
+        // handleBackspaceKey 内部已按场景选择「模拟按键」或「deleteSurroundingText」，
+        // 这里直接复用它，避免重复删除
+        repeat(count) { handleBackspaceKey() }
+    }
+
+    /**
      * custom：`@` 上屏后触发邮箱域名联想。
      *
      * 域名数据为标准 QuickPhrase 词库（内置 `email.mb` 预置域名 + 用户词库自学习，见
@@ -1215,6 +1263,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         Timber.d("onFinishInputView: finishingInput=$finishingInput")
         // custom: 收起语音面板覆盖层并释放麦克风（IME 隐藏时不能继续录音）
         inputView.value?.voiceInput?.closePanel()
+        // custom: 收起手写面板覆盖层（IME 隐藏时活动字固化、识别任务取消）
+        inputView.value?.handwritingInput?.closePanel()
         // the session is over — a later InputView recreation must not replay it
         currentEditorInfo = null
         currentRestarting = false
@@ -1259,6 +1309,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
         prefs.candidates.unregisterOnChangeListener(recreateCandidatesViewListener)
         ThemeManager.removeOnChangedListener(onThemeChangeListener)
+        // custom: 释放手写 ONNX 会话（避免 IME 重建时残留 native 会话）
+        inputView.value?.handwritingInput?.release()
         super.onDestroy()
         // Fcitx might be used in super.onDestroy()
         FcitxDaemon.disconnect(javaClass.name)

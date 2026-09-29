@@ -105,6 +105,8 @@ class ComposeKawaiiBarComponent :
     private val popup: PopupComponent by manager.must()
     // custom: 内置语音输入入口（工具栏麦克风按钮）
     private val voiceInput: org.fcitx.fcitx5.android.input.voice.VoiceInputComponent by manager.must()
+    // custom: 手写输入入口（工具栏手写按钮）
+    private val handwritingInput: org.fcitx.fcitx5.android.input.handwriting.HandwritingInputComponent by manager.must()
     private val inputView by manager.inputView()
 
     private val prefs = AppPrefs.getInstance()
@@ -119,6 +121,8 @@ class ComposeKawaiiBarComponent :
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var clipboardTimeoutJob: Job? = null
+    private var voicePanelJob: Job? = null
+    private var handwritingPanelJob: Job? = null
 
     private var isClipboardFresh: Boolean = false
     private var isInlineSuggestionPresent: Boolean = false
@@ -348,8 +352,9 @@ class ComposeKawaiiBarComponent :
                 else inputView.showKeyboardTune()
             },
             onTitleBack = {
-                // custom: 语音面板是覆盖层，不能只切窗口 —— 不然面板会盖在新键盘上
+                // custom: 语音/手写面板是覆盖层，不能只切窗口 —— 不然面板会盖在新键盘上
                 voiceInput.closePanel()
+                handwritingInput.closePanel()
                 windowManager.attachWindow(
                     org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
                 )
@@ -383,6 +388,20 @@ class ComposeKawaiiBarComponent :
                 // 工具栏麦克风进入：留在语音页，方便连续说话
                 { voiceInput.onVoiceEntryClicked(returnToKeyboardOnCommit = false) }
             } else null,
+            onHandwritingInput = if (AppPrefs.getInstance().handwriting.handwritingInputEnabled.getValue()) {
+                {
+                    if (handwritingInput.isModelReady()) {
+                        handwritingInput.togglePanel()
+                    } else {
+                        // 模型缺失不打开空面板：直接提示去模型市场（面板内也有同一提示）
+                        android.widget.Toast.makeText(
+                            context,
+                            context.getString(R.string.handwriting_model_missing),
+                            android.widget.Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                }
+            } else null,
         )
     }
 
@@ -399,6 +418,7 @@ class ComposeKawaiiBarComponent :
         ClipboardManager.addOnUpdateListener(onClipboardUpdateListener)
         splitKeyboardPref.registerOnChangeListener(splitKeyboardListener)
         observeVoicePanel()
+        observeHandwritingPanel()
     }
 
     /**
@@ -407,7 +427,7 @@ class ComposeKawaiiBarComponent :
      * 这里直接把面板可见性映射成同一套状态机的转移，返回按钮的语义仍由工具栏统一提供。
      */
     private fun observeVoicePanel() {
-        scope.launch {
+        voicePanelJob = scope.launch {
             voiceInput.panelVisible.collect { visible ->
                 if (visible) {
                     _titleData.value = TitleData(
@@ -425,10 +445,35 @@ class ComposeKawaiiBarComponent :
         }
     }
 
+    /**
+     * custom: 手写面板与语音面板同理——覆盖层不产生 [InputWindow]，这里补上工具栏的
+     * 「标题 + 返回」态；返回按钮由 `onTitleBack` 统一关闭两个面板。
+     */
+    private fun observeHandwritingPanel() {
+        handwritingPanelJob = scope.launch {
+            handwritingInput.panelVisible.collect { visible ->
+                if (visible) {
+                    _titleData.value = TitleData(
+                        title = context.getString(R.string.handwriting_input),
+                        showTitle = true
+                    )
+                    _titleExtensionView.value = null
+                    barStateMachine.push(ExtendedWindowAttached)
+                } else {
+                    _titleData.value = null
+                    _titleExtensionView.value = null
+                    barStateMachine.push(WindowDetached)
+                }
+            }
+        }
+    }
+
     fun destroy() {
         ClipboardManager.removeOnUpdateListener(onClipboardUpdateListener)
         splitKeyboardPref.unregisterOnChangeListener(splitKeyboardListener)
         clipboardTimeoutJob?.cancel()
+        voicePanelJob?.cancel()
+        handwritingPanelJob?.cancel()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             inlineRenderJob?.cancel()
             inlineSuggestionsUi.clear()

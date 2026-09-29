@@ -22,6 +22,7 @@ compose = "1.12.0"
 # custom: 语音输入（内置语音识别平台/模型市场）
 kaml = "0.104.0"
 commonsCompress = "1.28.0"
+onnxruntimeAndroid = "1.28.0"
 
 [libraries]
 android-gradlePlugin = { group = "com.android.tools.build", name = "gradle", version.ref = "androidGradlePlugin" }
@@ -99,6 +100,8 @@ jieba-analysis = { module = "com.huaban:jieba-analysis", version = "1.0.2" }
 kaml = { module = "com.charleskorn.kaml:kaml", version.ref = "kaml" }
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commonsCompress" }
 okhttp-sse = { module = "com.squareup.okhttp3:okhttp-sse", version.ref = "okhttp" }
+# custom: 手写识别（ONNX Runtime Java API）
+onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntimeAndroid" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }

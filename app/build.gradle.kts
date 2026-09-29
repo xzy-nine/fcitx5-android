@@ -64,6 +64,16 @@ android {
         @Suppress("UnstableApiUsage")
         generateLocaleConfig = true
     }
+
+    // custom: 手写识别用官方 ONNX Runtime Java API，但 native 运行时仍用 sherpa-onnx AAR
+    // 内置的那份 libonnxruntime.so（两者同名）。这里排除 onnxruntime-android 自带的 .so，
+    // 避免打包期重复文件冲突；libonnxruntime4j_jni.so（Java 绑定）保留。
+    // 注意：语音与手写因此共用同一份 native runtime，改动后需回归一次语音。
+    packaging {
+        jniLibs {
+            excludes += "**/libonnxruntime.so"
+        }
+    }
 }
 
 fcitxComponent {
@@ -151,6 +161,8 @@ dependencies {
     implementation(libs.okhttp.sse)
     implementation(libs.kaml)
     implementation(libs.commons.compress)
+    // custom: 手写识别 —— 官方 ONNX Runtime Java API（native 运行时复用 sherpa AAR 内置的那份）
+    implementation(libs.onnxruntime.android)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)
