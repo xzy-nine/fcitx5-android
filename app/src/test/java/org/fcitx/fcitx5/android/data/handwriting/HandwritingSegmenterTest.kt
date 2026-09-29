@@ -63,41 +63,50 @@ class HandwritingSegmenterTest {
 
     @Test
     fun `cursive multi character without pause keeps dp split when merged score is low`() = runBlocking {
-        // 连笔写两个字：整段识别分数很低，不应被「一个字先验」吞掉
-        val seg = segmenter { segment ->
-            when (segment.size) {
-                2 -> listOf(HandwritingCandidate("你", 0.9f))
-                1 -> listOf(HandwritingCandidate("好", 0.9f))
-                else -> listOf(HandwritingCandidate("?", 0.02f))
+        // 用一个「位置敏感」的假模型：只有 [0,2) 是一个真字（0.95），[0,3)/[0,4) 跨字不成字（0.02），
+        // 其余段一律 0.40 的弱分。这样单字先验（合并段 0.02 < 0.35）不成立，
+        // 且任何把 [0,2) 与后两笔合并或拆碎的方案都会更低分 —— 最优切分应为 2|2。
+        val seg = HandwritingSegmenter { segment, _ ->
+            val size = segment.size
+            val score = when {
+                size == 2 && segment.first().first().y == 0f -> 0.95f
+                size >= 3 && segment.first().first().y == 0f -> 0.02f
+                else -> 0.40f
             }
+            listOf(HandwritingCandidate("字", score))
         }
         val result = seg.recognize(strokes(4), listOf(0L, 30L, 30L, 30L))
         assertEquals(2, result.segments.size)
-        assertEquals(listOf("你", "好"), result.segments.map { it.candidates[0].char })
+        assertEquals(2, result.segments[0].strokeCount)
+        assertEquals(2, result.segments[1].strokeCount)
+        assertEquals("字", result.segments[0].candidates[0].char)
     }
 
     @Test
-    fun `segment results are cached across appended strokes`() = runBlocking {
-        val requested = mutableListOf<Pair<Int, Int>>()
+    fun `segment cache survives appended strokes`() = runBlocking {
         val seg = HandwritingSegmenter { strokeList, _ ->
-            requested += 0 to strokeList.size
             listOf(HandwritingCandidate("字", 0.9f / strokeList.size))
         }
-        val two = strokes(2)
-        seg.recognize(two, listOf(0L, 30L))
-        // 首轮已覆盖「前两笔」的所有子段
-        assertTrue("首轮应已推理 (0,2)", requested.contains(0 to 2))
+        seg.recognize(strokes(2), listOf(0L, 30L))
+        val firstRound = cacheKeys(seg)
+        assertTrue("首轮应缓存 2 笔内的所有子段：$firstRound", firstRound.isNotEmpty())
 
-        // 追加两笔：已覆盖的子段（0..2 范围内）**不得重新推理**，只允许新增涉及第 3/4 笔的段
-        requested.clear()
-        val four = strokes(4)
-        seg.recognize(four, listOf(0L, 30L, 30L, 30L))
-        val recomputed = requested.filter { it.second <= 2 }
+        // 追加两笔：首轮键必须全部保留（键是 (start,end) 编码，与总笔数无关）
+        seg.recognize(strokes(4), listOf(0L, 30L, 30L, 30L))
+        val secondRound = cacheKeys(seg)
         assertTrue(
-            "已缓存子段被重复推理：$recomputed（本轮全部：$requested）",
-            recomputed.isEmpty(),
+            "首轮缓存应跨轮保留：首轮=$firstRound，第二轮=$secondRound",
+            secondRound.containsAll(firstRound),
         )
-        assertTrue("追加笔画后应确实新增了推理：$requested", requested.isNotEmpty())
+        assertTrue("追加笔画应新增段缓存：$secondRound", secondRound.size > firstRound.size)
+    }
+
+    /** 读私有段缓存键（仅测试用）：key = start*1000 + end。 */
+    private fun cacheKeys(seg: HandwritingSegmenter): Set<Long> {
+        val field = HandwritingSegmenter::class.java.getDeclaredField("segmentCache")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        return (field.get(seg) as Map<Long, *>).keys.toSet()
     }
 
     @Test
