@@ -21,13 +21,21 @@ class HandwritingStrokeFxTest {
         HandwritingSegmenter.Segment(start, count, listOf(HandwritingCandidate("字", 0.9f)))
 
     @Test
-    fun `split pause shrinks with stroke count and never below floor`() {
-        assertEquals(HW_SPLIT_PAUSE_BASE_MS, HandwritingStrokeFx.splitPauseMs(1))
-        assertEquals(HW_SPLIT_PAUSE_BASE_MS - HW_SPLIT_PAUSE_STEP_MS, HandwritingStrokeFx.splitPauseMs(2))
-        // 起笔阶段（0 笔）不应低于基准
-        assertEquals(HW_SPLIT_PAUSE_BASE_MS, HandwritingStrokeFx.splitPauseMs(0))
-        // 足够多笔后压到下限
-        assertEquals(HW_SPLIT_PAUSE_MIN_MS, HandwritingStrokeFx.splitPauseMs(50))
+    fun `split pause is a V curve around the median stroke count`() {
+        // 中位数处最快，0 笔（y(0)）与 2×中位数处同为 750ms
+        assertEquals(
+            HW_SPLIT_PAUSE_MIN_MS,
+            HandwritingStrokeFx.splitPauseMs(HW_SPLIT_PAUSE_MEDIAN_STROKES),
+        )
+        assertEquals(750L, HandwritingStrokeFx.splitPauseMs(0))
+        assertEquals(750L, HandwritingStrokeFx.splitPauseMs(2 * HW_SPLIT_PAUSE_MEDIAN_STROKES))
+        // 关于中位数对称
+        assertEquals(
+            HandwritingStrokeFx.splitPauseMs(4),
+            HandwritingStrokeFx.splitPauseMs(HW_SPLIT_PAUSE_MEDIAN_STROKES * 2 - 4),
+        )
+        // 偏离足够远时封顶
+        assertEquals(HW_SPLIT_PAUSE_MAX_MS, HandwritingStrokeFx.splitPauseMs(50))
     }
 
     @Test

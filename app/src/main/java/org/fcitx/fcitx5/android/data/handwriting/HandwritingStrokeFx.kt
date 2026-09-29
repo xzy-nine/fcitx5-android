@@ -4,19 +4,24 @@
  *
  * custom: 手写叠写的窗口与视觉前缀计算（纯逻辑）。
  *
- * 提供笔间间隔、自适应停顿阈值、「已完成前缀」判定与滑窗固化条件，
- * 供 `HandwritingKeyboardLayout` 维护识别窗口与三段式渲染；不依赖模型与 UI。
+ * 提供笔间间隔、停顿阈值、「已完成前缀」判定与滑窗固化条件，
+ * 供 `HandwritingKeyboardLayout` 维护识别窗口与渲染；不依赖模型与 UI。
  */
 package org.fcitx.fcitx5.android.data.handwriting
 
-/** 停顿分割阈值基准（ms），见 [HandwritingStrokeFx.splitPauseMs]。 */
-const val HW_SPLIT_PAUSE_BASE_MS = 700L
+import kotlin.math.roundToLong
 
-/** 停顿分割阈值每多一笔的递减量（ms），见 [HandwritingStrokeFx.splitPauseMs]。 */
-const val HW_SPLIT_PAUSE_STEP_MS = 50L
-
-/** 停顿分割阈值下限（ms）。 */
+/** 停顿分割阈值在笔画数 = 中位数处取到下限（ms），见 [HandwritingStrokeFx.splitPauseMs]。 */
 const val HW_SPLIT_PAUSE_MIN_MS = 500L
+
+/** 停顿分割阈值上限（ms），见 [HandwritingStrokeFx.splitPauseMs]。 */
+const val HW_SPLIT_PAUSE_MAX_MS = 1500L
+
+/** 常用字笔画中位数（曲线谷底所在的窗口笔画数）。 */
+const val HW_SPLIT_PAUSE_MEDIAN_STROKES = 9
+
+/** 曲线系数：窗口笔画数偏离中位数 [HW_SPLIT_PAUSE_MEDIAN_STROKES] 笔时，阈值抬升 250ms。 */
+const val HW_SPLIT_PAUSE_CURVE_RISE_MS = 250.0
 
 /**
  * 识别窗口笔画上限。
@@ -36,13 +41,20 @@ const val HW_FADE_GAP_MS = 400L
 object HandwritingStrokeFx {
 
     /**
-     * 停顿分割阈值：`基准 − (笔画数 − 1) × 递减量`，不低于下限。
+     * 停顿分割阈值：`min(上限, 下限 + 系数/m² × (笔画数 − m)²)`，`m` = [HW_SPLIT_PAUSE_MEDIAN_STROKES]。
+     *
+     * 笔画数等于 m（常用字中位数）时取到下限，偏离越远越慢；`splitPauseMs(0)` = 750ms。
      *
      * @param windowStrokes 当前识别窗口（未固化）笔画数
      */
-    fun splitPauseMs(windowStrokes: Int): Long =
-        (HW_SPLIT_PAUSE_BASE_MS - (windowStrokes - 1).coerceAtLeast(0) * HW_SPLIT_PAUSE_STEP_MS)
-            .coerceAtLeast(HW_SPLIT_PAUSE_MIN_MS)
+    fun splitPauseMs(windowStrokes: Int): Long {
+        val median = HW_SPLIT_PAUSE_MEDIAN_STROKES.toDouble()
+        val offset = (windowStrokes - HW_SPLIT_PAUSE_MEDIAN_STROKES).toDouble()
+        val rise = HW_SPLIT_PAUSE_CURVE_RISE_MS / (median * median) * offset * offset
+        return (HW_SPLIT_PAUSE_MIN_MS + rise)
+            .coerceAtMost(HW_SPLIT_PAUSE_MAX_MS.toDouble())
+            .roundToLong()
+    }
 
     /** 窗口的笔间时间间隔（gaps[j] = 第 j 笔起笔与上一笔收笔的间隔，gaps[0] = 0）。 */
     fun windowGaps(window: List<List<StrokePoint>>): List<Long> =

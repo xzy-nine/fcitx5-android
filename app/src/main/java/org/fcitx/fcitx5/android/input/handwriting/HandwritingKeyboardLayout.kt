@@ -6,9 +6,9 @@
  *
  * - 布局：状态行 → 手写画布 → 底部键行（复用项目既有 `KeyDef` 与 `ComposeKeyRow`）；
  * - 候选由 `HandwritingInputComponent` 推给候选栏，不绘制在本布局；
- * - 识别窗口：每落一笔全窗重新识别；停顿只推进视觉前缀（变淡 → 隐藏），
- *   超长闲置（变淡后 [HW_CLEAR_IDLE_MS]）清空窗口并回调 [HandwritingKeyboardLayout] 的 `onFinalize`；
- * - 三段式渲染：`[0,gone)` 不画、`[gone,fade)` 变淡、`[fade,end)` 正常；
+ * - 识别窗口：每落一笔全窗重新识别；停顿只把笔画变淡，
+ *   继续闲置 [HW_CLEAR_IDLE_MS] 才清空窗口（墨迹同步消失）并回调 `onFinalize`；
+ * - 渲染：`[0,fade)` 变淡、`[fade,end)` 正常；笔画离开识别窗口（固化/清窗）时墨迹同步消失；
  * - 固化：窗口笔画数超过 `HW_RECOGNIZE_WINDOW_LIMIT`，或段数饱和且存在已完成前缀时，
  *   把最早段移出窗口并回调 `onSegmentSettled`；
  * - ⚠️ `Canvas` 的 `pointerInput` 不挂 `key(...)`：否则每个采样点都会重建手势节点并
@@ -78,13 +78,10 @@ import kotlin.math.sqrt
 /** 起笔判定阈值（px）：小于它视为点击而不是笔画。 */
 private const val STROKE_START_THRESHOLD_PX = 12f
 
-/** 变淡后推进「隐藏」前缀的延时（ms）。 */
-private const val HW_FADE_OUT_MS = 450L
-
 /**
- * 超长闲置（ms）：停顿变淡后仍无新笔画达到此时长，才真正清空识别窗口。
+ * 变淡后到清空识别窗口（墨迹随之消失）的延时（ms）。
  */
-private const val HW_CLEAR_IDLE_MS = 3000L
+private const val HW_CLEAR_IDLE_MS = 300L
 
 /** 单次识别任务里最多连续固化的轮数。 */
 private const val MAX_SETTLE_ROUNDS = 8
@@ -126,10 +123,7 @@ fun HandwritingKeyboardLayout(
     /** 已完成前缀（段边界间隔 ≥ [HW_FADE_GAP_MS] 之前），仅影响渲染。 */
     var donePrefix by remember { mutableIntStateOf(0) }
 
-    /** 已隐藏（不画）的前缀：变淡 [HW_FADE_OUT_MS] 后推进。 */
-    var gonePrefix by remember { mutableIntStateOf(0) }
-
-    /** 停顿提示：整窗变淡/隐藏（不清笔画）。 */
+    /** 停顿提示：整窗变淡（不清笔画）。 */
     var idleHidden by remember { mutableStateOf(false) }
 
     var lastStrokeEndMs by remember { mutableLongStateOf(0L) }
@@ -151,15 +145,7 @@ fun HandwritingKeyboardLayout(
     /** 变淡范围起点：停顿提示时是整窗，否则是已完成前缀。 */
     val fadeStart = if (idleHidden) strokes.size else donePrefix
 
-    // 变淡后推进「隐藏」前缀（只影响渲染）
-    LaunchedEffect(fadeStart) {
-        if (fadeStart > 0) {
-            delay(HW_FADE_OUT_MS)
-            gonePrefix = fadeStart
-        }
-    }
-
-    // 停顿达阈值后整窗变淡；继续闲置 HW_CLEAR_IDLE_MS 则清空窗口并固化活动区
+    // 停顿达阈值后整窗变淡；继续闲置 HW_CLEAR_IDLE_MS 则清空窗口（墨迹同步消失）并固化活动区
     LaunchedEffect(lastStrokeEndMs, strokeCount) {
         if (lastStrokeEndMs <= 0L || strokeCount <= 0) return@LaunchedEffect
         delay(HandwritingStrokeFx.splitPauseMs(strokeCount))
@@ -172,7 +158,6 @@ fun HandwritingKeyboardLayout(
         currentStroke = emptyList()
         strokeCount = 0
         donePrefix = 0
-        gonePrefix = 0
         idleHidden = false
         lastStrokeEndMs = 0L
         recognizer.reset()
@@ -188,7 +173,6 @@ fun HandwritingKeyboardLayout(
         currentStroke = emptyList()
         strokeCount = 0
         donePrefix = 0
-        gonePrefix = 0
         idleHidden = false
         lastStrokeEndMs = 0L
         recognizer.reset()
@@ -223,7 +207,6 @@ fun HandwritingKeyboardLayout(
                     // 已完成前缀只做视觉变淡
                     val done = HandwritingStrokeFx.settledStrokesBeforeCurrent(segments, gaps)
                     donePrefix = done
-                    if (gonePrefix > done) gonePrefix = done
 
                     // 固化：窗口超限，或段数饱和且有已完成前缀
                     val over = HandwritingStrokeFx.isWindowOverLimit(window.size)
@@ -240,7 +223,6 @@ fun HandwritingKeyboardLayout(
                         repeat(settleStrokes) { if (strokes.isNotEmpty()) strokes.removeAt(0) }
                         strokeCount = strokes.size
                         donePrefix = 0
-                        gonePrefix = 0
                         recognizer.onStrokesTrimmed(settleStrokes)
                     }
                 }
@@ -256,11 +238,8 @@ fun HandwritingKeyboardLayout(
     fun commitStroke(stroke: List<StrokePoint>) {
         strokes.add(stroke)
         strokeCount = strokes.size
-        // 新笔画落下：取消停顿提示并显示整窗，随后由识别结果更新已完成前缀
-        if (idleHidden) {
-            idleHidden = false
-            gonePrefix = 0
-        }
+        // 新笔画落下：取消停顿提示，随后由识别结果更新已完成前缀
+        if (idleHidden) idleHidden = false
         lastStrokeEndMs = System.currentTimeMillis()
         scheduleRecognition()
     }
@@ -274,7 +253,6 @@ fun HandwritingKeyboardLayout(
         strokeCount = strokes.size
         idleHidden = false
         if (donePrefix > strokes.size) donePrefix = strokes.size
-        if (gonePrefix > strokes.size) gonePrefix = strokes.size
         if (strokes.isEmpty()) {
             lastStrokeEndMs = 0L
             recognizer.reset()
@@ -369,19 +347,16 @@ fun HandwritingKeyboardLayout(
                         }
                     },
             ) {
-                // 三段渲染：[0,gone) 不画；[gone,fade) 变淡；[fade,end) 正常。
+                // 渲染：[0,fade) 变淡、[fade,end) 正常；笔画离开识别窗口（固化/清窗）时墨迹同步消失。
                 // 正在书写的笔画无条件渲染（它尚未进入 strokes）。
                 val fade = fadeStart.coerceIn(0, strokes.size)
-                val gone = gonePrefix.coerceIn(0, fade)
-                val color =
-                    if (idleHidden) colors.onSurface.copy(alpha = 0.3f) else colors.onSurface
-                if (gone < fade) {
-                    strokes.subList(gone, fade).forEach {
-                        drawStroke(it, color.copy(alpha = 0.3f))
+                if (fade > 0) {
+                    strokes.subList(0, fade).forEach {
+                        drawStroke(it, colors.onSurface.copy(alpha = 0.3f))
                     }
                 }
-                strokes.drop(fade).forEach { drawStroke(it, color) }
-                if (currentStroke.size >= 2) drawStroke(currentStroke, color)
+                strokes.drop(fade).forEach { drawStroke(it, colors.onSurface) }
+                if (currentStroke.size >= 2) drawStroke(currentStroke, colors.onSurface)
             }
             if (!modelReady) {
                 Text(
