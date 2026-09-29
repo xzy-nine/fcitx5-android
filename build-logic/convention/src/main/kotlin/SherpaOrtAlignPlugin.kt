@@ -17,6 +17,8 @@ import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.TaskAction
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
@@ -100,8 +102,11 @@ abstract class PatchSherpaOrtVersionTask : DefaultTask() {
                             val index = indexOf(payload, from)
                             System.arraycopy(to, 0, payload, index, to.size)
                             require(payload.size == bytes.size) { "长度必须不变" }
+                            // 名字字符串之外，版本需求的 vna_hash 也要同步，否则版本匹配不上
+                            val hashes = rewriteVersionNeedHash(payload, toTag)
+                            require(hashes >= 1) { "$name 未改到版本需求 hash，拒绝写出" }
                             patched++
-                            logger.lifecycle("patch $name: $fromTag -> $toTag")
+                            logger.lifecycle("patch $name: $fromTag -> $toTag（hash 重写 $hashes 处）")
                         }
                     }
 
@@ -124,6 +129,127 @@ abstract class PatchSherpaOrtVersionTask : DefaultTask() {
         logger.lifecycle(
             "sherpa ORT 对齐完成：patch=$patched，jniLibs 导出 $extracted 个文件 -> $outRoot"
         )
+    }
+
+    /**
+     * 版本名 → ELF hash（`.gnu.version_r` / `.gnu.version_d` 里存的是这个值）。
+     */
+    private fun elfHash(name: ByteArray): Int {
+        var h = 0
+        for (b in name) {
+            h = (h shl 4) + (b.toInt() and 0xFF)
+            val g = h and 0xF0000000.toInt()
+            if (g != 0) h = h xor (g ushr 24)
+            h = h and g.inv()
+        }
+        return h
+    }
+
+    /**
+     * 把 `.gnu.version_r` 中指向 [tag] 的每个版本需求项 `vna_hash` 重写为 [tag] 的 ELF hash。
+     *
+     * 链接器按 (hash, 名字) 匹配版本定义，只替换名字字符串不足以保证版本能被匹配到。
+     * 同时支持 ELF32（armeabi-v7a / x86）与 ELF64（arm64-v8a / x86_64）。
+     *
+     * @return 改写的条目数；非 ELF 或缺少相关段时返回 0
+     */
+    private fun rewriteVersionNeedHash(payload: ByteArray, tag: String): Int {
+        if (payload.size < 64) return 0
+        if (payload[0] != 0x7f.toByte() || payload[1] != 'E'.code.toByte() ||
+            payload[2] != 'L'.code.toByte() || payload[3] != 'F'.code.toByte()
+        ) return 0
+
+        val is64 = payload[4] == 2.toByte()
+        if (!is64 && payload[4] != 1.toByte()) return 0
+
+        val buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+        val shoff: Long
+        val shentsize: Int
+        val shnum: Int
+        val shstrndx: Int
+        if (is64) {
+            shoff = buf.getLong(0x28)
+            shentsize = buf.getShort(0x3a).toInt() and 0xffff
+            shnum = buf.getShort(0x3c).toInt() and 0xffff
+            shstrndx = buf.getShort(0x3e).toInt() and 0xffff
+        } else {
+            shoff = buf.getInt(0x20).toLong() and 0xffffffffL
+            shentsize = buf.getShort(0x2e).toInt() and 0xffff
+            shnum = buf.getShort(0x30).toInt() and 0xffff
+            shstrndx = buf.getShort(0x32).toInt() and 0xffff
+        }
+        if (shoff <= 0L || shnum <= 0 || shstrndx >= shnum) return 0
+        if (shoff + shnum.toLong() * shentsize > payload.size) return 0
+
+        /** 节头的 name/type 偏移两者一致（0/4），offset/size 位置不同。 */
+        data class Section(val name: Int, val type: Int, val offset: Long, val size: Long)
+
+        val sections = (0 until shnum).map { i ->
+            val at = shoff.toInt() + i * shentsize
+            if (is64) {
+                Section(
+                    name = buf.getInt(at),
+                    type = buf.getInt(at + 4),
+                    offset = buf.getLong(at + 24),
+                    size = buf.getLong(at + 32),
+                )
+            } else {
+                Section(
+                    name = buf.getInt(at),
+                    type = buf.getInt(at + 4),
+                    offset = buf.getInt(at + 16).toLong() and 0xffffffffL,
+                    size = buf.getInt(at + 20).toLong() and 0xffffffffL,
+                )
+            }
+        }
+
+        val shstr = sections[shstrndx]
+        fun nameAt(offset: Int): String {
+            var p = shstr.offset.toInt() + offset
+            val sb = StringBuilder()
+            while (p < payload.size && payload[p] != 0.toByte()) sb.append(payload[p++].toInt().toChar())
+            return sb.toString()
+        }
+
+        fun section(name: String): Section? = sections.firstOrNull { nameAt(it.name) == name }
+
+        val dynstr = section(".dynstr") ?: return 0
+        val verneed = section(".gnu.version_r") ?: return 0
+
+        fun cstr(base: Long, offset: Int): String {
+            var p = base.toInt() + offset
+            val sb = StringBuilder()
+            while (p < payload.size && payload[p] != 0.toByte()) sb.append(payload[p++].toInt().toChar())
+            return sb.toString()
+        }
+
+        val want = elfHash(tag.toByteArray(Charsets.US_ASCII))
+        var modified = 0
+        var vn = verneed.offset.toInt()
+        val vnEnd = (verneed.offset + verneed.size).toInt()
+        while (vn + 16 <= vnEnd) {
+            val cnt = buf.getShort(vn + 2).toInt() and 0xffff
+            val vnAux = buf.getInt(vn + 8)
+            val vnNext = buf.getInt(vn + 12)
+            if (cnt <= 0) break
+            var aux = vn + vnAux
+            var left = cnt
+            while (left > 0 && aux + 16 <= vnEnd) {
+                val vnaHash = buf.getInt(aux)
+                val vnaName = buf.getInt(aux + 8)
+                val vnaNext = buf.getInt(aux + 12)
+                if (vnaHash != want && cstr(dynstr.offset, vnaName) == tag) {
+                    buf.putInt(aux, want)
+                    modified++
+                }
+                if (vnaNext == 0) break
+                aux += vnaNext
+                left--
+            }
+            if (vnNext == 0) break
+            vn += vnNext
+        }
+        return modified
     }
 
     private fun indexOf(haystack: ByteArray, needle: ByteArray): Int {
