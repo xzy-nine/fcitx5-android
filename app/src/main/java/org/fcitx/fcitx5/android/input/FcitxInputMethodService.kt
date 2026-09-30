@@ -20,6 +20,7 @@ import android.util.LruCache
 import android.util.Size
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
@@ -78,6 +79,7 @@ import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.cursor.CursorRange
 import org.fcitx.fcitx5.android.input.cursor.CursorTracker
 import org.fcitx.fcitx5.android.input.clipboard.ClipboardDictFeeder
+import org.fcitx.fcitx5.android.input.handwriting.StylusHandwritingController
 import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import org.fcitx.fcitx5.android.utils.alpha
@@ -143,6 +145,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             navbarMgr.evaluate(it, isVirtualKeyboard)
         }
     }
+
+    // custom: 触控笔手写会话（Android 13+ 触控笔手写协议；识别管线与手写键盘布局共用）
+    private val stylusHandwriting by lazy { StylusHandwritingController(this) }
 
     private var capabilityFlags = CapabilityFlags.DefaultFlags
 
@@ -851,6 +856,27 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         inputDeviceMgr.evaluateOnUpdateEditorToolType(toolType, this)
     }
 
+    // custom: 触控笔手写协议（Android 13+，官方要求重写 onStartStylusHandwriting 即视为支持、
+    // 无需 Manifest 声明）：预热 / 进入会话（返回 boolean，false = 本次 no-op）/
+    // 接收触控笔事件（重写以不依赖墨迹窗口可见时机）/ 会话结束
+    @RequiresApi(33)
+    override fun onPrepareStylusHandwriting() {
+        stylusHandwriting.prepare()
+    }
+
+    @RequiresApi(33)
+    override fun onStartStylusHandwriting(): Boolean = stylusHandwriting.start()
+
+    @RequiresApi(33)
+    override fun onStylusHandwritingMotionEvent(motionEvent: MotionEvent) {
+        stylusHandwriting.onMotionEvent(motionEvent)
+    }
+
+    @RequiresApi(33)
+    override fun onFinishStylusHandwriting() {
+        stylusHandwriting.finish()
+    }
+
     private var firstBindInput = true
 
     override fun onBindInput() {
@@ -1309,6 +1335,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         ThemeManager.removeOnChangedListener(onThemeChangeListener)
         // custom: 释放手写 ONNX 会话（避免 IME 重建时残留 native 会话）
         inputView.value?.handwritingInput?.release()
+        // custom: 释放触控笔手写会话（协程与状态；不调用系统方法）
+        stylusHandwriting.release()
         super.onDestroy()
         // Fcitx might be used in super.onDestroy()
         FcitxDaemon.disconnect(javaClass.name)

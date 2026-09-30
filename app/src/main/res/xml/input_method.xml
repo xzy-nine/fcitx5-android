@@ -5,8 +5,9 @@
     android:configChanges="uiMode"
     android:settingsActivity="org.fcitx.fcitx5.android.ui.main.MainActivity"
     android:supportsInlineSuggestions="true"
+    android:supportsStylusHandwriting="true"
     android:supportsSwitchingToNextInputMethod="true"
-    tools:targetApi="30">
+    tools:targetApi="34">
     <subtype
         android:icon="@mipmap/ic_launcher"
         android:imeSubtypeMode="keyboard"
