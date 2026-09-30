@@ -75,6 +75,39 @@ class HandwritingSegmenterTest {
     }
 
     @Test
+    fun `stylus mode keeps one character through deliberate pen lifts`() = runBlocking {
+        // 触控笔在字内普遍刻意提笔（500/650ms）：默认阈值判为显著换字并加分拆开，
+        // 触控笔模式（阈值上调到 900ms）应保持一个字
+        val seg = HandwritingSegmenter(stylusMode = true) { segment, _ ->
+            if (segment.size >= 3) listOf(HandwritingCandidate("张", 0.95f))
+            else listOf(HandwritingCandidate("弓", 0.92f))
+        }
+        val result = seg.recognize(strokes(3), listOf(0L, 550L, 650L))
+        assertEquals(1, result.segments.size)
+        assertEquals("张", result.segments[0].candidates[0].char)
+        // 同样输入下默认（手指）模式仍拆开（每处切分点都拿加分）：确认触控笔档位真的生效
+        val finger = segmenter { segment ->
+            if (segment.size >= 3) listOf(HandwritingCandidate("张", 0.95f))
+            else listOf(HandwritingCandidate("弓", 0.92f))
+        }
+        assertTrue(
+            "默认模式应把字内提笔拆开（实际 ${finger.recognize(strokes(3), listOf(0L, 550L, 650L)).segments.size} 段）",
+            finger.recognize(strokes(3), listOf(0L, 550L, 650L)).segments.size > 1,
+        )
+    }
+
+    @Test
+    fun `stylus mode still splits on real character boundary pauses`() = runBlocking {
+        // 字与字之间的真实停顿 1200ms ≥ 触控笔档位 900ms：仍应切开
+        val seg = HandwritingSegmenter(stylusMode = true) { segment, _ ->
+            if (segment.size >= 3) listOf(HandwritingCandidate("张", 0.95f))
+            else listOf(HandwritingCandidate("弓", 0.92f))
+        }
+        val result = seg.recognize(strokes(3), listOf(0L, 500L, 1200L))
+        assertEquals(2, result.segments.size)
+    }
+
+    @Test
     fun `cursive multi character without pause keeps dp split when merged score is low`() = runBlocking {
         // 用一个「位置敏感」的假模型：只有 [0,2) 是一个真字（0.95），[0,3)/[0,4) 跨字不成字（0.02），
         // 其余段一律 0.40 的弱分。这样单字先验（合并段 0.02 < 0.35）不成立，

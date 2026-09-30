@@ -26,6 +26,13 @@ class HandwritingSegmenter(
     private val maxSegments: Int = DEFAULT_MAX_SEGMENTS,
     /** 单段（一个字）允许的最大笔画数。 */
     private val maxStrokesPerSegment: Int = DEFAULT_MAX_STROKES_PER_SEGMENT,
+    /**
+     * 触控笔模式：触控笔在字内也普遍刻意提笔（笔画间停顿普遍 400–800ms，
+     * 与手指连写的「停顿≈换字」信号不可靠），时间阈值整体上调，
+     * 避免「部位成字」（弓/长、丿/乀）被字内提笔拆开；字与字之间的真实停顿
+     * （≥[companion.STYLUS_GAP_SPLIT_MS]）仍正常切开。
+     */
+    private val stylusMode: Boolean = false,
     /** 单字识别函数：生产环境注入 [HandwritingEngine.predict]，测试注入假模型。 */
     private val predictFn: suspend (List<List<StrokePoint>>, Int) -> List<HandwritingCandidate>,
 ) {
@@ -179,10 +186,18 @@ class HandwritingSegmenter(
 
     /** 切分点时间偏置：明显停顿倾向切分（加分），连笔压制切分（减分）。 */
     private fun gapBias(gapMs: Long): Float = when {
-        gapMs >= GAP_SPLIT_MS -> GAP_SPLIT_BONUS
-        gapMs <= GAP_JOIN_MS -> GAP_JOIN_MALUS
+        gapMs >= splitMs -> GAP_SPLIT_BONUS
+        gapMs <= joinMs -> GAP_JOIN_MALUS
         else -> 0f
     }
+
+    /** 换字切分的停顿阈值（触控笔模式下上调，见 [stylusMode]）。 */
+    private val splitMs: Long
+        get() = if (stylusMode) STYLUS_GAP_SPLIT_MS else GAP_SPLIT_MS
+
+    /** 连笔（压制切分）的间隔上限（触控笔模式下上调）。 */
+    private val joinMs: Long
+        get() = if (stylusMode) STYLUS_GAP_JOIN_MS else GAP_JOIN_MS
 
     /**
      * 显著换字停顿检测（相对阈值）：
@@ -194,13 +209,17 @@ class HandwritingSegmenter(
         val inner = gaps.drop(1)
         if (inner.isEmpty()) return false
         val threshold = if (inner.size < 3) {
-            GAP_SPLIT_MS
+            splitMs
         } else {
             val median = inner.sorted()[inner.size / 2]
-            max(median * 2, GAP_PAUSE_MIN_MS)
+            max(median * 2, pauseMinMs)
         }
         return inner.any { it >= threshold }
     }
+
+    /** 「显著换字」相对停顿检测的绝对下限（触控笔模式下上调）。 */
+    private val pauseMinMs: Long
+        get() = if (stylusMode) STYLUS_GAP_PAUSE_MIN_MS else GAP_PAUSE_MIN_MS
 
     companion object {
         /** 活动笔画最多同时叠写的字数。 */
@@ -224,5 +243,14 @@ class HandwritingSegmenter(
 
         /** 相对停顿检测的绝对下限（ms）。 */
         private const val GAP_PAUSE_MIN_MS = 250L
+
+        /** 触控笔模式：换字切分停顿阈值（字内刻意提笔普遍 400–800ms，不算换字）。 */
+        private const val STYLUS_GAP_SPLIT_MS = 900L
+
+        /** 触控笔模式：连笔（压制切分）间隔上限。 */
+        private const val STYLUS_GAP_JOIN_MS = 300L
+
+        /** 触控笔模式：相对停顿检测的绝对下限。 */
+        private const val STYLUS_GAP_PAUSE_MIN_MS = 700L
     }
 }

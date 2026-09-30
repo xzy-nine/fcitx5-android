@@ -59,6 +59,7 @@ import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.FcitxInputMethodService
 import timber.log.Timber
+import kotlin.math.max
 
 /** 墨迹视图命中目标（单点按下抬起视为点选）。 */
 private sealed interface StylusTapTarget {
@@ -98,7 +99,8 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         }
     )
 
-    private val recognizer = HandwritingSegmenter { s, k -> HandwritingEngine.predict(s, k) }
+    // 触控笔模式：字内刻意提笔的时间信号不可靠，切分阈值整体上调（见 HandwritingSegmenter.stylusMode）
+    private val recognizer = HandwritingSegmenter(stylusMode = true) { s, k -> HandwritingEngine.predict(s, k) }
 
     private var loadJob: Job? = null
     private var recognizeJob: Job? = null
@@ -308,13 +310,19 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         scheduleRecognition()
     }
 
-    /** 空闲清窗：停顿达阈值后固化活动区（文本已上屏），清窗；chips 保留。 */
+    /** 空闲清窗：停顿达阈值后固化活动区（文本已上屏），清窗；chips 保留。
+     *
+     * 触控笔思考停顿普遍 1–2s（字内/字间都远长于手指连写），
+     * 清窗下限上调到 [STYLUS_IDLE_CLEAR_MS]，避免写到一半窗口被清、
+     * 后半截被当成新字（「拆开单字为多字」的主要来源之一）。
+     */
     private fun scheduleIdleFinalize() {
         idleJob?.cancel()
         val count = inkView.strokeCount
         if (count <= 0) return
         idleJob = scope.launch {
-            delay(HandwritingStrokeFx.splitPauseMs(count) + HW_CLEAR_IDLE_MS)
+            val delayMs = max(HandwritingStrokeFx.splitPauseMs(count) + HW_CLEAR_IDLE_MS, STYLUS_IDLE_CLEAR_MS)
+            delay(delayMs)
             if (!sessionActive) return@launch
             active = ""
             inkView.clearWindow()
@@ -398,6 +406,9 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         /** 空闲清窗延时（ms），与键盘手写布局同口径。 */
         const val HW_CLEAR_IDLE_MS = 300L
 
+        /** 触控笔模式空闲清窗下限（ms）：字内思考停顿普遍 1–2s，低于它不清窗。 */
+        const val STYLUS_IDLE_CLEAR_MS = 2000L
+
         /** 单次识别任务里最多连续固化的轮数。 */
         const val MAX_SETTLE_ROUNDS = 8
     }
@@ -433,6 +444,9 @@ private class StylusInkView(
 
     private var chips: List<HandwritingCandidate> = emptyList()
 
+    /** 本视图的屏幕位置缓存（事件坐标换算用，feed 每次刷新）。 */
+    private val viewOrigin = IntArray(2)
+
     /** 点选命中区（onDraw 时重建）。 */
     private val chipRects = ArrayList<Pair<RectF, Int>>()
     private val buttonRects = ArrayList<Pair<RectF, StylusTapTarget>>()
@@ -451,13 +465,21 @@ private class StylusInkView(
 
     fun feed(event: MotionEvent) {
         synchronized(lock) {
+            // 事件坐标统一换算到本视图坐标系（Gboard 用视图间 Matrix 变换，同口径）：
+            // - rawX/rawY 恒为屏幕坐标；应用内回放的转发事件其 X/Y 可能仍在宿主视图空间，
+            //   故一律以 raw 为准；
+            // - 历史点没有 raw 访问器，用「当点 raw−x」补偿同一事件内的视图变换；
+            // - 再减去本视图的屏幕位置 —— 墨迹窗口的屏幕位置/内容 insets/父级偏移全部免疫。
+            getLocationOnScreen(viewOrigin)
+            val originX = viewOrigin[0].toFloat()
+            val originY = viewOrigin[1].toFloat()
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     val tool = event.getToolType(event.actionIndex)
                     if (tool != MotionEvent.TOOL_TYPE_STYLUS && tool != MotionEvent.TOOL_TYPE_ERASER) return
                     currentIsEraser = tool == MotionEvent.TOOL_TYPE_ERASER
                     current = InkStrokeBuilder()
-                    addPoint(event.x, event.y, event.eventTime, event.pressure)
+                    addPoint(event.rawX - originX, event.rawY - originY, event.eventTime, event.pressure)
                     invalidate()
                 }
 
@@ -465,15 +487,17 @@ private class StylusInkView(
                     val c = current ?: return
                     if (c.points.isEmpty()) return
                     // 历史采样补齐（批量合帧的 MOVE 事件），保证笔画保真
+                    val dx = event.rawX - event.x
+                    val dy = event.rawY - event.y
                     for (h in 0 until event.historySize) {
                         addPoint(
-                            event.getHistoricalX(h),
-                            event.getHistoricalY(h),
+                            event.getHistoricalX(h) + dx - originX,
+                            event.getHistoricalY(h) + dy - originY,
                             event.getHistoricalEventTime(h),
                             event.getHistoricalPressure(h),
                         )
                     }
-                    addPoint(event.x, event.y, event.eventTime, event.pressure)
+                    addPoint(event.rawX - originX, event.rawY - originY, event.eventTime, event.pressure)
                     invalidate()
                 }
 
