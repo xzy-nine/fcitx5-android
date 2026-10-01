@@ -288,6 +288,9 @@
     <string name="handwriting_gesture_keyboard">键盘</string>
     <string name="handwriting_stylus_toolbox">手写笔工具箱</string>
     <string name="handwriting_stylus_toolbox_summary">触控笔书写时显示的浮动按键</string>
-    <string name="handwriting_stylus_region">限制手写区域</string>
-    <string name="handwriting_stylus_region_summary">触控笔点击键盘时仍按键盘按键处理，而不进入书写</string>
+    <string name="handwriting_system_engine">优先使用系统手写引擎</string>
+    <string name="handwriting_system_engine_summary">设备支持时使用系统手写引擎（小米随手写）；不支持的设备自动回落到内置模型</string>
+    <string name="handwriting_system_engine_available">状态：本机可用</string>
+    <string name="handwriting_system_engine_unavailable">状态：不可用，将使用内置模型</string>
+    <string name="handwriting_system_engine_capabilities">文字 %1$s · 手势 %2$s</string>
 </resources>

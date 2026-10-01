@@ -292,6 +292,9 @@
     <string name="handwriting_gesture_keyboard">Keyboard</string>
     <string name="handwriting_stylus_toolbox">Stylus toolbox</string>
     <string name="handwriting_stylus_toolbox_summary">Floating keys shown while writing with the stylus</string>
-    <string name="handwriting_stylus_region">Limit the writing area</string>
-    <string name="handwriting_stylus_region_summary">Stylus taps on the keyboard stay keyboard taps instead of being written</string>
+    <string name="handwriting_system_engine">Prefer the system handwriting engine</string>
+    <string name="handwriting_system_engine_summary">Use the device handwriting engine (Xiaomi Pencil Engine) when available; falls back to the built-in model on unsupported devices</string>
+    <string name="handwriting_system_engine_available">Status: available on this device</string>
+    <string name="handwriting_system_engine_unavailable">Status: unavailable — using the built-in model</string>
+    <string name="handwriting_system_engine_capabilities">Text %1$s · Gestures %2$s</string>
 </resources>

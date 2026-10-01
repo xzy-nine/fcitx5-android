@@ -652,6 +652,19 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             summary = R.string.handwriting_stylus_toolbox_summary
         ) { handwritingInputEnabled.getValue() }
 
+        /**
+         * 优先使用系统手写引擎（小米随手写，系统 jar），默认开启。
+         *
+         * 系统引擎被多个输入法使用、成熟度更高；设备不支持（非小米 / 未安装引擎 jar /
+         * 系统设置未开启）时自动回落到自带 ONNX 模型，因此该开关只影响「是否优先用系统引擎」。
+         */
+        val handwritingSystemEngineEnabled = switch(
+            R.string.handwriting_system_engine,
+            "handwriting_system_engine_enabled",
+            true,
+            summary = R.string.handwriting_system_engine_summary
+        ) { handwritingInputEnabled.getValue() }
+
         init {
             groups = listOf(
                 SubGroup(
@@ -660,6 +673,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                         handwritingInputEnabled.key,
                         handwritingAutoCommit.key,
                         stylusToolboxEnabled.key,
+                        handwritingSystemEngineEnabled.key,
                         handwritingModelId.key,
                         handwritingIndexUrl.key,
                     )

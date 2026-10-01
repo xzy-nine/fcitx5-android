@@ -24,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingMarketCategory
+import org.fcitx.fcitx5.android.data.handwriting.XiaomiHandwritingEngine
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
 import top.yukonga.miuix.kmp.basic.Card
@@ -58,8 +59,14 @@ fun HandwritingSettingsScreen(
     val enabled = remember(version) { prefs.handwritingInputEnabled.getValue() }
     val autoCommit = remember(version) { prefs.handwritingAutoCommit.getValue() }
     val stylusToolbox = remember(version) { prefs.stylusToolboxEnabled.getValue() }
+    val systemEngine = remember(version) { prefs.handwritingSystemEngineEnabled.getValue() }
     val modelId = remember(version) { prefs.handwritingModelId.getValue() }
     val modelReady = HandwritingMarketCategory.isReady(context, modelId)
+    // 系统手写引擎能力探测（读系统设置 + 探测引擎 jar；纯本地、无 IO）
+    // 分开探测文字识别与手势：两者可能只装了一个
+    val systemTextOk = remember(version) { XiaomiHandwritingEngine.isTextRecognitionAvailable(context) }
+    val systemGestureOk = remember(version) { XiaomiHandwritingEngine.isGestureAvailable(context) }
+    val systemEngineAvailable = systemTextOk || systemGestureOk
 
     PageScaffold(
         title = stringResource(R.string.handwriting_input),
@@ -93,6 +100,23 @@ fun HandwritingSettingsScreen(
                     checked = stylusToolbox,
                     enabled = enabled,
                     onCheckedChange = { prefs.stylusToolboxEnabled.setValue(it) },
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.handwriting_system_engine),
+                    // 分能力回显：文字识别 / 手势各自可用性（只装一个时能一眼看出）
+                    summary = stringResource(R.string.handwriting_system_engine_summary) + "\n" +
+                            if (systemEngineAvailable) {
+                                stringResource(
+                                    R.string.handwriting_system_engine_capabilities,
+                                    if (systemTextOk) "✓" else "✗",
+                                    if (systemGestureOk) "✓" else "✗",
+                                )
+                            } else {
+                                stringResource(R.string.handwriting_system_engine_unavailable)
+                            },
+                    checked = systemEngine,
+                    enabled = enabled,
+                    onCheckedChange = { prefs.handwritingSystemEngineEnabled.setValue(it) },
                 )
             }
         }
