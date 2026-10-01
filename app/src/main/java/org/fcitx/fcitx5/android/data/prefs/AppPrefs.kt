@@ -12,6 +12,7 @@ import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.InputFeedbacks.InputFeedbackMode
+import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngineKind
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingModelCatalog
 import org.fcitx.fcitx5.android.data.voice.VoiceModelCatalog
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesMode
@@ -666,19 +667,19 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         ) { handwritingInputEnabled.getValue() }
 
         /**
-         * 优先使用系统手写引擎（小米随手写，系统 jar），默认开启。
+         * 手写识别引擎（下拉），**声明顺序即默认优先级**：
+         * 系统内置（小米随手写）→ 谷歌数字墨水 → 内置 ONNX 模型。
          *
-         * 系统引擎被多个输入法使用、成熟度更高；设备不支持（非小米 / 未安装引擎 jar /
-         * 系统设置未开启）时自动回落到自带 ONNX 模型，因此该开关只影响「是否优先用系统引擎」。
+         * 选中项优先，不可用时按该顺序继续回落；手写键盘与触控笔手写共用该选择。
          */
-        val handwritingSystemEngineEnabled = switch(
-            R.string.handwriting_system_engine,
-            "handwriting_system_engine_enabled",
-            true,
-            summary = R.string.handwriting_system_engine_summary
+        val handwritingEngine = enumList(
+            R.string.handwriting_engine,
+            "handwriting_engine",
+            HandwritingEngineKind.System,
         ) { handwritingInputEnabled.getValue() }
 
         init {
+            migrateSystemEngineSwitch()
             groups = listOf(
                 SubGroup(
                     R.string.group_handwriting,
@@ -687,12 +688,27 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                         handwritingAutoCommit.key,
                         handwritingSingleCharMode.key,
                         stylusToolboxEnabled.key,
-                        handwritingSystemEngineEnabled.key,
+                        handwritingEngine.key,
                         handwritingModelId.key,
                         handwritingIndexUrl.key,
                     )
                 )
             )
+        }
+
+        /**
+         * 旧「优先使用系统手写引擎」开关（PBool）→ 新引擎下拉的一次性迁移。
+         *
+         * 旧值为 false（不用系统引擎）等价于直接选内置 ONNX 模型；为 true（默认）等价于
+         * 保持默认的「系统内置优先」。仅在新键还不存在时迁移一次。
+         */
+        private fun migrateSystemEngineSwitch() {
+            val legacyKey = "handwriting_system_engine_enabled"
+            if (sharedPreferences.contains(handwritingEngine.key)) return
+            if (!sharedPreferences.contains(legacyKey)) return
+            if (!sharedPreferences.getBoolean(legacyKey, true)) {
+                handwritingEngine.setValue(HandwritingEngineKind.Onnx)
+            }
         }
     }
 

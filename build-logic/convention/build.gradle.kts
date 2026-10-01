@@ -69,6 +69,10 @@ gradlePlugin {
             id = "org.fcitx.fcitx5.android.sherpa-ort-align"
             implementationClass = "SherpaOrtAlignPlugin"
         }
+        register("digitalInkModel") {
+            id = "org.fcitx.fcitx5.android.digitalink-model"
+            implementationClass = "DigitalInkModelPlugin"
+        }
     }
 }
 

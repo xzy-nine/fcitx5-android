@@ -6,6 +6,8 @@ plugins {
     id("org.fcitx.fcitx5.android.fcitx-component")
     // custom: 构建期对齐 sherpa AAR 的 ONNX Runtime 符号版本（见文件头说明）
     id("org.fcitx.fcitx5.android.sherpa-ort-align")
+    // custom: 构建期拉取谷歌数字墨水模型（内置进包，见 DigitalInkModelPlugin）
+    id("org.fcitx.fcitx5.android.digitalink-model")
     alias(libs.plugins.kotlin.parcelize)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.kotlin.compose)
@@ -13,6 +15,9 @@ plugins {
 }
 
 val sherpaAlignedDir = layout.buildDirectory.dir("generated/sherpa-ort-align")
+
+// custom: fetchDigitalInkModel 的产物（内置数字墨水模型的 assets 源集根）
+val digitalInkModelAssetsDir = layout.buildDirectory.dir("generated/digitalink-model/assets")
 
 android {
     namespace = "org.fcitx.fcitx5.android"
@@ -61,6 +66,18 @@ android {
         generateLocaleConfig = true
     }
 
+    sourceSets {
+        getByName("main") {
+            // custom: 随包内置的谷歌数字墨水模型走**独立 assets 源集**（不进 `src/main/assets`，
+            // 否则 generateDataDescriptor 会收录它、DataManager 会把模型再复制一份到 fcitx 数据目录）：
+            //  - `src/main/mlkit-assets` = MDD 的「文件组已下载」状态（随源码，官方无处可下）
+            //  - `digitalInkModelAssetsDir` = 构建期拉取的模型本体（fetchDigitalInkModel 产出）
+            // 两者在 APK 内合并成同一棵 assets 树 `mlkit/digitalink/**`，只由 `MlKitBundledModel` 读取。
+            assets.srcDir("src/main/mlkit-assets")
+            assets.srcDir(digitalInkModelAssetsDir)
+        }
+    }
+
     packaging {
         jniLibs {
             // 仅剩 ai.onnxruntime 自带的那一份 runtime（sherpa 副本里已摘除）
@@ -88,6 +105,10 @@ afterEvaluate {
         it.name.startsWith("merge") &&
                 (it.name.endsWith("JniLibFolders") || it.name.endsWith("NativeLibs"))
     }.configureEach { dependsOn("patchSherpaOrtVersion") }
+
+    // 内置数字墨水模型的 assets 是 fetchDigitalInkModel 的产物：合并 assets 前先拉取
+    tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
+        .configureEach { dependsOn("fetchDigitalInkModel") }
 }
 
 fcitxComponent {
@@ -181,6 +202,8 @@ dependencies {
     implementation(libs.commons.compress)
     // custom: 手写识别 —— 官方 ONNX Runtime Java 绑定（native runtime 同版本，见上方 packaging 说明）
     implementation(libs.onnxruntime.android)
+    // custom: 手写识别 —— Google ML Kit 数字墨水（推理在端上；语言模型由用户手动下载）
+    implementation(libs.mlkit.digital.ink)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)

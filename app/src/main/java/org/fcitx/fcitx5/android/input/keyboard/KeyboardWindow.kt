@@ -170,8 +170,12 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
                         hs.modelMissing -> stringResource(R.string.handwriting_model_missing)
                         !hs.modelReady -> stringResource(R.string.handwriting_state_loading)
                         hs.recognizing -> stringResource(R.string.handwriting_state_recognizing)
-                        // 引擎选择对所有路径生效：状态行回显当前后端，便于确认是否走了系统引擎
-                        hs.systemEngine -> stringResource(R.string.handwriting_state_idle_system_engine)
+                        // 引擎选择对所有路径生效：状态行回显当前后端（下拉选择 + 回落结果）
+                        hs.activeEngine != null -> stringResource(
+                            R.string.handwriting_state_idle_engine,
+                            stringResource(hs.activeEngine.stringRes),
+                        )
+
                         else -> stringResource(R.string.handwriting_state_idle)
                     }
                     HandwritingKeyboardLayout(

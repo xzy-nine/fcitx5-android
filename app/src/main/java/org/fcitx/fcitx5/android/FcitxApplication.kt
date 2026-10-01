@@ -17,12 +17,15 @@ import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.data.broadcast.BroadcastSecurityManager
+import org.fcitx.fcitx5.android.data.handwriting.GoogleDigitalInkEngine
+import org.fcitx.fcitx5.android.data.handwriting.MlKitBundledModel
 import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.ui.main.LogActivity
 import org.fcitx.fcitx5.android.utils.AppUtil
@@ -81,6 +84,17 @@ class FcitxApplication : Application() {
         } else {
             applicationContext
         }
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(newBase)
+        // custom: 内置谷歌数字墨水模型物化（assets → 应用私有目录）。
+        // **必须早于 ContentProvider**：ML Kit / GMS MDD 的「模型已下载」状态存在
+        // shared_prefs，而 ML Kit 的 MlKitInitProvider 会在 Application.onCreate 之前跑。
+        // `:asr` 独立进程不涉及手写，跳过以免多进程同时写同一份 shared_prefs。
+        if (!Application.getProcessName().endsWith(ASR_PROCESS_SUFFIX)) {
+            MlKitBundledModel.materializeIfNeeded(newBase)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -165,6 +179,15 @@ class FcitxApplication : Application() {
         )
         if (!isDirectBootMode) {
             AutoDictSync.startDownloadLoop()
+        }
+        // custom: 内置数字墨水模型诊断（一条日志，确认包内模型被 ML Kit 认作已下载）
+        coroutineScope.launch {
+            Timber.i(
+                "digital ink model: bundled=%b, materialized=%b, mlkitDownloaded=%b",
+                MlKitBundledModel.isBundled(ctx),
+                MlKitBundledModel.isMaterialized(ctx),
+                GoogleDigitalInkEngine.isModelDownloaded(ctx),
+            )
         }
     }
 

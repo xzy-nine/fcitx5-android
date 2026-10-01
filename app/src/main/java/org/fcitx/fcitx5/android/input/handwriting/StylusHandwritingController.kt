@@ -727,8 +727,9 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      * 预热完成后 [HandwritingRecognition.isSystemEngineReady] 置位，落笔时即可直接使用。
      */
     private fun warmUpSystemEngine() {
+        // 引擎链里没有系统内置（用户选了谷歌/ONNX）时不预热：手势也随该选择退回本地启发式
         if (HandwritingRecognition.isSystemEngineReady) return
-        if (!HandwritingRecognition.systemEngineEnabled()) return
+        if (!HandwritingRecognition.systemEngineRequested()) return
         if (systemEngineWarmUpJob?.isActive == true) return
         systemEngineWarmUpJob = scope.launch(Dispatchers.Default) {
             // 同步版初始化只在非主线程调用（这里已是 Default）

@@ -19,6 +19,7 @@ compose = "1.12.0"
 kaml = "0.104.0"
 commonsCompress = "1.28.0"
 onnxruntimeAndroid = "1.28.0"
+mlkitDigitalInk = "19.0.0"
 
 [libraries]
 android-gradlePlugin = { group = "com.android.tools.build", name = "gradle", version.ref = "androidGradlePlugin" }
@@ -96,6 +97,8 @@ commons-compress = { module = "org.apache.commons:commons-compress", version.ref
 okhttp-sse = { module = "com.squareup.okhttp3:okhttp-sse", version.ref = "okhttp" }
 # custom: 手写识别（ONNX Runtime Java 绑定；与包内 runtime 同版本，见上方说明）
 onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntimeAndroid" }
+# custom: 手写识别（Google ML Kit 数字墨水；识别在端上，语言模型运行时下载）
+mlkit-digital-ink = { module = "com.google.mlkit:digital-ink-recognition", version.ref = "mlkitDigitalInk" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
