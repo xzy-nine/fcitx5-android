@@ -167,11 +167,7 @@ class StylusToolboxWindow(private val context: Context) {
             isClickable = false
             addView(
                 cardView,
-                FrameLayout.LayoutParams(cardSize.x, cardSize.y).apply {
-                    // 限定名：apply 接收者是 FrameLayout，裸 x/y 会解析成 View.getX()/getY()（Float）
-                    leftMargin = this@StylusToolboxWindow.x
-                    topMargin = this@StylusToolboxWindow.y
-                },
+                FrameLayout.LayoutParams(cardSize.x, cardSize.y),
             )
         }
         rootView = container
@@ -183,6 +179,10 @@ class StylusToolboxWindow(private val context: Context) {
             ),
         )
         isShown = true
+        // 位置必须**挂载后**再应用：margin 要减去 decor 原点，未挂载时拿不到窗口位置。
+        // 布局前先设一次（decorView 的屏幕位置在 attach 后即可用），布局后再校正一次。
+        applyPosition()
+        container.post { applyPosition() }
     }
 
     /** 隐藏并移除（幂等；米系在 `onFinishInputView` / `onDestroy` 才真正移除）。 */
@@ -206,9 +206,27 @@ class StylusToolboxWindow(private val context: Context) {
 
     /**
      * 卡片在屏幕坐标中的矩形（米系 `getTouchRegion()` 同义：用于判断触摸命中）。
+     *
+     * **优先取卡片的真实布局位置**（`getLocationOnScreen`），而不是逻辑 `x`/`y`：
+     * `x`/`y` 是**屏幕坐标**（`clampPosition()` 按 `screenArea` 夹取），却被 `applyPosition()`
+     * 当作**相对 decorView 的 margin** 使用 —— IME 窗口不在屏幕原点时（例如窗口上边缘在 y=92），
+     * 卡片实际画出来的位置会比 `x`/`y` 低一个 decor 原点偏移，
+     * 于是命中判定与 `touchableRegion` 整体偏上 ⇒ 点在画出来的卡片上却被判成「不在工具箱里」
+     * （触控笔被当成笔画、手指事件被路由给应用）。
      */
     fun cardRectOnScreen(): Rect {
         val shadow = (SHADOW_MARGIN_DP * density()).toInt()
+        val cardView = card
+        if (cardView != null && cardView.isAttachedToWindow) {
+            val location = IntArray(2)
+            cardView.getLocationOnScreen(location)
+            return Rect(
+                location[0] - shadow,
+                location[1] - shadow,
+                location[0] + cardView.width + shadow,
+                location[1] + cardView.height + shadow,
+            )
+        }
         return Rect(x - shadow, y - shadow, x + cardSize.x + shadow, y + cardSize.y + shadow)
     }
 
@@ -273,12 +291,23 @@ class StylusToolboxWindow(private val context: Context) {
         return false
     }
 
+    /**
+     * 应用位置。
+     *
+     * **[x]/[y] 是屏幕坐标**（拖拽用 `rawX/rawY`、[clampPosition] 用屏幕坐标的 `screenArea`），
+     * 而 margin 是**相对 decorView** 的 —— 必须减去 decor 原点，绘制位置才会与 [x]/[y] 一致。
+     * 否则 IME 窗口不在屏幕原点时卡片会整体偏移，命中判定与 `touchableRegion` 也跟着偏。
+     */
     private fun applyPosition() {
         val container = rootView ?: return
         val lp = card?.layoutParams as? FrameLayout.LayoutParams ?: return
-        if (lp.leftMargin == x && lp.topMargin == y) return
-        lp.leftMargin = x
-        lp.topMargin = y
+        val origin = IntArray(2)
+        container.rootView.getLocationOnScreen(origin)
+        val marginX = x - origin[0]
+        val marginY = y - origin[1]
+        if (lp.leftMargin == marginX && lp.topMargin == marginY) return
+        lp.leftMargin = marginX
+        lp.topMargin = marginY
         card?.layoutParams = lp
         container.invalidate()
     }
@@ -417,6 +446,9 @@ private class ToolboxCardView @JvmOverloads constructor(
 
     /**
      * 刷新候选行：候选挂在工具箱上（而非墨迹层），因此跨 500ms 短会话稳定可见。
+     *
+     * 候选一律用 **[android.widget.Button]**（与中部/底部行的 `ImageButton` 同一种「正经可点击控件」），
+     * 并显式给 `LayoutParams`；不要用裸 `TextView` —— 它没有背景与最小尺寸，命中区域不可靠。
      */
     fun setCandidates(candidates: List<String>, onPick: (Int) -> Unit) {
         val row = candidateRow ?: return
@@ -426,22 +458,26 @@ private class ToolboxCardView @JvmOverloads constructor(
             return
         }
         row.visibility = View.VISIBLE
+        val pad = (CANDIDATE_PADDING_DP * selfDensity).toInt()
         candidates.forEachIndexed { index, text ->
             row.addView(
-                object : android.widget.TextView(context) {
-                    init {
-                        setText(text)
-                        setTextColor(CANDIDATE_TEXT_COLOR)
-                        textSize = CANDIDATE_TEXT_SP
-                        gravity = Gravity.CENTER
-                        setPadding(
-                            (CANDIDATE_PADDING_DP * selfDensity).toInt(),
-                            0,
-                            (CANDIDATE_PADDING_DP * selfDensity).toInt(),
-                            0,
-                        )
-                        setOnClickListener { onPick(index) }
-                    }
+                android.widget.Button(context).apply {
+                    this.text = text
+                    textSize = CANDIDATE_TEXT_SP
+                    setTextColor(CANDIDATE_TEXT_COLOR)
+                    setBackgroundColor(Color.TRANSPARENT)
+                    isAllCaps = false
+                    // Button 默认带 48dp 最小尺寸与内边距，这里清零以贴合 24dp 候选行
+                    minWidth = 0
+                    minimumWidth = 0
+                    minHeight = 0
+                    minimumHeight = 0
+                    setPadding(pad, 0, pad, 0)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                    )
+                    setOnClickListener { onPick(index) }
                 },
             )
         }
@@ -620,10 +656,15 @@ private class ToolboxCardView @JvmOverloads constructor(
         const val ROW_HEIGHT_DP = 38f
         const val BOTTOM_ROW_HEIGHT_DP = 32f
 
-        /** 候选行高度（比按钮行略矮，贴着卡片底部）。 */
-        const val CANDIDATE_ROW_HEIGHT_DP = 30f
-        const val CANDIDATE_TEXT_SP = 18f
-        const val CANDIDATE_PADDING_DP = 10f
+        /**
+         * 候选行高度：**必须正好填满米系卡片的剩余空间**。
+         *
+         * 卡片 116dp = 拖柄 22 + 中部行 38 + 底部行 32 + **候选行 24**；
+         * 若候选行高于 24dp 会越过卡片下沿被裁掉，越界部分既看不全也点不到。
+         */
+        const val CANDIDATE_ROW_HEIGHT_DP = 24f
+        const val CANDIDATE_TEXT_SP = 15f
+        const val CANDIDATE_PADDING_DP = 8f
         const val CANDIDATE_TEXT_COLOR = 0xFF1A1A1A.toInt()
 
         const val ICON_SIZE_DP = 32f

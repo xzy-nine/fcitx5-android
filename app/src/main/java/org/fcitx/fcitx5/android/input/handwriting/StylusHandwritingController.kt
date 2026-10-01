@@ -15,10 +15,14 @@
  * - `onFinishStylusHandwriting()`：会话结束（系统空闲超时 / 输入结束 / IME 主动
  *   `finishStylusHandwriting()`）→ 固化活动区并清理。
  *
- * 识别复用与键盘手写布局同一套管线（`HandwritingSegmenter` + `HandwritingEngine` +
- * `HandwritingStrokeFx` 窗口固化规则），上屏走 `FcitxInputMethodService.replaceBeforeCursor`
- * 活动区替换式上屏。与键盘布局不同：墨迹窗口盖住应用、没有常驻候选栏，
- * 因此**始终边写边上屏**（不读 `handwritingAutoCommit`），错字用窗口内候选 chips / 退格修正。
+ * 识别**完全对齐米系 `MiuiHandWritingIMEStylus` 的会话模型**：整段墨迹累积，
+ * 抬笔后 [STYLUS_SETTLE_MS]（= 米系 `mTextEditTimer` 500ms）到点做**二选一** ——
+ * 是手势 → 交编辑器执行；否则把**整段墨迹一次性**识别出**单个结果** `commitText` 上屏。
+ * 不做逐笔识别、不做叠写切分、不产生候选（米系同样只有单结果）。
+ * 手势判定与识别后端解耦：系统引擎（小米随手写）优先，不可用时文字走自带 ONNX 模型
+ * （整窗当一个字）、手势走本地几何启发式 `HandwritingGestures` + `HandwritingStrokeFx`。
+ * 与键盘手写布局（`HandwritingKeyboardLayout`，那套仍用 `HandwritingSegmenter` 多字切分）
+ * 是**并列的两条输入入口**，不共享状态。
  *
  * 墨迹渲染用原生 `View`（不走 Compose：系统墨迹窗口的 decorView 没有 lifecycle owner 链，
  * 且原生绘制延迟更低）；笔宽按 `AXIS_PRESSURE` 调制；橡皮擦端（`TOOL_TYPE_ERASER`）
@@ -61,7 +65,6 @@ import org.fcitx.fcitx5.android.data.handwriting.HandwritingCandidate
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngine
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingGestures
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingMarketCategory
-import org.fcitx.fcitx5.android.data.handwriting.HandwritingSegmenter
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingStrokeFx
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingStrokeKind
 import org.fcitx.fcitx5.android.data.handwriting.StrokePoint
@@ -126,57 +129,9 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         }
     )
 
-    // 触控笔 = **纯单字识别**（不做叠写切分）：笔的落点精度高、用户按「一个字一次」书写，
-    // 叠写切分对多部件字（测=氵/贝/刂）极易误拆；米系随手写同样是单字会话。
-    //
-    // 识别后端：**优先系统手写引擎**（小米随手写，见 [XiaomiHandwritingEngine]），
-    // 不可用或用户关闭时回落自带 ONNX 模型（[HandwritingEngine]）。
-    private val recognizer = HandwritingSegmenter(singleCharacterMode = true) { s, k ->
-        recognizeStrokes(s, k)
-    }
-
-    /**
-     * 识别后端分派：系统引擎优先，失败/关闭即回落 ONNX。
-     *
-     * 系统引擎只返回单个结果（无 top-k），因此把它作为首选字、补一个较高置信度；
-     * 两个后端都拿不到结果时返回空表（调用方会把候选栏清空）。
-     *
-     * **连续空结果自降级**：万一引擎不服务本应用（白名单之外的兜底情况），
-     * 连续 [SYSTEM_ENGINE_GIVE_UP] 次拿不到结果即改走 ONNX，
-     * 避免每一笔都白跑一次反射。
-     *
-     * 本方法在 [Dispatchers.Default] 上被调用，故可用同步版引擎初始化。
-     */
-    private suspend fun recognizeStrokes(
-        strokes: List<List<StrokePoint>>,
-        topK: Int,
-    ): List<HandwritingCandidate> = withContext(Dispatchers.Default) {
-        val systemEnabled = prefs.handwritingSystemEngineEnabled.getValue()
-        if (systemEnabled && !systemEngineGaveUp && ensureSystemEngineBlocking()) {
-            val text = XiaomiHandwritingEngine.recognizeText(strokes)
-            if (!text.isNullOrEmpty()) {
-                systemEngineEmptyStreak = 0
-                Timber.d("stylus handwriting: system engine recognized %s", text)
-                return@withContext listOf(HandwritingCandidate(text, SYSTEM_ENGINE_SCORE))
-            }
-            systemEngineEmptyStreak++
-            Timber.d(
-                "stylus handwriting: system engine returned nothing (%d/%d), falling back to ONNX",
-                systemEngineEmptyStreak, SYSTEM_ENGINE_GIVE_UP,
-            )
-            if (systemEngineEmptyStreak >= SYSTEM_ENGINE_GIVE_UP) {
-                systemEngineGaveUp = true
-                Timber.w("stylus handwriting: system engine gave up after %d empty results",
-                    SYSTEM_ENGINE_GIVE_UP)
-            }
-        }
-        HandwritingEngine.predict(strokes, topK)
-    }
 
     private var loadJob: Job? = null
-    private var recognizeJob: Job? = null
     private var idleJob: Job? = null
-    private var transientJob: Job? = null
 
     /** 系统手写引擎是否已初始化可用（[XiaomiHandwritingEngine.open] 成功）。 */
     @Volatile
@@ -238,20 +193,17 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     @Volatile
     private var sessionActive = false
 
-    /** 当前窗口识别出、**尚未提交**的字（停顿后由 [commitPending] 追加提交）。 */
-    private var pendingText = ""
-
-    /** [pendingText] 对应的窗口笔画数：提交时校验窗口未再变长，避免用旧结果提交。 */
-    private var pendingStrokeCount = 0
-
-    /** 最近一次提交到输入框的字（供候选点选替换用）。 */
+    /** 最近一次提交到输入框的字（候选点选时替换它）。 */
     private var lastCommittedText = ""
 
-    /** 当前正在写的字（最后一段首选字）：候选 chips 点选替换它。 */
-    private var lastSegText = ""
-
-    /** 候选 chips 数据（最后一段的候选）。 */
+    /**
+     * 最近一次识别的候选（挂浮动工具箱的候选行）。
+     *
+     * **识别完成、字已上屏后仍保留**（自带模型较弱，用户常需要点选纠错），
+     * 直到下一次识别刷新或工具箱收起。
+     */
     private var lastSegCandidates: List<HandwritingCandidate> = emptyList()
+
 
     private val inkView by lazy {
         StylusInkView(
@@ -324,6 +276,8 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         // 撤下键盘 + 显示浮动工具箱（米系 setStylusMode(true) 的效果）
         service.enterStylusUi()
         setToolboxVisible(prefs.stylusToolboxEnabled.getValue())
+        // 候选跨会话保留：工具箱卡片若被重建，把最近一次识别的候选重新挂上
+        if (lastSegCandidates.isNotEmpty()) publishToolboxCandidates()
     }
 
     /** `onUpdateEditorToolType(TOOL_TYPE_FINGER)`：手指输入 → 回到普通 IME 界面。 */
@@ -366,6 +320,8 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         ensureInkAttached(window)
         // 工具箱挂到 IME 窗口之上（米系做法），随会话显隐
         setToolboxVisible(prefs.stylusToolboxEnabled.getValue())
+        // 候选跨会话保留：工具箱卡片若被重建，把最近一次识别的候选重新挂上
+        if (lastSegCandidates.isNotEmpty()) publishToolboxCandidates()
         // custom: 进入触控笔 UI —— 撤下键盘（米系 `setInputView(空锚点)` 等价做法）
         service.enterStylusUi()
         // 米系 `ImeMenuViewHolder.show()` 末尾的 `requestShowInputView()`
@@ -438,11 +394,28 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     private fun setToolboxVisible(visible: Boolean) {
         if (visible) {
             val decor = runCatching { service.window.window?.decorView }.getOrNull() as? ViewGroup
-                ?: return
+                ?: run {
+                    Timber.w("stylus handwriting: toolbox show failed (no decor view)")
+                    return
+                }
             toolboxWindow.show(decor)
         } else {
             toolboxWindow.hide()
         }
+        Timber.d(
+            "stylus handwriting: toolbox visible=%b shown=%b", visible, toolboxWindow.isShown,
+        )
+        // 触摸区域随工具箱显隐变化，必须主动请求重算 insets：
+        // 否则 `onComputeInsets` 不再被调用，`touchableRegion` 停在旧值 —— 触控笔模式下
+        // `visibleTopInsets = decorView.height`（可见区高度为 0），
+        // 落回 `TOUCHABLE_INSETS_VISIBLE` 就等于**整个 IME 窗口不可触摸**，
+        // 所有点击（含候选词、工具箱按钮）都会被路由给应用。
+        requestInsetsRecompute()
+    }
+
+    /** 请求重算 IME insets（触控笔模式的触摸区域依赖它）。 */
+    private fun requestInsetsRecompute() {
+        service.requestInsetsRecompute()
     }
 
     /** 配置变化：浮窗重算安全区并夹取位置。 */
@@ -545,6 +518,12 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 toolboxTouchActive = toolboxWindow.hitTest(event.rawX, event.rawY)
+                // 同时打出「按下点」与「卡片真实屏幕矩形」，用于判定命中区域是否与画出来的卡片重合
+                Timber.d(
+                    "stylus handwriting: stylus down at (%.0f,%.0f) toolboxHit=%b cardRect=%s",
+                    event.rawX, event.rawY, toolboxTouchActive,
+                    toolboxWindow.cardRectOnScreen().toShortString(),
+                )
                 if (toolboxTouchActive) toolboxWindow.dispatchStylusEvent(event)
                 return toolboxTouchActive
             }
@@ -678,7 +657,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      * [onInputViewFinished]（输入视图结束）与 [release]（服务销毁）时移除。
      *
      * **系统会话与书写状态解耦**：本方法只终止「接收事件」这一段，
-     * **不得取消识别与提交计时**（[recognizeJob]/[idleJob]）——系统的会话超时比我们的
+     * **不得取消识别与提交计时**（[idleJob]）——系统的会话超时比我们的
      * 停顿提交更早到，取消它们会让这一笔既不上屏也不清窗。书写状态的真正清理只发生在
      * [resetWindow]（外部动作/换框）与 [onInputViewFinished]/[release]（视图结束/销毁）。
      *
@@ -688,7 +667,6 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         sessionActive = false
         // 只丢弃未完成的那一笔（不会再收到 UP）；识别结果与停顿提交跨会话保留
         inkView.cancelCurrentStroke()
-        transientJob?.cancel()
     }
 
     /**
@@ -712,7 +690,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      * 与键盘侧 [InputView.startInput] 同一口径（共用 [EditorKey]）：
      * `restarting=false` 与「换了输入框」都要复位书写状态，**同一输入框的 resync 则保留**。
      *
-     * 同框 resync 时保留窗口是关键：此刻窗口里是用户**还没写完**的字，[pendingText]
+     * 同框 resync 时保留窗口是关键：此刻窗口里是用户**还没写完**的字，窗口
      * 只是残缺笔画的识别结果，补交会把半个字上屏。保留后由笔停的自然提交
      * （[scheduleIdleFinalize]）在用户真正写完时才上屏。
      * 换框/新会话则丢弃（不提交）：那些笔画属于旧输入框。
@@ -722,10 +700,10 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         val sameEditor = key.isSameAs(lastEditorKey)
         lastEditorKey = key
         Timber.d(
-            "stylus handwriting onStartInput: restarting=%b, sameEditor=%b, strokes=%d, pending=%s, key=%s",
-            restarting, sameEditor, inkView.strokeCount, pendingText, key,
+            "stylus handwriting onStartInput: restarting=%b, sameEditor=%b, strokes=%d, key=%s",
+            restarting, sameEditor, inkView.strokeCount, key,
         )
-        // 同框 resync：原样保留书写窗口与待提交结果（追加上屏模型下无需任何补救）
+        // 同框 resync：原样保留书写窗口（会话结束一次性提交的模型下无需任何补救）
         if (restarting && sameEditor) return
         discardWindow()
         handwritingBounds = null
@@ -813,8 +791,44 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             StylusTapTarget.Redo -> onRedo()
             StylusTapTarget.Keyboard -> finalizeWindowInternal()
             StylusTapTarget.Close -> requestFinish()
+            // 候选点选（候选挂在浮动工具箱的候选行，不走墨迹层 chips）
             is StylusTapTarget.Chip -> onChipTap(target.index)
         }
+    }
+
+    /** 把当前候选刷到浮动工具箱的候选行（点选走 [onChipTap] 替换刚上屏的字）。 */
+    private fun publishToolboxCandidates() {
+        toolboxWindow.setCandidates(lastSegCandidates.map { it.char }) { index -> onChipTap(index) }
+    }
+
+    /**
+     * 候选点选：用选中的候选替换**刚上屏的那个字**，然后**结束这次候选交互**（清掉候选）。
+     *
+     * 先试精确替换（[FcitxInputMethodService.replaceBeforeCursor] 会先只读校验光标前的文本）；
+     * **校验不通过时回落「退格删除 + 提交」** —— 很多应用不实现 `getTextBeforeCursor`，
+     * 只依赖只读校验会让点选变成「点了没反应」。
+     */
+    private fun onChipTap(index: Int) {
+        val picked = lastSegCandidates.getOrNull(index)?.char
+        if (picked.isNullOrEmpty()) return
+        val expected = lastCommittedText
+        Timber.d(
+            "stylus handwriting: candidate #%d picked=%s (current=%s)",
+            index, picked, expected,
+        )
+        if (expected.isNotEmpty() && expected != picked &&
+            service.replaceBeforeCursor(expected, picked)
+        ) {
+            lastCommittedText = picked
+        } else {
+            // 回落：删掉刚上屏的那个字再提交选中的候选（不依赖 getTextBeforeCursor）
+            if (expected.isNotEmpty()) service.deleteBeforeCursor(expected.length)
+            service.commitText(picked)
+            lastCommittedText = picked
+        }
+        // 点选即结束：清掉候选（本窗口不再保留）
+        lastSegCandidates = emptyList()
+        publishToolboxCandidates()
     }
 
     /** 工具箱按钮（米系菜单项同义）。 */
@@ -854,40 +868,34 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     }
 
     /**
-     * 切换/清空前：把待提交的字补交上屏，再清窗（米系 `onFinishStylusHandwriting` 的补交同义）。
+     * 切换/清空前：把窗口里已写的字补交上屏，再清窗（米系 `onFinishStylusHandwriting` 的补交同义）。
      *
-     * **系统引擎路径必须异步**：文字来自系统 `recognizeText`（引擎推理不能在主线程），
-     * 故 [after] 在该识别提交完成后再执行，保证「先上屏已写的字，再做动作」的顺序
-     * （否则点空格/回车会把刚写的墨迹连字一起清掉）。
+     * 文字识别要离开主线程，故 [after] 在提交完成后再执行，保证「先上屏已写的字，再做动作」
+     * 的顺序（否则点空格/回车会把刚写的墨迹连字一起清掉）。
      *
-     * @param after 提交完成后的动作（系统路径下会被延后到提交之后）
+     * **同步取走墨迹并清窗**：异步识别期间若又落笔，新笔应进**新窗口**，
+     * 而不是被后续清窗一起抹掉；也顺带取消停顿计时，避免同一段墨迹被提交两次。
+     *
+     * @param after 提交完成后的动作
      */
     private fun finalizeWindowInternal(after: (() -> Unit)? = null) {
-        if (systemEngineInUse()) {
-            // 同步取走墨迹并清窗：异步识别期间若又落笔，新笔应进**新窗口**，
-            // 而不是被本轮的 resetWindow() 一起抹掉；同时也取消停顿计时，
-            // 否则计时到点会把同一段墨迹再提交一次。
-            val strokes = inkView.snapshot()
-            resetWindow()
-            if (strokes.isEmpty()) {
-                after?.invoke()
-                return
-            }
-            scope.launch {
-                val text = withContext(Dispatchers.Default) {
-                    XiaomiHandwritingEngine.recognizeText(strokes)
-                }
-                if (!text.isNullOrEmpty()) {
-                    service.commitText(text)
-                    lastCommittedText = text
-                }
-                after?.invoke()
-            }
+        val strokes = inkView.snapshot()
+        resetWindow()
+        if (strokes.isEmpty()) {
+            after?.invoke()
             return
         }
-        commitPending()
-        resetWindow()
-        after?.invoke()
+        scope.launch {
+            val candidates = withContext(Dispatchers.Default) { recognizeWholeInk(strokes) }
+            val text = candidates.firstOrNull()?.char
+            if (!text.isNullOrEmpty()) {
+                service.commitText(text)
+                lastCommittedText = text
+                lastSegCandidates = candidates
+                publishToolboxCandidates()
+            }
+            after?.invoke()
+        }
     }
 
     /** 丢弃书写窗口（不提交）：换框/新会话时旧框的未完成笔画不应落到新框。 */
@@ -899,13 +907,8 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
 
     /** 清空书写窗口与相关状态（是否提交由调用方决定）。 */
     private fun resetWindow() {
-        pendingText = ""
-        pendingStrokeCount = 0
         lastCommittedText = ""
-        lastSegText = ""
-        publishChips(emptyList())
         clearWindowState()
-        recognizeJob?.cancel()
         idleJob?.cancel()
     }
 
@@ -920,7 +923,6 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      */
     private fun clearWindowState() {
         inkView.clearWindow()
-        recognizer.reset()
         resetGestureState()
     }
 
@@ -937,23 +939,25 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     /**
      * ⌫：后退删除。
      *
-     * - 窗口里还有未提交的字（[pendingText]）→ 丢弃它并清窗（相当于撤销这一笔/这个字）；
-     * - 否则（都已提交）→ 删除最近提交的那一个字；没有则退格一格。
+     * **有候选词时先清候选**（这一下不删字，符合「候选还在 ⇒ 先收起候选」的直觉）；
+     * 没有候选才按顺序：窗口里还留着没提交的笔画 → 丢弃它们（撤销这一笔）
+     * → 否则删除最近提交的那一个字 → 再没有则退格一格。
      */
     private fun onBackspace() {
-        if (pendingText.isNotEmpty()) {
-            pendingText = ""
+        if (lastSegCandidates.isNotEmpty()) {
+            lastSegCandidates = emptyList()
+            publishToolboxCandidates()
+            return
+        }
+        if (inkView.strokeCount > 0) {
+            clearWindowState()
         } else if (lastCommittedText.isNotEmpty()) {
             // 按字符数删除上一次提交的内容（多为单字）
             service.deleteBeforeCursor(lastCommittedText.length)
+            lastCommittedText = ""
         } else {
             service.deleteBeforeCursor(1)
         }
-        lastSegText = ""
-        lastCommittedText = ""
-        publishChips(emptyList())
-        clearWindowState()
-        recognizeJob?.cancel()
         idleJob?.cancel()
     }
 
@@ -974,40 +978,6 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         runCatching { service.finishStylusHandwriting() }
     }
 
-    /**
-     * 候选点选：用选中的候选替换**当前这个字**。
-     *
-     * 追加模型下的两种情况：
-     * - 还没提交（[pendingText] 有值）→ 直接改成选中项，随后提交；
-     * - 已提交（停顿自动提交过）→ 替换屏上最后那个字（`replaceBeforeCursor` 只读校验）。
-     * 点选后清窗固化，chips 保留供继续点选纠错。
-     */
-    private fun onChipTap(index: Int) {
-        val picked = lastSegCandidates.getOrNull(index)?.char
-        if (picked.isNullOrEmpty()) return
-        when {
-            pendingText.isNotEmpty() -> {
-                // 未提交：直接替换待提交内容，并立即提交
-                pendingText = picked
-                commitPending()
-            }
-
-            lastCommittedText.isNotEmpty() -> {
-                // 已提交：替换屏上最后那个字
-                if (service.replaceBeforeCursor(lastCommittedText, picked)) {
-                    lastCommittedText = picked
-                }
-            }
-
-            else -> {
-                service.commitText(picked)
-                lastCommittedText = picked
-            }
-        }
-        lastSegText = ""
-        clearWindowState()
-    }
-
     // ------------------------------------------------------------------
     // 一笔手势（系统引擎优先；不可用时退回本地几何启发式）
     // ------------------------------------------------------------------
@@ -1015,46 +985,26 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     /**
      * 笔画完成回调（主线程）：返回 true 表示本笔已被手势消费、不进识别窗口。
      *
-     * **系统引擎可用时一律返回 false**（本笔先正常进识别窗口）：
-     * 米系 `MiuiHandWritingIMEStylus` 的手势判定不在落笔时做，而是在**会话结束**
-     * （`onFinishStylusHandwriting` → `getGestureRecognizeResult`）对最后一笔判一次，
-     * 然后二选一：是手势 → `performHandwritingGesture`；否 → `getRecognizeText` 文字上屏。
-     * 因此这里只让笔画入窗，手势交由 [scheduleIdleFinalize] 的会话结束逻辑处理。
-     *
-     * 系统引擎不可用时才走本地几何启发式（非小米设备的回落路径）。
+     * **一律返回 false**（本笔先正常进识别窗口）：米系 `MiuiHandWritingIMEStylus` 的手势判定
+     * 不在落笔时做，而是在**会话结束**（`onFinishStylusHandwriting` → `getGestureRecognizeResult`）
+     * 对最后一笔判一次，然后二选一：是手势 → `performHandwritingGesture`；否 → 文字识别。
+     * 因此这里只让笔画入窗，手势交由 [scheduleIdleFinalize] 的会话结束逻辑处理 ——
+     * 这样手势判定与文字识别后端完全解耦（系统引擎或自带 ONNX 都用同一套）。
      */
     private fun onStrokeFinished(stroke: InkStroke): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return false
-        if (systemEngineInUse()) return false
-        // 系统引擎不可用：退回本地几何启发式
-        val kind = HandwritingGestures.detect(
-            stroke.points,
-            service.resources.displayMetrics.widthPixels,
-        )
-        if (kind == HandwritingStrokeKind.Character) return false
-        Timber.d("stylus handwriting: gesture=%s strokes=%d", kind, stroke.points.size)
-        // 手势墨迹短暂显示（不算书写笔画，不改活动区）
-        inkView.showTransient(stroke)
-        transientJob?.cancel()
-        transientJob = scope.launch {
-            delay(GESTURE_INK_LINGER_MS)
-            inkView.clearTransient()
-        }
-        performGesture(kind, stroke)
-        return true
+        return false
     }
 
+    /**
+     * 本地几何启发式手势（系统引擎不可用时的手势来源）。
+     *
+     * 与系统引擎路径共用同一套屏幕坐标语义：入参 [points] 已是屏幕坐标。
+     */
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-    private fun performGesture(kind: HandwritingStrokeKind, stroke: InkStroke) {
+    private fun performLocalGesture(kind: HandwritingStrokeKind, points: List<StrokePoint>) {
         val ic = service.currentInputConnection ?: return
-        val box = HandwritingStrokeFx.boxOf(stroke.points)
-        // HandwritingGesture 的区域/点一律屏幕坐标：视图坐标 + 捕获时的视图屏幕原点
-        val rect = RectF(
-            box.minX + stroke.originX,
-            box.minY + stroke.originY,
-            box.maxX + stroke.originX,
-            box.maxY + stroke.originY,
-        )
+        val box = HandwritingStrokeFx.boxOf(points)
+        val rect = RectF(box.minX, box.minY, box.maxX, box.maxY)
         val executor = ContextCompat.getMainExecutor(service)
         when (kind) {
             HandwritingStrokeKind.Newline -> sendGesture(
@@ -1077,9 +1027,11 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
 
             HandwritingStrokeKind.Delete, HandwritingStrokeKind.Select -> scope.launch {
                 // 回落文本 = 该笔被当成字符时的识别结果（编辑器不支持手势时提交它）
-                val fallback = runCatching {
-                    HandwritingEngine.predict(listOf(stroke.points)).firstOrNull()?.char.orEmpty()
-                }.getOrDefault("")
+                val fallback = withContext(Dispatchers.Default) {
+                    runCatching {
+                        HandwritingEngine.predict(listOf(points)).firstOrNull()?.char.orEmpty()
+                    }.getOrDefault("")
+                }
                 val gesture = if (kind == HandwritingStrokeKind.Delete) {
                     DeleteGesture.Builder()
                         .setGranularity(DeleteGesture.GRANULARITY_CHARACTER)
@@ -1178,16 +1130,18 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      */
     private fun fallbackToSystemRecognition(strokes: List<List<StrokePoint>>) {
         scope.launch {
-            val text = withContext(Dispatchers.Default) {
-                XiaomiHandwritingEngine.recognizeText(strokes)
-            }
+            // 与文字路径同一套后端分派（系统引擎优先、不可用回落自带 ONNX）
+            val candidates = withContext(Dispatchers.Default) { recognizeWholeInk(strokes) }
+            val text = candidates.firstOrNull()?.char
             if (text.isNullOrEmpty()) {
-                Timber.d("stylus handwriting: gesture unhandled and system recognition empty")
+                Timber.d("stylus handwriting: gesture unhandled and recognition empty")
                 return@launch
             }
-            Timber.d("stylus handwriting: gesture unhandled, system recognized %s", text)
+            Timber.d("stylus handwriting: gesture unhandled, recognized %s", text)
             service.commitText(text)
             lastCommittedText = text
+            lastSegCandidates = candidates
+            publishToolboxCandidates()
         }
     }
 
@@ -1197,7 +1151,6 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
 
     private fun onStrokeCommitted() {
         scheduleIdleFinalize()
-        scheduleRecognition()
     }
 
     /**
@@ -1213,11 +1166,14 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      *         else getRecognizeText(... submitText ...);
      *     });
      * ```
-     * 即：**先看最后一笔是不是手势**；是则执行（未成功再回落系统文字识别），
-     * 否则把**累积墨迹**交系统 `recognizeText` 出字。
+     * 即：**先判最后一笔是不是手势**；是则执行（未成功再回落文字识别），
+     * 否则把**整段累积墨迹**一次性出字。
      *
-     * **阈值与系统会话超时对齐**：平台判定「落笔已停」的唯一信号就是「距最后一个事件 500ms」
-     * （每个事件都会重排该计时），这正是「一个字写完」的天然边界。
+     * **与识别后端无关**：手势判定与文字识别都走同一条路径，
+     * 系统引擎（小米随手写）不可用时由自带 ONNX 模型承担文字识别、由本地几何启发式承担手势。
+     *
+     * **阈值与系统会话超时对齐**（米系 `mTextEditTimer` 同款 500ms）：平台判定「落笔已停」的
+     * 唯一信号就是「距最后一个事件 500ms」（每个事件都会重排该计时），这正是「一个字写完」的天然边界。
      *
      * **不依赖 [sessionActive]**：计时器跨系统会话存活，否则会话结束时提交会被丢掉。
      */
@@ -1226,27 +1182,15 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         val count = inkView.strokeCount
         if (count <= 0) return
         idleJob = scope.launch {
-            // 系统引擎用米系同款 500ms（`mTextEditTimer`）；自带 ONNX 管线用较长阈值
-            // （其切分器把 <900ms 视为「同一个字的部件间提笔」）
-            val systemPath = systemEngineInUse()
-            delay(if (systemPath) SYSTEM_ENGINE_SETTLE_MS else STYLUS_SETTLE_MS)
+            delay(STYLUS_SETTLE_MS)
             // 期间又落了新笔：该笔有自己的计时，本轮作废
             if (inkView.strokeCount != count) return@launch
             // 正有一笔在写（已 DOWN 未 UP）：绝不能把「写了一半」的笔画当成写完提交，
             // 该笔 UP 时会重新排定计时
             if (inkView.hasActiveStroke()) return@launch
-            // ---- 系统引擎：完全按米系「会话结束一次性处理」----
-            if (systemPath) {
-                if (!tryConsumeAsGesture()) commitSystemRecognition()
-                return@launch
-            }
-            // ---- 自带 ONNX 管线（系统引擎不可用时的回落）----
-            // 等这一笔的识别出结果再提交：识别是异步的，早了会提交到空结果并误清窗
-            recognizeJob?.join()
-            commitPending()
-            clearWindowState()
-            lastSegCandidates = emptyList()
-            publishChips(emptyList())
+            // 手势优先；不是手势则整段墨迹一次性出字（米系二选一）
+            if (tryConsumeAsGesture()) return@launch
+            commitRecognition()
         }
     }
 
@@ -1255,27 +1199,67 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         prefs.handwritingSystemEngineEnabled.getValue() && systemEngineReady
 
     /**
-     * 会话结束时把**整段累积墨迹**交系统 `recognizeText` 出字并上屏
-     * （米系 `getRecognizeText` → `submitText` 分支）。
+     * 会话结束时把**整段累积墨迹**一次性出字并上屏
+     * （米系 `getRecognizeText` → `submitText(str)` → `commitText(str, 1)` 分支）。
+     *
+     * 自带模型较弱，故**取前几名候选挂在浮动工具箱的候选行**供纠错；
+     * 候选**识别完成后保留**（点选替换刚上屏的那个字），直到下次识别刷新或工具箱收起。
+     * 墨迹层不出 chips。
      */
-    private suspend fun commitSystemRecognition() {
+    private suspend fun commitRecognition() {
         val strokes = inkView.snapshot()
         clearWindowState()
-        if (strokes.isEmpty()) {
-            publishChips(emptyList())
+        if (strokes.isEmpty()) return
+        val candidates = withContext(Dispatchers.Default) { recognizeWholeInk(strokes) }
+        if (candidates.isEmpty()) {
+            Timber.d("stylus handwriting: session end, recognition empty (strokes=%d)", strokes.size)
             return
         }
-        val text = withContext(Dispatchers.Default) {
-            XiaomiHandwritingEngine.recognizeText(strokes)
-        }
-        publishChips(emptyList())
-        if (text.isNullOrEmpty()) {
-            Timber.d("stylus handwriting: session end, system recognition empty")
-            return
-        }
-        Timber.d("stylus handwriting: session end, system recognized %s", text)
+        val text = candidates.first().char
+        Timber.d(
+            "stylus handwriting: session end, recognized %s (candidates=%s)",
+            text, candidates.joinToString("") { it.char },
+        )
         service.commitText(text)
         lastCommittedText = text
+        lastSegCandidates = candidates
+        publishToolboxCandidates()
+    }
+
+    /**
+     * 整段墨迹 → 候选列表（前 [HANDWRITING_TOP_K] 个）。
+     *
+     * 系统引擎优先（**只给单结果**，候选表就一项）；不可用（非小米设备/开关关闭/已降级）时用
+     * 自带 ONNX 模型，把整个窗口当作**一个字**送模型取前几名（模型是单字分类器，无 CTC、不做多字解码）。
+     *
+     * **连续空结果自降级**：万一引擎不服务本应用（白名单之外的兜底情况），
+     * 连续 [SYSTEM_ENGINE_GIVE_UP] 次拿不到结果即改走 ONNX，避免每次都白跑反射。
+     *
+     * 在 [Dispatchers.Default] 上被调用，故可用同步版引擎初始化。
+     */
+    private suspend fun recognizeWholeInk(strokes: List<List<StrokePoint>>): List<HandwritingCandidate> {
+        val systemEnabled = prefs.handwritingSystemEngineEnabled.getValue()
+        if (systemEnabled && !systemEngineGaveUp && ensureSystemEngineBlocking()) {
+            val text = XiaomiHandwritingEngine.recognizeText(strokes)
+            if (!text.isNullOrEmpty()) {
+                systemEngineEmptyStreak = 0
+                return listOf(HandwritingCandidate(text, SYSTEM_ENGINE_SCORE))
+            }
+            systemEngineEmptyStreak++
+            Timber.d(
+                "stylus handwriting: system engine returned nothing (%d/%d), falling back to ONNX",
+                systemEngineEmptyStreak, SYSTEM_ENGINE_GIVE_UP,
+            )
+            if (systemEngineEmptyStreak >= SYSTEM_ENGINE_GIVE_UP) {
+                systemEngineGaveUp = true
+                Timber.w(
+                    "stylus handwriting: system engine gave up after %d empty results",
+                    SYSTEM_ENGINE_GIVE_UP,
+                )
+            }
+        }
+        if (!HandwritingEngine.isReady) return emptyList()
+        return HandwritingEngine.predict(strokes, HANDWRITING_TOP_K)
     }
 
     /**
@@ -1303,6 +1287,19 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         }
         val all = inkView.snapshotScreen()
         val last = all.lastOrNull()?.takeIf { it.isNotEmpty() } ?: return false
+        // 系统引擎可用 → 用引擎判手势；不可用（非小米设备/开关关闭/已降级）→ 本地几何启发式。
+        // 两条路径产出**同一个 AOSP `HandwritingGesture` 类型**，下游执行/回落完全统一。
+        if (!systemEngineInUse()) {
+            val kind = HandwritingGestures.detect(last, service.resources.displayMetrics.widthPixels)
+            if (kind == HandwritingStrokeKind.Character) {
+                Timber.d("stylus handwriting: local heuristics say writing")
+                return false
+            }
+            Timber.d("stylus handwriting: session end local gesture=%s", kind)
+            clearWindowState()
+            performLocalGesture(kind, last)
+            return true
+        }
         var gesture = withContext(Dispatchers.Default) {
             XiaomiHandwritingEngine.recognizeGesture(last)
         }
@@ -1330,8 +1327,6 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         )
         // 手势笔不参与文字识别，清窗
         clearWindowState()
-        lastSegCandidates = emptyList()
-        publishChips(emptyList())
         // 未真正执行时回落系统文字识别，用整段墨迹（米系 `getRecognizeText`）
         sendGesture(
             ic,
@@ -1343,104 +1338,18 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         return true
     }
 
-    /**
-     * 识别管线（**自带 ONNX 回落路径**）：**纯单字模式 + 停顿后追加提交**。
-     *
-     * 每落一笔只更新候选与 [pendingText]，**不写输入框**；笔停（[scheduleIdleFinalize]）
-     * 判定「这个字写完了」才 `commitText` **追加**上屏。
-     *
-     * **系统引擎可用时不走本方法**：米系是「会话结束一次性 `recognizeText`」，
-     * 逐笔识别只为自带模型提供实时候选，故此处直接返回。
-     *
-     * 追加而非替换：应用的输入连接可在书写中途被重启（`onStartInput(restarting=true)`），
-     * 替换所依赖的「先读校验」此时会失败并清窗，正在写的字随之丢失；追加只把当前光标
-     * 当作新的插入点，不受影响。
-     */
-    private fun scheduleRecognition() {
-        // 系统引擎：不逐笔识别（米系在会话结束一次性 recognizeText）
-        if (systemEngineInUse()) return
-        recognizeJob?.cancel()
-        recognizeJob = scope.launch {
-            val self = coroutineContext[Job]
-            val window = inkView.snapshot()
-            if (window.isEmpty()) {
-                publishChips(emptyList())
-                return@launch
-            }
-            val gaps = HandwritingStrokeFx.windowGaps(window)
-            val result = withContext(Dispatchers.Default) {
-                recognizer.recognize(window, gaps)
-            }
-            if (self?.isActive != true) return@launch
-            val segment = result.segments.firstOrNull()
-            publishChips(segment?.candidates ?: emptyList())
-            if (segment == null) return@launch
-            // 仅记录待提交的识别结果（供候选点选与停顿提交用），**不写输入框**
-            pendingText = segment.candidates.firstOrNull()?.char.orEmpty()
-            pendingStrokeCount = window.size
-
-            // 窗口超过模型可容纳的笔画数：清窗重来（单字模式下不做部分固化）
-            if (HandwritingStrokeFx.isWindowOverLimit(window.size)) {
-                commitPending()
-                clearWindowState()
-            }
-        }
-    }
-
-    /**
-     * 把 [pendingText] 追加提交到输入框（米系 `submitText` 同义：`commitText(text, 1)`）。
-     *
-     * 追加而非替换：应用的输入连接可在书写中途被重启，追加只把当前光标位置当成新的
-     * 插入点，不会因「先读校验失败」丢掉正在写的字。
-     *
-     * 提交前校验窗口笔画数未再增长：否则说明用户又开始落新笔，
-     * 此时 [pendingText] 是上一个中间态的识别结果，不应提交。
-     */
-    private fun commitPending(): Boolean {
-        val text = pendingText
-        if (text.isEmpty()) return false
-        val currentStrokes = inkView.strokeCount
-        if (currentStrokes > pendingStrokeCount) {
-            // 窗口又长了：结果已过期，丢弃待提交内容（后续识别会刷新）
-            pendingText = ""
-            return false
-        }
-        service.commitText(text)
-        lastCommittedText = text
-        pendingText = ""
-        return true
-    }
-
-    private fun publishChips(candidates: List<HandwritingCandidate>) {
-        lastSegCandidates = candidates
-        // 墨迹层 chips：仅在墨迹可见时可见（会随系统 InkWindow.hide 消失）
-        inkView.showChips(candidates)
-        // **候选同时挂到浮动工具箱**（独立浮窗、跨短会话常驻），避免「候选只在墨迹显示时才有」；
-        // 点选走同一个 onChipTap。
-        toolboxWindow.setCandidates(candidates.map { it.char }) { index -> onChipTap(index) }
-    }
 
     private companion object {
         /**
-         * 停顿提交延时（ms）：**与切分器的「字间真实停顿」同值**
-         * （`HandwritingSegmenter` 触控笔档 `STYLUS_GAP_SPLIT_MS = 900`）。
+         * 会话结束延时（ms）：**米系 `mTextEditTimer` 同款 500ms**。
          *
-         * 语义一致：抬笔后低于它视为「同一个字的部件间提笔」（测=氵/贝/刂 这类字必须留在
-         * 同一窗口），达到它才判定「这个字写完」。它同时大于平台会话空闲超时
-         * （[SESSION_IDLE_TIMEOUT_MS] = 500ms），因此系统先结束会话、本计时随后提交；
-         * 本计时**跨系统会话存活**（`finish()` 不取消它），否则提交永远等不到。
+         * 米系在 `ACTION_UP` 后 `postDelayed(mTextEditTimer, 500)` → `finish()` →
+         * `onFinishStylusHandwriting` 里做「手势 or 文字」的二选一；这个值同时也是平台
+         * 会话空闲超时（[SESSION_IDLE_TIMEOUT_MS]）——「距最后一个事件 500ms」正是
+         * 「一个字写完」的天然边界。本计时**跨系统会话存活**（`finish()` 不取消它），
+         * 否则提交永远等不到。
          */
-        const val STYLUS_SETTLE_MS = 900L
-
-        /** 手势墨迹的留存时长（ms）：给用户「动作已被识别」的反馈。 */
-        const val GESTURE_INK_LINGER_MS = 350L
-
-        /**
-         * 系统手写引擎给出的单结果的置信度（引擎不返回概率，只返回文本）。
-         *
-         * 取一个高于 ONNX 典型置信度的固定值，使候选栏把它显示为首选。
-         */
-        const val SYSTEM_ENGINE_SCORE = 0.95f
+        const val STYLUS_SETTLE_MS = 500L
 
         /**
          * 系统引擎连续返回空结果多少次后放弃（改走 ONNX）。
@@ -1448,6 +1357,12 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
          * 非白名单包名下引擎会「构造成功但恒返回空」；连续几次即可判定不值得再试。
          */
         const val SYSTEM_ENGINE_GIVE_UP = 3
+
+        /** 自带 ONNX 模型返回的候选个数（工具箱候选行只显示这么多，卡片宽度有限）。 */
+        const val HANDWRITING_TOP_K = 5
+
+        /** 系统引擎只给文本、不给概率，补一个固定置信度作首选排序用。 */
+        const val SYSTEM_ENGINE_SCORE = 0.95f
 
         /** 插入模式手势的无操作超时（ms）：米系 `mGestureTimer` 同款 3000ms。 */
         const val INSERT_MODE_TIMEOUT_MS = 3000L

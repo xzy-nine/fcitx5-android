@@ -163,11 +163,24 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     /** 进入触控笔 UI：撤下输入视图，只保留浮动工具箱（幂等）。 */
     fun enterStylusUi() {
         stylusUiActive.value = true
+        requestInsetsRecompute()
     }
 
     /** 退出触控笔 UI：恢复键盘（幂等）。工具箱「键盘」按钮、输入结束、服务销毁时调用。 */
     fun exitStylusUi() {
         stylusUiActive.value = false
+        requestInsetsRecompute()
+    }
+
+    /**
+     * 请求重算 IME insets。
+     *
+     * 触控笔模式下 `onComputeInsets` 把 `touchableRegion` 收窄到工具箱卡片矩形；
+     * 该分支取决于 [stylusUiActive] 与工具箱是否已挂载，二者变化后**必须**重算，
+     * 否则区域停在旧值（此时可见区高度为 0 ⇒ 整个 IME 窗口不可触摸，点击全给应用）。
+     */
+    internal fun requestInsetsRecompute() {
+        runCatching { window?.window?.decorView?.requestApplyInsets() }
     }
 
     // custom: 触控笔手写会话（Android 13+ 触控笔手写协议；识别管线与手写键盘布局共用）
@@ -826,7 +839,15 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 stylusHandwriting.toolboxRectInWindow()?.let { rect ->
                     touchableRegion.set(rect)
                     touchableInsets = Insets.TOUCHABLE_INSETS_REGION
+                    // 只在区域变化时打印：用于确认「手指点不到工具箱」时区域到底是哪个值
+                    if (rect != stylusRegionLogged) {
+                        stylusRegionLogged = android.graphics.Rect(rect)
+                        Timber.d("stylus ui: touchableRegion=%s", rect.toShortString())
+                    }
                 } ?: run {
+                    // 拿不到工具箱矩形 ⇒ 可见区高度为 0，整个 IME 窗口都不可触摸
+                    // （点击会被路由给应用）。这条日志用于定位「工具箱/候选词点不动」。
+                    Timber.w("stylus ui: toolbox rect unavailable, ime window becomes untouchable")
                     touchableInsets = Insets.TOUCHABLE_INSETS_VISIBLE
                 }
             }
@@ -1106,6 +1127,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     private val anchorPosition = floatArrayOf(0f, 0f, 0f, 0f)
+
+    /** 上次打印过的触控笔模式触摸区域（避免每帧刷屏）。 */
+    private var stylusRegionLogged: android.graphics.Rect? = null
 
     override fun onUpdateCursorAnchorInfo(info: CursorAnchorInfo) {
         // custom: 把编辑框自己声明的「手写区域」交给触控笔控制器
