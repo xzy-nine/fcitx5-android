@@ -194,6 +194,39 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     /** 手势预览的推理任务（引擎推理不能占主线程）。 */
     private var gesturePreviewJob: Job? = null
 
+    /**
+     * 编辑器「可见文本行」（屏幕坐标）。
+     *
+     * 来源 `CursorAnchorInfo.getVisibleLineBounds()`（API 34，经 `matrix.mapRect` 映射），
+     * 由 `onUpdateCursorAnchorInfo` 下发。**手势与书写的分界就靠它**：
+     * 笔画落在已有文字上 = 对文字本身的操作 = **手势**（涂改/圈选…）；
+     * 笔画落在空白处 = **书写**。
+     */
+    private var visibleLineBounds: List<android.graphics.RectF> = emptyList()
+
+    /** 手势判定状态（米系 `com.miui.ime.g.b` / 讯飞 `w63.mCurrentState` 同义）。 */
+    private var gestureState = GESTURE_UNDECIDED
+
+    /** 本识别窗口内的落笔次数（米系 `g` / 讯飞 `i`）：手势是**单笔**，第 2 笔起即视为书写。 */
+    private var gestureDownCount = 0
+
+    /** 手势路径（屏幕坐标，米系 `mGesturePath`）。 */
+    private val gesturePath = android.graphics.Path()
+    private val gestureRegion = android.graphics.Region()
+    private val gestureClip = android.graphics.Region()
+    private val gestureClipRect = android.graphics.Rect()
+
+    /**
+     * 本笔书写途中引擎判出过的最后一个手势及其笔画点数。
+     *
+     * 引擎的手势分类在笔画**末段**可能翻回 null（最后几个抬笔采样点扰动包围盒/形状），
+     * 而中段一直稳定判为该手势（实测：265..273 点判 DeleteGesture、275..277 点变 null）。
+     * 会话结束时若最终判定为书写，且该手势是在**末段**（[GESTURE_TAIL_CACHE_RATIO] 之后）
+     * 判出的，则沿用它 —— 用户意图仍是手势，末段只是收笔噪声。
+     */
+    private var tailGesture: HandwritingGesture? = null
+    private var tailGesturePointCount = 0
+
     /** 系统引擎连续返回空的次数（用于自降级判定）。 */
     private var systemEngineEmptyStreak = 0
 
@@ -339,6 +372,11 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         // （`BaseStylusInputMethodService.requestShowSelf(0)`）：浮动工具箱挂在 IME 窗口上，
         // IME 窗口被系统隐藏时工具箱会一起不可见，故主动保持其显示。
         runCatching { service.forceShowSelf() }
+        // 米系同款（讯飞 `w63.E()` = onStartStylusHandwriting）：**每会话重置手势判定**——
+        // `mCurrentState = 0; actionDownCount = 0; mGesturePath.reset()`。
+        // 手势是**单笔**：本会话第一笔是手势候选，第 2 笔起即视为书写；
+        // 会话（500ms 空闲）结束后下一笔重新成为候选。
+        resetGestureState()
         // 空闲清窗继续有效：会话切换不得让上一笔的固化计时丢失
         scheduleIdleFinalize()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -426,11 +464,12 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             return
         }
         inkView.feed(event)
-        // 米系 `onStylusHandwritingMotionEvent` 同款：**每个事件**都让引擎判手势并实时预览
-        // （`previewHandwritingGesture`，仅 Select/Delete 等 Previewable 手势有效），
-        // 让用户在书写途中就看到「这一笔会被当成圈选/删除」。
-        // 推理在 [Dispatchers.Default]，且同一时刻只跑一个（见 previewGestureIfPossible），
-        // 因此无需节流也不会阻塞主线程。
+        // 米系手势判定状态机（`com.miui.ime.g.j()` / 讯飞 `w63` 每事件同款）：
+        // 决定这一笔是「对文字本身的操作（手势）」还是「书写」，见 [advanceGestureState]。
+        advanceGestureState(event)
+        // 米系同款：**只有判定为手势候选才调引擎判手势并实时预览**
+        // （`previewHandwritingGesture`，仅 Select/Delete 等 Previewable 手势有效）。
+        // 推理在 [Dispatchers.Default]，且同一时刻只跑一个（见 previewGestureIfPossible）。
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 cancelGesturePreview()
@@ -444,7 +483,10 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
                 }
             }
 
-            MotionEvent.ACTION_MOVE -> previewGestureIfPossible()
+            MotionEvent.ACTION_MOVE -> {
+                if (gestureState == GESTURE_GESTURE) previewGestureIfPossible()
+            }
+
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 cancelGesturePreview()
                 // 米系同款（`postDelayed(mTextEditTimer, 500)`）：**抬笔即排定停顿计时**。
@@ -477,12 +519,18 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     private fun previewGestureIfPossible() {
         if (!systemEngineReady) return
         if (!prefs.handwritingSystemEngineEnabled.getValue()) return
-        val points = inkView.currentPoints() ?: return
+        // 屏幕坐标：手势区域要交给编辑器，必须是 screen coordinates（见 snapshotScreen）
+        val points = inkView.currentPointsScreen() ?: return
         if (gesturePreviewJob?.isActive == true) return
         gesturePreviewJob = scope.launch(Dispatchers.Default) {
             val gesture = XiaomiHandwritingEngine.recognizeGesture(points) ?: return@launch
-            if (gesture !is android.view.inputmethod.PreviewableHandwritingGesture) return@launch
             withContext(Dispatchers.Main) {
+                // 记录末段判出的手势（供会话结束时兜底，见 [tailGesture]）
+                tailGesture = gesture
+                tailGesturePointCount = points.size
+                if (gesture !is android.view.inputmethod.PreviewableHandwritingGesture) {
+                    return@withContext
+                }
                 val ic = service.currentInputConnection ?: return@withContext
                 cancelGesturePreview()
                 val signal = android.os.CancellationSignal()
@@ -528,6 +576,88 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     /** 由 `onUpdateCursorAnchorInfo` 下发编辑框手写区域。 */
     fun onEditorBounds(bounds: android.graphics.RectF?) {
         handwritingBounds = bounds
+    }
+
+    /**
+     * 由 `onUpdateCursorAnchorInfo` 下发**编辑器可见文本行**（屏幕坐标）。
+     *
+     * 空表表示编辑器没有提供（或 API < 34）：此时米系按「允许手势」处理
+     * （`mVisibleLineBounds.isEmpty()` 是放行条件之一）。
+     */
+    fun onVisibleLineBounds(bounds: List<android.graphics.RectF>) {
+        visibleLineBounds = bounds
+    }
+
+    /** 手势路径是否与任一可见文本行相交（米系 `g.h(RectF)` / 讯飞 `w63.u()` 同义）。 */
+    private fun gesturePathIntersectsVisibleLines(): Boolean {
+        if (visibleLineBounds.isEmpty()) return true
+        return visibleLineBounds.any { rect ->
+            gestureClipRect.set(
+                rect.left.toInt(), rect.top.toInt(), rect.right.toInt(), rect.bottom.toInt(),
+            )
+            gestureClip.set(gestureClipRect)
+            gestureRegion.setPath(gesturePath, gestureClip)
+        }
+    }
+
+    /**
+     * 推进手势判定状态机（米系 `com.miui.ime.g.j()` / 讯飞 `w63` 每事件同款）。
+     *
+     * - 第 2 笔起（或已判定为手势后再落笔）→ [GESTURE_WRITING]，本窗口不再判手势；
+     * - 未定时若「手势路径 ∩ 可见文本行」或编辑器没给文本行 → [GESTURE_GESTURE]。
+     */
+    private fun advanceGestureState(event: MotionEvent) {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            gestureDownCount++
+            if (gestureState == GESTURE_GESTURE || gestureDownCount > 1) {
+                gestureState = GESTURE_WRITING
+            }
+        }
+        if (gestureState != GESTURE_WRITING) {
+            // 屏幕坐标：与 matrix 映射后的 visibleLineBounds 同口径
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                gesturePath.moveTo(event.rawX, event.rawY)
+            } else {
+                gesturePath.lineTo(event.rawX, event.rawY)
+            }
+        }
+        if (gestureState == GESTURE_UNDECIDED && gesturePathIntersectsVisibleLines()) {
+            gestureState = GESTURE_GESTURE
+            Timber.d(
+                "stylus handwriting: gesture candidate (downCount=%d, lines=%d)",
+                gestureDownCount, visibleLineBounds.size,
+            )
+        }
+    }
+
+    /**
+     * 手势的关键坐标（排查用）。
+     *
+     * AOSP 规定这些坐标是**屏幕坐标**；打印出来即可判断「手势区域是否落在目标文字上」，
+     * 以及「是否被窗口原点偏移」（墨迹窗口不在 (0,0) 时最容易出这种错）。
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    private fun describeGesture(g: HandwritingGesture): String = runCatching {
+        when (g) {
+            is android.view.inputmethod.SelectGesture -> g.selectionArea
+            is android.view.inputmethod.DeleteGesture -> g.deletionArea
+            is android.view.inputmethod.InsertGesture -> g.insertionPoint
+            is android.view.inputmethod.InsertModeGesture -> g.insertionPoint
+            is android.view.inputmethod.JoinOrSplitGesture -> g.joinOrSplitPoint
+            else -> null
+        }?.toString() ?: "?"
+    }.getOrDefault("?")
+
+    /**
+     * 复位手势判定（清窗/新会话时调用）。
+     */
+    private fun resetGestureState() {
+        gestureState = GESTURE_UNDECIDED
+        gestureDownCount = 0
+        gesturePath.reset()
+        tailGesture = null
+        tailGesturePointCount = 0
+        cancelGesturePreview()
     }
 
     /** 屏幕坐标是否在编辑框的手写区域外（为空视为不限）。 */
@@ -774,10 +904,24 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         lastCommittedText = ""
         lastSegText = ""
         publishChips(emptyList())
-        inkView.clearWindow()
-        recognizer.reset()
+        clearWindowState()
         recognizeJob?.cancel()
         idleJob?.cancel()
+    }
+
+    /**
+     * 清识别窗口 + 重置手势判定（**所有清窗点必须走这里**）。
+     *
+     * 手势是**单笔**：一次「落笔 → 识别 → 上屏」循环结束后，下一笔应重新成为手势候选
+     * （米系 `resetRecognizeManager()` → `InkRecognizeManager.reset()` 每会话结束时把
+     * `mIsGesturing` 置回 true / 讯飞每会话重置 `mCurrentState`）。
+     * 若只清墨迹而不重置，`gestureDownCount` 会跨多次上屏一路累加，
+     * 第 2 笔之后 [GESTURE_WRITING] 永久成立 ⇒ **手势再也判不出来**。
+     */
+    private fun clearWindowState() {
+        inkView.clearWindow()
+        recognizer.reset()
+        resetGestureState()
     }
 
     /** 空格：先固化活动区（避免空格插到活动字中间），再上屏空格。 */
@@ -808,8 +952,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         lastSegText = ""
         lastCommittedText = ""
         publishChips(emptyList())
-        inkView.clearWindow()
-        recognizer.reset()
+        clearWindowState()
         recognizeJob?.cancel()
         idleJob?.cancel()
     }
@@ -862,8 +1005,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             }
         }
         lastSegText = ""
-        inkView.clearWindow()
-        recognizer.reset()
+        clearWindowState()
     }
 
     // ------------------------------------------------------------------
@@ -1102,8 +1244,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             // 等这一笔的识别出结果再提交：识别是异步的，早了会提交到空结果并误清窗
             recognizeJob?.join()
             commitPending()
-            inkView.clearWindow()
-            recognizer.reset()
+            clearWindowState()
             lastSegCandidates = emptyList()
             publishChips(emptyList())
         }
@@ -1119,8 +1260,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      */
     private suspend fun commitSystemRecognition() {
         val strokes = inkView.snapshot()
-        inkView.clearWindow()
-        recognizer.reset()
+        clearWindowState()
         if (strokes.isEmpty()) {
             publishChips(emptyList())
             return
@@ -1149,20 +1289,47 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      */
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private suspend fun tryConsumeAsGesture(): Boolean {
-        val all = inkView.snapshot()
+        // 米系 `A()` / `onFinishStylusHandwriting` 同款：结束时若已是手势候选，**再判一次**
+        // 「路径 ∩ 可见文本行」；不成立则降级为书写（编辑器给了文本行却画在空白处 = 写字）。
+        if (gestureState == GESTURE_GESTURE && !gesturePathIntersectsVisibleLines()) {
+            gestureState = GESTURE_WRITING
+        }
+        if (gestureState != GESTURE_GESTURE) {
+            Timber.d(
+                "stylus handwriting: not a gesture stroke (state=%d, downCount=%d, lines=%d)",
+                gestureState, gestureDownCount, visibleLineBounds.size,
+            )
+            return false
+        }
+        val all = inkView.snapshotScreen()
         val last = all.lastOrNull()?.takeIf { it.isNotEmpty() } ?: return false
-        val gesture = withContext(Dispatchers.Default) {
+        var gesture = withContext(Dispatchers.Default) {
             XiaomiHandwritingEngine.recognizeGesture(last)
-        } ?: run {
+        }
+        if (gesture == null) {
+            // 末段曾判出过手势（见 [tailGesture]）：沿用它，避免收笔噪声把整笔降级成文字
+            val cached = tailGesture
+            val minPoints = (last.size * GESTURE_TAIL_CACHE_RATIO).toInt()
+            if (cached != null && tailGesturePointCount >= minPoints) {
+                Timber.d(
+                    "stylus handwriting: engine says writing at end, reuse tail gesture=%s (%d/%d points)",
+                    cached.javaClass.simpleName, tailGesturePointCount, last.size,
+                )
+                gesture = cached
+            }
+        }
+        if (gesture == null) {
             // 引擎判为普通书写（GestureType.WRITING/NONE，只解析 5 种手势）
             Timber.d("stylus handwriting: session end, engine says writing")
             return false
         }
         val ic = service.currentInputConnection ?: return false
-        Timber.d("stylus handwriting: session end gesture=%s", gesture.javaClass.simpleName)
+        Timber.d(
+            "stylus handwriting: session end gesture=%s at %s",
+            gesture.javaClass.simpleName, describeGesture(gesture),
+        )
         // 手势笔不参与文字识别，清窗
-        inkView.clearWindow()
-        recognizer.reset()
+        clearWindowState()
         lastSegCandidates = emptyList()
         publishChips(emptyList())
         // 未真正执行时回落系统文字识别，用整段墨迹（米系 `getRecognizeText`）
@@ -1215,8 +1382,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             // 窗口超过模型可容纳的笔画数：清窗重来（单字模式下不做部分固化）
             if (HandwritingStrokeFx.isWindowOverLimit(window.size)) {
                 commitPending()
-                inkView.clearWindow()
-                recognizer.reset()
+                clearWindowState()
             }
         }
     }
@@ -1285,6 +1451,23 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
 
         /** 插入模式手势的无操作超时（ms）：米系 `mGestureTimer` 同款 3000ms。 */
         const val INSERT_MODE_TIMEOUT_MS = 3000L
+
+        /** 手势判定：未定（米系 `mCurrentState == 0`）。 */
+        const val GESTURE_UNDECIDED = 0
+
+        /** 手势判定：**手势候选**（米系 `mCurrentState == 1` / `g.b == 1`）。 */
+        const val GESTURE_GESTURE = 1
+
+        /** 手势判定：**书写**（米系 `mCurrentState == 2`）——本窗口不再判手势。 */
+        const val GESTURE_WRITING = 2
+
+        /**
+         * 末段手势缓存的生效下限（占最终笔画点数的比例）。
+         *
+         * 只有「笔画末段仍判为该手势」才沿用；中段一闪而过的手势不算，
+         * 避免书写时偶发误判把整笔当手势执行。
+         */
+        const val GESTURE_TAIL_CACHE_RATIO = 0.8f
 
         /**
          * 系统引擎的会话结束延时（ms）：**米系 `mTextEditTimer` 同款 500ms**。
@@ -1479,11 +1662,31 @@ private class StylusInkView(
         current?.points?.toList()?.takeIf { it.isNotEmpty() }
     }
 
+    /** 进行中笔画已采集的点，**屏幕坐标**（手势识别用，理由见 [snapshotScreen]）。 */
+    fun currentPointsScreen(): List<StrokePoint>? = synchronized(lock) {
+        current?.let { c ->
+            c.points.map { StrokePoint(it.x + c.originX, it.y + c.originY, it.timeMs) }
+        }?.takeIf { it.isNotEmpty() }
+    }
+
     /** 是否正有一笔在写（已 DOWN、尚未 UP/CANCEL）。 */
     fun hasActiveStroke(): Boolean = synchronized(lock) { current != null }
 
     fun snapshot(): List<List<StrokePoint>> = synchronized(lock) {
         strokes.map { it.points.toList() }
+    }
+
+    /**
+     * 已完成笔画，**屏幕坐标**（视图坐标 + 该笔捕获时的视图屏幕原点）。
+     *
+     * 手势识别必须用屏幕坐标：引擎把笔画坐标直接填进 `HandwritingGesture`
+     * （`GestureParserUtils.parsePointToRectF`），而 AOSP 规定手势区域/点一律是
+     * **screen coordinates**（`SelectGesture.getSelectionArea()` 文档）。
+     * 墨迹窗口不在屏幕原点时（多窗口/分屏），用视图坐标会让编辑器在错误位置找文字
+     * ⇒ `HANDWRITING_GESTURE_RESULT_FAILED`。文字识别不受影响（引擎按包围盒归一化渲染）。
+     */
+    fun snapshotScreen(): List<List<StrokePoint>> = synchronized(lock) {
+        strokes.map { s -> s.points.map { StrokePoint(it.x + s.originX, it.y + s.originY, it.timeMs) } }
     }
 
     /**

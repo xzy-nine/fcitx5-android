@@ -267,11 +267,21 @@ object XiaomiHandwritingEngine {
      * @return 未识别/引擎不可用时 null
      */
     fun recognizeGesture(stroke: List<StrokePoint>): HandwritingGesture? {
-        val engine = gesturer ?: return null
-        val method = gestureGetGoogle ?: return null
+        val engine = gesturer
+        val method = gestureGetGoogle
+        if (engine == null || method == null) {
+            Timber.d("$TAG: recognizeGesture skipped (gesturer=%b, method=%b)", engine != null, method != null)
+            return null
+        }
         return try {
-            val nativeStroke = buildStroke(stroke) ?: return null
-            method.invoke(engine, nativeStroke) as HandwritingGesture?
+            val nativeStroke = buildStroke(stroke) ?: run {
+                Timber.w("$TAG: recognizeGesture stroke build failed (points=%d)", stroke.size)
+                return null
+            }
+            (method.invoke(engine, nativeStroke) as HandwritingGesture?).also {
+                // 引擎只解析 5 种手势（Select/Delete/InsertMode/JoinOrSplit/NewLine），其余返回 null
+                Timber.d("$TAG: getGoogleGesture(points=%d) => %s", stroke.size, it?.javaClass?.simpleName)
+            }
         } catch (t: Throwable) {
             Timber.e(t, "$TAG: recognizeGesture failed")
             null

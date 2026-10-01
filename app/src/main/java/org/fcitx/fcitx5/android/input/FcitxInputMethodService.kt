@@ -1121,6 +1121,18 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             )
             stylusHandwriting.onEditorBounds(screen)
         } ?: stylusHandwriting.onEditorBounds(null)
+        // custom: 「可见文本行」交给触控笔控制器 —— 米系用它判定一笔是**手势**还是**书写**：
+        // 手势（涂改删除/圈选）必须画在编辑器已有文字上，画在空白处就是写字。
+        // `CursorAnchorInfo.getVisibleLineBounds()` 是 API 34 新增，且同样是 local coordinates，
+        // 必须经 info.matrix 映射（米系 `com.miui.ime.g.k()` / 讯飞 `w63.H()` 同款）。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val lines = runCatching {
+                info.visibleLineBounds.map { r ->
+                    android.graphics.RectF(r).also { info.matrix.mapRect(it) }
+                }
+            }.getOrDefault(emptyList())
+            stylusHandwriting.onVisibleLineBounds(lines)
+        }
         val bounds = info.getCharacterBounds(0)
         if (bounds != null) {
             // anchor to start of composing span instead of insertion mark if available
