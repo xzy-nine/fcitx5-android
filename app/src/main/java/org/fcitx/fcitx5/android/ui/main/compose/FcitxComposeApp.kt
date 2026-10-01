@@ -40,6 +40,7 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.ThemeScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WebDavSyncScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceInputSettingsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.ModelMarketScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingGestureDemoScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingSettingsScreen
 import org.fcitx.fcitx5.android.data.market.MarketCategories
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceProviderConfigScreen
@@ -318,7 +319,11 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                                 AppRoute.ModelMarket(MarketCategories.HANDWRITING)
                             )
                         },
+                        onOpenGestureDemo = { navigateTo(AppRoute.HandwritingGestureDemo) },
                     )
+                }
+                entry<AppRoute.HandwritingGestureDemo> {
+                    HandwritingGestureDemoScreen(onBack = { backStack.removeLastOrNull() })
                 }
                 entry<AppRoute.RawConfigHost> { route ->
                     RawConfigHostScreen(

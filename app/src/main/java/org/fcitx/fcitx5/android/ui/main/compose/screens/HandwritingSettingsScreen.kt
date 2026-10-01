@@ -38,6 +38,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 fun HandwritingSettingsScreen(
     onBack: () -> Unit,
     onOpenModels: () -> Unit,
+    onOpenGestureDemo: () -> Unit,
 ) {
     val context = LocalContext.current
     val prefs = AppPrefs.getInstance().handwriting
@@ -56,6 +57,7 @@ fun HandwritingSettingsScreen(
 
     val enabled = remember(version) { prefs.handwritingInputEnabled.getValue() }
     val autoCommit = remember(version) { prefs.handwritingAutoCommit.getValue() }
+    val stylusToolbox = remember(version) { prefs.stylusToolboxEnabled.getValue() }
     val modelId = remember(version) { prefs.handwritingModelId.getValue() }
     val modelReady = HandwritingMarketCategory.isReady(context, modelId)
 
@@ -84,6 +86,29 @@ fun HandwritingSettingsScreen(
                     checked = autoCommit,
                     enabled = enabled,
                     onCheckedChange = { prefs.handwritingAutoCommit.setValue(it) },
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.handwriting_stylus_toolbox),
+                    summary = stringResource(R.string.handwriting_stylus_toolbox_summary),
+                    checked = stylusToolbox,
+                    enabled = enabled,
+                    onCheckedChange = { prefs.stylusToolboxEnabled.setValue(it) },
+                )
+            }
+        }
+
+        item { SmallTitle(text = stringResource(R.string.handwriting_stylus_gestures)) }
+        item {
+            Card(
+                modifier = Modifier.padding(horizontal = 12.dp),
+                colors = CardDefaults.defaultColors(
+                    color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                ),
+            ) {
+                ArrowPreference(
+                    title = stringResource(R.string.handwriting_gesture_try),
+                    summary = stringResource(R.string.handwriting_stylus_gestures_summary),
+                    onClick = onOpenGestureDemo,
                 )
             }
         }

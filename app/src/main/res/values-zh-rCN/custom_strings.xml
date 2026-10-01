@@ -264,4 +264,30 @@
     <string name="handwriting_model_retry_download">重新下载</string>
     <string name="handwriting_model_download_ok">模型已就绪</string>
     <string name="handwriting_index_refresh">刷新模型列表</string>
+    <!-- 触控笔手写：动作演示与试用 -->
+    <string name="handwriting_stylus_gestures">手写笔手势</string>
+    <string name="handwriting_stylus_gestures_summary">用触控笔画出的删除、选择、插入与换行动作</string>
+    <string name="handwriting_gesture_delete">涂改删除</string>
+    <string name="handwriting_gesture_delete_summary">在文字上来回涂抹即可删除</string>
+    <string name="handwriting_gesture_select">圈选</string>
+    <string name="handwriting_gesture_select_summary">用闭合的圈把文字圈起来即可选中</string>
+    <string name="handwriting_gesture_insert">插入空格</string>
+    <string name="handwriting_gesture_insert_summary">在需要插入空格处画一个高瘦的“V”</string>
+    <string name="handwriting_gesture_newline">换行</string>
+    <string name="handwriting_gesture_newline_summary">画一个向左收笔的下行钩即可换行</string>
+    <string name="handwriting_gesture_try">试用</string>
+    <string name="handwriting_gesture_demo_hint">在下方画出动作，识别结果会显示在这里</string>
+    <string name="handwriting_gesture_demo_result">识别为</string>
+    <string name="handwriting_gesture_demo_none">未识别到动作</string>
+    <string name="handwriting_gesture_clear">清空</string>
+    <string name="handwriting_gesture_undo">撤销</string>
+    <string name="handwriting_gesture_redo">重做</string>
+    <string name="handwriting_gesture_space">空格</string>
+    <string name="handwriting_gesture_enter">回车</string>
+    <string name="handwriting_gesture_backspace">退格</string>
+    <string name="handwriting_gesture_keyboard">键盘</string>
+    <string name="handwriting_stylus_toolbox">手写笔工具箱</string>
+    <string name="handwriting_stylus_toolbox_summary">触控笔书写时显示的浮动按键</string>
+    <string name="handwriting_stylus_region">限制手写区域</string>
+    <string name="handwriting_stylus_region_summary">触控笔点击键盘时仍按键盘按键处理，而不进入书写</string>
 </resources>

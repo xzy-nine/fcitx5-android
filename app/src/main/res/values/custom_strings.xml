@@ -268,4 +268,30 @@
     <string name="handwriting_model_retry_download">Retry download</string>
     <string name="handwriting_model_download_ok">Model ready</string>
     <string name="handwriting_index_refresh">Refresh model list</string>
+    <!-- 触控笔手写：动作演示与试用（对齐 Gboard 设置页内演示，米系把试用放在系统设置里） -->
+    <string name="handwriting_stylus_gestures">Stylus gestures</string>
+    <string name="handwriting_stylus_gestures_summary">Delete, select, insert and newline gestures drawn with the stylus</string>
+    <string name="handwriting_gesture_delete">Scribble to delete</string>
+    <string name="handwriting_gesture_delete_summary">Scribble back and forth over text to delete it</string>
+    <string name="handwriting_gesture_select">Circle to select</string>
+    <string name="handwriting_gesture_select_summary">Draw a closed loop around text to select it</string>
+    <string name="handwriting_gesture_insert">Caret to insert a space</string>
+    <string name="handwriting_gesture_insert_summary">Draw a tall narrow “v” where a space should be inserted</string>
+    <string name="handwriting_gesture_newline">Hook to insert a newline</string>
+    <string name="handwriting_gesture_newline_summary">Draw a downward hook ending leftwards to insert a line break</string>
+    <string name="handwriting_gesture_try">Try it</string>
+    <string name="handwriting_gesture_demo_hint">Draw the gesture below; the recognition result shows here</string>
+    <string name="handwriting_gesture_demo_result">Detected</string>
+    <string name="handwriting_gesture_demo_none">No gesture detected</string>
+    <string name="handwriting_gesture_clear">Clear</string>
+    <string name="handwriting_gesture_undo">Undo</string>
+    <string name="handwriting_gesture_redo">Redo</string>
+    <string name="handwriting_gesture_space">Space</string>
+    <string name="handwriting_gesture_enter">Enter</string>
+    <string name="handwriting_gesture_backspace">Backspace</string>
+    <string name="handwriting_gesture_keyboard">Keyboard</string>
+    <string name="handwriting_stylus_toolbox">Stylus toolbox</string>
+    <string name="handwriting_stylus_toolbox_summary">Floating keys shown while writing with the stylus</string>
+    <string name="handwriting_stylus_region">Limit the writing area</string>
+    <string name="handwriting_stylus_region_summary">Stylus taps on the keyboard stay keyboard taps instead of being written</string>
 </resources>

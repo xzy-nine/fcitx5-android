@@ -644,6 +644,14 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             summary = R.string.handwriting_auto_commit_summary
         ) { handwritingInputEnabled.getValue() }
 
+        /** 触控笔书写时显示浮动工具箱（撤销/重做/空格/回车/退格/键盘/关闭）。 */
+        val stylusToolboxEnabled = switch(
+            R.string.handwriting_stylus_toolbox,
+            "stylus_toolbox_enabled",
+            true,
+            summary = R.string.handwriting_stylus_toolbox_summary
+        ) { handwritingInputEnabled.getValue() }
+
         init {
             groups = listOf(
                 SubGroup(
@@ -651,6 +659,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                     listOf(
                         handwritingInputEnabled.key,
                         handwritingAutoCommit.key,
+                        stylusToolboxEnabled.key,
                         handwritingModelId.key,
                         handwritingIndexUrl.key,
                     )

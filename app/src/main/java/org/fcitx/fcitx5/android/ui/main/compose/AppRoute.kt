@@ -107,6 +107,10 @@ sealed interface AppRoute : NavKey {
     /** custom: 手写输入设置页（独立输入方案） */
     @Serializable
     data object HandwritingSettings : AppRoute
+
+    /** custom: 触控笔手势动作演示 + 试用页（Gboard 式设置页内演示） */
+    @Serializable
+    data object HandwritingGestureDemo : AppRoute
 }
 
 @Serializable
