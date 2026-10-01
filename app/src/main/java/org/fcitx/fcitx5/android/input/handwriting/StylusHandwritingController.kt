@@ -58,6 +58,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -211,6 +212,8 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             onStroke = ::onStrokeCommitted,
             onTap = ::onTap,
             onStrokeFinished = ::onStrokeFinished,
+            // 浮动手写栏已无「收起」按钮：**手指点击墨迹区即收起**（等价旧 Close）
+            onFingerTap = ::requestClose,
         )
     }
 
@@ -840,29 +843,31 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             StylusToolboxAction.Enter -> onEnter()
             StylusToolboxAction.Space -> onSpace()
             StylusToolboxAction.Backspace -> onBackspace()
-            StylusToolboxAction.Close -> requestClose()
         }
     }
 
     /**
-     * 工具箱「键盘」：**退出触控笔 UI、恢复键盘**（米系 `switchKeyboardByStylus` 语义）。
+     * 工具箱「唤起键盘」：**退出触控笔 UI、恢复键盘，并收起浮动手写栏**。
      *
      * 触控笔 UI 下键盘是被撤下的（米系 `setInputView(空锚点)`），因此这里必须
-     * 先 `exitStylusUi()` 把键盘装回去，再结束系统手写会话。
+     * 先 `exitStylusUi()` 把键盘装回去，再结束系统手写会话；**浮动手写栏随之隐藏**
+     * （键盘已唤起，手写栏不应再悬浮在键盘之上）。
      */
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private fun onKeyboard() {
         finalizeWindowInternal {
             service.exitStylusUi()
+            setToolboxVisible(false)
             runCatching { service.finishStylusHandwriting() }
         }
     }
 
-    /** 关闭：同「键盘」（都回到普通键盘界面）。 */
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    /**
+     * 关闭浮动手写栏（浮动手写栏已无「收起」按钮，由手指点击 / 点击非书写区域触发）。
+     */
     private fun requestClose() {
         finalizeWindowInternal {
             service.exitStylusUi()
+            setToolboxVisible(false)
             runCatching { service.finishStylusHandwriting() }
         }
     }
@@ -1424,11 +1429,40 @@ private class StylusInkView(
     private val onTap: (StylusTapTarget) -> Unit,
     /** 笔画完成回调：返回 true = 已按一笔手势消费（不写入识别窗口）。 */
     private val onStrokeFinished: (InkStroke) -> Boolean,
+    /** 手指点击回调（墨迹区上）：用于收起浮动手写栏。 */
+    private val onFingerTap: () -> Unit = {},
 ) : View(context) {
 
     private val density = context.resources.displayMetrics.density
 
     private val lock = Any()
+
+    /** 手指按下的位置（判定「点击」而非「拖动」）。 */
+    private var fingerDownX = 0f
+    private var fingerDownY = 0f
+
+    /**
+     * 手指事件：墨迹窗口是全屏且在最上层的，手指点击若不在这里消费就会「石沉大海」。
+     * 浮动手写栏已无「收起」按钮，因此**手指在墨迹区点击即收起**（拖动不算）。
+     */
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        val tool = event.getToolType(event.actionIndex)
+        if (tool != MotionEvent.TOOL_TYPE_FINGER) return super.onTouchEvent(event)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                fingerDownX = event.rawX
+                fingerDownY = event.rawY
+            }
+
+            MotionEvent.ACTION_UP -> {
+                val slop = FINGER_TAP_SLOP_DP * density
+                if (abs(event.rawX - fingerDownX) <= slop && abs(event.rawY - fingerDownY) <= slop) {
+                    onFingerTap()
+                }
+            }
+        }
+        return true
+    }
 
     /** 识别窗口笔画（时间序；头部不可变，固化从头部裁剪）。 */
     private val strokes = ArrayList<InkStroke>()
@@ -1739,6 +1773,9 @@ private class StylusInkView(
         const val INK_MIN_WIDTH_DP = 2.5f
         const val INK_MAX_WIDTH_DP = 10f
         const val INK_FADE_ALPHA = 0.35f
+
+        /** 手指「点击」（用于收起浮动手写栏）的最大位移（dp）；超过即视为拖动。 */
+        const val FINGER_TAP_SLOP_DP = 12f
 
         /** 手势墨迹（短暂显示）的透明度。 */
         const val TRANSIENT_INK_ALPHA = 0.5f

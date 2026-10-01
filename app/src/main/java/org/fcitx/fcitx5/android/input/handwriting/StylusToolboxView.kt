@@ -27,13 +27,15 @@ package org.fcitx.fcitx5.android.input.handwriting
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.util.AttributeSet
 import android.view.Gravity
 import android.view.MotionEvent
@@ -42,9 +44,11 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.data.InputFeedbacks
 import kotlin.math.abs
 
-/** 工具箱按钮（对齐米系菜单项语义）。 */
+/** 工具箱按钮（对齐米系菜单项语义；「收起」已移除，改由手指点击/点非书写区关闭）。 */
 enum class StylusToolboxAction {
     Undo,
     Redo,
@@ -52,7 +56,6 @@ enum class StylusToolboxAction {
     Enter,
     Space,
     Backspace,
-    Close,
 }
 
 /**
@@ -230,7 +233,7 @@ class StylusToolboxWindow(private val context: Context) {
         return Rect(x - shadow, y - shadow, x + cardSize.x + shadow, y + cardSize.y + shadow)
     }
 
-    /** 配置变化：重算安全区、夹取位置（米系 `onNewConfiguration` 同款）。 */
+    /** 配置变化：重算安全区、夹取位置、跟随深浅色（米系 `onNewConfiguration` 同款）。 */
     fun onConfigurationChanged() {
         val before = lastOrientation
         updateScreenInfo()
@@ -241,6 +244,8 @@ class StylusToolboxWindow(private val context: Context) {
         }
         clampPosition()
         applyPosition()
+        // 深色/浅色可能同时切换：卡片按 uiMode 重新取色（图标着色与候选文字色一并跟随）
+        card?.applyTheme()
     }
 
     /**
@@ -407,27 +412,26 @@ private class ToolboxCardView @JvmOverloads constructor(
     /** 屏幕密度（显式取值，避开 `View.density`（API 34）带来的解析歧义）。 */
     private val selfDensity: Float = resources.displayMetrics.density
 
+    /** 是否深色（跟随系统）。配置变化时由 [applyTheme] 重建内容。 */
+    private var isNight: Boolean = isNightMode(context)
+
+    /** 最近一次构建内容时的监听器，用于深浅色切换后重建。 */
+    private var actionListener: ((StylusToolboxAction) -> Unit)? = null
+
     private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        setShadowLayer(SHADOW_RADIUS_DP * selfDensity, 0f, SHADOW_DY_DP * selfDensity, SHADOW_COLOR)
-    }
-    private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
-        color = ICON_COLOR
+        color = cardColor()
+        setShadowLayer(SHADOW_RADIUS_DP * selfDensity, 0f, SHADOW_DY_DP * selfDensity, shadowColor())
     }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = ICON_COLOR
+        color = iconColor()
     }
-    private val path = Path()
 
     /** 拖柄（自带绘制，外部挂触摸监听）。 */
     private val handle: View = object : View(context) {
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
-            fillPaint.color = if (pressed) HANDLE_PRESSED_COLOR else HANDLE_COLOR
+            fillPaint.color = if (pressed) handlePressedColor() else handleColor()
             val cy = height / 2f
             val half = HANDLE_BAR_WIDTH_DP * selfDensity / 2f
             canvas.drawRoundRect(
@@ -441,30 +445,98 @@ private class ToolboxCardView @JvmOverloads constructor(
 
     private var pressed = false
 
+    // ------------------------------------------------------------------
+    // 深浅色（跟随系统）
+    // ------------------------------------------------------------------
+
+    private fun isNightMode(ctx: Context): Boolean =
+        (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+
+    private fun cardColor(): Int = if (isNight) CARD_COLOR_DARK else CARD_COLOR_LIGHT
+    private fun iconColor(): Int = if (isNight) ICON_COLOR_DARK else ICON_COLOR_LIGHT
+    private fun fillColor(): Int = if (isNight) FILL_COLOR_DARK else FILL_COLOR_LIGHT
+    private fun accentColor(): Int = if (isNight) ACCENT_COLOR_DARK else ACCENT_COLOR_LIGHT
+    private fun rippleColor(): Int = if (isNight) RIPPLE_COLOR_DARK else RIPPLE_COLOR_LIGHT
+    private fun handleColor(): Int = if (isNight) HANDLE_COLOR_DARK else HANDLE_COLOR_LIGHT
+    private fun handlePressedColor(): Int = if (isNight) HANDLE_PRESSED_DARK else HANDLE_PRESSED_LIGHT
+    private fun shadowColor(): Int = if (isNight) SHADOW_COLOR_DARK else SHADOW_COLOR_LIGHT
+
+    /**
+     * 跟随系统深浅色：View 不在 Compose 树里拿不到 `MiuixTheme`，只能按 `uiMode` 取色；
+     * 夜间模式变化时重建整块内容（图标着色与候选文字色都随主题）。
+     */
+    fun applyTheme() {
+        val night = isNightMode(context)
+        if (night == isNight) return
+        isNight = night
+        shadowPaint.color = cardColor()
+        shadowPaint.setShadowLayer(SHADOW_RADIUS_DP * selfDensity, 0f, SHADOW_DY_DP * selfDensity, shadowColor())
+        fillPaint.color = iconColor()
+        val onAction = actionListener ?: return
+        removeAllViews()
+        handle.invalidate()
+        buildContent(onAction)
+        republishCandidates()
+        invalidate()
+    }
+
+    /**
+     * 圆形/胶囊按钮底：**实心填充**（不靠描边区分）+ 按下涟漪。
+     * 宽高相同即正圆、加宽即胶囊。
+     */
+    private fun buttonBackground(fillColor: Int): android.graphics.drawable.Drawable {
+        val radius = 999f * selfDensity
+        val content = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = radius
+            setColor(fillColor)
+        }
+        val mask = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = radius
+            setColor(Color.WHITE)
+        }
+        return RippleDrawable(ColorStateList.valueOf(rippleColor()), content, mask)
+    }
+
     /** 候选行（手写候选，随识别结果刷新；空则隐藏）。 */
     private var candidateRow: LinearLayout? = null
+
+    /** 最近一次候选与点选回调：深浅色切换重建内容后据此重挂。 */
+    private var lastCandidates: List<String> = emptyList()
+    private var pickListener: ((Int) -> Unit)? = null
 
     /**
      * 刷新候选行：候选挂在工具箱上（而非墨迹层），因此跨 500ms 短会话稳定可见。
      *
      * 候选一律用 **[android.widget.Button]**（与中部/底部行的 `ImageButton` 同一种「正经可点击控件」），
      * 并显式给 `LayoutParams`；不要用裸 `TextView` —— 它没有背景与最小尺寸，命中区域不可靠。
+     * 点选同样走项目统一的**受控震动反馈**。
      */
     fun setCandidates(candidates: List<String>, onPick: (Int) -> Unit) {
+        lastCandidates = candidates
+        pickListener = onPick
+        republishCandidates()
+    }
+
+    /** 按当前主题把 [lastCandidates] 铺进候选行（空则隐藏）。 */
+    private fun republishCandidates() {
         val row = candidateRow ?: return
+        val onPick = pickListener
         row.removeAllViews()
-        if (candidates.isEmpty()) {
+        if (lastCandidates.isEmpty() || onPick == null) {
             row.visibility = View.GONE
             return
         }
         row.visibility = View.VISIBLE
         val pad = (CANDIDATE_PADDING_DP * selfDensity).toInt()
-        candidates.forEachIndexed { index, text ->
+        lastCandidates.forEachIndexed { index, text ->
             row.addView(
                 android.widget.Button(context).apply {
                     this.text = text
                     textSize = CANDIDATE_TEXT_SP
-                    setTextColor(CANDIDATE_TEXT_COLOR)
+                    setTextColor(iconColor())
                     setBackgroundColor(Color.TRANSPARENT)
                     isAllCaps = false
                     // Button 默认带 48dp 最小尺寸与内边距，这里清零以贴合 24dp 候选行
@@ -477,7 +549,10 @@ private class ToolboxCardView @JvmOverloads constructor(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
                         LinearLayout.LayoutParams.MATCH_PARENT,
                     )
-                    setOnClickListener { onPick(index) }
+                    setOnClickListener { view ->
+                        InputFeedbacks.hapticFeedback(view)
+                        onPick(index)
+                    }
                 },
             )
         }
@@ -494,32 +569,49 @@ private class ToolboxCardView @JvmOverloads constructor(
     }
 
     fun buildContent(onAction: (StylusToolboxAction) -> Unit) {
+        actionListener = onAction
         orientation = VERTICAL
         layoutDirection = View.LAYOUT_DIRECTION_LTR
         setWillNotDraw(false)
         isClickable = false
 
         addView(handle, LayoutParams(LayoutParams.MATCH_PARENT, (HANDLE_HEIGHT_DP * selfDensity).toInt()))
+        // 第一行（38dp）：撤销 / 重做 / 唤起键盘 / 删除 —— 四个等分格，每格内一个正圆按钮
         addView(
             LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 layoutDirection = View.LAYOUT_DIRECTION_LTR
-                gravity = Gravity.CENTER_VERTICAL
-                addView(iconButton(StylusToolboxAction.Undo, onAction), iconParams(leading = true))
-                addView(iconButton(StylusToolboxAction.Redo, onAction), iconParams())
-                addView(iconButton(StylusToolboxAction.Keyboard, onAction), iconParams())
-                addView(iconButton(StylusToolboxAction.Enter, onAction), iconParams())
+                gravity = Gravity.CENTER
+                val rowH = (ROW_HEIGHT_DP * selfDensity).toInt()
+                addView(circleCell(StylusToolboxAction.Undo, R.drawable.ic_baseline_undo_24, onAction), cellParams(ROW_HEIGHT_DP, 1f))
+                addView(circleCell(StylusToolboxAction.Redo, R.drawable.ic_baseline_redo_24, onAction), cellParams(ROW_HEIGHT_DP, 1f))
+                // 键盘用「分体键盘按钮的非分体图标」（非分体态显示的就是它）
+                addView(circleCell(StylusToolboxAction.Keyboard, R.drawable.ic_baseline_keyboard_24, onAction), cellParams(ROW_HEIGHT_DP, 1f))
+                addView(circleCell(StylusToolboxAction.Backspace, R.drawable.ic_baseline_backspace_24, onAction), cellParams(ROW_HEIGHT_DP, 1f))
+                minimumHeight = rowH
             },
             LayoutParams(LayoutParams.MATCH_PARENT, (ROW_HEIGHT_DP * selfDensity).toInt()),
         )
+        // 第二行（32dp）：空格 / 回车 —— 两个胶囊按钮**均分整行**
         addView(
             LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 layoutDirection = View.LAYOUT_DIRECTION_LTR
-                gravity = Gravity.CENTER_VERTICAL
-                addView(iconButton(StylusToolboxAction.Backspace, onAction), iconParams(leading = true))
-                addView(iconButton(StylusToolboxAction.Space, onAction), iconParams())
-                addView(iconButton(StylusToolboxAction.Close, onAction), iconParams())
+                gravity = Gravity.CENTER
+                addView(
+                    iconButton(StylusToolboxAction.Space, R.drawable.ic_baseline_space_bar_24, onAction),
+                    cellParams(PILL_HEIGHT_DP, 1f).apply {
+                        marginStart = (EDGE_MARGIN_DP * selfDensity).toInt()
+                        marginEnd = (ICON_GAP_DP * selfDensity).toInt()
+                    },
+                )
+                addView(
+                    iconButton(StylusToolboxAction.Enter, R.drawable.ic_baseline_keyboard_return_24, onAction),
+                    cellParams(PILL_HEIGHT_DP, 1f).apply {
+                        marginStart = (ICON_GAP_DP * selfDensity).toInt()
+                        marginEnd = (EDGE_MARGIN_DP * selfDensity).toInt()
+                    },
+                )
             },
             LayoutParams(LayoutParams.MATCH_PARENT, (BOTTOM_ROW_HEIGHT_DP * selfDensity).toInt()),
         )
@@ -537,108 +629,63 @@ private class ToolboxCardView @JvmOverloads constructor(
         )
     }
 
-    private fun iconParams(leading: Boolean = false) = LayoutParams(
-        (ICON_SIZE_DP * selfDensity).toInt(),
-        (ICON_SIZE_DP * selfDensity).toInt(),
-    ).apply {
-        marginStart = ((if (leading) LEADING_MARGIN_DP else ICON_GAP_DP) * selfDensity).toInt()
+    /**
+     * 等分格（宽 0 + weight ⇒ 均分父行宽度）。
+     *
+     * 第二行的「空格 / 回车」用它把整行**对半分**；第一行的圆形按钮不用它直接套在按钮上
+     * （否则按钮会被拉成胶囊），而是套在 [circleCell] 的外层格上。
+     */
+    private fun cellParams(sizeDp: Float, weight: Float) = LayoutParams(
+        0,
+        (sizeDp * selfDensity).toInt(),
+        weight,
+    )
+
+    /** 固定尺寸的圆形按钮格：外层等分、内层固定直径并居中（保证是正圆而不是胶囊）。 */
+    private fun circleCell(
+        action: StylusToolboxAction,
+        iconRes: Int,
+        onAction: (StylusToolboxAction) -> Unit,
+    ): View = FrameLayout(context).apply {
+        val size = (CIRCLE_SIZE_DP * selfDensity).toInt()
+        addView(
+            iconButton(action, iconRes, onAction),
+            FrameLayout.LayoutParams(size, size, Gravity.CENTER),
+        )
     }
 
+    /**
+     * 统一的圆形按钮（第二行加宽即成胶囊；宽高相同即正圆）。
+     *
+     * 图标用项目既有矢量资源（不再手绘路径）：`ic_baseline_undo_24` / `redo` /
+     * `keyboard_24` / `backspace_24` / `space_bar_24` / `keyboard_return_24`。
+     *
+     * **靠填充色而非描边区分**：[StylusToolboxAction.Backspace] 与 [StylusToolboxAction.Enter]
+     * 用 miuix 标准蓝 `primary` + `onPrimary` 图标，其余用 `secondaryContainer` +
+     * `onSurface` 图标（浅色下更深、深色下更浅的背景色）。
+     * 点选走项目统一的**受控震动反馈**（[InputFeedbacks.hapticFeedback]，与键盘按键同口径）。
+     */
     private fun iconButton(
         action: StylusToolboxAction,
+        iconRes: Int,
         onAction: (StylusToolboxAction) -> Unit,
-    ): View = object : ImageButton(context) {
-        init {
-            setBackgroundColor(Color.TRANSPARENT)
-            scaleType = ScaleType.CENTER
-            setOnClickListener { onAction(action) }
-        }
-
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
-            val cx = width / 2f
-            val cy = height / 2f
-            val r = minOf(width, height) / 2f * 0.62f
-            iconPaint.strokeWidth = 2f * selfDensity
-            drawIcon(canvas, action, cx, cy, r)
-        }
-    }
-
-    private fun drawIcon(canvas: Canvas, action: StylusToolboxAction, cx: Float, cy: Float, r: Float) {
-        when (action) {
-            StylusToolboxAction.Undo -> {
-                path.reset()
-                path.moveTo(cx + r * 0.5f, cy + r * 0.45f)
-                path.lineTo(cx + r * 0.5f, cy - r * 0.1f)
-                path.lineTo(cx - r * 0.5f, cy - r * 0.1f)
-                canvas.drawPath(path, iconPaint)
-                canvas.drawLine(cx - r * 0.5f, cy - r * 0.1f, cx - r * 0.1f, cy - r * 0.5f, iconPaint)
-                canvas.drawLine(cx - r * 0.5f, cy - r * 0.1f, cx - r * 0.1f, cy + r * 0.3f, iconPaint)
-            }
-
-            StylusToolboxAction.Redo -> {
-                path.reset()
-                path.moveTo(cx - r * 0.5f, cy + r * 0.45f)
-                path.lineTo(cx - r * 0.5f, cy - r * 0.1f)
-                path.lineTo(cx + r * 0.5f, cy - r * 0.1f)
-                canvas.drawPath(path, iconPaint)
-                canvas.drawLine(cx + r * 0.5f, cy - r * 0.1f, cx + r * 0.1f, cy - r * 0.5f, iconPaint)
-                canvas.drawLine(cx + r * 0.5f, cy - r * 0.1f, cx + r * 0.1f, cy + r * 0.3f, iconPaint)
-            }
-
-            StylusToolboxAction.Keyboard -> {
-                canvas.drawRoundRect(
-                    RectF(cx - r * 0.6f, cy - r * 0.4f, cx + r * 0.6f, cy + r * 0.4f),
-                    r * 0.15f, r * 0.15f, iconPaint,
-                )
-                fillPaint.color = ICON_COLOR
-                for (i in 0..2) {
-                    canvas.drawCircle(cx - r * 0.34f + i * r * 0.34f, cy - r * 0.15f, r * 0.08f, fillPaint)
-                    canvas.drawCircle(cx - r * 0.34f + i * r * 0.34f, cy + r * 0.15f, r * 0.08f, fillPaint)
-                }
-            }
-
-            StylusToolboxAction.Enter -> {
-                path.reset()
-                path.moveTo(cx + r * 0.45f, cy - r * 0.5f)
-                path.lineTo(cx + r * 0.45f, cy + r * 0.15f)
-                path.lineTo(cx - r * 0.5f, cy + r * 0.15f)
-                canvas.drawPath(path, iconPaint)
-                canvas.drawLine(cx - r * 0.5f, cy + r * 0.15f, cx - r * 0.15f, cy - r * 0.2f, iconPaint)
-                canvas.drawLine(cx - r * 0.5f, cy + r * 0.15f, cx - r * 0.15f, cy + r * 0.5f, iconPaint)
-            }
-
-            StylusToolboxAction.Space -> {
-                canvas.drawLine(cx - r * 0.5f, cy + r * 0.25f, cx + r * 0.5f, cy + r * 0.25f, iconPaint)
-                canvas.drawLine(cx - r * 0.5f, cy + r * 0.25f, cx - r * 0.5f, cy - r * 0.05f, iconPaint)
-                canvas.drawLine(cx + r * 0.5f, cy + r * 0.25f, cx + r * 0.5f, cy - r * 0.05f, iconPaint)
-            }
-
-            StylusToolboxAction.Backspace -> {
-                val left = cx - r * 0.6f
-                val right = cx + r * 0.55f
-                val top = cy - r * 0.4f
-                val bottom = cy + r * 0.4f
-                path.reset()
-                path.moveTo(right, top)
-                path.lineTo(left + r * 0.3f, top)
-                path.lineTo(left, cy)
-                path.lineTo(left + r * 0.3f, bottom)
-                path.lineTo(right, bottom)
-                path.close()
-                canvas.drawPath(path, iconPaint)
-                canvas.drawLine(cx - r * 0.02f, cy - r * 0.18f, cx + r * 0.3f, cy + r * 0.18f, iconPaint)
-                canvas.drawLine(cx - r * 0.02f, cy + r * 0.18f, cx + r * 0.3f, cy - r * 0.18f, iconPaint)
-            }
-
-            StylusToolboxAction.Close -> {
-                canvas.drawLine(cx - r * 0.35f, cy - r * 0.35f, cx + r * 0.35f, cy + r * 0.35f, iconPaint)
-                canvas.drawLine(cx - r * 0.35f, cy + r * 0.35f, cx + r * 0.35f, cy - r * 0.35f, iconPaint)
+    ): View {
+        val accent = action == StylusToolboxAction.Backspace || action == StylusToolboxAction.Enter
+        return ImageButton(context).apply {
+            setImageResource(iconRes)
+            setColorFilter(if (accent) ON_ACCENT_COLOR else iconColor())
+            scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+            background = buttonBackground(if (accent) accentColor() else fillColor())
+            isClickable = true
+            contentDescription = action.name
+            setOnClickListener { view ->
+                InputFeedbacks.hapticFeedback(view)
+                onAction(action)
             }
         }
     }
 
-    /** 白底圆角 + 阴影（米系 `ShadowLayout.onDraw` 同款）。 */
+    /** 卡片底：圆角 + 阴影（米系 `ShadowLayout.onDraw` 同款；颜色随深浅色）。 */
     override fun onDraw(canvas: Canvas) {
         val r = CORNER_RADIUS_DP * selfDensity
         canvas.drawRoundRect(RectF(0f, 0f, width.toFloat(), height.toFloat()), r, r, shadowPaint)
@@ -649,30 +696,68 @@ private class ToolboxCardView @JvmOverloads constructor(
         const val CORNER_RADIUS_DP = 18f
         const val SHADOW_RADIUS_DP = 14f
         const val SHADOW_DY_DP = 4f
-        const val SHADOW_COLOR = 0x191a1a1a
 
         const val HANDLE_HEIGHT_DP = 22f
         const val HANDLE_BAR_WIDTH_DP = 28f
+
+        /** 第一行：撤销 / 重做 / 唤起键盘 / 删除（四个等宽格，圆形按钮）。 */
         const val ROW_HEIGHT_DP = 38f
+
+        /** 第二行：空格 / 回车（两格均分整行，胶囊按钮）。 */
         const val BOTTOM_ROW_HEIGHT_DP = 32f
+
+        /** 圆形按钮直径（第一行；行高 38dp 内尽量占满）。 */
+        const val CIRCLE_SIZE_DP = 34f
+
+        /** 胶囊按钮高度（第二行，宽度由 weight 均分）。 */
+        const val PILL_HEIGHT_DP = 30f
 
         /**
          * 候选行高度：**必须正好填满米系卡片的剩余空间**。
          *
-         * 卡片 116dp = 拖柄 22 + 中部行 38 + 底部行 32 + **候选行 24**；
+         * 卡片 116dp = 拖柄 22 + 第一行 38 + 第二行 32 + **候选行 24**；
          * 若候选行高于 24dp 会越过卡片下沿被裁掉，越界部分既看不全也点不到。
          */
         const val CANDIDATE_ROW_HEIGHT_DP = 24f
         const val CANDIDATE_TEXT_SP = 15f
         const val CANDIDATE_PADDING_DP = 8f
-        const val CANDIDATE_TEXT_COLOR = 0xFF1A1A1A.toInt()
 
-        const val ICON_SIZE_DP = 32f
-        const val LEADING_MARGIN_DP = 12f
-        const val ICON_GAP_DP = 6f
+        /** 第二行两格之间的间隔。 */
+        const val ICON_GAP_DP = 4f
 
-        const val ICON_COLOR = 0xFF1A1A1A.toInt()
-        const val HANDLE_COLOR = 0x33000000
-        const val HANDLE_PRESSED_COLOR = 0x66000000
+        /** 第二行首尾留白（与卡片左右边距）。 */
+        const val EDGE_MARGIN_DP = 8f
+
+        // ---- 深浅色（View 不在 Compose 树里，按 uiMode 取色；色号取 miuix `Colors.kt`）----
+        /** 卡片底：浅色 `background` 白（= 米系 `td`）/ 深色 `background` #242424。 */
+        const val CARD_COLOR_LIGHT = 0xFFFFFFFF.toInt()
+        const val CARD_COLOR_DARK = 0xFF242424.toInt()
+
+        /** 普通按钮填充：miuix `secondaryContainer`（浅色下比卡片更深、深色下比卡片更浅）。 */
+        const val FILL_COLOR_LIGHT = 0xFFF0F0F0.toInt()
+        const val FILL_COLOR_DARK = 0xFF434343.toInt()
+
+        /** 普通按钮图标 / 候选文字：miuix `onSurface`。 */
+        const val ICON_COLOR_LIGHT = 0xFF000000.toInt()
+        const val ICON_COLOR_DARK = 0xFFF2F2F2.toInt()
+
+        /** 重点按钮（删除 / 回车）：miuix `primary` 标准蓝 + `onPrimary` 图标。 */
+        const val ACCENT_COLOR_LIGHT = 0xFF3482FF.toInt()
+        const val ACCENT_COLOR_DARK = 0xFF277AF7.toInt()
+        const val ON_ACCENT_COLOR = 0xFFFFFFFF.toInt()
+
+        /** 按钮按下涟漪。 */
+        const val RIPPLE_COLOR_LIGHT = 0x33000000
+        const val RIPPLE_COLOR_DARK = 0x33FFFFFF
+
+        /** 拖柄条。 */
+        const val HANDLE_COLOR_LIGHT = 0x33000000
+        const val HANDLE_COLOR_DARK = 0x33FFFFFF
+        const val HANDLE_PRESSED_LIGHT = 0x66000000
+        const val HANDLE_PRESSED_DARK = 0x66FFFFFF
+
+        /** 卡片阴影：米系浅色 `#191a1a1a`；深色用更重的黑。 */
+        const val SHADOW_COLOR_LIGHT = 0x191A1A1A
+        const val SHADOW_COLOR_DARK = 0x66000000
     }
 }
