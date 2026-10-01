@@ -19,10 +19,11 @@
  * 抬笔后 [STYLUS_SETTLE_MS]（= 米系 `mTextEditTimer` 500ms）到点做**二选一** ——
  * 是手势 → 交编辑器执行；否则把**整段墨迹一次性**识别出**单个结果** `commitText` 上屏。
  * 不做逐笔识别、不做叠写切分、不产生候选（米系同样只有单结果）。
- * 手势判定与识别后端解耦：系统引擎（小米随手写）优先，不可用时文字走自带 ONNX 模型
- * （整窗当一个字）、手势走本地几何启发式 `HandwritingGestures` + `HandwritingStrokeFx`。
- * 与键盘手写布局（`HandwritingKeyboardLayout`，那套仍用 `HandwritingSegmenter` 多字切分）
- * 是**并列的两条输入入口**，不共享状态。
+ * 手势判定与识别后端解耦：**文字识别走统一入口
+ * [org.fcitx.fcitx5.android.data.handwriting.HandwritingRecognition]**（系统引擎优先、回落
+ * ONNX），手势走系统引擎，不可用时走本地几何启发式 `HandwritingGestures` + `HandwritingStrokeFx`。
+ * 与键盘手写布局（`HandwritingKeyboardLayout`）是**并列的两条输入入口**：笔迹与会话状态各自持有，
+ * 只有识别后端（引擎选择/模型加载/自降级）经 [HandwritingRecognition] 共用。
  *
  * 墨迹渲染用原生 `View`（不走 Compose：系统墨迹窗口的 decorView 没有 lifecycle owner 链，
  * 且原生绘制延迟更低）；笔宽按 `AXIS_PRESSURE` 调制；橡皮擦端（`TOOL_TYPE_ERASER`）
@@ -65,7 +66,7 @@ import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingCandidate
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngine
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingGestures
-import org.fcitx.fcitx5.android.data.handwriting.HandwritingMarketCategory
+import org.fcitx.fcitx5.android.data.handwriting.HandwritingRecognition
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingStrokeFx
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingStrokeKind
 import org.fcitx.fcitx5.android.data.handwriting.StrokePoint
@@ -134,10 +135,6 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     private var loadJob: Job? = null
     private var idleJob: Job? = null
 
-    /** 系统手写引擎是否已初始化可用（[XiaomiHandwritingEngine.open] 成功）。 */
-    @Volatile
-    private var systemEngineReady = false
-
     /** 系统引擎异步预热任务（初始化要加载 native 库 + 模型，不能占主线程）。 */
     private var systemEngineWarmUpJob: Job? = null
 
@@ -182,13 +179,6 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      */
     private var tailGesture: HandwritingGesture? = null
     private var tailGesturePointCount = 0
-
-    /** 系统引擎连续返回空的次数（用于自降级判定）。 */
-    private var systemEngineEmptyStreak = 0
-
-    /** 已放弃系统引擎（连续空结果，通常是包名不在引擎白名单内）。 */
-    @Volatile
-    private var systemEngineGaveUp = false
 
     /** 会话进行中（`onStartStylusHandwriting` 返回 true 之后）。 */
     @Volatile
@@ -255,13 +245,10 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     /**
      * 识别后端是否已就绪：**系统手写引擎或自带 ONNX 模型任一可用即可**。
      *
-     * 注意不能只看 [HandwritingEngine.isReady]：系统引擎可用时我们**不会加载 ONNX**
-     * （省内存），此时 `isReady` 恒为 false，只看它会把整条触控笔路径挡在门外。
-     *
-     * 只做**状态查询**，不触发耗时的引擎初始化（那走 [warmUpSystemEngine]）。
+     * 判定在统一入口 [HandwritingRecognition.backendReady]（两条路径同口径）；
+     * 只做**状态查询**，不触发耗时的引擎初始化（那走 [warmUpSystemEngine] / [HandwritingRecognition.prepare]）。
      */
-    private fun backendReady(): Boolean =
-        systemEngineReady || HandwritingEngine.isReady
+    private fun backendReady(): Boolean = HandwritingRecognition.backendReady
 
     /**
      * `onUpdateEditorToolType(TOOL_TYPE_STYLUS)`：**米系同款的进入时机**。
@@ -317,8 +304,8 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         // 记录本次会话实际使用的识别后端（排查「系统引擎到底有没有被调用」只看这一行）
         Timber.i(
             "stylus handwriting: session start, backend=%s, systemReady=%b, onnxReady=%b",
-            if (systemEngineReady) "system" else "onnx",
-            systemEngineReady, HandwritingEngine.isReady,
+            if (HandwritingRecognition.isSystemEngineReady) "system" else "onnx",
+            HandwritingRecognition.isSystemEngineReady, HandwritingEngine.isReady,
         )
         ensureInkAttached(window)
         // 工具箱挂到 IME 窗口之上（米系做法），随会话显隐
@@ -493,8 +480,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      * 投到 `mBackgroundHandler`，结果再 post 回主线程。这里用 [scope] + `Dispatchers.Default`。
      */
     private fun previewGestureIfPossible() {
-        if (!systemEngineReady) return
-        if (!prefs.handwritingSystemEngineEnabled.getValue()) return
+        if (!systemEngineInUse()) return
         // 屏幕坐标：手势区域要交给编辑器，必须是 screen coordinates（见 snapshotScreen）
         val points = inkView.currentPointsScreen() ?: return
         if (gesturePreviewJob?.isActive == true) return
@@ -717,64 +703,36 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         finish()
         setToolboxVisible(false)
         service.exitStylusUi()
-        systemEngineReady = false
-        systemEngineEmptyStreak = 0
-        systemEngineGaveUp = false
-        XiaomiHandwritingEngine.close()
+        // 识别后端（系统引擎 + ONNX 会话）由统一入口释放，两条路径共用同一份状态
+        HandwritingRecognition.release()
         scope.cancel()
     }
 
     private fun isEnabled(): Boolean = prefs.handwritingInputEnabled.getValue()
 
     private fun ensureModelLoaded() {
-        // 系统引擎已就绪（或正在预热）时不加载 ONNX 模型（省内存与启动时间）；
-        // 关掉开关或引擎不可用时才回落加载
-        if (prefs.handwritingSystemEngineEnabled.getValue() &&
-            (systemEngineReady || systemEngineWarmUpJob?.isActive == true)
-        ) {
-            return
-        }
         if (loadJob?.isActive == true) return
         val modelId = prefs.handwritingModelId.getValue()
         if (HandwritingEngine.isReady && HandwritingEngine.loadedModel() == modelId) return
         loadJob = scope.launch {
-            if (!HandwritingMarketCategory.isReady(service, modelId)) return@launch
-            HandwritingEngine.load(service, modelId)
+            // 统一入口决定用哪个后端：系统引擎可用时不加载 ONNX（省内存与启动时间）
+            HandwritingRecognition.prepare(service, modelId)
         }
-    }
-
-    /**
-     * 初始化系统手写引擎（幂等，**同步**）。成功时置 [systemEngineReady]。
-     *
-     * ⚠️ 只在**非主线程**调用：`RecognizeFacade` 构造会加载 8.8MB 算法库与 17MB OCR 模型
-     * （`MultiLineRecognize.init` → `nativeInitOCR`），主线程调用会卡住 IME。
-     * 主线程路径请用 [warmUpSystemEngine]（异步）。
-     *
-     * 引擎自带包名白名单（只服务搜狗/百度/讯飞小米版等 12 个包名），
-     * 由 [XiaomiHandwritingEngine.open] 内部反射放行，这里无需额外判断。
-     */
-    private fun ensureSystemEngineBlocking(): Boolean {
-        if (systemEngineReady) return true
-        if (systemEngineGaveUp) return false
-        if (!prefs.handwritingSystemEngineEnabled.getValue()) return false
-        val ok = XiaomiHandwritingEngine.open(service)
-        systemEngineReady = ok
-        if (ok) Timber.i("stylus handwriting: system engine in use")
-        return ok
     }
 
     /**
      * 异步预热系统引擎（主线程安全，幂等）。
      *
      * 引擎初始化耗时可观（加载 native 库 + 模型），放到 [Dispatchers.Default]；
-     * 预热完成后 [systemEngineReady] 置位，落笔时即可直接使用。
+     * 预热完成后 [HandwritingRecognition.isSystemEngineReady] 置位，落笔时即可直接使用。
      */
     private fun warmUpSystemEngine() {
-        if (systemEngineReady || systemEngineGaveUp) return
-        if (!prefs.handwritingSystemEngineEnabled.getValue()) return
+        if (HandwritingRecognition.isSystemEngineReady) return
+        if (!HandwritingRecognition.systemEngineEnabled()) return
         if (systemEngineWarmUpJob?.isActive == true) return
         systemEngineWarmUpJob = scope.launch(Dispatchers.Default) {
-            val ok = ensureSystemEngineBlocking()
+            // 同步版初始化只在非主线程调用（这里已是 Default）
+            val ok = HandwritingRecognition.ensureSystemEngine(service)
             withContext(Dispatchers.Main) {
                 Timber.i("stylus handwriting: system engine warm-up done, ready=%b", ok)
             }
@@ -1034,7 +992,9 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
                 // 回落文本 = 该笔被当成字符时的识别结果（编辑器不支持手势时提交它）
                 val fallback = withContext(Dispatchers.Default) {
                     runCatching {
-                        HandwritingEngine.predict(listOf(points)).firstOrNull()?.char.orEmpty()
+                        // 与文字识别同一入口（此处系统引擎不可用，实际走 ONNX）
+                        HandwritingRecognition.recognize(service, listOf(points))
+                            .firstOrNull()?.char.orEmpty()
                     }.getOrDefault("")
                 }
                 val gesture = if (kind == HandwritingStrokeKind.Delete) {
@@ -1200,8 +1160,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     }
 
     /** 系统引擎是否正在使用（开关开启 + 已就绪）。 */
-    private fun systemEngineInUse(): Boolean =
-        prefs.handwritingSystemEngineEnabled.getValue() && systemEngineReady
+    private fun systemEngineInUse(): Boolean = HandwritingRecognition.systemEngineInUse()
 
     /**
      * 会话结束时把**整段累积墨迹**一次性出字并上屏
@@ -1234,38 +1193,12 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     /**
      * 整段墨迹 → 候选列表（前 [HANDWRITING_TOP_K] 个）。
      *
-     * 系统引擎优先（**只给单结果**，候选表就一项）；不可用（非小米设备/开关关闭/已降级）时用
-     * 自带 ONNX 模型，把整个窗口当作**一个字**送模型取前几名（模型是单字分类器，无 CTC、不做多字解码）。
-     *
-     * **连续空结果自降级**：万一引擎不服务本应用（白名单之外的兜底情况），
-     * 连续 [SYSTEM_ENGINE_GIVE_UP] 次拿不到结果即改走 ONNX，避免每次都白跑反射。
-     *
-     * 在 [Dispatchers.Default] 上被调用，故可用同步版引擎初始化。
+     * 触控笔按「整窗当一个字」送识别（模型是单字分类器、系统引擎也只给单结果），
+     * 后端分派与自降级都在统一入口 [HandwritingRecognition.recognize]：
+     * 与键盘手写布局共用同一份引擎选择，见该类说明。
      */
-    private suspend fun recognizeWholeInk(strokes: List<List<StrokePoint>>): List<HandwritingCandidate> {
-        val systemEnabled = prefs.handwritingSystemEngineEnabled.getValue()
-        if (systemEnabled && !systemEngineGaveUp && ensureSystemEngineBlocking()) {
-            val text = XiaomiHandwritingEngine.recognizeText(strokes)
-            if (!text.isNullOrEmpty()) {
-                systemEngineEmptyStreak = 0
-                return listOf(HandwritingCandidate(text, SYSTEM_ENGINE_SCORE))
-            }
-            systemEngineEmptyStreak++
-            Timber.d(
-                "stylus handwriting: system engine returned nothing (%d/%d), falling back to ONNX",
-                systemEngineEmptyStreak, SYSTEM_ENGINE_GIVE_UP,
-            )
-            if (systemEngineEmptyStreak >= SYSTEM_ENGINE_GIVE_UP) {
-                systemEngineGaveUp = true
-                Timber.w(
-                    "stylus handwriting: system engine gave up after %d empty results",
-                    SYSTEM_ENGINE_GIVE_UP,
-                )
-            }
-        }
-        if (!HandwritingEngine.isReady) return emptyList()
-        return HandwritingEngine.predict(strokes, HANDWRITING_TOP_K)
-    }
+    private suspend fun recognizeWholeInk(strokes: List<List<StrokePoint>>): List<HandwritingCandidate> =
+        HandwritingRecognition.recognize(service, strokes, HANDWRITING_TOP_K)
 
     /**
      * 会话结束时把「最后一笔」当手势尝试执行（米系 `getGestureRecognizeResult` 分支）。
@@ -1356,18 +1289,8 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
          */
         const val STYLUS_SETTLE_MS = 500L
 
-        /**
-         * 系统引擎连续返回空结果多少次后放弃（改走 ONNX）。
-         *
-         * 非白名单包名下引擎会「构造成功但恒返回空」；连续几次即可判定不值得再试。
-         */
-        const val SYSTEM_ENGINE_GIVE_UP = 3
-
         /** 自带 ONNX 模型返回的候选个数（工具箱候选行只显示这么多，卡片宽度有限）。 */
         const val HANDWRITING_TOP_K = 5
-
-        /** 系统引擎只给文本、不给概率，补一个固定置信度作首选排序用。 */
-        const val SYSTEM_ENGINE_SCORE = 0.95f
 
         /** 插入模式手势的无操作超时（ms）：米系 `mGestureTimer` 同款 3000ms。 */
         const val INSERT_MODE_TIMEOUT_MS = 3000L

@@ -237,7 +237,7 @@
     <string name="group_handwriting">Handwriting</string>
     <string name="handwriting_input">Handwriting</string>
     <string name="handwriting_input_enabled">Enable handwriting input</string>
-    <string name="handwriting_input_enabled_summary">Shows the handwriting button on the toolbar; requires a downloaded model</string>
+    <string name="handwriting_input_enabled_summary">Shows the handwriting button on the toolbar; requires a downloaded model or a supported system handwriting engine</string>
     <string name="handwriting_model">Handwriting model</string>
     <string name="handwriting_model_missing">No model downloaded — open the model marketplace first</string>
     <string name="handwriting_model_market">Handwriting models</string>
@@ -250,7 +250,10 @@
     <string name="handwriting_undo_stroke">Undo stroke</string>
     <string name="handwriting_back_to_keyboard">Back to keyboard</string>
     <string name="handwriting_candidates">Candidates</string>
+    <string name="handwriting_single_char">Single-character recognition</string>
+    <string name="handwriting_single_char_summary">Treat the whole writing window as one character (no multi-character segmentation); the system handwriting engine always works this way</string>
     <string name="handwriting_state_idle">Write in the area above</string>
+    <string name="handwriting_state_idle_system_engine">Write in the area above · system engine</string>
     <string name="handwriting_state_loading">Loading model…</string>
     <string name="handwriting_state_recognizing">Recognizing…</string>
     <string name="handwriting_index_failed">Failed to load model list</string>
@@ -293,7 +296,7 @@
     <string name="handwriting_stylus_toolbox">Stylus toolbox</string>
     <string name="handwriting_stylus_toolbox_summary">Floating keys shown while writing with the stylus</string>
     <string name="handwriting_system_engine">Prefer the system handwriting engine</string>
-    <string name="handwriting_system_engine_summary">Use the device handwriting engine (Xiaomi Pencil Engine) when available; falls back to the built-in model on unsupported devices</string>
+    <string name="handwriting_system_engine_summary">Use the device handwriting engine (Xiaomi Pencil Engine) when available — applies to the handwriting keyboard and stylus handwriting alike; falls back to the built-in model on unsupported devices</string>
     <string name="handwriting_system_engine_available">Status: available on this device</string>
     <string name="handwriting_system_engine_unavailable">Status: unavailable — using the built-in model</string>
     <string name="handwriting_system_engine_capabilities">Text %1$s · Gestures %2$s</string>

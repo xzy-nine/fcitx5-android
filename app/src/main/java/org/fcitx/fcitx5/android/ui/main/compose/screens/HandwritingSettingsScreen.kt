@@ -58,6 +58,7 @@ fun HandwritingSettingsScreen(
 
     val enabled = remember(version) { prefs.handwritingInputEnabled.getValue() }
     val autoCommit = remember(version) { prefs.handwritingAutoCommit.getValue() }
+    val singleChar = remember(version) { prefs.handwritingSingleCharMode.getValue() }
     val stylusToolbox = remember(version) { prefs.stylusToolboxEnabled.getValue() }
     val systemEngine = remember(version) { prefs.handwritingSystemEngineEnabled.getValue() }
     val modelId = remember(version) { prefs.handwritingModelId.getValue() }
@@ -93,6 +94,13 @@ fun HandwritingSettingsScreen(
                     checked = autoCommit,
                     enabled = enabled,
                     onCheckedChange = { prefs.handwritingAutoCommit.setValue(it) },
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.handwriting_single_char),
+                    summary = stringResource(R.string.handwriting_single_char_summary),
+                    checked = singleChar,
+                    enabled = enabled,
+                    onCheckedChange = { prefs.handwritingSingleCharMode.setValue(it) },
                 )
                 SwitchPreference(
                     title = stringResource(R.string.handwriting_stylus_toolbox),

@@ -644,6 +644,19 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             summary = R.string.handwriting_auto_commit_summary
         ) { handwritingInputEnabled.getValue() }
 
+        /**
+         * 单字识别：整个识别窗口按**一个字**送识别，不做叠写切分。
+         *
+         * 默认关闭（保留叠写多字切分）；系统手写引擎在使用时**恒按单字识别**
+         * （引擎只能对整段墨迹给一个结果），见 `HandwritingUiState.singleCharacter`。
+         */
+        val handwritingSingleCharMode = switch(
+            R.string.handwriting_single_char,
+            "handwriting_single_char_mode",
+            false,
+            summary = R.string.handwriting_single_char_summary
+        ) { handwritingInputEnabled.getValue() }
+
         /** 触控笔书写时显示浮动工具箱（撤销/重做/空格/回车/退格/键盘/关闭）。 */
         val stylusToolboxEnabled = switch(
             R.string.handwriting_stylus_toolbox,
@@ -672,6 +685,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                     listOf(
                         handwritingInputEnabled.key,
                         handwritingAutoCommit.key,
+                        handwritingSingleCharMode.key,
                         stylusToolboxEnabled.key,
                         handwritingSystemEngineEnabled.key,
                         handwritingModelId.key,

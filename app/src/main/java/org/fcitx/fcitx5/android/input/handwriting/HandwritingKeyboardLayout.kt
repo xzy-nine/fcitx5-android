@@ -8,6 +8,8 @@
  *   （返回 ABC / 123 / 符号页 / 空格），竖列与底行由 `ComposeKeyColumn` / `ComposeKeyRow` 渲染；
  * - 右侧列的符号键单独填充且不可自定义，键值与主键盘同口径（由引擎按全半角/标点设置转换）；
  * - 候选由 `HandwritingInputComponent` 推给候选栏，不绘制在本布局；
+ * - 识别走统一入口 `data/handwriting/HandwritingRecognition.kt`（系统手写引擎优先 → ONNX 回落，
+ *   与触控笔手写同一份引擎选择）；`singleCharacterMode` 时整窗按一个字送识别、不做叠写切分；
  * - 识别窗口：每落一笔全窗重新识别；停顿只把笔画变淡，
  *   继续闲置 [HW_CLEAR_IDLE_MS] 才清空窗口（墨迹同步消失）并回调 `onFinalize`；
  * - 渲染：`[0,fade)` 变淡、`[fade,end)` 正常；笔画离开识别窗口（固化/清窗）时墨迹同步消失；
@@ -48,6 +50,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -60,7 +63,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.KeySym
-import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngine
+import org.fcitx.fcitx5.android.data.handwriting.HandwritingRecognition
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingSegmenter
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingStrokeFx
 import org.fcitx.fcitx5.android.data.handwriting.StrokePoint
@@ -125,8 +128,9 @@ private val HandwritingSymbolLabels: List<String> = HandwritingSymbolSyms.keys.t
 /**
  * 手写键盘。
  *
- * @param modelReady 模型是否就绪（false 时画布不接收笔画，只显示提示）
+ * @param modelReady 识别后端是否就绪（false 时画布不接收笔画，只显示提示）
  * @param statusText 状态文案（加载中 / 识别中 / 空闲 / 错误）
+ * @param singleCharacterMode 单字识别：整个识别窗口按一个字送识别，不做叠写切分
  * @param clearSignal 外部清空请求（固化/上屏失败时递增；本布局清笔画并重置段缓存）
  * @param onFinalize 本布局已自行清窗（超长闲置）：会话组件固化活动区
  * @param onFinalizeWindow 删除/回车/空格/符号键按下：会话组件固化活动区并请布局清窗
@@ -140,6 +144,7 @@ private val HandwritingSymbolLabels: List<String> = HandwritingSymbolSyms.keys.t
 fun HandwritingKeyboardLayout(
     modelReady: Boolean,
     statusText: String,
+    singleCharacterMode: Boolean,
     clearSignal: Int,
     onFinalize: () -> Unit,
     onFinalizeWindow: () -> Unit,
@@ -175,8 +180,12 @@ fun HandwritingKeyboardLayout(
     val scope = rememberCoroutineScope()
 
     // 段缓存随组合存活（离开布局即释放）
-    val recognizer = remember {
-        HandwritingSegmenter { s, k -> HandwritingEngine.predict(s, k) }
+    // 识别走统一入口（系统手写引擎优先 → ONNX 回落），与触控笔路径同一份引擎选择
+    val context = LocalContext.current
+    val recognizer = remember(singleCharacterMode) {
+        HandwritingSegmenter(singleCharacterMode = singleCharacterMode) { s, k ->
+            HandwritingRecognition.recognize(context, s, k)
+        }
     }
     var recognizeJob by remember { mutableStateOf<Job?>(null) }
 

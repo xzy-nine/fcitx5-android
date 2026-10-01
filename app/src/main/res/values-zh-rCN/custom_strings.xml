@@ -233,7 +233,7 @@
     <string name="group_handwriting">手写</string>
     <string name="handwriting_input">手写输入</string>
     <string name="handwriting_input_enabled">启用手写输入</string>
-    <string name="handwriting_input_enabled_summary">在工具栏显示手写按钮；需先下载手写模型</string>
+    <string name="handwriting_input_enabled_summary">在工具栏显示手写按钮；需已下载手写模型或设备支持系统手写引擎</string>
     <string name="handwriting_model">手写模型</string>
     <string name="handwriting_model_missing">尚未下载手写模型——请先进入模型市场下载</string>
     <string name="handwriting_model_market">手写模型</string>
@@ -246,7 +246,10 @@
     <string name="handwriting_undo_stroke">撤销一笔</string>
     <string name="handwriting_back_to_keyboard">返回键盘</string>
     <string name="handwriting_candidates">候选</string>
+    <string name="handwriting_single_char">单字识别</string>
+    <string name="handwriting_single_char_summary">整个书写窗口按一个字识别，不做叠写切分；使用系统手写引擎时恒为单字识别</string>
     <string name="handwriting_state_idle">在上方区域书写</string>
+    <string name="handwriting_state_idle_system_engine">在上方区域书写 · 系统引擎</string>
     <string name="handwriting_state_loading">正在加载模型…</string>
     <string name="handwriting_state_recognizing">识别中…</string>
     <string name="handwriting_index_failed">模型列表加载失败</string>
@@ -289,7 +292,7 @@
     <string name="handwriting_stylus_toolbox">手写笔工具箱</string>
     <string name="handwriting_stylus_toolbox_summary">触控笔书写时显示的浮动按键</string>
     <string name="handwriting_system_engine">优先使用系统手写引擎</string>
-    <string name="handwriting_system_engine_summary">设备支持时使用系统手写引擎（小米随手写）；不支持的设备自动回落到内置模型</string>
+    <string name="handwriting_system_engine_summary">设备支持时使用系统手写引擎（小米随手写），手写键盘与触控笔手写共用该选择；不支持的设备自动回落到内置模型</string>
     <string name="handwriting_system_engine_available">状态：本机可用</string>
     <string name="handwriting_system_engine_unavailable">状态：不可用，将使用内置模型</string>
     <string name="handwriting_system_engine_capabilities">文字 %1$s · 手势 %2$s</string>

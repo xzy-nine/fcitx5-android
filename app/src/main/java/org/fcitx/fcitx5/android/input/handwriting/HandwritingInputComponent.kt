@@ -4,8 +4,11 @@
  *
  * custom: 手写输入的会话组件（**第三种键盘布局**）。
  *
- * 由 `KeyboardWindow` 在切到手写布局时持有并驱动：模型加载、活动区文本上屏、
+ * 由 `KeyboardWindow` 在切到手写布局时持有并驱动：识别后端准备、活动区文本上屏、
  * 候选投喂与点选替换；识别窗口与画布见 `HandwritingKeyboardLayout`。
+ *
+ * 识别后端（系统手写引擎优先 → 自带 ONNX 模型回落）与「优先使用系统手写引擎」设置
+ * 都走统一入口 `data/handwriting/HandwritingRecognition.kt`，与触控笔路径同一份口径。
  *
  * 候选经 [HandwritingCandidateFeed] 推给 `InputView` 的候选栏；手写候选不在 fcitx
  * 引擎候选表里，点选由 [pickCandidate] 直接上屏。
@@ -29,8 +32,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.core.CandidateWord
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingCandidate
-import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngine
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingMarketCategory
+import org.fcitx.fcitx5.android.data.handwriting.HandwritingRecognition
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingSegmenter
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.FcitxInputMethodService
@@ -110,8 +113,19 @@ object HandwritingCandidateFeed {
 
 /** 手写键盘的展示态。 */
 data class HandwritingUiState(
+    /** 识别后端就绪：系统手写引擎或自带 ONNX 模型**任一**可用。 */
     val modelReady: Boolean = false,
+    /** 两个后端都不可用（画布不接收笔画，只显示提示）。 */
     val modelMissing: Boolean = false,
+    /** 当前实际使用系统手写引擎（引擎选择设置对所有手写路径生效）。 */
+    val systemEngine: Boolean = false,
+    /**
+     * 单字识别模式：整个识别窗口按**一个字**送识别，不做叠写切分。
+     *
+     * 来源有二：设置项开启，或系统手写引擎正在使用（引擎只能对整段墨迹给一个结果，
+     * 逐段切分既无收益又要多跑很多次反射推理）。
+     */
+    val singleCharacter: Boolean = false,
     val recognizing: Boolean = false,
     val error: String? = null,
 )
@@ -161,19 +175,28 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
     /** 手写输入总开关（工具栏按钮显示条件之一）。 */
     val isEnabled: Boolean get() = prefs.handwritingInputEnabled.getValue()
 
-    /** 模型是否已就绪（模型市场下载完成）。 */
+    /** 识别后端是否可用（系统手写引擎已就绪，或模型市场里的模型已下载）。 */
     fun isModelReady(): Boolean =
-        HandwritingMarketCategory.isReady(context, prefs.handwritingModelId.getValue())
+        HandwritingRecognition.isSystemEngineReady ||
+                HandwritingMarketCategory.isReady(context, prefs.handwritingModelId.getValue())
 
     // ------------------------------------------------------------------
     // 布局进入 / 离开
     // ------------------------------------------------------------------
 
-    /** 切到本布局时调用：接管候选栏并确保模型已加载。 */
+    /** 切到本布局时调用：接管候选栏并确保识别后端已就绪。 */
     fun onEnter() {
         active = ""
         lastSegText = ""
         HandwritingCandidateFeed.set(emptyList(), active = true)
+        // 每次进入都按当前设置重算（用户可能在设置页改过引擎/单字识别开关）
+        _state.value = _state.value.copy(
+            modelReady = HandwritingRecognition.backendReady,
+            modelMissing = false,
+            systemEngine = HandwritingRecognition.isSystemEngineReady,
+            singleCharacter = prefs.handwritingSingleCharMode.getValue() ||
+                    HandwritingRecognition.systemEngineInUse(),
+        )
         ensureModelLoaded()
     }
 
@@ -186,22 +209,23 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
         _state.value = _state.value.copy(recognizing = false, error = null)
     }
 
+    /**
+     * 确保有一个可用的识别后端（统一入口：系统手写引擎优先 → 自带 ONNX 模型，见
+     * [HandwritingRecognition.prepare]）。系统引擎可用时**不加载 ONNX**（省内存与启动时间）。
+     */
     private fun ensureModelLoaded() {
         if (loadJob?.isActive == true) return
         val modelId = prefs.handwritingModelId.getValue()
-        if (HandwritingEngine.isReady && HandwritingEngine.loadedModel() == modelId) {
-            _state.value = _state.value.copy(modelReady = true, modelMissing = false)
-            return
-        }
         loadJob = scope.launch {
-            val ready = HandwritingMarketCategory.isReady(context, modelId)
-            if (!ready) {
-                _state.value = _state.value.copy(modelReady = false, modelMissing = true)
-                return@launch
-            }
-            val ok = HandwritingEngine.load(context, modelId)
-            _state.value = _state.value.copy(modelReady = ok, modelMissing = !ok)
-            if (!ok) Timber.w("handwriting: model loading failed for $modelId")
+            val ok = HandwritingRecognition.prepare(context, modelId)
+            _state.value = _state.value.copy(
+                modelReady = ok,
+                modelMissing = !ok,
+                systemEngine = HandwritingRecognition.isSystemEngineReady,
+                singleCharacter = prefs.handwritingSingleCharMode.getValue() ||
+                        HandwritingRecognition.systemEngineInUse(),
+            )
+            if (!ok) Timber.w("handwriting: no recognition backend available for $modelId")
         }
     }
 
@@ -212,7 +236,8 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
         active = ""
         lastSegText = ""
         HandwritingCandidateFeed.clear()
-        HandwritingEngine.release()
+        // 两个识别后端（系统引擎 + ONNX 会话）由统一入口释放（与触控笔路径共用）
+        HandwritingRecognition.release()
     }
 
     // ------------------------------------------------------------------
