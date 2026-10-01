@@ -200,7 +200,8 @@ dependencies {
     implementation(libs.okhttp.sse)
     implementation(libs.kaml)
     implementation(libs.commons.compress)
-    // custom: 手写识别 —— 官方 ONNX Runtime Java 绑定（native runtime 同版本，见上方 packaging 说明）
+    // custom: ONNX Runtime —— 语音（sherpa-onnx）用：它的 AAR 副本已被摘掉自带的
+    // libonnxruntime.so，native runtime 由本依赖提供（见上方 sherpa-ort-align 说明）
     implementation(libs.onnxruntime.android)
     // custom: 手写识别 —— Google ML Kit 数字墨水（推理在端上；语言模型由用户手动下载）
     implementation(libs.mlkit.digital.ink)

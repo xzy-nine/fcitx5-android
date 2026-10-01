@@ -2,12 +2,11 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  *
- * custom: 模型市场页（**唯一实现**，语音与手写共用）。
+ * custom: 模型市场页（**唯一实现**，按 [MarketCategory] 泛化）。
  *
  * 通过 [MarketCategory] 拿到清单与下载状态，因此页面本身不认识任何具体模型：
- * 「语音模型市场」= `ModelMarketScreen(VoiceMarketCategory)`，
- * 「手写模型市场」= `ModelMarketScreen(HandwritingMarketCategory)`。
- * 分类差异只体现在索引 category / 内置清单 / 就绪判定（见各分类实现）。
+ * 目前唯一分类是语音「语音模型市场」= `ModelMarketScreen(VoiceMarketCategory)`。
+ * 分类差异只体现在索引 category / 内置清单 / 就绪判定（见分类实现）。
  */
 package org.fcitx.fcitx5.android.ui.main.compose.screens
 
@@ -33,7 +32,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import org.fcitx.fcitx5.android.R
-import org.fcitx.fcitx5.android.data.market.MarketCategories
 import org.fcitx.fcitx5.android.data.market.MarketCategory
 import org.fcitx.fcitx5.android.data.market.MarketDownloadState
 import org.fcitx.fcitx5.android.data.market.MarketModel
@@ -150,30 +148,20 @@ private fun LazyListScope.ModelMarketList(
     }
 }
 
-/** 索引地址覆盖输入框（留空 = 用默认端点 index.ximei.me；两个分类共用同一偏好）。 */
+/** 索引地址覆盖输入框（留空 = 用默认端点 index.ximei.me）。 */
 @Composable
 private fun ModelIndexField(category: MarketCategory) {
     val prefs = AppPrefs.getInstance()
-    // 手写有自己的覆盖项；语音沿用原 key。取「当前分类更具体的那个」
-    val isHandwriting = category.id == MarketCategories.HANDWRITING
-    var indexUrl by remember(isHandwriting) {
-        mutableStateOf(
-            if (isHandwriting) prefs.handwriting.handwritingIndexUrl.getValue()
-            else prefs.voice.voiceIndexUrl.getValue()
-        )
+    var indexUrl by remember(category.id) {
+        mutableStateOf(prefs.voice.voiceIndexUrl.getValue())
     }
     TextField(
         value = indexUrl,
         onValueChange = {
             indexUrl = it
-            val trimmed = it.trim()
-            if (isHandwriting) {
-                prefs.handwriting.handwritingIndexUrl.setValue(trimmed)
-            } else {
-                prefs.voice.voiceIndexUrl.setValue(trimmed)
-            }
+            prefs.voice.voiceIndexUrl.setValue(it.trim())
         },
-        label = stringResource(R.string.handwriting_index_url),
+        label = stringResource(R.string.voice_index_url),
         singleLine = true,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
     )

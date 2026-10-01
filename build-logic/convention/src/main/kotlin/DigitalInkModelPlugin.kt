@@ -13,8 +13,8 @@
  * 说明：MDD 的「文件组已下载」状态（`shared_prefs/gms_icing_mdd_*` 等）官方不提供下载，
  * 由仓库内 `app/src/main/mlkit-assets/` 随源码携带，与这里的产物合并成同一 assets 树。
  *
- * 离线构建可用 `-PdigitalInkModel=off` 跳过拉取（包内将不含内置模型，引擎链会回落到
- * 系统内置 / 内置 ONNX，或由用户在设置页手动下载）。
+ * 离线构建可用 `-PdigitalInkModel=off` 跳过拉取（包内将不含内置模型：引擎链会回落到
+ * 系统内置引擎，或由用户在设置页手动下载）。
  */
 
 import org.gradle.api.DefaultTask

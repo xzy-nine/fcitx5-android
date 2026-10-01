@@ -297,7 +297,7 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         },
                     )
                 }
-                // custom: 模型市场（公共组件：语音 asr / 手写 handwriting 只是不同 category）
+                // custom: 模型市场（公共组件，按 category 分流；目前为语音 asr）
                 entry<AppRoute.ModelMarket> { route ->
                     ModelMarketScreen(
                         category = MarketCategories.of(route.category),
@@ -310,15 +310,10 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }
-                // custom: 手写输入设置页（模型市场与语音共用同一个公共市场页，按 category 分流）
+                // custom: 手写输入设置页（引擎下拉 + 谷歌数字墨水模型 + 手势演示）
                 entry<AppRoute.HandwritingSettings> {
                     HandwritingSettingsScreen(
                         onBack = { backStack.removeLastOrNull() },
-                        onOpenModels = {
-                            navigateTo(
-                                AppRoute.ModelMarket(MarketCategories.HANDWRITING)
-                            )
-                        },
                         onOpenGestureDemo = { navigateTo(AppRoute.HandwritingGestureDemo) },
                     )
                 }

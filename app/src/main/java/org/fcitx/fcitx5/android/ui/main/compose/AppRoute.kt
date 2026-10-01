@@ -96,7 +96,7 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object VoiceInputSettings : AppRoute
 
-    /** custom: 模型市场（**公共组件**：语音 `asr` / 手写 `handwriting` 只是不同 category） */
+    /** custom: 模型市场（**公共组件**，按 category 分流；目前为语音 `asr`） */
     @Serializable
     data class ModelMarket(val category: String) : AppRoute
 

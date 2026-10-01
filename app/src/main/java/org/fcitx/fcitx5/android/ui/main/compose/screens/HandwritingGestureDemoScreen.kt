@@ -110,7 +110,7 @@ fun HandwritingGestureDemoScreen(onBack: () -> Unit) {
  * 试用画布：手指或触控笔直接画一笔，实时显示判定结果。
  *
  * 判定与 IME 内完全同一套 [HandwritingGestures]（阈值一致），因此这里学会的动作在
- * 真实书写时表现相同；同时它不依赖手写模型，未下载模型也能用。
+ * 真实书写时表现相同；纯几何判定，不依赖任何识别引擎或模型。
  */
 @Composable
 private fun GestureTryCanvas() {

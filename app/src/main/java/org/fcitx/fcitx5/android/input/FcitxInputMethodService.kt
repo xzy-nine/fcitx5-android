@@ -1460,7 +1460,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
         prefs.candidates.unregisterOnChangeListener(recreateCandidatesViewListener)
         ThemeManager.removeOnChangedListener(onThemeChangeListener)
-        // custom: 释放手写 ONNX 会话（避免 IME 重建时残留 native 会话）
+        // custom: 释放手写识别后端（系统引擎 / 谷歌数字墨水，避免 IME 重建时残留会话）
         inputView.value?.handwritingInput?.release()
         // custom: 释放触控笔手写会话（协程与状态；不调用系统方法）
         stylusHandwriting.release()

@@ -15,7 +15,7 @@
  * - [recognizeText] → 整段墨迹的识别文本（单结果，无候选列表）
  *
  * 引擎可用性由系统设置 `support_native_handwriting` 决定（小米定制版输入法也是这么探测的）；
- * 不可用时所有方法返回 null / false，调用方回落到本项目自带的 ONNX 管线。
+ * 不可用时所有方法返回 null / false，调用方按引擎链回落到谷歌数字墨水（见 `HandwritingRecognition`）。
  */
 package org.fcitx.fcitx5.android.data.handwriting
 
@@ -210,7 +210,7 @@ object XiaomiHandwritingEngine {
      * 文字识别能力是否就绪（jar 中有 `RecognizeFacade` 且系统开关已开）。
      *
      * 与 [isAvailable] 区分：两类 facade 可能只装了一个（实测不同机型/版本不一），
-     * 只装手势时不应把「文字识别」也报成可用（否则会静默回落到 ONNX，看起来像「没调用到」）。
+     * 只装手势时不应把「文字识别」也报成可用（否则会静默回落到谷歌数字墨水，看起来像「没调用到」）。
      */
     fun isTextRecognitionAvailable(context: Context): Boolean =
         isAvailable(context) && recognizeCtor != null
@@ -228,7 +228,7 @@ object XiaomiHandwritingEngine {
      * 两个 facade（文字识别 / 手势）**各自独立尝试**：任一可用即算引擎可用，
      * 单个失败不影响另一个（实测两类能力可能只装了一个）。
      *
-     * @return 是否**文字识别**可用（调用方最常需要它来决定是否跳过 ONNX 加载）；
+     * @return 是否**文字识别**可用（调用方据此决定要不要用本引擎出字）；
      *         手势能力单独用 [isGestureAvailable] 判断
      */
     fun open(context: Context): Boolean {

@@ -6,14 +6,14 @@
  *
  * 两条输入路径只负责收集笔迹（键盘画布 / 系统墨迹窗口），识别后端的选择集中在这里：
  * 设置项 `AppPrefs.handwriting.handwritingEngine`（下拉）决定**首选引擎**，不可用时按
- * [HandwritingEngineKind.chainFrom] 的链回落（系统内置 → 谷歌数字墨水 → 内置 ONNX）：
+ * [HandwritingEngineKind.chainFrom] 的链回落（系统内置 → 谷歌数字墨水）：
  * - **系统内置**（小米随手写，反射系统 jar）：整段墨迹 → 单结果，另提供触控笔手势；
- * - **谷歌数字墨水**（ML Kit digital-ink）：整段墨迹 → 文本候选，语言模型需手动下载；
- * - **内置 ONNX 模型**（[HandwritingEngine]，ochwpro 单字分类器）：给 top-k 候选，
- *   叠写切分由调用侧的 `HandwritingSegmenter` 完成。
+ * - **谷歌数字墨水**（ML Kit digital-ink）：整段墨迹 → 文本候选，中文模型随包内置。
  *
- * 「系统引擎连续空结果」与「谷歌模型没下载」都只是**本引擎本次不可用**，链继续往下走；
- * 走到 ONNX 且模型还没加载时按需懒加载（系统/谷歌可用时不会预加载 ONNX，省内存）。
+ * 两个引擎都是「整段墨迹 → 文本」型（自带整句/多字识别），因此**不做切分**：
+ * 每次识别把当前窗口的整段墨迹交给链上第一个可用的引擎。
+ *
+ * 「系统引擎连续空结果」与「谷歌模型没下载」都只是**本引擎本次不可用**，链继续往下走。
  *
  * ⚠️ 引擎推理不能占主线程：[recognize] 与 [prepare] 自身切后台线程，调用方直接调用即可。
  */
@@ -31,6 +31,9 @@ object HandwritingRecognition {
 
     private const val TAG = "HandwritingRecognition"
 
+    /** 单次识别默认候选数（触控笔路径传自己的值）。 */
+    const val DEFAULT_TOP_K = 8
+
     /**
      * 系统引擎连续返回空结果多少次后放弃（本进程内不再尝试）。
      *
@@ -42,7 +45,7 @@ object HandwritingRecognition {
     /** 系统引擎只给文本、不给概率，补一个固定置信度作首选排序用。 */
     const val SYSTEM_ENGINE_SCORE = 0.95f
 
-    /** 推理串行化：两条路径可能同时在跑（同一个 ONNX 会话 / 同一个识别器实例）。 */
+    /** 推理串行化：两条路径可能同时在跑（同一个识别器实例 / 同一个引擎实例）。 */
     private val mutex = Mutex()
 
     /** 系统引擎初始化锁（[ensureSystemEngine] 是阻塞式的一次性初始化）。 */
@@ -59,7 +62,7 @@ object HandwritingRecognition {
     /** 系统引擎连续返回空的次数（用于自降级判定）。 */
     private var systemEmptyStreak = 0
 
-    /** 谷歌数字墨水模型是否已下载（最近一次探测结果）。 */
+    /** 谷歌数字墨水模型是否已下载/已内置（最近一次探测结果）。 */
     @Volatile
     private var googleModelReady = false
 
@@ -83,8 +86,8 @@ object HandwritingRecognition {
     /**
      * 系统内置引擎是否参与本次选择（引擎链里含它）。
      *
-     * 触控笔手势只有系统引擎能给，故手势能力也随该判定开关（选了谷歌/ONNX 时
-     * 手势退回本地几何启发式，见 `StylusHandwritingController`）。
+     * 触控笔手势只有系统引擎能给，故手势能力也随该判定开关（选了谷歌时手势退回本地
+     * 几何启发式，见 `StylusHandwritingController`）。
      */
     fun systemEngineRequested(): Boolean = engineChain().contains(HandwritingEngineKind.System)
 
@@ -94,27 +97,21 @@ object HandwritingRecognition {
     /** 系统内置引擎是否**正在使用**（在引擎链里 + 已就绪）。 */
     fun systemEngineInUse(): Boolean = systemEngineReady && systemEngineRequested()
 
-    /** 谷歌数字墨水模型是否已下载（最近一次探测结果）。 */
+    /** 谷歌数字墨水模型是否已就绪（最近一次探测结果）。 */
     val isGoogleModelReady: Boolean get() = googleModelReady
 
     /**
-     * 识别后端是否已就绪：**引擎链上任一后端当前可用即可**。
-     *
-     * 不能只看 [HandwritingEngine.isReady]：系统/谷歌引擎可用时不会加载 ONNX（省内存），
-     * 此时它是 false，只看它会把手写整条路径挡在门外。
+     * 识别后端是否已就绪：**引擎链上任一后端当前可用即可**（状态查询，不触发初始化）。
      */
-    val backendReady: Boolean
-        get() = systemEngineReady || googleModelReady || HandwritingEngine.isReady
+    val backendReady: Boolean get() = systemEngineReady || googleModelReady
 
     /** 当前实际可用的引擎（链上第一个就绪的；都不可用时 null）。 */
-    fun activeEngine(): HandwritingEngineKind? =
-        engineChain().firstOrNull { isReady(it) }
+    fun activeEngine(): HandwritingEngineKind? = engineChain().firstOrNull { isReady(it) }
 
     /** 某个引擎当前是否可用（不含触发初始化的动作）。 */
     private fun isReady(kind: HandwritingEngineKind): Boolean = when (kind) {
         HandwritingEngineKind.System -> systemEngineReady
         HandwritingEngineKind.GoogleDigitalInk -> googleModelReady
-        HandwritingEngineKind.Onnx -> HandwritingEngine.isReady
     }
 
     // ------------------------------------------------------------------
@@ -157,35 +154,22 @@ object HandwritingRecognition {
     /**
      * 按引擎链把识别后端准备到**第一个可用**的（幂等）。
      *
-     * 引擎链靠前的那一个可用时不会准备后面的（尤其是不预加载 ONNX，省内存与启动时间）。
-     *
-     * @return 准备好的引擎；链上全不可用时 null（画布显示「模型未就绪」）
+     * @return 准备好的引擎；链上全不可用时 null（画布显示「引擎不可用」）
      */
-    suspend fun prepare(context: Context, modelId: String): HandwritingEngineKind? =
-        withContext(Dispatchers.IO) {
-            for (kind in engineChain()) {
-                when (kind) {
-                    HandwritingEngineKind.System ->
-                        if (ensureSystemEngine(context)) return@withContext HandwritingEngineKind.System
+    suspend fun prepare(context: Context): HandwritingEngineKind? = withContext(Dispatchers.IO) {
+        for (kind in engineChain()) {
+            when (kind) {
+                HandwritingEngineKind.System ->
+                    if (ensureSystemEngine(context)) return@withContext HandwritingEngineKind.System
 
-                    HandwritingEngineKind.GoogleDigitalInk -> {
-                        refreshGoogleModel(context)
-                        if (googleModelReady) return@withContext HandwritingEngineKind.GoogleDigitalInk
-                    }
-
-                    HandwritingEngineKind.Onnx ->
-                        if (loadOnnx(context, modelId)) return@withContext HandwritingEngineKind.Onnx
+                HandwritingEngineKind.GoogleDigitalInk -> {
+                    refreshGoogleModel(context)
+                    if (googleModelReady) return@withContext HandwritingEngineKind.GoogleDigitalInk
                 }
             }
-            Timber.w("$TAG: no engine available in chain ${engineChain()}")
-            null
         }
-
-    /** 按需加载内置 ONNX 模型（同模型已加载则直接命中）。 */
-    private suspend fun loadOnnx(context: Context, modelId: String): Boolean {
-        if (HandwritingEngine.isReady && HandwritingEngine.loadedModel() == modelId) return true
-        if (!HandwritingModelStore.isReady(context, modelId)) return false
-        return HandwritingEngine.load(context, modelId)
+        Timber.w("$TAG: no engine available in chain ${engineChain()}")
+        null
     }
 
     // ------------------------------------------------------------------
@@ -193,18 +177,16 @@ object HandwritingRecognition {
     // ------------------------------------------------------------------
 
     /**
-     * 统一识别入口：笔画序列 → 候选列表（按分数降序）。
+     * 统一识别入口：**整段墨迹** → 候选列表（按分数降序）。
      *
      * 沿引擎链依次尝试，第一个给出结果的引擎即返回；全都没结果时返回空表。
-     * ONNX 是**单字分类器**（无 CTC、不做多字解码），多字切分由调用侧
-     * `HandwritingSegmenter` 完成（每个切分段单独走本入口）。
      *
      * @param strokes 笔画序列（画布坐标，顺序即时间序）
      */
     suspend fun recognize(
         context: Context,
         strokes: List<List<StrokePoint>>,
-        topK: Int = HandwritingEngine.DEFAULT_TOP_K,
+        topK: Int = DEFAULT_TOP_K,
     ): List<HandwritingCandidate> = withContext(Dispatchers.Default) {
         if (strokes.isEmpty()) return@withContext emptyList()
         mutex.withLock {
@@ -245,26 +227,13 @@ object HandwritingRecognition {
                             return@withLock candidates
                         }
                     }
-
-                    HandwritingEngineKind.Onnx -> {
-                        // 走到这一档才按需加载模型（系统/谷歌可用时不会预加载）
-                        if (!HandwritingEngine.isReady) {
-                            loadOnnx(
-                                context,
-                                AppPrefs.getInstance().handwriting.handwritingModelId.getValue(),
-                            )
-                        }
-                        if (!HandwritingEngine.isReady) continue
-                        lastUsedEngine = kind
-                        return@withLock HandwritingEngine.predict(strokes, topK)
-                    }
                 }
             }
             emptyList()
         }
     }
 
-    /** 释放三个后端（IME 销毁时调用；幂等）。 */
+    /** 释放两个后端（IME 销毁时调用；幂等）。 */
     fun release() {
         systemEngineReady = false
         systemEngineGaveUp = false
@@ -273,6 +242,5 @@ object HandwritingRecognition {
         lastUsedEngine = null
         XiaomiHandwritingEngine.close()
         GoogleDigitalInkEngine.close()
-        HandwritingEngine.release()
     }
 }

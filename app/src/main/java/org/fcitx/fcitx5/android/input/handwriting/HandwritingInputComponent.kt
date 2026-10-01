@@ -7,7 +7,7 @@
  * 由 `KeyboardWindow` 在切到手写布局时持有并驱动：识别后端准备、活动区文本上屏、
  * 候选投喂与点选替换；识别窗口与画布见 `HandwritingKeyboardLayout`。
  *
- * 识别后端（系统手写引擎优先 → 自带 ONNX 模型回落）与「优先使用系统手写引擎」设置
+ * 识别后端（系统内置引擎优先 → 谷歌数字墨水回落）与引擎下拉设置
  * 都走统一入口 `data/handwriting/HandwritingRecognition.kt`，与触控笔路径同一份口径。
  *
  * 候选经 [HandwritingCandidateFeed] 推给 `InputView` 的候选栏；手写候选不在 fcitx
@@ -33,9 +33,7 @@ import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.core.CandidateWord
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingCandidate
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngineKind
-import org.fcitx.fcitx5.android.data.handwriting.HandwritingMarketCategory
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingRecognition
-import org.fcitx.fcitx5.android.data.handwriting.HandwritingSegmenter
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.FcitxInputMethodService
 import org.fcitx.fcitx5.android.input.dependency.context
@@ -114,19 +112,12 @@ object HandwritingCandidateFeed {
 
 /** 手写键盘的展示态。 */
 data class HandwritingUiState(
-    /** 识别后端就绪：系统手写引擎或自带 ONNX 模型**任一**可用。 */
+    /** 识别后端就绪：系统内置引擎或谷歌数字墨水**任一**可用。 */
     val modelReady: Boolean = false,
     /** 引擎链上全不可用（画布不接收笔画，只显示提示）。 */
     val modelMissing: Boolean = false,
     /** 当前使用的识别引擎（下拉选择 + 回落结果；状态行回显用）。 */
     val activeEngine: HandwritingEngineKind? = null,
-    /**
-     * 单字识别模式：整个识别窗口按**一个字**送识别，不做叠写切分。
-     *
-     * 来源有二：设置项开启，或当前引擎是「整段墨迹 → 文本」型（系统内置 / 谷歌数字墨水
-     * 自带整句识别，逐段切分既无收益又要多跑很多次引擎推理）。
-     */
-    val singleCharacter: Boolean = false,
     val recognizing: Boolean = false,
     val error: String? = null,
 )
@@ -170,16 +161,14 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
      */
     private var active: String = ""
 
-    /** 最近一次识别「最后一段」（当前正在写的字）的文本：候选点选替换它。 */
+    /** 最近一次识别的文本（候选点选替换它）。 */
     private var lastSegText: String = ""
 
     /** 手写输入总开关（工具栏按钮显示条件之一）。 */
     val isEnabled: Boolean get() = prefs.handwritingInputEnabled.getValue()
 
-    /** 识别后端是否可用（引擎链上任一后端就绪，或模型市场里的模型已下载）。 */
-    fun isModelReady(): Boolean =
-        HandwritingRecognition.backendReady ||
-                HandwritingMarketCategory.isReady(context, prefs.handwritingModelId.getValue())
+    /** 识别后端是否可用（引擎链上任一后端就绪）。 */
+    fun isModelReady(): Boolean = HandwritingRecognition.backendReady
 
     // ------------------------------------------------------------------
     // 布局进入 / 离开
@@ -190,15 +179,13 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
         active = ""
         lastSegText = ""
         HandwritingCandidateFeed.set(emptyList(), active = true)
-        // 每次进入都按当前设置重算（用户可能在设置页改过引擎/单字识别开关）
-        val engine = HandwritingRecognition.activeEngine()
+        // 每次进入都按当前设置重算（用户可能在设置页改过引擎选择/换过语言）
         _state.value = _state.value.copy(
             modelReady = HandwritingRecognition.backendReady,
             modelMissing = false,
-            activeEngine = engine,
-            singleCharacter = singleCharacterFor(engine),
+            activeEngine = HandwritingRecognition.activeEngine(),
         )
-        ensureModelLoaded()
+        ensureEnginePrepared()
     }
 
     /** 离开本布局（切回文本/数字键盘）时调用：交还候选栏。 */
@@ -213,29 +200,20 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
     /**
      * 按设置的引擎下拉（含回落链）准备识别后端，见 [HandwritingRecognition.prepare]。
      *
-     * 链上靠前的引擎可用时**不会准备后面的**（尤其不预加载 ONNX，省内存与启动时间）。
+     * 链上靠前的引擎可用时**不会准备后面的**（省内存与启动时间）。
      */
-    private fun ensureModelLoaded() {
+    private fun ensureEnginePrepared() {
         if (loadJob?.isActive == true) return
-        val modelId = prefs.handwritingModelId.getValue()
         loadJob = scope.launch {
-            val engine = HandwritingRecognition.prepare(context, modelId)
+            val engine = HandwritingRecognition.prepare(context)
             _state.value = _state.value.copy(
                 modelReady = engine != null,
                 modelMissing = engine == null,
                 activeEngine = engine,
-                singleCharacter = singleCharacterFor(engine),
             )
-            if (engine == null) Timber.w("handwriting: no engine available for $modelId")
+            if (engine == null) Timber.w("handwriting: no engine available")
         }
     }
-
-    /**
-     * 单字识别是否生效：设置项开启，或当前引擎是「整段墨迹 → 文本」型
-     * （系统内置 / 谷歌数字墨水自带整句识别，不需要也经不起逐段切分）。
-     */
-    private fun singleCharacterFor(engine: HandwritingEngineKind?): Boolean =
-        prefs.handwritingSingleCharMode.getValue() || engine?.wholeInk == true
 
     /** IME 销毁时释放会话。 */
     fun release() {
@@ -244,7 +222,7 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
         active = ""
         lastSegText = ""
         HandwritingCandidateFeed.clear()
-        // 两个识别后端（系统引擎 + ONNX 会话）由统一入口释放（与触控笔路径共用）
+        // 两个识别后端（系统引擎 + 谷歌数字墨水）由统一入口释放（与触控笔路径共用）
         HandwritingRecognition.release()
     }
 
@@ -258,40 +236,36 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
     }
 
     /**
-     * 识别结果上报（时间序；最后一段=当前正在写的字）。需在主线程调用。
+     * 识别结果上报（整段墨迹的识别结果）。需在主线程调用。
      *
-     * 活动区整体重写为各段首选字的拼接，候选栏取最后一段的候选，并重置候选栏存活计时。
+     * 活动区整体重写为首选文本，候选栏取同一批候选，并重置候选栏存活计时。
      */
-    fun onRecognition(segments: List<HandwritingSegmenter.Segment>) {
-        // 回落链可能在识别期换引擎（如系统引擎连续空结果后走 ONNX）：状态行/单字模式跟着更新
+    fun onRecognition(candidates: List<HandwritingCandidate>) {
+        // 回落链可能在识别期换引擎（如系统引擎连续空结果后走谷歌）：状态行跟着更新
         syncActiveEngine()
         scheduleCandidatesClear()
-        if (segments.isEmpty()) {
+        if (candidates.isEmpty()) {
             HandwritingCandidateFeed.set(emptyList(), active = true)
             return
         }
-        val segText = segments.joinToString("") { it.candidates.firstOrNull()?.char.orEmpty() }
-        val last = segments.last().candidates.firstOrNull()?.char.orEmpty()
-        HandwritingCandidateFeed.set(segments.last().candidates, active = true)
+        val text = candidates.first().char
+        HandwritingCandidateFeed.set(candidates, active = true)
         if (prefs.handwritingAutoCommit.getValue()) {
-            val applied = applyActive(segText)
-            if (applied) lastSegText = last
+            val applied = applyActive(text)
+            if (applied) lastSegText = text
             _state.value = _state.value.copy(error = if (applied) null else REPLACE_FAILED)
         } else {
             // 未开启边写边上屏：只在点选候选时上屏
-            lastSegText = last
+            lastSegText = text
             _state.value = _state.value.copy(error = null)
         }
     }
 
-    /** 把「实际产出结果的引擎」同步进展示态（含单字识别模式跟着引擎变）。 */
+    /** 把「实际产出结果的引擎」同步进展示态。 */
     private fun syncActiveEngine() {
         val used = HandwritingRecognition.lastUsedEngine ?: return
         if (_state.value.activeEngine == used) return
-        _state.value = _state.value.copy(
-            activeEngine = used,
-            singleCharacter = singleCharacterFor(used),
-        )
+        _state.value = _state.value.copy(activeEngine = used)
     }
 
     /** 候选栏在下次识别推送时被替换，否则推送后 [CANDIDATES_LINGER_MS] 自动清空。 */
@@ -301,15 +275,6 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
             delay(CANDIDATES_LINGER_MS)
             HandwritingCandidateFeed.set(emptyList(), active = true)
         }
-    }
-
-    /**
-     * 最早段固化出窗（滑窗）：其文本已在屏上、退出可替换区。
-     * 需在主线程调用（布局侧识别循环里切主线程派发）。
-     */
-    fun onSegmentSettled(text: String) {
-        if (text.isEmpty()) return
-        active = if (active.length >= text.length) active.drop(text.length) else ""
     }
 
     /**

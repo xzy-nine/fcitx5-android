@@ -15,44 +15,24 @@ class HandwritingEngineKindTest {
             listOf(
                 HandwritingEngineKind.System,
                 HandwritingEngineKind.GoogleDigitalInk,
-                HandwritingEngineKind.Onnx,
             ),
             HandwritingEngineKind.entries.toList(),
         )
     }
 
     @Test
-    fun `system engine falls back to google then onnx`() {
+    fun `system engine falls back to google`() {
         assertEquals(
-            listOf(
-                HandwritingEngineKind.System,
-                HandwritingEngineKind.GoogleDigitalInk,
-                HandwritingEngineKind.Onnx,
-            ),
+            listOf(HandwritingEngineKind.System, HandwritingEngineKind.GoogleDigitalInk),
             HandwritingEngineKind.chainFrom(HandwritingEngineKind.System),
         )
     }
 
     @Test
-    fun `google falls back to onnx only`() {
+    fun `google is the last resort`() {
         assertEquals(
-            listOf(HandwritingEngineKind.GoogleDigitalInk, HandwritingEngineKind.Onnx),
+            listOf(HandwritingEngineKind.GoogleDigitalInk),
             HandwritingEngineKind.chainFrom(HandwritingEngineKind.GoogleDigitalInk),
         )
-    }
-
-    @Test
-    fun `onnx is the last resort`() {
-        assertEquals(
-            listOf(HandwritingEngineKind.Onnx),
-            HandwritingEngineKind.chainFrom(HandwritingEngineKind.Onnx),
-        )
-    }
-
-    @Test
-    fun `system and google recognize whole ink, onnx needs the segmenter`() {
-        assertEquals(true, HandwritingEngineKind.System.wholeInk)
-        assertEquals(true, HandwritingEngineKind.GoogleDigitalInk.wholeInk)
-        assertEquals(false, HandwritingEngineKind.Onnx.wholeInk)
     }
 }

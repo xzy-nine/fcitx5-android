@@ -13,7 +13,6 @@ import androidx.preference.PreferenceManager
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.InputFeedbacks.InputFeedbackMode
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngineKind
-import org.fcitx.fcitx5.android.data.handwriting.HandwritingModelCatalog
 import org.fcitx.fcitx5.android.data.voice.VoiceModelCatalog
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesMode
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesOrientation
@@ -614,9 +613,8 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
     /**
      * custom: 手写输入（独立输入方案）。
      *
-     * 推理侧用官方 ONNX Runtime 的 Java API 加载 ochwpro.onnx（StrokeTransformer，
-     * 7356 类中文单字），模型不随包分发，统一走模型市场 `category: handwriting` 分类下载。
-     * 与语音共用同一份索引端点与 `filesDir/models/` 目录。
+     * 识别后端 = 系统内置引擎（小米随手写）/ 谷歌数字墨水（ML Kit），两者都是端上整段识别，
+     * 不依赖外部模型文件；谷歌的中文模型随包内置（见 `MlKitBundledModel`）。
      */
     inner class Handwriting : ManagedPreferenceCategory(R.string.handwriting_input, sharedPreferences) {
         /** 手写输入总开关（工具栏手写按钮的显示条件之一）。 */
@@ -627,35 +625,12 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             summary = R.string.handwriting_input_enabled_summary
         )
 
-        /** 当前选中的手写模型 id（模型市场索引里的 id）。 */
-        val handwritingModelId = ManagedPreference.PString(
-            sharedPreferences, "handwriting_model_id", HandwritingModelCatalog.DEFAULT_ID
-        ).apply { register() }
-
-        /** 手写模型索引地址覆盖（空 = 沿用语音的索引地址，其次内置默认端点）。 */
-        val handwritingIndexUrl = ManagedPreference.PString(
-            sharedPreferences, "handwriting_index_url", ""
-        ).apply { register() }
-
         /** 边写边上屏（替换式）；关闭后只在点选候选时上屏。 */
         val handwritingAutoCommit = switch(
             R.string.handwriting_auto_commit,
             "handwriting_auto_commit",
             true,
             summary = R.string.handwriting_auto_commit_summary
-        ) { handwritingInputEnabled.getValue() }
-
-        /**
-         * 单字识别：整个识别窗口按**一个字**送识别，不做叠写切分。
-         *
-         * 默认关闭（保留叠写多字切分）；系统手写引擎在使用时**恒按单字识别**
-         * （引擎只能对整段墨迹给一个结果），见 `HandwritingUiState.singleCharacter`。
-         */
-        val handwritingSingleCharMode = switch(
-            R.string.handwriting_single_char,
-            "handwriting_single_char_mode",
-            false,
-            summary = R.string.handwriting_single_char_summary
         ) { handwritingInputEnabled.getValue() }
 
         /** 触控笔书写时显示浮动工具箱（撤销/重做/空格/回车/退格/键盘/关闭）。 */
@@ -667,8 +642,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         ) { handwritingInputEnabled.getValue() }
 
         /**
-         * 手写识别引擎（下拉），**声明顺序即默认优先级**：
-         * 系统内置（小米随手写）→ 谷歌数字墨水 → 内置 ONNX 模型。
+         * 手写识别引擎（下拉），**声明顺序即默认优先级**：系统内置（小米随手写）→ 谷歌数字墨水。
          *
          * 选中项优先，不可用时按该顺序继续回落；手写键盘与触控笔手写共用该选择。
          */
@@ -686,20 +660,17 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                     listOf(
                         handwritingInputEnabled.key,
                         handwritingAutoCommit.key,
-                        handwritingSingleCharMode.key,
                         stylusToolboxEnabled.key,
                         handwritingEngine.key,
-                        handwritingModelId.key,
-                        handwritingIndexUrl.key,
                     )
                 )
             )
         }
 
         /**
-         * 旧「优先使用系统手写引擎」开关（PBool）→ 新引擎下拉的一次性迁移。
+         * 旧「优先使用系统手写引擎」开关（PBool）→ 引擎下拉的一次性迁移。
          *
-         * 旧值为 false（不用系统引擎）等价于直接选内置 ONNX 模型；为 true（默认）等价于
+         * 旧值为 false（不用系统引擎）等价于「只用谷歌数字墨水」；为 true（默认）等价于
          * 保持默认的「系统内置优先」。仅在新键还不存在时迁移一次。
          */
         private fun migrateSystemEngineSwitch() {
@@ -707,7 +678,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             if (sharedPreferences.contains(handwritingEngine.key)) return
             if (!sharedPreferences.contains(legacyKey)) return
             if (!sharedPreferences.getBoolean(legacyKey, true)) {
-                handwritingEngine.setValue(HandwritingEngineKind.Onnx)
+                handwritingEngine.setValue(HandwritingEngineKind.GoogleDigitalInk)
             }
         }
     }
@@ -735,7 +706,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
     val advanced = Advanced().register()
     // custom: 语音输入（Xime 核心移植）
     val voice = Voice().register()
-    // custom: 手写输入（独立输入方案，模型复用模型市场的 handwriting 分类）
+    // custom: 手写输入（独立输入方案，端上引擎：系统内置 / 谷歌数字墨水）
     val handwriting = Handwriting().register()
 
     @Keep

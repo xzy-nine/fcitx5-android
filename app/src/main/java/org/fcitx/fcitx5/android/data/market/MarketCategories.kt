@@ -7,18 +7,15 @@
  */
 package org.fcitx.fcitx5.android.data.market
 
-import org.fcitx.fcitx5.android.data.handwriting.HandwritingMarketCategory
 import org.fcitx.fcitx5.android.data.voice.VoiceMarketCategory
 
 object MarketCategories {
 
     /** 路由参数用的稳定分类 id（等于索引里的 `category` 值）。 */
     const val ASR = ModelIndex.CATEGORY_ASR
-    const val HANDWRITING = ModelIndex.CATEGORY_HANDWRITING
 
     fun of(id: String): MarketCategory = when (id) {
         ASR -> VoiceMarketCategory
-        HANDWRITING -> HandwritingMarketCategory
         else -> VoiceMarketCategory
     }
 }

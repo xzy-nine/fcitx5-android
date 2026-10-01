@@ -167,7 +167,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
                     val hs = handwriting.state.collectAsState().value
                     val handwritingClearSignal by handwriting.clearSignal.collectAsState()
                     val status = when {
-                        hs.modelMissing -> stringResource(R.string.handwriting_model_missing)
+                        hs.modelMissing -> stringResource(R.string.handwriting_engine_unavailable)
                         !hs.modelReady -> stringResource(R.string.handwriting_state_loading)
                         hs.recognizing -> stringResource(R.string.handwriting_state_recognizing)
                         // 引擎选择对所有路径生效：状态行回显当前后端（下拉选择 + 回落结果）
@@ -181,13 +181,11 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
                     HandwritingKeyboardLayout(
                         modelReady = hs.modelReady,
                         statusText = hs.error ?: status,
-                        singleCharacterMode = hs.singleCharacter,
                         clearSignal = handwritingClearSignal,
                         onFinalize = handwriting::finalizeActive,
                         onFinalizeWindow = handwriting::finalizeWindow,
                         onSpace = handwriting::onSpacePressed,
                         onRecognition = handwriting::onRecognition,
-                        onSegmentSettled = handwriting::onSegmentSettled,
                         onRecognizing = handwriting::onRecognizing,
                         keyActionListener = keyActionListener,
                         modifier = Modifier.fillMaxSize(),

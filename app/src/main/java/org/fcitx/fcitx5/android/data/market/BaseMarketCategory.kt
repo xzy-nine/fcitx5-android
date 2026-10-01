@@ -58,7 +58,7 @@ abstract class BaseMarketCategory(
     /** 索引里请求的模型应落到的目录。 */
     protected abstract fun targetDir(context: Context, model: MarketModel): File
 
-    /** 该模型在本地是否可用（语音 4 文件 / 手写 onnx + 字符索引）。 */
+    /** 该模型在本地是否可用（由各分类定义自己的就绪条件）。 */
     abstract fun isReady(context: Context, modelId: String): Boolean
 
     final override fun isDownloaded(context: Context, model: MarketModel): Boolean =

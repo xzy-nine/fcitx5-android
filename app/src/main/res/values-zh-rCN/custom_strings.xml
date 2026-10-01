@@ -233,21 +233,14 @@
     <string name="group_handwriting">手写</string>
     <string name="handwriting_input">手写输入</string>
     <string name="handwriting_input_enabled">启用手写输入</string>
-    <string name="handwriting_input_enabled_summary">在工具栏显示手写按钮；需已下载手写模型或设备支持系统手写引擎</string>
-    <string name="handwriting_model">手写模型</string>
-    <string name="handwriting_model_missing">尚未下载手写模型——请先进入模型市场下载</string>
-    <string name="handwriting_model_market">手写模型</string>
-    <string name="handwriting_model_market_summary">下载或删除手写识别模型</string>
-    <string name="handwriting_index_url">索引来源地址</string>
-    <string name="handwriting_index_url_summary">留空则沿用语音输入的索引来源</string>
+    <string name="handwriting_input_enabled_summary">在工具栏显示手写按钮；系统内置引擎或谷歌数字墨水任一可用即可</string>
+    <string name="handwriting_engine_unavailable">手写引擎不可用——请在设置中改选引擎或下载对应模型</string>
     <string name="handwriting_auto_commit">边写边上屏</string>
     <string name="handwriting_auto_commit_summary">识别出字就自动上屏；关闭后仅在点选候选时上屏</string>
     <string name="handwriting_clear">清空</string>
     <string name="handwriting_undo_stroke">撤销一笔</string>
     <string name="handwriting_back_to_keyboard">返回键盘</string>
     <string name="handwriting_candidates">候选</string>
-    <string name="handwriting_single_char">单字识别</string>
-    <string name="handwriting_single_char_summary">整个书写窗口按一个字识别，不做叠写切分；使用系统手写引擎时恒为单字识别</string>
     <string name="handwriting_state_idle">在上方区域书写</string>
     <string name="handwriting_state_idle_engine">在上方区域书写 · %1$s</string>
     <string name="handwriting_state_loading">正在加载模型…</string>
@@ -256,7 +249,7 @@
     <string name="handwriting_index_using_builtin">正在使用内置模型列表</string>
     <string name="handwriting_download_failed">下载失败</string>
     <string name="handwriting_downloading">下载中…</string>
-    <string name="handwriting_model_size">体积</string>
+
     <string name="handwriting_model_state_ready">已下载</string>
     <string name="handwriting_model_state_missing">未下载</string>
     <string name="handwriting_model_delete">删除模型</string>
@@ -292,10 +285,9 @@
     <string name="handwriting_stylus_toolbox">手写笔工具箱</string>
     <string name="handwriting_stylus_toolbox_summary">触控笔书写时显示的浮动按键</string>
     <string name="handwriting_engine">识别引擎</string>
-    <string name="handwriting_engine_summary">选中项优先，不可用时按 系统内置 → 谷歌数字墨水 → 内置模型 回落；手写键盘与触控笔手写共用</string>
+    <string name="handwriting_engine_summary">选中项优先，不可用时按 系统内置 → 谷歌数字墨水 回落；手写键盘与触控笔手写共用</string>
     <string name="handwriting_engine_system">系统内置（小米随手写）</string>
     <string name="handwriting_engine_google">谷歌数字墨水</string>
-    <string name="handwriting_engine_onnx">内置模型（ONNX）</string>
     <string name="handwriting_google_model">下载谷歌数字墨水模型</string>
     <string name="handwriting_google_model_checking">正在检测模型状态…</string>
     <string name="handwriting_google_model_downloaded">模型已就绪（随包内置或已下载）</string>

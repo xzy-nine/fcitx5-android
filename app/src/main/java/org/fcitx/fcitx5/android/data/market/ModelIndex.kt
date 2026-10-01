@@ -2,12 +2,10 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  *
- * custom: 模型市场的远程索引（语音与手写共用同一个端点与同一份 YAML）。
+ * custom: 模型市场的远程索引（语音用；手写已改为端上引擎 + 随包内置模型，不再走市场）。
  *
- * 拉取 `<base>/models/index.yaml`，由调用方给出 **category**：
- * - 语音取 `asr`（[org.fcitx.fcitx5.android.data.market.VoiceMarketCategory]）
- * - 手写取 `handwriting`（[org.fcitx.fcitx5.android.data.market.HandwritingMarketCategory]）
- *
+ * 拉取 `<base>/models/index.yaml`，由调用方给出 **category**（语音取 `asr`，
+ * 见 [org.fcitx.fcitx5.android.data.market.VoiceMarketCategory]）；
  * 索引不可用时由各分类回落到自己的内置清单。
  */
 package org.fcitx.fcitx5.android.data.market
@@ -33,7 +31,6 @@ object ModelIndex {
 
     /** 分类 id（= 索引里的 `category` 字段值）。 */
     const val CATEGORY_ASR = "asr"
-    const val CATEGORY_HANDWRITING = "handwriting"
 
     private val yaml = Yaml(configuration = YamlConfiguration(strictMode = false))
 
@@ -43,17 +40,12 @@ object ModelIndex {
         .followRedirects(true)
         .build()
 
-    /**
-     * 索引地址优先级：手写自己的覆盖值 → 语音的覆盖值 → 内置默认端点。
-     * 绝大多数用户只需配一次端点，两个分类共用。
-     */
+    /** 索引地址：语音的覆盖值 → 内置默认端点。 */
     private fun baseUrl(): String {
         val prefs = runCatching { AppPrefs.getInstance() }.getOrNull()
-        val handwriting = runCatching { prefs?.handwriting?.handwritingIndexUrl?.getValue() }
-            .getOrNull().orEmpty()
         val voice = runCatching { prefs?.voice?.voiceIndexUrl?.getValue() }
             .getOrNull().orEmpty()
-        return handwriting.ifBlank { voice }.ifBlank { DEFAULT_BASE_URL }.trimEnd('/')
+        return voice.ifBlank { DEFAULT_BASE_URL }.trimEnd('/')
     }
 
     /** 拉取并解析指定分类的条目；失败返回空列表（调用方据此回落内置清单）。 */

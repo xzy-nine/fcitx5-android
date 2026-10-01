@@ -237,21 +237,14 @@
     <string name="group_handwriting">Handwriting</string>
     <string name="handwriting_input">Handwriting</string>
     <string name="handwriting_input_enabled">Enable handwriting input</string>
-    <string name="handwriting_input_enabled_summary">Shows the handwriting button on the toolbar; requires a downloaded model or a supported system handwriting engine</string>
-    <string name="handwriting_model">Handwriting model</string>
-    <string name="handwriting_model_missing">No model downloaded — open the model marketplace first</string>
-    <string name="handwriting_model_market">Handwriting models</string>
-    <string name="handwriting_model_market_summary">Download or remove the handwriting recognition model</string>
-    <string name="handwriting_index_url">Index source URL</string>
-    <string name="handwriting_index_url_summary">Leave empty to reuse the voice input index source</string>
+    <string name="handwriting_input_enabled_summary">Shows the handwriting button on the toolbar; either the system engine or Google digital ink must be available</string>
+    <string name="handwriting_engine_unavailable">Handwriting engine unavailable — pick another engine or download its model in settings</string>
     <string name="handwriting_auto_commit">Insert text while writing</string>
     <string name="handwriting_auto_commit_summary">The recognized character is committed as soon as it is recognized; turn off to pick from candidates only</string>
     <string name="handwriting_clear">Clear</string>
     <string name="handwriting_undo_stroke">Undo stroke</string>
     <string name="handwriting_back_to_keyboard">Back to keyboard</string>
     <string name="handwriting_candidates">Candidates</string>
-    <string name="handwriting_single_char">Single-character recognition</string>
-    <string name="handwriting_single_char_summary">Treat the whole writing window as one character (no multi-character segmentation); the system handwriting engine always works this way</string>
     <string name="handwriting_state_idle">Write in the area above</string>
     <string name="handwriting_state_idle_engine">Write in the area above · %1$s</string>
     <string name="handwriting_state_loading">Loading model…</string>
@@ -260,7 +253,7 @@
     <string name="handwriting_index_using_builtin">Using the built-in model list</string>
     <string name="handwriting_download_failed">Download failed</string>
     <string name="handwriting_downloading">Downloading…</string>
-    <string name="handwriting_model_size">Size</string>
+
     <string name="handwriting_model_state_ready">Downloaded</string>
     <string name="handwriting_model_state_missing">Not downloaded</string>
     <string name="handwriting_model_delete">Delete model</string>
@@ -296,10 +289,9 @@
     <string name="handwriting_stylus_toolbox">Stylus toolbox</string>
     <string name="handwriting_stylus_toolbox_summary">Floating keys shown while writing with the stylus</string>
     <string name="handwriting_engine">Recognition engine</string>
-    <string name="handwriting_engine_summary">The selected engine is tried first, then falls back in order: system → Google digital ink → built-in model; shared by the handwriting keyboard and stylus handwriting</string>
+    <string name="handwriting_engine_summary">The selected engine is tried first, then falls back in order: system → Google digital ink; shared by the handwriting keyboard and stylus handwriting</string>
     <string name="handwriting_engine_system">System (Xiaomi Pencil Engine)</string>
     <string name="handwriting_engine_google">Google digital ink</string>
-    <string name="handwriting_engine_onnx">Built-in model (ONNX)</string>
     <string name="handwriting_google_model">Download Google digital ink model</string>
     <string name="handwriting_google_model_checking">Checking model status…</string>
     <string name="handwriting_google_model_downloaded">Model ready (bundled with the app or downloaded)</string>

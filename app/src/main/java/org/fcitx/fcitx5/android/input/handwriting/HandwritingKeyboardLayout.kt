@@ -8,13 +8,11 @@
  *   （返回 ABC / 123 / 符号页 / 空格），竖列与底行由 `ComposeKeyColumn` / `ComposeKeyRow` 渲染；
  * - 右侧列的符号键单独填充且不可自定义，键值与主键盘同口径（由引擎按全半角/标点设置转换）；
  * - 候选由 `HandwritingInputComponent` 推给候选栏，不绘制在本布局；
- * - 识别走统一入口 `data/handwriting/HandwritingRecognition.kt`（系统手写引擎优先 → ONNX 回落，
- *   与触控笔手写同一份引擎选择）；`singleCharacterMode` 时整窗按一个字送识别、不做叠写切分；
+ * - 识别走统一入口 `data/handwriting/HandwritingRecognition.kt`（系统手写引擎优先 → 谷歌数字墨水
+ *   回落，与触控笔手写同一份引擎选择）；两个引擎都是**整段墨迹 → 文本**，故每次把整个窗口送进去；
  * - 识别窗口：每落一笔全窗重新识别；停顿只把笔画变淡，
  *   继续闲置 [HW_CLEAR_IDLE_MS] 才清空窗口（墨迹同步消失）并回调 `onFinalize`；
- * - 渲染：`[0,fade)` 变淡、`[fade,end)` 正常；笔画离开识别窗口（固化/清窗）时墨迹同步消失；
- * - 固化：窗口笔画数超过 `HW_RECOGNIZE_WINDOW_LIMIT`，或段数饱和且存在已完成前缀时，
- *   把最早段移出窗口并回调 `onSegmentSettled`；
+ * - 渲染：停顿提示时整窗变淡；笔画离开识别窗口（清窗）时墨迹同步消失；
  * - ⚠️ `Canvas` 的 `pointerInput` 不挂 `key(...)`：否则每个采样点都会重建手势节点并
  *   CANCEL 当前笔画。
  */
@@ -64,7 +62,7 @@ import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.KeySym
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingRecognition
-import org.fcitx.fcitx5.android.data.handwriting.HandwritingSegmenter
+import org.fcitx.fcitx5.android.data.handwriting.HandwritingCandidate
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingStrokeFx
 import org.fcitx.fcitx5.android.data.handwriting.StrokePoint
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
@@ -97,9 +95,6 @@ private const val STROKE_START_THRESHOLD_PX = 12f
  */
 private const val HW_CLEAR_IDLE_MS = 300L
 
-/** 单次识别任务里最多连续固化的轮数。 */
-private const val MAX_SETTLE_ROUNDS = 8
-
 /** 底栏小键（ABC / 123 / 符号 / 回车）与右侧竖列的宽度占键盘宽比例。 */
 private const val HW_SIDE_KEY_WIDTH_FRACTION = 0.15f
 
@@ -130,13 +125,11 @@ private val HandwritingSymbolLabels: List<String> = HandwritingSymbolSyms.keys.t
  *
  * @param modelReady 识别后端是否就绪（false 时画布不接收笔画，只显示提示）
  * @param statusText 状态文案（加载中 / 识别中 / 空闲 / 错误）
- * @param singleCharacterMode 单字识别：整个识别窗口按一个字送识别，不做叠写切分
- * @param clearSignal 外部清空请求（固化/上屏失败时递增；本布局清笔画并重置段缓存）
+ * @param clearSignal 外部清空请求（固化/上屏失败时递增；本布局清笔画并重置识别窗口）
  * @param onFinalize 本布局已自行清窗（超长闲置）：会话组件固化活动区
  * @param onFinalizeWindow 删除/回车/空格/符号键按下：会话组件固化活动区并请布局清窗
  * @param onSpace 空格键按下：返回 true 表示已被候选词消费（不上屏空格）
- * @param onRecognition 识别结果（时间序；最后一段=当前正在写的字）
- * @param onSegmentSettled 最早段被固化出窗（文本已上屏，参数为固化的文本）
+ * @param onRecognition 整段墨迹的识别结果（候选，按分数降序）
  * @param onRecognizing 识别忙闲（状态行用）
  * @param keyActionListener 底部键行与右侧列的按键出口
  */
@@ -144,13 +137,11 @@ private val HandwritingSymbolLabels: List<String> = HandwritingSymbolSyms.keys.t
 fun HandwritingKeyboardLayout(
     modelReady: Boolean,
     statusText: String,
-    singleCharacterMode: Boolean,
     clearSignal: Int,
     onFinalize: () -> Unit,
     onFinalizeWindow: () -> Unit,
     onSpace: () -> Boolean,
-    onRecognition: (List<HandwritingSegmenter.Segment>) -> Unit,
-    onSegmentSettled: (String) -> Unit,
+    onRecognition: (List<HandwritingCandidate>) -> Unit,
     onRecognizing: (Boolean) -> Unit,
     keyActionListener: KeyActionListener?,
     modifier: Modifier = Modifier,
@@ -159,9 +150,6 @@ fun HandwritingKeyboardLayout(
     val strokes = remember { mutableStateListOf<List<StrokePoint>>() }
     var currentStroke by remember { mutableStateOf<List<StrokePoint>>(emptyList()) }
     var strokeCount by remember { mutableIntStateOf(0) }
-
-    /** 已完成前缀（段边界间隔 ≥ [HW_FADE_GAP_MS] 之前），仅影响渲染。 */
-    var donePrefix by remember { mutableIntStateOf(0) }
 
     /** 停顿提示：整窗变淡（不清笔画）。 */
     var idleHidden by remember { mutableStateOf(false) }
@@ -179,14 +167,9 @@ fun HandwritingKeyboardLayout(
         remember { AppPrefs.getInstance().symbols }.symbolSliderVisibleCount.preferenceState()
     val scope = rememberCoroutineScope()
 
-    // 段缓存随组合存活（离开布局即释放）
-    // 识别走统一入口（系统手写引擎优先 → ONNX 回落），与触控笔路径同一份引擎选择
+    // 识别走统一入口（系统手写引擎优先 → 谷歌数字墨水回落），与触控笔路径同一份引擎选择；
+    // 两个引擎都是整段墨迹识别，故直接把整个窗口送进去，不做切分。
     val context = LocalContext.current
-    val recognizer = remember(singleCharacterMode) {
-        HandwritingSegmenter(singleCharacterMode = singleCharacterMode) { s, k ->
-            HandwritingRecognition.recognize(context, s, k)
-        }
-    }
     var recognizeJob by remember { mutableStateOf<Job?>(null) }
 
     // 空格：有候选词时点选首选、不上屏空格
@@ -244,9 +227,6 @@ fun HandwritingKeyboardLayout(
         )
     }
 
-    /** 变淡范围起点：停顿提示时是整窗，否则是已完成前缀。 */
-    val fadeStart = if (idleHidden) strokes.size else donePrefix
-
     // 停顿达阈值后整窗变淡；继续闲置 HW_CLEAR_IDLE_MS 则清空窗口（墨迹同步消失）并固化活动区
     LaunchedEffect(lastStrokeEndMs, strokeCount) {
         if (lastStrokeEndMs <= 0L || strokeCount <= 0) return@LaunchedEffect
@@ -259,14 +239,12 @@ fun HandwritingKeyboardLayout(
         strokes.clear()
         currentStroke = emptyList()
         strokeCount = 0
-        donePrefix = 0
         idleHidden = false
         lastStrokeEndMs = 0L
-        recognizer.reset()
         onFinalize()
     }
 
-    // 外部清空请求：清笔画并重置段缓存
+    // 外部清空请求：清笔画并重置识别窗口
     LaunchedEffect(clearSignal) {
         if (clearSignal <= 0) return@LaunchedEffect
         recognizeJob?.cancel()
@@ -274,10 +252,8 @@ fun HandwritingKeyboardLayout(
         strokes.clear()
         currentStroke = emptyList()
         strokeCount = 0
-        donePrefix = 0
         idleHidden = false
         lastStrokeEndMs = 0L
-        recognizer.reset()
         onRecognizing(false)
     }
 
@@ -287,47 +263,16 @@ fun HandwritingKeyboardLayout(
             val self = coroutineContext[Job]
             onRecognizing(true)
             try {
-                var round = 0
-                while (isActive && round++ < MAX_SETTLE_ROUNDS) {
-                    val window = strokes.toList()
-                    if (window.isEmpty()) {
-                        onRecognition(emptyList())
-                        return@launch
-                    }
-                    val gaps = HandwritingStrokeFx.windowGaps(window)
-                    val result = withContext(Dispatchers.Default) {
-                        recognizer.recognize(window, gaps)
-                    }
-                    if (!isActive) return@launch
-                    val segments = result.segments
-                    if (segments.isEmpty()) {
-                        onRecognition(emptyList())
-                        return@launch
-                    }
-                    onRecognition(segments)
-
-                    // 已完成前缀只做视觉变淡
-                    val done = HandwritingStrokeFx.settledStrokesBeforeCurrent(segments, gaps)
-                    donePrefix = done
-
-                    // 固化：窗口超限，或段数饱和且有已完成前缀
-                    val over = HandwritingStrokeFx.isWindowOverLimit(window.size)
-                    val saturated = HandwritingStrokeFx.needsSettleOnSaturation(segments.size, done)
-                    if (!over && !saturated) return@launch
-                    val settleStrokes = if (over) segments.first().strokeCount else done
-                    if (settleStrokes <= 0) return@launch
-                    val settledText = segments
-                        .filter { it.startStroke + it.strokeCount <= settleStrokes }
-                        .mapNotNull { it.candidates.firstOrNull()?.char }
-                        .joinToString("")
-                    onSegmentSettled(settledText)
-                    withContext(Dispatchers.Main) {
-                        repeat(settleStrokes) { if (strokes.isNotEmpty()) strokes.removeAt(0) }
-                        strokeCount = strokes.size
-                        donePrefix = 0
-                        recognizer.onStrokesTrimmed(settleStrokes)
-                    }
+                val window = strokes.toList()
+                if (window.isEmpty()) {
+                    onRecognition(emptyList())
+                    return@launch
                 }
+                val candidates = withContext(Dispatchers.Default) {
+                    HandwritingRecognition.recognize(context, window)
+                }
+                if (!isActive) return@launch
+                onRecognition(candidates)
             } finally {
                 if (recognizeJob === self) {
                     recognizeJob = null
@@ -340,7 +285,7 @@ fun HandwritingKeyboardLayout(
     fun commitStroke(stroke: List<StrokePoint>) {
         strokes.add(stroke)
         strokeCount = strokes.size
-        // 新笔画落下：取消停顿提示，随后由识别结果更新已完成前缀
+        // 新笔画落下：取消停顿提示
         if (idleHidden) idleHidden = false
         lastStrokeEndMs = System.currentTimeMillis()
         scheduleRecognition()
@@ -416,20 +361,19 @@ fun HandwritingKeyboardLayout(
                                 }
                             },
                     ) {
-                        // 渲染：[0,fade) 变淡、[fade,end) 正常；笔画离开识别窗口（固化/清窗）时墨迹同步消失。
-                        // 正在书写的笔画无条件渲染（它尚未进入 strokes）。
-                        val fade = fadeStart.coerceIn(0, strokes.size)
-                        if (fade > 0) {
-                            strokes.subList(0, fade).forEach {
-                                drawStroke(it, visuals.keyTextColor.copy(alpha = 0.3f))
-                            }
+                        // 渲染：停顿提示时整窗变淡；笔画离开识别窗口（清窗）时墨迹同步消失。
+                        // 正在书写的笔画无条件正常渲染（它尚未进入 strokes）。
+                        val inkColor = if (idleHidden) {
+                            visuals.keyTextColor.copy(alpha = 0.3f)
+                        } else {
+                            visuals.keyTextColor
                         }
-                        strokes.drop(fade).forEach { drawStroke(it, visuals.keyTextColor) }
+                        strokes.forEach { drawStroke(it, inkColor) }
                         if (currentStroke.size >= 2) drawStroke(currentStroke, visuals.keyTextColor)
                     }
                     if (!modelReady) {
                         Text(
-                            text = stringResource(R.string.handwriting_model_missing),
+                            text = stringResource(R.string.handwriting_engine_unavailable),
                             color = visuals.keyTextColor,
                             fontSize = 13.sp,
                             modifier = Modifier.align(Alignment.Center).padding(24.dp),

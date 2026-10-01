@@ -4,7 +4,7 @@
  *
  * custom: 触控笔「一笔手势」判定（纯逻辑，启发式）。
  *
- * 识别引擎（ochwpro）只有单字分类、没有手势类别，因此手势判定放在识别之前用几何启发式做，
+ * 文字识别引擎只出文本、没有手势类别，因此手势判定放在识别之前用几何启发式做，
  * 判定结果用于构造标准 `HandwritingGesture` 交给编辑器执行（`InputConnection#performHandwritingGesture`，
  * 坐标一律屏幕坐标；不支持的编辑器回落提交识别文本）。参考实现：
  * - Gboard `HandwritingEventHandler.c()`（ScribeRecognitionCandidate.gesture → DeleteGesture /

@@ -95,7 +95,7 @@ jieba-analysis = { module = "com.huaban:jieba-analysis", version = "1.0.2" }
 kaml = { module = "com.charleskorn.kaml:kaml", version.ref = "kaml" }
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commonsCompress" }
 okhttp-sse = { module = "com.squareup.okhttp3:okhttp-sse", version.ref = "okhttp" }
-# custom: 手写识别（ONNX Runtime Java 绑定；与包内 runtime 同版本，见上方说明）
+# custom: ONNX Runtime（语音 sherpa-onnx 的 AAR 副本摘掉了自带 runtime，由本依赖提供）
 onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntimeAndroid" }
 # custom: 手写识别（Google ML Kit 数字墨水；识别在端上，语言模型运行时下载）
 mlkit-digital-ink = { module = "com.google.mlkit:digital-ink-recognition", version.ref = "mlkitDigitalInk" }

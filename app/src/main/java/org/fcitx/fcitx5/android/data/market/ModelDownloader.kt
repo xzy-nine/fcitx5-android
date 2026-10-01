@@ -2,14 +2,13 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  *
- * custom: 模型下载器（分类无关）——语音的 tar.bz2 整包与手写的逐文件都走这里。
+ * custom: 模型下载器（分类无关）。
  *
  * 只负责「把一个 [MarketModel] 落到 `filesDir/models/<id>/`」：
  * - 有 [MarketModel.archiveUrl] → 下载归档并解压（剥掉首层目录）；
  * - 否则按 [MarketModel.files] 逐个下载（带 sha256 校验与原子改名）。
  *
- * 各分类自己的「就绪判定」仍留在各自 store（语音 4 个文件 / 手写 onnx+索引），
- * 因此这里不需要知道任何分类语义。
+ * 各分类自己的「就绪判定」仍留在各自 store，因此这里不需要知道任何分类语义。
  */
 package org.fcitx.fcitx5.android.data.market
 

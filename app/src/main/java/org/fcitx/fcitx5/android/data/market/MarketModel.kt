@@ -2,16 +2,16 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  *
- * custom: 模型市场 —— 语音与手写共用的**公共组件**。
+ * custom: 模型市场 —— 按分类泛化的**公共组件**（目前唯一分类是语音 `asr`）。
  *
  * 分层：
  * - 本文件：市场的数据类型（清单条目、下载状态）；
- * - [ModelIndex]：从远程索引 `models/index.yaml` 按 **category** 过滤出本分类的条目
- *   （语音 `asr` / 手写 `handwriting`），索引不可用时回落各分类的内置清单；
+ * - [ModelIndex]：从远程索引 `models/index.yaml` 按 **category** 过滤出本分类的条目，
+ *   索引不可用时回落各分类的内置清单；
  * - [ModelMarketScreen]：唯一的市场页 UI；
  * - [MarketCategory]：各分类的实现（谁提供清单、谁负责下载/删除/就绪判定）。
  *
- * 因此「语音模型市场」与「手写模型市场」是同一个组件传不同 category，而不是两份页面。
+ * 新增分类只需实现 [MarketCategory] 并在 [MarketCategories] 注册，页面无需改动。
  */
 package org.fcitx.fcitx5.android.data.market
 
