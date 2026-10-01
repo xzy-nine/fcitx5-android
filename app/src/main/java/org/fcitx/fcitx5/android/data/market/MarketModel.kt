@@ -56,15 +56,18 @@ sealed class MarketDownloadState {
 }
 
 /**
- * 一个模型分类（语音 / 手写）需要提供给市场页的全部能力。
+ * 一个模型分类（语音 `asr` / 谷歌数字墨水 `digitalink`）需要提供给市场页的全部能力。
  *
- * 实现方持有自己的清单、下载器与本地存储；市场页只依赖这个接口，
- * 因此新增分类（如后续的联想词模型）只需再写一个实现 + 注册一行。
+ * 实现方持有自己的清单、下载器与本地存储；市场页（父级索引页 + 分类子页）只依赖这个接口，
+ * 因此新增分类只需再写一个实现 + 在 [MarketCategories] 注册一行。
  */
 interface MarketCategory {
 
     /** 稳定的分类 id（用于路由参数，禁止随意改名）。 */
     val id: String
+
+    /** 清单是否来自远程索引（否则为内置清单；市场页据此决定要不要显示索引地址输入框）。 */
+    val usesRemoteIndex: Boolean get() = true
 
     /** 分类展示名（资源 id）。 */
     val titleRes: Int
@@ -82,6 +85,13 @@ interface MarketCategory {
 
     /** 最近一次下载失败原因。 */
     val lastError: StateFlow<String?>
+
+    /**
+     * 状态修订号：**任何会影响列表展示的变化**（清单加载完、下载/删除完成、选中项变化、
+     * 后台刷新到新的「已下载」状态）都要递增，市场页据此重组（否则同步查询的
+     * [isDownloaded]/[selectedModelId] 会一直显示旧值）。
+     */
+    val revision: StateFlow<Int>
 
     /** 当前选中（在用）的模型 id。 */
     fun selectedModelId(context: Context): String
@@ -101,4 +111,16 @@ interface MarketCategory {
 
     /** 选中为当前模型。 */
     fun selectModel(context: Context, model: MarketModel)
+
+    /** 已下载数量（父级「模型市场」页的摘要行用）。 */
+    fun downloadedCount(context: Context): Int =
+        models.value.count { isDownloaded(context, it) }
+
+    /**
+     * 重查「已下载」状态并触发一次重组（父级市场页返回时调用）。
+     *
+     * 与 [refreshIndex] 不同：**不发网络请求**，只让本地就绪判定重新生效
+     * （数字墨水要重新问一次 ML Kit，语音/文件类只需重看文件是否存在）。
+     */
+    fun refreshDownloadedState(context: Context)
 }

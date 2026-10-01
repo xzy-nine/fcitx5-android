@@ -32,6 +32,12 @@ object ModelIndex {
     /** 分类 id（= 索引里的 `category` 字段值）。 */
     const val CATEGORY_ASR = "asr"
 
+    /**
+     * 数字墨水分类 id：**没有远程索引**（清单是官方语言表，内置在
+     * `DigitalInkModelCatalog`），仅用于路由与注册表。
+     */
+    const val CATEGORY_DIGITAL_INK = "digitalink"
+
     private val yaml = Yaml(configuration = YamlConfiguration(strictMode = false))
 
     private val client = OkHttpClient.Builder()

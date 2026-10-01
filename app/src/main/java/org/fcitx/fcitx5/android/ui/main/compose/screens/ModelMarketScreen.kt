@@ -56,16 +56,30 @@ fun ModelMarketScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    // 同步查询（isDownloaded / selectedModelId）不是 Compose State，靠 revision 驱动重组
+    val revision by category.revision.collectAsState()
     val models by category.models.collectAsState()
     val loading by category.loadingIndex.collectAsState()
     val indexError by category.indexError.collectAsState()
     val downloadState by category.downloadState.collectAsState()
     val downloadingId by category.downloadingId.collectAsState()
     val lastError by category.lastError.collectAsState()
-    val selectedModelId = category.selectedModelId(context)
+    val selectedModelId = remember(revision, category) { category.selectedModelId(context) }
+    // 已下载的排前面（用中的永远第一；组内保持清单原顺序，避免每次重组跳位）
+    val orderedModels = remember(models, revision, category) {
+        models.sortedByDescending { model ->
+            when {
+                model.id == selectedModelId -> 2
+                category.isDownloaded(context, model) -> 1
+                else -> 0
+            }
+        }
+    }
 
     LaunchedEffect(category) {
         category.ensureIndexLoaded(context)
+        // 返回本页时重查「已下载」（数字墨水是异步状态；文件类分类只重算一次）
+        category.refreshDownloadedState(context)
     }
 
     PageScaffold(
@@ -75,14 +89,14 @@ fun ModelMarketScreen(
             IconButton(onClick = { category.refreshIndex(context) }) {
                 Icon(
                     imageVector = MiuixIcons.Refresh,
-                    contentDescription = stringResource(R.string.handwriting_index_refresh),
+                    contentDescription = stringResource(R.string.market_index_refresh),
                 )
             }
         },
     ) {
         ModelMarketList(
             category = category,
-            models = models,
+            models = orderedModels,
             loading = loading,
             indexError = indexError,
             downloadState = downloadState,
@@ -112,8 +126,8 @@ private fun LazyListScope.ModelMarketList(
     if (indexError != null) {
         item {
             Text(
-                text = stringResource(R.string.handwriting_index_failed) +
-                        ": " + stringResource(R.string.handwriting_index_using_builtin),
+                text = stringResource(R.string.market_index_failed) +
+                        ": " + stringResource(R.string.market_index_using_builtin),
                 color = MiuixTheme.colorScheme.primary,
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
             )
@@ -123,7 +137,7 @@ private fun LazyListScope.ModelMarketList(
     lastError?.let { message ->
         item {
             Text(
-                text = stringResource(R.string.handwriting_download_failed) + "：" + message,
+                text = stringResource(R.string.market_download_failed) + "：" + message,
                 color = MiuixTheme.colorScheme.primary,
                 modifier = Modifier.fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -131,13 +145,17 @@ private fun LazyListScope.ModelMarketList(
         }
     }
 
-    item {
-        ModelIndexField(category)
+    // 只有拉远程索引的分类才需要索引地址覆盖输入框
+    if (category.usesRemoteIndex) {
+        item {
+            ModelIndexField()
+        }
     }
 
-    item { SmallTitle(stringResource(R.string.voice_models)) }
+    item { SmallTitle(stringResource(R.string.market_models)) }
 
-    items(models, key = { it.id }) { model ->
+    // key 用 id：排序把「已下载」提前时，卡片状态（下载进度等）跟着条目一起移动
+    items(items = models, key = { it.id }) { model ->
         ModelCard(
             category = category,
             model = model,
@@ -150,18 +168,16 @@ private fun LazyListScope.ModelMarketList(
 
 /** 索引地址覆盖输入框（留空 = 用默认端点 index.ximei.me）。 */
 @Composable
-private fun ModelIndexField(category: MarketCategory) {
+private fun ModelIndexField() {
     val prefs = AppPrefs.getInstance()
-    var indexUrl by remember(category.id) {
-        mutableStateOf(prefs.voice.voiceIndexUrl.getValue())
-    }
+    var indexUrl by remember { mutableStateOf(prefs.voice.voiceIndexUrl.getValue()) }
     TextField(
         value = indexUrl,
         onValueChange = {
             indexUrl = it
             prefs.voice.voiceIndexUrl.setValue(it.trim())
         },
-        label = stringResource(R.string.voice_index_url),
+        label = stringResource(R.string.market_index_url),
         singleLine = true,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
     )
@@ -198,8 +214,8 @@ private fun ModelCard(
                         model.description.takeIf { it.isNotBlank() },
                         model.size.takeIf { it.isNotBlank() },
                         stringResource(
-                            if (downloaded) R.string.handwriting_model_state_ready
-                            else R.string.handwriting_model_state_missing
+                            if (downloaded) R.string.market_model_state_ready
+                            else R.string.market_model_state_missing
                         ),
                     ).joinToString(" · "),
                     color = if (downloaded) MiuixTheme.colorScheme.primary
@@ -234,13 +250,13 @@ private fun ModelCard(
                                         " ${(state.progress * 100).toInt()}%"
 
                             is MarketDownloadState.Error ->
-                                stringResource(R.string.handwriting_download_failed)
+                                stringResource(R.string.market_download_failed)
 
                             MarketDownloadState.Complete ->
-                                stringResource(R.string.handwriting_model_download_ok)
+                                stringResource(R.string.market_model_download_ok)
 
                             MarketDownloadState.Idle ->
-                                stringResource(R.string.handwriting_downloading)
+                                stringResource(R.string.market_downloading)
                         },
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     )
@@ -252,9 +268,9 @@ private fun ModelCard(
                 !downloaded -> TextButton(
                     text = stringResource(
                         when {
-                            failed -> R.string.handwriting_model_retry_download
-                            isTarget -> R.string.handwriting_model_cancel_download
-                            else -> R.string.handwriting_model_download
+                            failed -> R.string.market_model_retry_download
+                            isTarget -> R.string.market_model_cancel_download
+                            else -> R.string.market_model_download
                         }
                     ),
                     onClick = {
@@ -267,7 +283,7 @@ private fun ModelCard(
                 )
                 // 已下载且在用：不再给动作，只显示状态
                 inUse -> Text(
-                    text = stringResource(R.string.handwriting_model_in_use),
+                    text = stringResource(R.string.market_model_in_use),
                     color = MiuixTheme.colorScheme.primary,
                 )
                 // 已下载且未在用：删除 + 使用
@@ -275,12 +291,12 @@ private fun ModelCard(
                     IconButton(onClick = { category.deleteModel(context, model) }) {
                         Icon(
                             imageVector = MiuixIcons.Delete,
-                            contentDescription = stringResource(R.string.handwriting_model_delete),
+                            contentDescription = stringResource(R.string.market_model_delete),
                             modifier = Modifier.size(20.dp),
                         )
                     }
                     TextButton(
-                        text = stringResource(R.string.handwriting_model_select),
+                        text = stringResource(R.string.market_model_select),
                         onClick = { category.selectModel(context, model) },
                     )
                 }

@@ -95,6 +95,9 @@ class StylusToolboxWindow(private val context: Context) {
 
     private var lastOrientation = Configuration.ORIENTATION_UNDEFINED
 
+    /** 最近一次引擎文案：卡片重建（深浅色/尺寸变化）后据此重挂。 */
+    private var engineLabel: String? = null
+
     var isShown: Boolean = false
         private set
 
@@ -117,6 +120,18 @@ class StylusToolboxWindow(private val context: Context) {
      */
     fun setCandidates(candidates: List<String>, onPick: (Int) -> Unit) {
         card?.setCandidates(candidates, onPick)
+    }
+
+    /**
+     * 设置**当前识别引擎**文案。
+     *
+     * 与手写键盘的状态行同一口径：候选行**没有候选时**显示这一行（用户由此知道现在
+     * 用的是系统内置还是谷歌数字墨水；有候选时让位给候选）。
+     * 传 null/空白 = 不显示（引擎还没探测出来）。
+     */
+    fun setEngineLabel(label: String?) {
+        engineLabel = label
+        card?.setEngineLabel(label)
     }
 
     /** 屏幕坐标是否落在卡片（含阴影外扩）内。 */
@@ -164,6 +179,8 @@ class StylusToolboxWindow(private val context: Context) {
             setOnHandleTouchListener { event -> onHandleTouch(event) }
         }
         card = cardView
+        // 重建后把引擎文案与候选重新挂上（否则工具箱重建一次就只剩空候选行）
+        cardView.setEngineLabel(engineLabel)
         val container = FrameLayout(ctx).apply {
             layoutDirection = View.LAYOUT_DIRECTION_LTR
             setBackgroundColor(Color.TRANSPARENT)
@@ -462,6 +479,10 @@ private class ToolboxCardView @JvmOverloads constructor(
     private fun handlePressedColor(): Int = if (isNight) HANDLE_PRESSED_DARK else HANDLE_PRESSED_LIGHT
     private fun shadowColor(): Int = if (isNight) SHADOW_COLOR_DARK else SHADOW_COLOR_LIGHT
 
+    /** 引擎文案色（弱化后的 `onSurface`，与手写键盘状态行同一视觉权重）。 */
+    private fun engineLabelColor(): Int =
+        if (isNight) ENGINE_LABEL_ALPHA_DARK else ENGINE_LABEL_ALPHA_LIGHT
+
     /**
      * 跟随系统深浅色：View 不在 Compose 树里拿不到 `MiuixTheme`，只能按 `uiMode` 取色；
      * 夜间模式变化时重建整块内容（图标着色与候选文字色都随主题）。
@@ -500,12 +521,15 @@ private class ToolboxCardView @JvmOverloads constructor(
         return RippleDrawable(ColorStateList.valueOf(rippleColor()), content, mask)
     }
 
-    /** 候选行（手写候选，随识别结果刷新；空则隐藏）。 */
+    /** 候选行（手写候选，随识别结果刷新；无候选时显示引擎文案）。 */
     private var candidateRow: LinearLayout? = null
 
     /** 最近一次候选与点选回调：深浅色切换重建内容后据此重挂。 */
     private var lastCandidates: List<String> = emptyList()
     private var pickListener: ((Int) -> Unit)? = null
+
+    /** 当前识别引擎文案（候选为空时显示；见 [StylusToolboxWindow.setEngineLabel]）。 */
+    private var engineLabel: String? = null
 
     /**
      * 刷新候选行：候选挂在工具箱上（而非墨迹层），因此跨 500ms 短会话稳定可见。
@@ -520,12 +544,26 @@ private class ToolboxCardView @JvmOverloads constructor(
         republishCandidates()
     }
 
-    /** 按当前主题把 [lastCandidates] 铺进候选行（空则隐藏）。 */
+    /** 引擎文案：候选行空时顶上（同 [setCandidates] 的刷新路径）。 */
+    fun setEngineLabel(label: String?) {
+        engineLabel = label?.takeIf { it.isNotBlank() }
+        republishCandidates()
+    }
+
+    /**
+     * 按当前主题把 [lastCandidates] 铺进候选行：
+     * 有候选 → 候选按钮；**无候选 → 当前识别引擎文案**；两者都没有才隐藏。
+     */
     private fun republishCandidates() {
         val row = candidateRow ?: return
         val onPick = pickListener
         row.removeAllViews()
         if (lastCandidates.isEmpty() || onPick == null) {
+            engineLabel?.let { label ->
+                row.visibility = View.VISIBLE
+                row.addView(engineLabelView(label))
+                return
+            }
             row.visibility = View.GONE
             return
         }
@@ -557,6 +595,26 @@ private class ToolboxCardView @JvmOverloads constructor(
             )
         }
     }
+
+    /**
+     * 无候选时占位的引擎文案。
+     *
+     * 用非可点的 `TextView`（不挂点击监听）——它不是操作项，只是状态回显；
+     * 高度 MATCH_PARENT 以贴合 24dp 候选行，左内边距与候选按钮一致。
+     */
+    private fun engineLabelView(label: String): android.widget.TextView =
+        android.widget.TextView(context).apply {
+            text = label
+            textSize = ENGINE_LABEL_TEXT_SP
+            setTextColor(engineLabelColor())
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding((CANDIDATE_PADDING_DP * selfDensity).toInt(), 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.MATCH_PARENT,
+            )
+        }
 
     fun setPressedHandle(pressed: Boolean) {
         this.pressed = pressed
@@ -722,6 +780,9 @@ private class ToolboxCardView @JvmOverloads constructor(
         const val CANDIDATE_TEXT_SP = 15f
         const val CANDIDATE_PADDING_DP = 8f
 
+        /** 无候选时的引擎文案字号（比候选略小，弱化为状态信息）。 */
+        const val ENGINE_LABEL_TEXT_SP = 12f
+
         /** 第二行两格之间的间隔。 */
         const val ICON_GAP_DP = 4f
 
@@ -740,6 +801,10 @@ private class ToolboxCardView @JvmOverloads constructor(
         /** 普通按钮图标 / 候选文字：miuix `onSurface`。 */
         const val ICON_COLOR_LIGHT = 0xFF000000.toInt()
         const val ICON_COLOR_DARK = 0xFFF2F2F2.toInt()
+
+        /** 引擎文案（状态回显）：弱化的 miuix `onSurfaceVariantSummary`（带 alpha）。 */
+        const val ENGINE_LABEL_ALPHA_LIGHT = 0x8A000000.toInt()
+        const val ENGINE_LABEL_ALPHA_DARK = 0x8AF2F2F2.toInt()
 
         /** 重点按钮（删除 / 回车）：miuix `primary` 标准蓝 + `onPrimary` 图标。 */
         const val ACCENT_COLOR_LIGHT = 0xFF3482FF.toInt()

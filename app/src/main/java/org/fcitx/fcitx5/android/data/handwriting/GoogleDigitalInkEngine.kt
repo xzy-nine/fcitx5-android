@@ -4,9 +4,12 @@
  *
  * custom: 谷歌数字墨水（Google ML Kit Digital Ink Recognition）桥。
  *
- * 与另两个引擎的差别：
- * - **语言模型不随 APK 分发**：按语言打 tag（中文 = `zh-Hani`），由用户在设置页手动
- *   `RemoteModelManager.download()` 下载后才可用于识别（识别本身在端上离线跑）；
+ * 与其他引擎的差别：
+ * - **语言模型不随 SDK 分发**：按语言打 BCP-47 tag（中文 = `zh-Hani`），模型在**模型市场**
+ *   （`DigitalInkMarketCategory`，清单见 `DigitalInkModelCatalog`）里按语言下载 —— 走
+ *   `RemoteModelManager.download()`，识别本身在端上离线跑；中文那份已随包内置；
+ * - 识别语言 = 设置项 `AppPrefs.handwriting.handwritingDigitalInkLanguage`（市场里选中），
+ *   留空时跟随应用/系统语言（见 [languageTag]）；
  * - 输入是「整段墨迹」（多笔），输出是若干**完整文本候选**（`RecognitionCandidate`：
  *   text + score），因此不需要本项目的叠写切分；
  * - 只做文字识别，**没有手势能力**（触控笔手势仍由系统内置引擎提供）。
@@ -27,6 +30,7 @@ import com.google.mlkit.vision.digitalink.recognition.DigitalInkRecognizer
 import com.google.mlkit.vision.digitalink.recognition.DigitalInkRecognizerOptions
 import com.google.mlkit.vision.digitalink.recognition.Ink
 import kotlinx.coroutines.suspendCancellableCoroutine
+import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import timber.log.Timber
 import java.util.Locale
 
@@ -45,29 +49,59 @@ object GoogleDigitalInkEngine {
     private var recognizer: DigitalInkRecognizer? = null
     private var recognizerTag: String? = null
 
+    /** 已下载语言 tag 的集合（模型市场用；由 [refreshDownloadedModels] 刷新）。 */
+    @Volatile
+    private var downloadedTags: Set<String> = emptySet()
+
     /**
-     * 语言 tag：**跟随应用/系统语言**。
+     * 当前识别语言 tag：**优先用设置项选中的语言**（模型市场里选中），
+     * 未显式选择时跟随应用/系统语言。
      *
-     * 中文统一用 Han 脚本模型 `zh-Hani`（简体/繁体同模型）；其余语言直接用语言码
+     * 跟随语言时：中文统一用 Han 脚本模型 `zh-Hani`（简体/繁体同模型），其余用语言码
      * （`en`/`ja`/`ko`…）。不支持的 tag 会在 [modelFor] 里解析失败 ⇒ 本引擎不可用。
      */
     fun languageTag(context: Context): String {
+        val configured = runCatching {
+            AppPrefs.getInstance().handwriting.handwritingDigitalInkLanguage.getValue()
+        }.getOrNull().orEmpty()
+        if (configured.isNotBlank()) return configured
         val locale = context.resources.configuration.locales.takeIf { !it.isEmpty() }?.get(0)
             ?: Locale.getDefault()
         val language = locale.language.lowercase(Locale.ROOT)
         return if (language == "zh") LANGUAGE_ZH_HANI else language
     }
 
-    /** 当前语言是否有对应的数字墨水模型（tag 能解析成模型标识）。 */
+    /** 该语言是否有对应的数字墨水模型（tag 能解析成模型标识）。 */
+    fun isLanguageSupported(tag: String): Boolean =
+        runCatching { DigitalInkRecognitionModelIdentifier.fromLanguageTag(tag) }.getOrNull() != null
+
+    /** 当前语言是否有对应的数字墨水模型。 */
     fun isLanguageSupported(context: Context): Boolean = modelFor(context) != null
 
-    /**
-     * 模型是否已下载（未下载时识别不可用；设置页据此显示状态）。
-     *
-     * 无 Google Play 服务 / ML Kit 未初始化时返回 false。
-     */
-    suspend fun isModelDownloaded(context: Context): Boolean {
-        val model = modelFor(context) ?: return false
+    // ------------------------------------------------------------------
+    // 模型状态 / 下载 / 删除（模型市场用，按 tag 操作）
+    // ------------------------------------------------------------------
+
+    /** 已下载集合的**缓存判定**（同步，供市场列表刷新前使用；用 [refreshDownloadedModels] 刷新）。 */
+    fun isModelReadyCached(tag: String): Boolean = tag in downloadedTags
+
+    /** 刷新「已下载语言」缓存（一次 `getDownloadedModels` 拿到全部）。 */
+    suspend fun refreshDownloadedModels(context: Context) {
+        val models = runCatching {
+            RemoteModelManager.getInstance()
+                .getDownloadedModels(DigitalInkRecognitionModel::class.java)
+                .awaitValue()
+        }.getOrElse {
+            Timber.w(it, "$TAG: getDownloadedModels failed")
+            return
+        }
+        downloadedTags = models.mapNotNull { it.modelIdentifier?.languageTag }.toSet()
+        Timber.d("$TAG: downloaded models = %s", downloadedTags)
+    }
+
+    /** 指定语言是否已下载（单点精确查询，无 Google Play 服务 / ML Kit 未初始化时返回 false）。 */
+    suspend fun isModelDownloaded(context: Context, tag: String): Boolean {
+        val model = modelFor(tag) ?: return false
         return runCatching {
             RemoteModelManager.getInstance().isModelDownloaded(model).awaitValue()
         }.getOrElse {
@@ -76,26 +110,43 @@ object GoogleDigitalInkEngine {
         }
     }
 
-    /**
-     * 下载当前语言的模型（**设置页手动触发**）。
-     *
-     * @return 是否下载成功（失败原因进 logcat：无网络 / 无 Google Play 服务 / 语言不支持）
-     */
-    suspend fun downloadModel(context: Context): Boolean {
-        val model = modelFor(context) ?: run {
-            Timber.w("$TAG: no model for language ${languageTag(context)}")
+    /** 当前识别语言是否已下载（设置页/识别前判定）。 */
+    suspend fun isModelDownloaded(context: Context): Boolean =
+        isModelDownloaded(context, languageTag(context))
+
+    /** 下载指定语言（模型市场触发）；成功后刷新已下载缓存。 */
+    suspend fun downloadModel(context: Context, tag: String): Boolean {
+        val model = modelFor(tag) ?: run {
+            Timber.w("$TAG: no model for language $tag")
             return false
         }
         return runCatching {
             RemoteModelManager.getInstance()
                 .download(model, DownloadConditions.Builder().build())
                 .awaitVoid()
-            Timber.i("$TAG: model downloaded for ${languageTag(context)}")
+            Timber.i("$TAG: model downloaded for $tag")
             true
         }.getOrElse {
             Timber.w(it, "$TAG: model download failed")
             false
-        }
+        }.also { if (it) refreshDownloadedModels(context) }
+    }
+
+    /** 下载当前识别语言的模型。 */
+    suspend fun downloadModel(context: Context): Boolean =
+        downloadModel(context, languageTag(context))
+
+    /** 删除指定语言的模型（模型市场触发）；成功后刷新已下载缓存。 */
+    suspend fun deleteModel(context: Context, tag: String): Boolean {
+        val model = modelFor(tag) ?: return false
+        return runCatching {
+            RemoteModelManager.getInstance().deleteDownloadedModel(model).awaitVoid()
+            Timber.i("$TAG: model deleted for $tag")
+            true
+        }.getOrElse {
+            Timber.w(it, "$TAG: model delete failed")
+            false
+        }.also { if (it) refreshDownloadedModels(context) }
     }
 
     /**
@@ -136,9 +187,12 @@ object GoogleDigitalInkEngine {
     // 内部
     // ------------------------------------------------------------------
 
-    /** 当前语言对应的模型（解析失败 = 语言不支持）。 */
-    private fun modelFor(context: Context): DigitalInkRecognitionModel? {
-        val tag = languageTag(context)
+    /** 当前识别语言对应的模型（解析失败 = 语言不支持）。 */
+    private fun modelFor(context: Context): DigitalInkRecognitionModel? =
+        modelFor(languageTag(context))
+
+    /** 指定语言对应的模型（解析失败 = 语言不支持）。 */
+    private fun modelFor(tag: String): DigitalInkRecognitionModel? {
         cachedModel?.let { if (cachedModelTag == tag) return it }
         val model = runCatching {
             val identifier = DigitalInkRecognitionModelIdentifier.fromLanguageTag(tag)

@@ -27,7 +27,8 @@ abstract class BaseMarketCategory(
     final override val titleRes: Int,
 ) : MarketCategory {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** 子类可用来跑自己的异步动作（如数字墨水走 ML Kit 下载）。 */
+    protected val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _models = MutableStateFlow<List<MarketModel>>(emptyList())
     final override val models: StateFlow<List<MarketModel>> = _models.asStateFlow()
@@ -47,7 +48,40 @@ abstract class BaseMarketCategory(
     private val _lastError = MutableStateFlow<String?>(null)
     final override val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
+    private val _revision = MutableStateFlow(0)
+    final override val revision: StateFlow<Int> = _revision.asStateFlow()
+
     private var downloadJob: Job? = null
+
+    /** 见 [MarketCategory.revision]（子类在状态变化后调用）。 */
+    protected fun bumpRevision() {
+        _revision.value += 1
+    }
+
+    protected fun setModels(models: List<MarketModel>) {
+        _models.value = models
+        bumpRevision()
+    }
+
+    protected fun setIndexError(message: String?) {
+        _indexError.value = message
+        bumpRevision()
+    }
+
+    protected fun setDownloadState(state: MarketDownloadState) {
+        _downloadState.value = state
+        bumpRevision()
+    }
+
+    protected fun setDownloadingId(id: String?) {
+        _downloadingId.value = id
+        bumpRevision()
+    }
+
+    protected fun setLastError(message: String?) {
+        _lastError.value = message
+        bumpRevision()
+    }
 
     /** 索引里的 category 值（与远端 `category` 字段一致）。 */
     protected abstract val indexCategory: String
@@ -69,42 +103,41 @@ abstract class BaseMarketCategory(
         refreshIndex(context)
     }
 
-    final override fun refreshIndex(context: Context) {
+    /** 刷新清单；默认实现拉远程索引，分类可覆写成「只用内置清单」。 */
+    override fun refreshIndex(context: Context) {
         if (_loadingIndex.value) return
         _loadingIndex.value = true
         scope.launch {
             try {
                 val loaded = ModelIndex.load(context.applicationContext, indexCategory)
-                if (loaded.isNotEmpty()) {
-                    _models.value = loaded
-                    _indexError.value = null
-                } else {
-                    _models.value = builtin
-                }
+                setModels(loaded.ifEmpty { builtin })
+                setIndexError(null)
             } catch (e: Exception) {
                 Timber.w(e, "$id model index load failed")
-                _indexError.value = e.message ?: "unknown"
-                if (_models.value.isEmpty()) _models.value = builtin
+                setIndexError(e.message ?: "unknown")
+                if (_models.value.isEmpty()) setModels(builtin)
             } finally {
                 _loadingIndex.value = false
+                bumpRevision()
             }
         }
     }
 
-    final override fun downloadModel(context: Context, model: MarketModel) {
+    /** 下载一个模型；默认实现是「文件下载器」，分类可覆写（数字墨水走 ML Kit）。 */
+    override fun downloadModel(context: Context, model: MarketModel) {
         if (downloadJob?.isActive == true) return
         val appContext = context.applicationContext
-        _lastError.value = null
-        _downloadingId.value = model.id
-        _downloadState.value = MarketDownloadState.Downloading(0f, 0L, 0L)
+        setLastError(null)
+        setDownloadingId(model.id)
+        setDownloadState(MarketDownloadState.Downloading(0f, 0L, 0L))
         downloadJob = scope.launch {
             ModelDownloader.download(appContext, model, targetDir(appContext, model)) { state ->
-                _downloadState.value = state
+                setDownloadState(state)
             }.onSuccess {
-                _downloadingId.value = null
+                setDownloadingId(null)
             }.onFailure { e ->
                 // 失败时保留 downloadingId，使卡片继续显示错误与「重试下载」
-                _lastError.value = e.message ?: "下载失败"
+                setLastError(e.message ?: "下载失败")
             }
         }
     }
@@ -112,12 +145,20 @@ abstract class BaseMarketCategory(
     final override fun cancelDownload() {
         downloadJob?.cancel()
         downloadJob = null
-        _downloadingId.value = null
-        _downloadState.value = MarketDownloadState.Idle
+        setDownloadingId(null)
+        setDownloadState(MarketDownloadState.Idle)
     }
 
-    final override fun deleteModel(context: Context, model: MarketModel): Boolean {
+    /** 删除一个模型；默认实现删除 [targetDir]，分类可覆写（数字墨水走 ML Kit）。 */
+    override fun deleteModel(context: Context, model: MarketModel): Boolean {
         cancelDownload()
-        return targetDir(context.applicationContext, model).deleteRecursively()
+        val deleted = targetDir(context.applicationContext, model).deleteRecursively()
+        bumpRevision()
+        return deleted
+    }
+
+    /** 默认只递增修订号（文件类就绪判定是同步查文件，列表会自然重算）。 */
+    override fun refreshDownloadedState(context: Context) {
+        bumpRevision()
     }
 }

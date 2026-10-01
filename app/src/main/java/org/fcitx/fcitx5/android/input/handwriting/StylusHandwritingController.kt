@@ -63,6 +63,7 @@ import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingCandidate
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingGestures
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingRecognition
@@ -265,8 +266,8 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         // 撤下键盘 + 显示浮动工具箱（米系 setStylusMode(true) 的效果）
         service.enterStylusUi()
         setToolboxVisible(prefs.stylusToolboxEnabled.getValue())
-        // 候选跨会话保留：工具箱卡片若被重建，把最近一次识别的候选重新挂上
-        if (lastSegCandidates.isNotEmpty()) publishToolboxCandidates()
+        // 候选跨会话保留 + 引擎文案（工具箱重建后必须重挂，否则候选行是空的）
+        publishToolboxCandidates()
     }
 
     /** `onUpdateEditorToolType(TOOL_TYPE_FINGER)`：手指输入 → 回到普通 IME 界面。 */
@@ -309,8 +310,8 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         ensureInkAttached(window)
         // 工具箱挂到 IME 窗口之上（米系做法），随会话显隐
         setToolboxVisible(prefs.stylusToolboxEnabled.getValue())
-        // 候选跨会话保留：工具箱卡片若被重建，把最近一次识别的候选重新挂上
-        if (lastSegCandidates.isNotEmpty()) publishToolboxCandidates()
+        // 候选跨会话保留 + 引擎文案（每次会话开始都重挂一次，成本可忽略）
+        publishToolboxCandidates()
         // custom: 进入触控笔 UI —— 撤下键盘（米系 `setInputView(空锚点)` 等价做法）
         service.enterStylusUi()
         // 米系 `ImeMenuViewHolder.show()` 末尾的 `requestShowInputView()`
@@ -758,6 +759,25 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     /** 把当前候选刷到浮动工具箱的候选行（点选走 [onChipTap] 替换刚上屏的字）。 */
     private fun publishToolboxCandidates() {
         toolboxWindow.setCandidates(lastSegCandidates.map { it.char }) { index -> onChipTap(index) }
+        // 候选与引擎状态一起刷：清空候选时标签要顶上，识别后回落换了后端也要立刻反映
+        publishToolboxEngineLabel()
+    }
+
+    /**
+     * 把**当前识别引擎**刷到浮动工具箱：候选行没有候选时显示它
+     * （与手写键盘的状态行同一口径：`HandwritingRecognition.activeEngine()` + 回落链）。
+     */
+    private fun publishToolboxEngineLabel() {
+        val label = when (val kind = HandwritingRecognition.activeEngine()) {
+            // 与手写键盘状态行同一优先级：就绪 → 引擎名；没就绪 → 加载中；都不可用 → 不可用
+            null -> service.getString(
+                if (HandwritingRecognition.backendReady) R.string.handwriting_engine_unavailable
+                else R.string.handwriting_state_loading
+            )
+
+            else -> service.getString(kind.stringRes)
+        }
+        toolboxWindow.setEngineLabel(label)
     }
 
     /**

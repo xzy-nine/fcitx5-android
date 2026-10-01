@@ -96,9 +96,13 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object VoiceInputSettings : AppRoute
 
-    /** custom: 模型市场（**公共组件**，按 category 分流；目前为语音 `asr`） */
+    /** custom: 模型市场（**公共组件**，按 category 分流：语音 `asr` / 数字墨水 `digitalink`） */
     @Serializable
     data class ModelMarket(val category: String) : AppRoute
+
+    /** custom: 模型市场**父页**（各分类入口；语音与手写的「模型」入口仍直达各自子页） */
+    @Serializable
+    data object ModelMarketHome : AppRoute
 
     /** custom: 在线 ASR 平台的声明式配置表单（按平台 id） */
     @Serializable

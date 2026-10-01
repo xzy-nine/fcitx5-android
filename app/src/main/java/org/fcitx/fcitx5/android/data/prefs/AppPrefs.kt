@@ -652,8 +652,19 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             HandwritingEngineKind.System,
         ) { handwritingInputEnabled.getValue() }
 
+        /**
+         * 谷歌数字墨水识别语言（在模型市场 `digitalink` 分类里选中）。
+         *
+         * BCP-47 tag，同时就是市场里的模型 id（清单见 `DigitalInkModelCatalog`）；
+         * **留空 = 跟随应用/系统语言**（中文取 `zh-Hani`）。
+         */
+        val handwritingDigitalInkLanguage = ManagedPreference.PString(
+            sharedPreferences, "handwriting_digital_ink_language", ""
+        ).apply { register() }
+
         init {
             migrateSystemEngineSwitch()
+            cleanupLegacyKeys()
             groups = listOf(
                 SubGroup(
                     R.string.group_handwriting,
@@ -679,6 +690,26 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             if (!sharedPreferences.contains(legacyKey)) return
             if (!sharedPreferences.getBoolean(legacyKey, true)) {
                 handwritingEngine.setValue(HandwritingEngineKind.GoogleDigitalInk)
+            }
+        }
+
+        /**
+         * 一次性清理**已移除功能**留下的配置键（避免孤儿配置长期留在用户数据里）。
+         *
+         * - `handwriting_system_engine_enabled`：已被引擎下拉取代（先迁移再清）；
+         * - `handwriting_model_id` / `handwriting_index_url`：ONNX 手写模型市场的模型 id
+         *   与索引地址，模型已改走端上引擎；
+         * - `handwriting_single_char_mode`：叠写切分下线后不再有该开关。
+         */
+        private fun cleanupLegacyKeys() {
+            val marker = "handwriting_legacy_cleanup_v1"
+            if (sharedPreferences.getBoolean(marker, false)) return
+            sharedPreferences.edit {
+                remove("handwriting_system_engine_enabled")
+                remove("handwriting_model_id")
+                remove("handwriting_index_url")
+                remove("handwriting_single_char_mode")
+                putBoolean(marker, true)
             }
         }
     }

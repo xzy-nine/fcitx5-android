@@ -18,17 +18,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.data.handwriting.DigitalInkModelCatalog
 import org.fcitx.fcitx5.android.data.handwriting.GoogleDigitalInkEngine
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngineKind
-import org.fcitx.fcitx5.android.data.handwriting.HandwritingRecognition
 import org.fcitx.fcitx5.android.data.handwriting.XiaomiHandwritingEngine
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceProvider
@@ -51,24 +49,18 @@ private enum class GoogleModelState {
     /** 已下载。 */
     Downloaded,
 
-    /** 未下载（可点按下载）。 */
+    /** 未下载（去模型市场下载）。 */
     NotDownloaded,
-
-    /** 下载中。 */
-    Downloading,
-
-    /** 下载失败（无网络 / 无 Google Play 服务）。 */
-    Failed,
 }
 
 @Composable
 fun HandwritingSettingsScreen(
     onBack: () -> Unit,
+    onOpenModels: () -> Unit,
     onOpenGestureDemo: () -> Unit,
 ) {
     val context = LocalContext.current
     val prefs = AppPrefs.getInstance().handwriting
-    val scope = rememberCoroutineScope()
 
     // ManagedPreference 不是 Compose State：用版本号驱动重组（与语音设置页同一做法）
     var version by remember { mutableIntStateOf(0) }
@@ -107,37 +99,28 @@ fun HandwritingSettingsScreen(
                 stringResource(R.string.handwriting_system_engine_unavailable)
             }
 
-    // 谷歌数字墨水：语言 tag 跟随应用/系统语言；模型需手动下载
-    val googleTag = remember { GoogleDigitalInkEngine.languageTag(context) }
-    var googleState by remember { mutableStateOf(GoogleModelState.Checking) }
-    LaunchedEffect(version) {
-        googleState = when {
+    // 谷歌数字墨水：语言 tag 来自「模型市场里选中的语言」，未选时跟随应用/系统语言；
+    // 模型下载 / 删除 / 切换全部在模型市场 `digitalink` 分类里完成，本页只回显 + 跳转
+    val inkTag = remember(version) { GoogleDigitalInkEngine.languageTag(context) }
+    val inkName = remember(inkTag) { DigitalInkModelCatalog.nameOf(inkTag) }
+    var inkState by remember { mutableStateOf(GoogleModelState.Checking) }
+    // 市场里选中语言 / 下载完成都会写偏好 → `version` 递增 → 这里重查状态
+    LaunchedEffect(version, inkTag) {
+        inkState = when {
             !GoogleDigitalInkEngine.isLanguageSupported(context) -> GoogleModelState.Unsupported
-            GoogleDigitalInkEngine.isModelDownloaded(context) -> GoogleModelState.Downloaded
+            GoogleDigitalInkEngine.isModelDownloaded(context, inkTag) -> GoogleModelState.Downloaded
             else -> GoogleModelState.NotDownloaded
         }
     }
-    // 手动下载：成功后刷新统一入口里的模型状态，识别立刻可用（无需等下次进设置页）
-    fun downloadGoogleModel() {
-        if (googleState == GoogleModelState.Downloading) return
-        googleState = GoogleModelState.Downloading
-        scope.launch {
-            val ok = GoogleDigitalInkEngine.downloadModel(context)
-            if (ok) HandwritingRecognition.refreshGoogleModel(context)
-            googleState = if (ok) GoogleModelState.Downloaded else GoogleModelState.Failed
-        }
-    }
 
-    val googleSummary = when (googleState) {
-        GoogleModelState.Checking -> stringResource(R.string.handwriting_google_model_checking)
-        GoogleModelState.Downloaded -> stringResource(R.string.handwriting_google_model_downloaded)
+    val inkSummary = when (inkState) {
+        GoogleModelState.Checking -> stringResource(R.string.digital_ink_checking)
+        GoogleModelState.Downloaded -> stringResource(R.string.digital_ink_ready)
         GoogleModelState.NotDownloaded ->
-            stringResource(R.string.handwriting_google_model_not_downloaded, googleTag)
+            stringResource(R.string.digital_ink_not_downloaded, inkTag)
 
-        GoogleModelState.Downloading -> stringResource(R.string.handwriting_google_model_downloading)
-        GoogleModelState.Failed -> stringResource(R.string.handwriting_google_model_failed)
         GoogleModelState.Unsupported ->
-            stringResource(R.string.handwriting_google_model_unsupported, googleTag)
+            stringResource(R.string.digital_ink_unsupported, inkTag)
     }
 
     PageScaffold(
@@ -195,13 +178,13 @@ fun HandwritingSettingsScreen(
                 ),
             ) {
                 ArrowPreference(
-                    title = stringResource(R.string.handwriting_google_model),
-                    summary = googleSummary,
-                    enabled = enabled &&
-                            googleState != GoogleModelState.Unsupported &&
-                            googleState != GoogleModelState.Downloaded &&
-                            googleState != GoogleModelState.Downloading,
-                    onClick = { downloadGoogleModel() },
+                    title = stringResource(R.string.digital_ink_recognition_language),
+                    summary = stringResource(
+                        R.string.digital_ink_recognition_language_summary,
+                        inkName,
+                        inkSummary,
+                    ),
+                    onClick = onOpenModels,
                 )
             }
         }

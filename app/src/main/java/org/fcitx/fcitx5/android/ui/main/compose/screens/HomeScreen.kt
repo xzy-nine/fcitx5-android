@@ -163,10 +163,12 @@ private val homeAndroidItems = listOf(
 /** custom: 分支特有功能（上游没有的能力集中在这里，避免混进上游分组） */
 private val homeCustomItems = listOf(
     HomeDestination(R.string.voice_input, MiuixIcons.AppRecording, AppRoute.VoiceInputSettings),
-    HomeDestination(R.string.handwriting_input, MiuixIcons.ListView, AppRoute.HandwritingSettings),    HomeDestination(
+    HomeDestination(R.string.handwriting_input, MiuixIcons.ListView, AppRoute.HandwritingSettings),
+    // 模型市场父页（各分类入口）；各设置页仍直达自己的分类子页
+    HomeDestination(
         R.string.voice_model_market,
         MiuixIcons.Store,
-        AppRoute.ModelMarket(MarketCategories.ASR),
+        AppRoute.ModelMarketHome,
     ),
     HomeDestination(R.string.webdav_settings_title, MiuixIcons.UploadCloud, AppRoute.WebDavSync),
     HomeDestination(R.string.broadcast_settings, MiuixIcons.Promotions, AppRoute.Prefs(PrefCategory.Broadcast)),

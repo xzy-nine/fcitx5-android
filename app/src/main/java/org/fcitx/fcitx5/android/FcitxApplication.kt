@@ -16,15 +16,18 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
+import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.data.broadcast.BroadcastSecurityManager
 import org.fcitx.fcitx5.android.data.handwriting.GoogleDigitalInkEngine
+import org.fcitx.fcitx5.android.data.handwriting.HandwritingLegacyCleanup
 import org.fcitx.fcitx5.android.data.handwriting.MlKitBundledModel
 import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.ui.main.LogActivity
@@ -180,13 +183,18 @@ class FcitxApplication : Application() {
         if (!isDirectBootMode) {
             AutoDictSync.startDownloadLoop()
         }
-        // custom: 内置数字墨水模型诊断（一条日志，确认包内模型被 ML Kit 认作已下载）
         coroutineScope.launch {
+            // custom: 清理已下线的「手写 ONNX 引擎」遗留的模型文件（≈7MB）
+            val removed = withContext(Dispatchers.IO) {
+                HandwritingLegacyCleanup.removeLegacyOnnxModels(ctx)
+            }
+            // custom: 内置数字墨水模型诊断（一条日志，确认包内模型被 ML Kit 认作已下载）
             Timber.i(
-                "digital ink model: bundled=%b, materialized=%b, mlkitDownloaded=%b",
+                "digital ink model: bundled=%b, materialized=%b, mlkitDownloaded=%b, legacyRemoved=%d",
                 MlKitBundledModel.isBundled(ctx),
                 MlKitBundledModel.isMaterialized(ctx),
                 GoogleDigitalInkEngine.isModelDownloaded(ctx),
+                removed,
             )
         }
     }

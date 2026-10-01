@@ -39,6 +39,7 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.TableInputMethodsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.ThemeScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WebDavSyncScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceInputSettingsScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.ModelMarketHomeScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.ModelMarketScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingGestureDemoScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingSettingsScreen
@@ -297,7 +298,16 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         },
                     )
                 }
-                // custom: 模型市场（公共组件，按 category 分流；目前为语音 asr）
+                // custom: 模型市场父页（各分类入口）
+                entry<AppRoute.ModelMarketHome> {
+                    ModelMarketHomeScreen(
+                        onBack = { backStack.removeLastOrNull() },
+                        onOpenCategory = {
+                            navigateTo(AppRoute.ModelMarket(MarketCategories.routeOf(it)))
+                        },
+                    )
+                }
+                // custom: 模型市场分类子页（语音 asr / 数字墨水 digitalink）
                 entry<AppRoute.ModelMarket> { route ->
                     ModelMarketScreen(
                         category = MarketCategories.of(route.category),
@@ -310,10 +320,15 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }
-                // custom: 手写输入设置页（引擎下拉 + 谷歌数字墨水模型 + 手势演示）
+                // custom: 手写输入设置页（引擎下拉 + 识别语言入口（模型市场）+ 手势演示）
                 entry<AppRoute.HandwritingSettings> {
                     HandwritingSettingsScreen(
                         onBack = { backStack.removeLastOrNull() },
+                        onOpenModels = {
+                            navigateTo(
+                                AppRoute.ModelMarket(MarketCategories.DIGITAL_INK)
+                            )
+                        },
                         onOpenGestureDemo = { navigateTo(AppRoute.HandwritingGestureDemo) },
                     )
                 }
