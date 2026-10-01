@@ -47,6 +47,18 @@ class HandwritingStrokeFxTest {
     }
 
     @Test
+    fun `character components are not treated as separate characters`() {
+        // 「测」的部件：氵(左)、贝(中)、刂(右) —— 部件之间确实分离，但间距远小于笔画自身尺寸，
+        // 不得判成空间硬边界（否则硬边界禁止跨边界合并 → 一个字被拆成「、冫贝刂」）
+        val radical = boxStroke(0f, 0f, 25f, 60f)     // 氵：宽 25 高 60 → size 60
+        val shell = boxStroke(45f, 0f, 90f, 60f)      // 贝：宽 45 高 60 → size 60
+        val knife = boxStroke(105f, 0f, 125f, 60f)    // 刂：宽 20 高 60 → size 60
+        val boundaries = HandwritingStrokeFx.spatialBoundaries(listOf(radical, shell, knife))
+        assertFalse("氵→贝 是字内部件间距，不算换字", boundaries[1])
+        assertFalse("贝→刂 是字内部件间距，不算换字", boundaries[2])
+    }
+
+    @Test
     fun `window gaps start at zero and measure stroke to stroke silence`() {
         val window = listOf(
             stroke(startMs = 0, endMs = 100),

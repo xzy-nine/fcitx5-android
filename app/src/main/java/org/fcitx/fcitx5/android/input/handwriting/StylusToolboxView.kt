@@ -107,8 +107,8 @@ class StylusToolboxWindow(private val context: Context) {
      * 设置候选行（手写识别候选）。
      *
      * **候选挂在浮动工具箱上、而不是墨迹层**：手写会话是 500ms 短会话，系统结束会话会
-     * `InkWindow.hide()`，画在墨迹层的候选随之消失（实测「候选词只在墨迹显示时显示」）；
-     * 工具箱是独立浮窗、跨会话常驻，候选因此能稳定显示与点选。
+     * `InkWindow.hide()`，画在墨迹层的候选随之消失；工具箱跨会话常驻，候选因此能稳定
+     * 显示与点选。
      *
      * @param onPick 点选回调（下标与 [candidates] 对应）
      */
@@ -116,16 +116,40 @@ class StylusToolboxWindow(private val context: Context) {
         card?.setCandidates(candidates, onPick)
     }
 
+    /** 屏幕坐标是否落在卡片（含阴影外扩）内。 */
+    fun hitTest(screenX: Float, screenY: Float): Boolean =
+        isShown && cardRectOnScreen().contains(screenX.toInt(), screenY.toInt())
+
+    /**
+     * 把触控笔事件转成卡片本地坐标后派发给工具箱（返回是否被消费）。
+     *
+     * **为什么需要这一步**：手写会话期间系统把所有触控笔事件直接投递给
+     * `InputMethodService.onStylusHandwritingMotionEvent`（AOSP 的 `mHandwritingEventReceiver`），
+     * **不再走窗口触摸分发**，因此触控笔点工具箱不会触发按钮点击，而是被当成笔画。
+     * 这里由 IME 侧按坐标判断「笔落在卡片上」，再把事件转派给工具箱视图 ——
+     * 于是工具栏按钮对触控笔同样可用，且手写只发生在工具栏以外的区域。
+     */
+    fun dispatchStylusEvent(event: MotionEvent): Boolean {
+        val cardView = card ?: return false
+        val host = rootView ?: return false
+        @Suppress("UNUSED_EXPRESSION") host
+        val location = IntArray(2)
+        cardView.getLocationOnScreen(location)
+        val local = MotionEvent.obtain(event)
+        local.offsetLocation(-location[0].toFloat(), -location[1].toFloat())
+        val handled = runCatching { cardView.dispatchTouchEvent(local) }.getOrDefault(false)
+        local.recycle()
+        return handled
+    }
+
     /**
      * 显示浮窗（幂等）：**米系 `StylusUtils.addStylusToolbox` 同款**——
      * 把透明全屏容器 `addView` 到**传入的宿主 ViewGroup**（= IME 窗口的 decorView），
      * 卡片用 margin 定位。
      *
-     * ⚠️ 之前用 `WindowManager.addView(TYPE_APPLICATION_ATTACHED_DIALOG)`：这类窗口**依附父窗口**，
-     * IME 窗口一隐藏箱子窗口就跟着不可见（实测「窗口创建/绘制了但用户看不到」）。
-     * 米系是把工具箱加在 IME 自己的 decorView 上（`oem.util.b.f()`），并配合
-     * `requestShowInputView()`（`requestShowSelf(0)`）**主动保持 IME 窗口显示**；
-     * 这里照做。
+     * 宿主必须是 IME 窗口 decorView：`TYPE_APPLICATION_ATTACHED_DIALOG` 之类的窗口
+     * **依附父窗口**，IME 窗口一隐藏箱子窗口就跟着不可见。配合
+     * `requestShowInputView()`（`requestShowSelf(0)`）主动保持 IME 窗口显示。
      *
      * @param host IME 窗口 decorView
      */

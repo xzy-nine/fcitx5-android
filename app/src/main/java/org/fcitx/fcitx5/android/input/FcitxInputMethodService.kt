@@ -1019,6 +1019,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 "pkg=${attribute.packageName}, fieldId=${attribute.fieldId}, " +
                 "inputType=0x${attribute.inputType.toString(16)}"
         )
+        // custom: 触控笔手写与键盘侧同口径处理「应用 resync 重启输入连接」——
+        // 同框重启保留书写状态（只补交待提交内容），换框/新会话才复位。
+        stylusHandwriting.onStartInput(attribute, restarting)
         val isNullType = attribute.isTypeNull()
         // wait until InputContext created/activated
         postFcitxJob {
@@ -1105,6 +1108,19 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private val anchorPosition = floatArrayOf(0f, 0f, 0f, 0f)
 
     override fun onUpdateCursorAnchorInfo(info: CursorAnchorInfo) {
+        // custom: 把编辑框自己声明的「手写区域」交给触控笔控制器
+        // （`EditorBoundsInfo.getHandwritingBounds()`，API 33+；只有请求过 monitorCursorAnchor
+        //  才会下发）。**该边界是 local coordinates**，必须经 info.matrix 映射到屏幕坐标，
+        // 才能与触控笔事件的 rawX/rawY 比较。手写只应发生在系统提供的文本框内。
+        info.editorBoundsInfo?.handwritingBounds?.let { local ->
+            val pts = floatArrayOf(local.left, local.top, local.right, local.bottom)
+            info.matrix.mapPoints(pts)
+            val screen = android.graphics.RectF(
+                minOf(pts[0], pts[2]), minOf(pts[1], pts[3]),
+                maxOf(pts[0], pts[2]), maxOf(pts[1], pts[3]),
+            )
+            stylusHandwriting.onEditorBounds(screen)
+        } ?: stylusHandwriting.onEditorBounds(null)
         val bounds = info.getCharacterBounds(0)
         if (bounds != null) {
             // anchor to start of composing span instead of insertion mark if available

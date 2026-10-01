@@ -102,16 +102,24 @@ object HandwritingStrokeFx {
     }
 
     /**
-     * 空间硬边界：[i] 为 true 表示第 i 笔与第 i-1 笔之间是两个字的分界
-     * （盒间距 ≥ 两笔尺寸均值 × [HW_SPATIAL_SPLIT_RATIO]）。长度与 [strokes] 一致，`[0]` 恒 false。
+     * 空间硬边界：[i] 为 true 表示第 i 笔与第 i-1 笔之间是两个字的分界。
+     *
+     * 判定用「**间距相对于字尺寸**」而不是绝对像素：汉字的部件（氵/贝/刂、弓/长）本身就
+     * 互相分离，若阈值太松会把一个字的部件判成两个字（「测」被拆成「、冫贝刂」）。
+     * 因此要求间距达到**两笔尺寸均值的 [HW_SPATIAL_SPLIT_RATIO] 倍**，且
+     * **至少达到任一方的尺寸**——即「隔开了一个笔画那么远」才算换字。
+     * 长度与 [strokes] 一致，`[0]` 恒 false。
      */
     fun spatialBoundaries(strokes: List<List<StrokePoint>>): BooleanArray {
         val boundaries = BooleanArray(strokes.size)
         for (i in 1 until strokes.size) {
             val previous = boxOf(strokes[i - 1])
             val current = boxOf(strokes[i])
-            val limit = (previous.size + current.size) / 2f * HW_SPATIAL_SPLIT_RATIO
-            boundaries[i] = boxGap(previous, current) >= limit
+            val gap = boxGap(previous, current)
+            val meanSize = (previous.size + current.size) / 2f
+            val maxSize = max(previous.size, current.size)
+            // 两道门都要过：相对间距（防部件误判） + 绝对间距（防小字/点被并进相邻字）
+            boundaries[i] = gap >= meanSize * HW_SPATIAL_SPLIT_RATIO && gap >= maxSize
         }
         return boundaries
     }

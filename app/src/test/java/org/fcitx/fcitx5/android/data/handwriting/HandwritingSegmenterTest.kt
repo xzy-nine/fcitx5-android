@@ -75,6 +75,34 @@ class HandwritingSegmenterTest {
     }
 
     @Test
+    fun `single character mode never splits a multi component character`() = runBlocking {
+        // 触控笔的纯单字模式：「测」= 氵/贝/刂 三个分离部件 + 明显停顿，
+        // 单字模式必须整体当一个字、且不做合并先验/DP
+        val seg = HandwritingSegmenter(singleCharacterMode = true) { segment, _ ->
+            if (segment.size >= 4) listOf(HandwritingCandidate("测", 0.93f))
+            else listOf(HandwritingCandidate("冫", 0.80f))
+        }
+        val result = seg.recognize(strokes(4), listOf(0L, 600L, 600L, 600L))
+        assertEquals(1, result.segments.size)
+        assertEquals("测", result.segments[0].candidates[0].char)
+        assertEquals(4, result.segments[0].strokeCount)
+        // 只有「整体分数低、部件分高」时多字模式才会拆；此时单字模式仍只返回一个字
+        val seg2 = HandwritingSegmenter(singleCharacterMode = true) { segment, _ ->
+            if (segment.size >= 4) listOf(HandwritingCandidate("测", 0.10f))
+            else listOf(HandwritingCandidate("冫", 0.90f))
+        }
+        assertEquals(1, seg2.recognize(strokes(4), listOf(0L, 600L, 600L, 600L)).segments.size)
+    }
+
+    @Test
+    fun `single character mode returns empty for no strokes`() = runBlocking {
+        val seg = HandwritingSegmenter(singleCharacterMode = true) { _, _ ->
+            listOf(HandwritingCandidate("字", 0.9f))
+        }
+        assertEquals(0, seg.recognize(emptyList()).segments.size)
+    }
+
+    @Test
     fun `stylus mode keeps one character through deliberate pen lifts`() = runBlocking {
         // 触控笔在字内普遍刻意提笔（500/650ms）：默认阈值判为显著换字并加分拆开，
         // 触控笔模式（阈值上调到 900ms）应保持一个字

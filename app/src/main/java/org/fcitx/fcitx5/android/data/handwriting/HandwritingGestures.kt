@@ -78,7 +78,10 @@ object HandwritingGestures {
         }
 
         // 插入尖角：高瘦 V（垂直方向仅一次转向、高度 ≥ 2×宽度）
-        if (vReversals == 1 && h >= w * INSERT_HEIGHT_RATIO) {
+        // 必须是**真正的 V**：两臂长度相当、两臂都近乎竖直、且收笔回到起笔高度附近。
+        // 只判「一次垂直反转 + 高瘦」会把汉字里的竖钩（亅：下行后向左上短收，
+        // 同样只有一次反转）误判成手势并吞掉这一笔。
+        if (vReversals == 1 && h >= w * INSERT_HEIGHT_RATIO && isTightV(stroke, box)) {
             return HandwritingStrokeKind.Insert
         }
 
@@ -94,9 +97,56 @@ object HandwritingGestures {
         return HandwritingStrokeKind.Character
     }
 
+    /**
+     * 是否为**真正的插入尖角 V**：顶点在中部、两臂长度相当且都近乎竖直、
+     * 收笔回到起笔高度附近。
+     *
+     * 汉字竖钩「亅」（下行后向左上短收）与「V」的差别就在这里：它的第二臂很短、
+     * 且明显斜向收笔，两个条件都不满足。
+     */
+    internal fun isTightV(stroke: List<StrokePoint>, box: HandwritingStrokeFx.Box): Boolean {
+        if (stroke.size < MIN_POINTS) return false
+        // 顶点 = 最低点（y 最大）；两臂按顶点切分
+        var vertexIndex = 0
+        for (i in stroke.indices) if (stroke[i].y > stroke[vertexIndex].y) vertexIndex = i
+        if (vertexIndex == 0 || vertexIndex == stroke.size - 1) return false
+        val legUp = run {
+            var total = 0f
+            for (i in 1..vertexIndex) {
+                total += hypot(stroke[i].x - stroke[i - 1].x, stroke[i].y - stroke[i - 1].y)
+            }
+            total
+        }
+        val legDown = run {
+            var total = 0f
+            for (i in vertexIndex + 1 until stroke.size) {
+                total += hypot(stroke[i].x - stroke[i - 1].x, stroke[i].y - stroke[i - 1].y)
+            }
+            total
+        }
+        if (legUp <= 0f || legDown <= 0f) return false
+        // 两臂长度相当（竖钩的第二臂极短，会被排除）
+        val shorter = minOf(legUp, legDown)
+        val longer = maxOf(legUp, legDown)
+        if (shorter < longer * V_LEG_SYMMETRY) return false
+        // 收笔高度回到起笔附近（V 的两个端点等高；竖钩的收笔停在字腰）
+        val topSpan = box.height
+        if (topSpan <= 0f) return false
+        if (kotlin.math.abs(stroke.last().y - stroke.first().y) > topSpan * V_ENDPOINT_LEVEL_RATIO) {
+            return false
+        }
+        // 两条臂都近乎竖直：每臂的水平跨度都远小于垂直跨度
+        val legUpSpanX = kotlin.math.abs(stroke[vertexIndex].x - stroke[0].x)
+        val legDownSpanX = kotlin.math.abs(stroke.last().x - stroke[vertexIndex].x)
+        val legUpSpanY = kotlin.math.abs(stroke[vertexIndex].y - stroke[0].y)
+        val legDownSpanY = kotlin.math.abs(stroke.last().y - stroke[vertexIndex].y)
+        val steepUp = legUpSpanY > 0f && legUpSpanX <= legUpSpanY * V_MAX_LEG_SLOPE
+        val steepDown = legDownSpanY > 0f && legDownSpanX <= legDownSpanY * V_MAX_LEG_SLOPE
+        return steepUp && steepDown
+    }
+
     /** 收笔是否为「明显向左的横向尾巴」（尾部 |dx| ≥ 2×|dy| 且向左）。 */
-    internal fun endsWithLeftwardHorizontal(stroke: List<StrokePoint>): Boolean {
-        val tail = maxOf(TAIL_MIN_POINTS, stroke.size / 5)
+    internal fun endsWithLeftwardHorizontal(stroke: List<StrokePoint>): Boolean {        val tail = maxOf(TAIL_MIN_POINTS, stroke.size / 5)
         if (stroke.size <= tail) return false
         val from = stroke[stroke.size - 1 - tail]
         val to = stroke.last()
@@ -169,6 +219,15 @@ object HandwritingGestures {
     private const val SELECT_MIN_AREA_RATIO = 0.6f
 
     private const val INSERT_HEIGHT_RATIO = 2f
+
+    /** V 两臂长度比下限（短臂 ≥ 长臂 × 此值），排除「竖钩」这类一臂极短的笔画。 */
+    private const val V_LEG_SYMMETRY = 0.55f
+
+    /** V 两端高度差上限（占笔画高度的比例）：真正的 V 两端等高。 */
+    private const val V_ENDPOINT_LEVEL_RATIO = 0.35f
+
+    /** 单臂水平跨度上限（相对该臂垂直跨度）：越大越斜，V 的两臂都应近乎竖直。 */
+    private const val V_MAX_LEG_SLOPE = 0.6f
 
     private const val NEWLINE_HEIGHT_RATIO = 0.6f
     private const val NEWLINE_MAX_REVERSALS = 2

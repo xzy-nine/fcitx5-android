@@ -90,6 +90,24 @@ class HandwritingGesturesTest {
     // ------------------------------------------------------------------
 
     @Test
+    fun `vertical hook stays character`() {
+        // 竖钩「亅」：长竖下行后向左上短收 —— 垂直方向也只有一次反转、也高瘦，
+        // 但第二臂极短且收笔停在字腰，不得判成插入尖角（否则整笔被吞掉、字写不出来）
+        val result = HandwritingGestures.detect(
+            polyline(800f to 400f, 810f to 900f, 700f to 780f),
+            screenWidth,
+        )
+        assertEquals(HandwritingStrokeKind.Character, result)
+    }
+
+    @Test
+    fun `right falling stroke stays character`() {
+        // 「捺」：斜向右下，无反转
+        val result = HandwritingGestures.detect(polyline(600f to 400f, 900f to 900f), screenWidth)
+        assertEquals(HandwritingStrokeKind.Character, result)
+    }
+
+    @Test
     fun `horizontal character stroke stays character`() {
         // 「一」：一笔横向 200px 长（< 屏宽 8% 的横向手势门槛之上但形状是直线，无往返、不闭合）
         val result = HandwritingGestures.detect(polyline(600f to 800f, 800f to 805f), screenWidth)

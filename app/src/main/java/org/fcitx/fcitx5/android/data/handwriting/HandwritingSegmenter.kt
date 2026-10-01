@@ -33,6 +33,15 @@ class HandwritingSegmenter(
      * （≥[companion.STYLUS_GAP_SPLIT_MS]）仍正常切开。
      */
     private val stylusMode: Boolean = false,
+    /**
+     * **纯单字识别**：整个窗口的笔画只当一个字送模型，不做任何叠写切分。
+     *
+     * 触控笔场景采用这一档：笔的落点精度高、用户按「一个字一次」书写，
+     * 叠写切分（过分割 + DP）对多部件字（测=氵/贝/刂）极易误拆；
+     * 且米系随手写同样是**单字会话**（500ms 短会话，一次一个字，写完即固化）。
+     * 开启时 [maxSegments]/[stylusMode] 均不参与。
+     */
+    private val singleCharacterMode: Boolean = false,
     /** 单字识别函数：生产环境注入 [HandwritingEngine.predict]，测试注入假模型。 */
     private val predictFn: suspend (List<List<StrokePoint>>, Int) -> List<HandwritingCandidate>,
 ) {
@@ -77,6 +86,14 @@ class HandwritingSegmenter(
         gaps: List<Long> = emptyList(),
     ): Result {
         if (strokes.isEmpty()) return Result(emptyList(), 0f, 0f)
+
+        // 纯单字模式：整个窗口只当一个字，直接送模型（不做过分割/DP，也不做合并先验）
+        if (singleCharacterMode) {
+            val candidates = candidatesOf(0, strokes.size, strokes)
+            if (candidates.isEmpty()) return Result(emptyList(), 0f, 0f)
+            val top = candidates.first().score
+            return Result(listOf(Segment(0, strokes.size, candidates)), top, top)
+        }
 
         val n = strokes.size
         val neg = Float.NEGATIVE_INFINITY
