@@ -702,6 +702,8 @@ class InputView(
         feed.clear()
         // detach 即释放语音会话资源（:asr 绑定、录音、媒体音量恢复）
         voiceInput.release()
+        // detach 即释放手写组件会话（识别协程与识别后端；下次 prepare 惰性重建）
+        handwritingInput.release()
         // clear DynamicScope, implies that InputView should not be attached again after detached.
         scope.clear()
         super.onDetachedFromWindow()

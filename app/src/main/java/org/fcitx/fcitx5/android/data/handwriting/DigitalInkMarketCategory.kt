@@ -15,6 +15,7 @@ package org.fcitx.fcitx5.android.data.handwriting
 
 import android.content.Context
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.market.BaseMarketCategory
@@ -23,6 +24,7 @@ import org.fcitx.fcitx5.android.data.market.MarketModel
 import org.fcitx.fcitx5.android.data.market.MarketModelGrouping
 import org.fcitx.fcitx5.android.data.market.ModelIndex
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import kotlin.coroutines.coroutineContext
 import java.io.File
 import java.util.Locale
 import timber.log.Timber
@@ -138,17 +140,20 @@ object DigitalInkMarketCategory :
         setLastError(null)
         setDownloadingId(model.id)
         setDownloadState(MarketDownloadState.Downloading(0f, 0L, 0L))
-        // LAZY 启动：先把 Job 赋给 downloadJob 再 start()，避免协程体在赋值前抢先运行
+        // LAZY 启动：先把 Job 赋给 downloadJob 再 start()，协程体里的身份比对不会失真
         downloadJob = scope.launch(start = CoroutineStart.LAZY) {
+            val job = coroutineContext[Job]
+            // 两条结果分支都要比对**本协程的 Job 身份**：只查 isActive 会让被取消的旧下载
+            // 在新下载已接管后仍改写状态（ML Kit 的下载不抛取消异常，直接返回布尔结果）
             if (GoogleDigitalInkEngine.downloadModel(appContext, model.id)) {
-                if (downloadJob?.isActive != true) return@launch
+                if (downloadJob !== job) return@launch
                 setDownloadingId(null)
                 setDownloadState(MarketDownloadState.Complete)
                 // 让统一识别入口立刻用上（模型状态缓存同步刷新）
                 HandwritingRecognition.refreshGoogleModel(appContext)
             } else {
                 // 失败时保留 downloadingId：卡片继续显示错误与「重试下载」
-                if (downloadJob?.isActive != true) return@launch
+                if (downloadJob !== job) return@launch
                 val reason = appContext.getString(R.string.digital_ink_download_failed)
                 setLastError(reason)
                 setDownloadState(MarketDownloadState.Error(reason))

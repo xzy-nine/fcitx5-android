@@ -16,6 +16,7 @@ import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
@@ -162,10 +163,14 @@ object ModelDownloader {
     ) {
         var lastError: Exception? = null
         repeat(MAX_RETRIES + 1) { attempt ->
-            // 取消时经 invokeOnCompletion 断开 OkHttp 连接：仅靠 yield() 查标志，
-            // 阻塞在 input.read(buffer) 上的 socket 读永远不会返回
+            // 上一轮若是因取消而中断（call.cancel() 抛 IOException），不得再发起新请求
+            coroutineContext.ensureActive()
             val call = client.newCall(Request.Builder().url(url).build())
-            coroutineContext[Job]?.invokeOnCompletion { call.cancel() }
+            // 每次尝试挂一个子 Job：父协程被取消时子 Job 当场完成，下面的回调随即触发并断开
+            // OkHttp —— 挂在父协程 Job 上的回调要等协程体真正退出才触发，那时读循环早已跑完。
+            // 尝试结束（成功返回或转下一次重试）即 complete 掉子 Job，回调随之注销不留残余。
+            val attemptJob = Job(coroutineContext[Job])
+            attemptJob.invokeOnCompletion { call.cancel() }
             try {
                 target.delete()
                 call.execute().use { response ->
@@ -177,7 +182,7 @@ object ModelDownloader {
                             val buffer = ByteArray(BUFFER_SIZE)
                             var read = 0L
                             while (true) {
-                                // 定期挂起检查取消；真正的中断靠上面 invokeOnCompletion 的 call.cancel()
+                                // 定期挂起检查取消；真正的中断靠上面取消回调里的 call.cancel()
                                 yield()
                                 val count = input.read(buffer)
                                 if (count <= 0) break
@@ -194,6 +199,9 @@ object ModelDownloader {
             } catch (e: Exception) {
                 lastError = e
                 Timber.w(e, "$TAG: attempt ${attempt + 1} failed for $url")
+            } finally {
+                // 本次尝试结束：子 Job 一并完成，取消回调随之注销
+                attemptJob.complete()
             }
         }
         throw lastError ?: IllegalStateException("下载失败")
