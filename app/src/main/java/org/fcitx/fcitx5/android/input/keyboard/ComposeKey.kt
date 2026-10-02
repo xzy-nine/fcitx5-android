@@ -177,6 +177,9 @@ fun ComposeKey(
                     sendAction = { action, source ->
                         keyActionListenerState.value?.onKeyAction(action, source)
                     },
+                    sendRelease = { action, source ->
+                        keyActionListenerState.value?.onKeyActionRelease(action, source)
+                    },
                     sendPopup = { popupActionListenerState.value?.onPopupAction(it) },
                     onSwipeGesture = { swipeGestureState.value?.onGesture(it) ?: false },
                 )
@@ -645,11 +648,22 @@ private class KeyGestureEnv(
     val longPressDelay: () -> Int,
     val hapticOnRepeat: () -> Boolean,
     val sendAction: (KeyAction, KeyActionListener.Source) -> Unit,
+    /** 长按动作的松开通知（可空：仅注入方关心时传）。 */
+    val sendRelease: ((KeyAction, KeyActionListener.Source) -> Unit)?,
     val sendPopup: (PopupAction) -> Unit,
     val onSwipeGesture: (ComposeKeyGestureEvent) -> Boolean,
 ) {
 
     fun action(action: KeyAction) = sendAction(action, KeyActionListener.Source.Keyboard)
+
+    /**
+     * 长按动作对应的「物理松开/手势取消」通知。
+     *
+     * 只有需要"按住语义"的动作（当前是空格长按→语音输入）关心：
+     * 按下超过长按阈值后动作已派发，抬起或手势被取消时补发一次 release。
+     */
+    fun releaseAction(action: KeyAction) =
+        sendRelease?.invoke(action, KeyActionListener.Source.Keyboard)
 
     /** View: `GestureType.Down` 时 `PopupAction.PreviewAction`。 */
     fun showPreview() {
@@ -797,6 +811,11 @@ private suspend fun AwaitPointerEventScope.runKeyGesture(env: KeyGestureEnv) {
                 val shouldPerformClick = !(movedOutside || longPressTriggered ||
                         repeatStarted || swipeRepeatTriggered || gestureConsumed)
                 if (shouldPerformClick) performClickOrDoubleTap(env)
+                // 长按动作已派发 → 抬起时补一次 release（空格长按→语音输入的「物理松手停止」）
+                if (longPressTriggered) {
+                    longPressTriggered = false
+                    env.spec.longPressAction?.let { env.releaseAction(it) }
+                }
                 break
             }
 
@@ -839,6 +858,11 @@ private suspend fun AwaitPointerEventScope.runKeyGesture(env: KeyGestureEnv) {
         repeatJob?.cancel()
         env.pressed.value = false
         env.dismissPreview()
+        // 手势被取消（布局切换/窗口失焦）时等同 ACTION_UP：已派发的长按动作补一次 release
+        if (longPressTriggered) {
+            longPressTriggered = false
+            env.spec.longPressAction?.let { env.releaseAction(it) }
+        }
         env.interactionSource.tryEmit(PressInteraction.Release(PressInteraction.Press(down.position)))
     }
 }

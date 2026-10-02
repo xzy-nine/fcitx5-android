@@ -96,11 +96,23 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
             nextWindow !is PickerWindow
         }
 
-    private val keyActionListener = KeyActionListener { action, source ->
-        if (action is KeyAction.LayoutSwitchAction) {
-            switchLayout(action.act)
-        } else {
-            commonKeyActionListener.listener.onKeyAction(action, source)
+    /**
+     * 键盘的动作监听器。
+     *
+     * **必须双向转发**：只转发 `onKeyAction` 的 SAM 写法会吃掉长按的释放通知
+     * （默认空实现），空格长按→语音的「物理松手停止」就会失效。
+     */
+    private val keyActionListener = object : KeyActionListener {
+        override fun onKeyAction(action: KeyAction, source: KeyActionListener.Source) {
+            if (action is KeyAction.LayoutSwitchAction) {
+                switchLayout(action.act)
+            } else {
+                commonKeyActionListener.listener.onKeyAction(action, source)
+            }
+        }
+
+        override fun onKeyActionRelease(action: KeyAction, source: KeyActionListener.Source) {
+            commonKeyActionListener.listener.onKeyActionRelease(action, source)
         }
     }
 

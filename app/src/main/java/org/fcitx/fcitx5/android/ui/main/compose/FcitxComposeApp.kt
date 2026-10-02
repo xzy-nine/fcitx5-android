@@ -38,6 +38,9 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.SettingsSearchDialog
 import org.fcitx.fcitx5.android.ui.main.compose.screens.TableInputMethodsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.ThemeScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WebDavSyncScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceInputSettingsScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceModelMarketScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceProviderConfigScreen
 import org.fcitx.fcitx5.android.ui.main.compose.settings.ManagedPrefsScreen
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.utils.parcelable
@@ -94,6 +97,27 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         importDictUri = intent.data?.toString()
                     }
                     Intent.ACTION_RUN -> {
+                        // custom: IME 内语音面板跳应用内语音页面（独立 extra，避免改动 SettingsRoute）
+                        when (intent.getStringExtra(
+                            org.fcitx.fcitx5.android.data.voice.VoiceRoutes.EXTRA
+                        )) {
+                            org.fcitx.fcitx5.android.data.voice.VoiceRoutes.SETTINGS -> {
+                                navigateTo(AppRoute.VoiceInputSettings)
+                                return@collect
+                            }
+
+                            org.fcitx.fcitx5.android.data.voice.VoiceRoutes.MODELS -> {
+                                navigateTo(AppRoute.VoiceModelMarket)
+                                return@collect
+                            }
+
+                            org.fcitx.fcitx5.android.data.voice.VoiceRoutes.PROVIDER_CONFIG -> {
+                                intent.getStringExtra(
+                                    org.fcitx.fcitx5.android.data.voice.VoiceRoutes.EXTRA_PROVIDER_ID
+                                )?.let { navigateTo(AppRoute.VoiceProviderConfig(it)) }
+                                return@collect
+                            }
+                        }
                         val route = intent.parcelable<SettingsRoute>(MainActivity.EXTRA_SETTINGS_ROUTE)
                             ?: return@collect
                         navigateTo(appRouteOf(route))
@@ -260,6 +284,22 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 }
                 entry<AppRoute.WebDavSync> {
                     WebDavSyncScreen(onBack = { backStack.removeLastOrNull() })
+                }
+                // custom: 语音输入设置页 / 模型市场
+                entry<AppRoute.VoiceInputSettings> {
+                    VoiceInputSettingsScreen(
+                        onBack = { backStack.removeLastOrNull() },
+                        onOpenModels = { navigateTo(AppRoute.VoiceModelMarket) },
+                    )
+                }
+                entry<AppRoute.VoiceModelMarket> {
+                    VoiceModelMarketScreen(onBack = { backStack.removeLastOrNull() })
+                }
+                entry<AppRoute.VoiceProviderConfig> { route ->
+                    VoiceProviderConfigScreen(
+                        providerId = route.providerId,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
                 }
                 entry<AppRoute.RawConfigHost> { route ->
                     RawConfigHostScreen(

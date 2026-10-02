@@ -60,6 +60,7 @@ import org.fcitx.fcitx5.android.core.FcitxAPI
 import org.fcitx.fcitx5.android.core.FcitxEvent
 import org.fcitx.fcitx5.android.core.FcitxKeyMapping
 import org.fcitx.fcitx5.android.core.FormattedText
+import org.fcitx.fcitx5.android.core.TextFormatFlag
 import org.fcitx.fcitx5.android.core.KeyStates
 import org.fcitx.fcitx5.android.core.KeySym
 import org.fcitx.fcitx5.android.core.ScancodeMapping
@@ -1124,6 +1125,28 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         ic.finishComposingText()
     }
 
+    /**
+     * custom: 语音输入的部分识别结果。
+     *
+     * 以带下划线的 composing 文本写入当前输入框，复用 fcitx 自己的 composing/选区状态机
+     * （不自行操作 InputConnection）。最终结果由调用方走 [commitText]：
+     * 它已处理「composing 与最终结果相同 → 仅结束 composing」与「不同 → 整个替换 composing」，
+     * 因此语音链路不需要再自己做 deleteSurroundingText 之类的兜底。
+     */
+    fun setVoiceComposingText(text: String) {
+        if (text.isEmpty()) {
+            finishComposing()
+            return
+        }
+        updateComposingText(
+            FormattedText(
+                arrayOf(text),
+                intArrayOf(TextFormatFlag.Underline.flag),
+                -1
+            )
+        )
+    }
+
     @SuppressLint("RestrictedApi")
     @RequiresApi(Build.VERSION_CODES.R)
     override fun onCreateInlineSuggestionsRequest(uiExtras: Bundle): InlineSuggestionsRequest? {
@@ -1190,6 +1213,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         Timber.d("onFinishInputView: finishingInput=$finishingInput")
+        // custom: 收起语音面板覆盖层并释放麦克风（IME 隐藏时不能继续录音）
+        inputView.value?.voiceInput?.closePanel()
         // the session is over — a later InputView recreation must not replay it
         currentEditorInfo = null
         currentRestarting = false

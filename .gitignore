@@ -28,6 +28,10 @@
 *.ap_
 *.aab
 
+# custom: vendored 官方 sherpa-onnx AAR（Apache-2.0，见 NOTICE.md）必须入库，
+# 它是离线语音识别的引擎+官方 Kotlin/JNI 适配器，不随构建下载。
+!app/libs/*.aar
+
 # Files for the ART/Dalvik VM
 *.dex
 

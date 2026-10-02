@@ -412,9 +412,19 @@ fun ComposeTextKeyboard(
     val view = LocalView.current
 
     // View: TextKeyboard.onAction / onPopupAction 的变换挂在按键动作前后
+    // 注意用匿名对象而不是 SAM 简写：SAM 不覆写 onKeyActionRelease（默认空实现），
+    // 会把空格长按的「物理松手」通知吃掉，导致语音面板松手不停止。
     val transformedKeyActionListener = remember(state, keyActionListener) {
-        KeyActionListener { action, source ->
-            keyActionListener?.onKeyAction(state.transformAction(action, source), source)
+        object : KeyActionListener {
+            override fun onKeyAction(action: KeyAction, source: KeyActionListener.Source) {
+                keyActionListener?.onKeyAction(state.transformAction(action, source), source)
+            }
+
+            override fun onKeyActionRelease(action: KeyAction, source: KeyActionListener.Source) {
+                // release 原样透传：press 阶段 transformAction 已消费掉 Caps/Shift 状态，
+                // 这里再变换会把长按 Caps 的松手又当成一次状态切换（大写锁多按一次就掉回）
+                keyActionListener?.onKeyActionRelease(action, source)
+            }
         }
     }
     val transformedPopupActionListener = remember(state, popupActionListener) {

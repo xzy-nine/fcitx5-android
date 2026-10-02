@@ -103,6 +103,8 @@ class ComposeKawaiiBarComponent :
     private val composeCandidate: ComposeCandidateComponent by manager.must()
     private val commonKeyActionListener: CommonKeyActionListener by manager.must()
     private val popup: PopupComponent by manager.must()
+    // custom: 内置语音输入入口（工具栏麦克风按钮）
+    private val voiceInput: org.fcitx.fcitx5.android.input.voice.VoiceInputComponent by manager.must()
     private val inputView by manager.inputView()
 
     private val prefs = AppPrefs.getInstance()
@@ -346,6 +348,8 @@ class ComposeKawaiiBarComponent :
                 else inputView.showKeyboardTune()
             },
             onTitleBack = {
+                // custom: 语音面板是覆盖层，不能只切窗口 —— 不然面板会盖在新键盘上
+                voiceInput.closePanel()
                 windowManager.attachWindow(
                     org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
                 )
@@ -375,6 +379,10 @@ class ComposeKawaiiBarComponent :
                 evalIdleUiState(fromUser = true)
             },
             splitKeyboardEnabled = splitKeyboardPref.getValue(),
+            onVoiceInput = if (AppPrefs.getInstance().voice.voiceInputEnabled.getValue()) {
+                // 工具栏麦克风进入：留在语音页，方便连续说话
+                { voiceInput.onVoiceEntryClicked(returnToKeyboardOnCommit = false) }
+            } else null,
         )
     }
 
@@ -390,6 +398,31 @@ class ComposeKawaiiBarComponent :
         }
         ClipboardManager.addOnUpdateListener(onClipboardUpdateListener)
         splitKeyboardPref.registerOnChangeListener(splitKeyboardListener)
+        observeVoicePanel()
+    }
+
+    /**
+     * custom: 语音面板是**覆盖层**而不是 [InputWindow]，因此不会触发
+     * [onWindowAttached]，工具栏也就拿不到「标题 + 返回」态（面板打开时看不到返回按钮）。
+     * 这里直接把面板可见性映射成同一套状态机的转移，返回按钮的语义仍由工具栏统一提供。
+     */
+    private fun observeVoicePanel() {
+        scope.launch {
+            voiceInput.panelVisible.collect { visible ->
+                if (visible) {
+                    _titleData.value = TitleData(
+                        title = context.getString(R.string.voice_input),
+                        showTitle = true
+                    )
+                    _titleExtensionView.value = null
+                    barStateMachine.push(ExtendedWindowAttached)
+                } else {
+                    _titleData.value = null
+                    _titleExtensionView.value = null
+                    barStateMachine.push(WindowDetached)
+                }
+            }
+        }
     }
 
     fun destroy() {

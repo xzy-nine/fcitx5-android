@@ -11,6 +11,7 @@ import android.graphics.Point
 import android.graphics.Rect
 import android.os.Build
 import android.view.View
+import android.widget.FrameLayout
 import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InlineSuggestionsResponse
@@ -59,6 +60,10 @@ import org.fcitx.fcitx5.android.input.picker.emoticonPicker
 import org.fcitx.fcitx5.android.input.picker.symbolPicker
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
 import org.fcitx.fcitx5.android.input.preedit.ComposePreeditComponent
+import androidx.core.view.isVisible
+import org.fcitx.fcitx5.android.input.voice.VoiceInputComponent
+import org.fcitx.fcitx5.android.input.voice.VoicePanelHost
+import org.fcitx.fcitx5.android.input.wm.createComposeWindowView
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.unset
 import org.fcitx.fcitx5.android.utils.windowManager
@@ -142,6 +147,29 @@ class InputView(
     private val symbolPicker = symbolPicker()
     private val emojiPicker = emojiPicker()
     private val emoticonPicker = emoticonPicker()
+    // custom: 内置语音输入的会话组件
+    internal val voiceInput = VoiceInputComponent()
+
+    /**
+     * custom: 语音面板覆盖层宿主（挂在 [InputWindowManager.view] 里、当前窗口之上）。
+     *
+     * 可见性由 [VoiceInputComponent.panelVisibleListener] 直接翻转**本 View**（外层 ComposeView）；
+     * 只翻转 Compose 内部的 `LocalView` 会让这个 GONE 的父级永远隐藏面板。
+     */
+    private val voicePanelView: View by lazy {
+        createComposeWindowView(themedContext) {
+            // 删除键等按键动作复用主键盘的监听器，保证与键盘语义完全一致
+            VoicePanelHost(voiceInput, commonKeyActionListener.listener)
+        }.apply {
+            // 置于当前窗口之上：后续 attachWindow 追加的窗口 View 不会盖住它
+            elevation = 1f
+            // 面板显示时必须**吃掉触摸**：Compose 内容里没有 pointer handler 的空白区域
+            // 默认不消费事件，会穿透到下层键盘（实测能点到下面的键）
+            isClickable = true
+            isVisible = false
+            voiceInput.panelVisibleListener = { visible -> isVisible = visible }
+        }
+    }
 
     /**
      * 工具栏 Compose 容器：预编辑栏、顶部延伸带与工具栏合并后的单一 Composition。
@@ -171,7 +199,15 @@ class InputView(
                             preeditHeightPx.toFloat()
                         )
                     }
-                    Column {
+                    Column(
+                        // custom：Compose 内容高度变化后核对宿主 ComposeView 是否跟上，
+                        // 滞后则异步补发布局请求。修 AndroidView 互操作宿主在 measure 期间
+                        // 触发 requestLayout 被吞、导致 View 层遍历停摆、内容被旧高度裁切的 bug
+                        // （见 HostLayoutRecovery.kt）。
+                        modifier = Modifier.onSizeChanged { size ->
+                            composeTopView.recoverHostLayoutIfStale(size.height)
+                        }
+                    ) {
                         // 预编辑栏在上（贴合内容高度），键盘体顶部延伸带居中，工具栏在下
                         // 首次按键时 InputPanelEvent（预编辑）与 CandidateListEvent（候选）是两个
                         // 独立事件，可能跨帧到达。若预编辑栏先出现而候选栏尚未到达，工具栏仍处
@@ -240,6 +276,8 @@ class InputView(
         scope += composeCandidate
         scope += candidateActionMenu
         scope += keyboardTune
+        // custom: 语音输入会话组件（面板/工具栏/空格长按都通过它）
+        scope += voiceInput
         broadcaster.onScopeSetupFinished(scope)
     }
 
@@ -402,6 +440,17 @@ class InputView(
                  * set start and end constrain in [updateKeyboardSize]
                  */
             })
+            // custom: 语音面板覆盖层挂进窗口容器（与当前窗口同几何位置）。
+            // 面板**不做窗口切换** —— 键盘窗口保持 attach，工具栏可见可用、空格长按的手势
+            // 不会因布局切换被 CANCEL，物理松手才能被键盘侧收到（见 VoicePanelHost 注释）。
+            // elevation 保证之后 attachWindow 追加的窗口 View 不会盖住它。
+            windowManager.view.add(
+                voicePanelView,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            )
             add(bottomPaddingSpace, lParams {
                 startToEndOf(leftPaddingSpace)
                 endToStartOf(rightPaddingSpace)
@@ -557,6 +606,8 @@ class InputView(
         lastEditorKey = editorKey
         Timber.d("startInput: restarting=$restarting, sameEditor=$sameEditor, key=$editorKey")
         if (!restarting || (focusChangeResetKeyboard && !sameEditor)) {
+            // 收起语音面板覆盖层（若有）：会话丢弃、麦克风释放
+            voiceInput.closePanel()
             windowManager.attachWindow(KeyboardWindow)
         }
     }
@@ -614,6 +665,8 @@ class InputView(
     override fun onDetachedFromWindow() {
         advancedPrefs.unregisterOnChangeListener(onKeyboardSizeChangeListener)
         keyboardPrefs.unregisterOnChangeListener(onKeyboardSizeChangeListener)
+        // detach 即释放语音会话资源（:asr 绑定、录音、媒体音量恢复）
+        voiceInput.release()
         // clear DynamicScope, implies that InputView should not be attached again after detached.
         scope.clear()
         super.onDetachedFromWindow()

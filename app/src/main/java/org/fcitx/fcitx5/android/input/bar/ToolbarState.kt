@@ -36,6 +36,8 @@ data class ToolbarCallbacks(
     val onClipboardSuggestionLongClick: () -> Unit,
     val onNumberRowCollapse: () -> Unit,
     val onNumberRowShow: () -> Unit,
+    /** custom: 内置语音输入入口；为 null 表示未启用（不显示麦克风按钮）。 */
+    val onVoiceInput: (() -> Unit)?,
 )
 
 /**

@@ -92,3 +92,12 @@ install(DIRECTORY "${PREBUILT_DIR}/opencc/data/" DESTINATION "${FCITX_INSTALL_DA
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/email/email.mb"
         DESTINATION "${FCITX_INSTALL_PKGDATADIR}/data/quickphrase.d"
         COMPONENT prebuilt-assets)
+
+# custom: 随包分发许可与归属声明
+# （sherpa-onnx / ONNX Runtime / Apache-2.0 等要求许可文本随二进制分发附带）
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../../../NOTICE.md"
+        DESTINATION "${FCITX_INSTALL_PKGDATADIR}/voice"
+        COMPONENT prebuilt-assets)
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../../../LICENSES/"
+        DESTINATION "${FCITX_INSTALL_PKGDATADIR}/voice/LICENSES"
+        COMPONENT prebuilt-assets)

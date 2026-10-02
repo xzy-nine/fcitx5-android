@@ -10,6 +10,14 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// ---------------------------------------------------------------------------
+// custom: 离线语音识别引擎 = 官方 sherpa-onnx AAR（Apache-2.0）
+//
+// 见 dependencies 里的 implementation(files("libs/sherpa-onnx-1.13.8.aar"))：
+// AAR 自带官方 Kotlin/JNI 适配器与各 ABI 的 .so（含其内置的 ONNX Runtime），
+// 因此不再自己抽 ONNX Runtime、也不再需要本地 C++ ASR 目标。
+// ---------------------------------------------------------------------------
+
 android {
     namespace = "org.fcitx.fcitx5.android"
 
@@ -42,6 +50,8 @@ android {
         viewBinding = true
         resValues = true
         compose = true
+        // custom: 离线语音识别服务 AIDL（:asr 进程）
+        aidl = true
     }
 
     buildTypes {
@@ -76,6 +86,7 @@ ksp {
 
 dependencies {
     implementation(libs.androidx.compose.runtime)
+    implementation(files("libs/sherpa-onnx-1.13.8.aar"))
     ksp(project(":codegen"))
     implementation(project(":lib:fcitx5"))
     implementation(project(":lib:fcitx5-lua"))
@@ -135,6 +146,11 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.ui)
     implementation(libs.jieba.analysis)
+    // custom: 语音输入 —— 在线识别（okhttp/SSE）、模型索引（kaml）、归档解压（commons-compress）
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.sse)
+    implementation(libs.kaml)
+    implementation(libs.commons.compress)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)

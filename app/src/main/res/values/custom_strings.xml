@@ -174,4 +174,63 @@
     <string name="clipboard_empty_hint">Copied content will show up here</string>
     <string name="retry">Retry</string>
     <string name="more_options">More options</string>
+
+    <!-- Custom: settings home custom-branch group -->
+    <string name="home_group_custom">Custom</string>
+
+    <!-- Custom: voice input (ported from whisperIME UI + Xime core) -->
+    <string name="voice_input">Voice input</string>
+    <string name="voice_input_enabled">Enable voice input</string>
+    <string name="voice_input_enabled_summary">Long press the space key or tap the microphone key in the toolbar</string>
+    <string name="voice_engine">Speech recognition engine</string>
+    <string name="voice_use_local">On-device recognition</string>
+    <string name="voice_use_local_summary">Use the offline Zipformer model; online plugins are used when disabled</string>
+    <string name="voice_online_provider">Online provider</string>
+    <string name="voice_online_provider_none">No online recognition platform available</string>
+    <string name="voice_provider_configured">Configured</string>
+    <string name="voice_provider_volcengine">Volcengine streaming ASR</string>
+    <string name="voice_provider_mimo">Xiaomi MiMo ASR</string>
+    <string name="voice_provider_settings">Provider settings</string>
+    <string name="voice_provider_hint_console">Obtain it from the provider console</string>
+    <string name="voice_volc_api_key">API Key</string>
+    <string name="voice_volc_app_key">App Key</string>
+    <string name="voice_volc_access_key">Access Key</string>
+    <string name="voice_volc_resource_id">Resource ID</string>
+    <string name="voice_mimo_api_key">API Key</string>
+    <string name="voice_mimo_language">Language hint</string>
+    <string name="voice_provider_not_configured">Not configured</string>
+    <string name="voice_simple_chinese">Simplified Chinese output</string>
+    <string name="voice_mute_during_recording">Mute media during recording</string>
+    <string name="voice_external_ime">External voice input method</string>
+    <string name="voice_external_ime_summary">Used when on-device recognition is unavailable</string>
+    <string name="voice_models">Models</string>
+    <string name="voice_model_market">Model marketplace</string>
+    <string name="voice_model_state_ready">Downloaded</string>
+    <string name="voice_model_state_missing">Not downloaded</string>
+    <string name="voice_model_delete">Delete model</string>
+    <string name="voice_download">Download</string>
+    <string name="voice_download_cancel">Cancel download</string>
+    <string name="voice_download_retry">Retry download</string>
+    <string name="voice_download_failed">Download failed</string>
+    <string name="voice_download_ok">Model ready</string>
+    <string name="voice_index_refresh">Refresh model list</string>
+    <string name="voice_index_failed">Failed to load model list</string>
+    <string name="voice_index_using_builtin">Using the built-in model list</string>
+    <string name="voice_record_permission">Microphone permission</string>
+    <string name="voice_record_permission_missing">Microphone permission is required for voice input</string>
+    <string name="voice_grant_permission">Grant permission</string>
+    <string name="voice_state_idle">Tap or hold the microphone to speak</string>
+    <string name="voice_delete">Delete</string>
+    <string name="voice_state_preparing">Loading model…</string>
+    <string name="voice_stop_discard">Stop and discard</string>
+    <string name="voice_state_listening">Listening…</string>
+    <string name="voice_state_processing">Recognizing…</string>
+    <string name="voice_state_error">Recognition failed</string>
+    <string name="voice_partial_hint">Recognized text is inserted as you speak</string>
+    <string name="voice_index_url">Index source URL</string>
+    <string name="voice_in_use">In use</string>
+    <string name="voice_use_this">Use</string>
+    <string name="voice_permission_granted">Granted</string>
+    <string name="voice_downloading">Downloading…</string>
+    <string name="voice_extracting">Extracting…</string>
 </resources>

@@ -170,4 +170,63 @@
     <string name="clipboard_empty_hint">复制内容后会自动出现在这里</string>
     <string name="retry">重试</string>
     <string name="more_options">更多操作</string>
+
+    <!-- Custom: settings home custom-branch group -->
+    <string name="home_group_custom">分支特色</string>
+
+    <!-- Custom: voice input (ported from whisperIME UI + Xime core) -->
+    <string name="voice_input">语音输入</string>
+    <string name="voice_input_enabled">启用语音输入</string>
+    <string name="voice_input_enabled_summary">长按空格键，或点击工具栏上的麦克风键</string>
+    <string name="voice_engine">语音识别引擎</string>
+    <string name="voice_use_local">本地识别</string>
+    <string name="voice_use_local_summary">使用离线 Zipformer 模型；关闭后走在线插件</string>
+    <string name="voice_online_provider">在线服务商</string>
+    <string name="voice_online_provider_none">没有可用的在线识别平台</string>
+    <string name="voice_provider_configured">已配置</string>
+    <string name="voice_provider_volcengine">火山引擎流式语音识别</string>
+    <string name="voice_provider_mimo">小米 MiMo 语音识别</string>
+    <string name="voice_provider_settings">平台设置</string>
+    <string name="voice_provider_hint_console">在平台控制台获取</string>
+    <string name="voice_volc_api_key">API Key</string>
+    <string name="voice_volc_app_key">App Key</string>
+    <string name="voice_volc_access_key">Access Key</string>
+    <string name="voice_volc_resource_id">资源 ID</string>
+    <string name="voice_mimo_api_key">API Key</string>
+    <string name="voice_mimo_language">语种提示</string>
+    <string name="voice_provider_not_configured">未配置</string>
+    <string name="voice_simple_chinese">输出简体中文</string>
+    <string name="voice_mute_during_recording">录音时静音媒体音量</string>
+    <string name="voice_external_ime">外部语音输入法</string>
+    <string name="voice_external_ime_summary">本地识别不可用时回落使用</string>
+    <string name="voice_models">模型</string>
+    <string name="voice_model_market">模型市场</string>
+    <string name="voice_model_state_ready">已下载</string>
+    <string name="voice_model_state_missing">未下载</string>
+    <string name="voice_model_delete">删除模型</string>
+    <string name="voice_download">下载</string>
+    <string name="voice_download_cancel">取消下载</string>
+    <string name="voice_download_retry">重新下载</string>
+    <string name="voice_download_failed">下载失败</string>
+    <string name="voice_download_ok">模型已就绪</string>
+    <string name="voice_index_refresh">刷新模型列表</string>
+    <string name="voice_index_failed">模型列表加载失败</string>
+    <string name="voice_index_using_builtin">正在使用内置模型列表</string>
+    <string name="voice_record_permission">麦克风权限</string>
+    <string name="voice_record_permission_missing">语音输入需要录音权限</string>
+    <string name="voice_grant_permission">授予权限</string>
+    <string name="voice_state_idle">点按或按住麦克风说话</string>
+    <string name="voice_delete">删除</string>
+    <string name="voice_state_preparing">正在加载模型…</string>
+    <string name="voice_stop_discard">停止并丢弃</string>
+    <string name="voice_state_listening">正在聆听…</string>
+    <string name="voice_state_processing">正在识别…</string>
+    <string name="voice_state_error">识别失败</string>
+    <string name="voice_partial_hint">说话过程中识别结果会实时写入输入框</string>
+    <string name="voice_index_url">索引地址（留空使用内置）</string>
+    <string name="voice_in_use">使用中</string>
+    <string name="voice_use_this">使用</string>
+    <string name="voice_permission_granted">已授予</string>
+    <string name="voice_downloading">正在下载…</string>
+    <string name="voice_extracting">正在解压…</string>
 </resources>
