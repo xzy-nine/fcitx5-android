@@ -616,6 +616,12 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         handwritingBounds = bounds
     }
 
+    /** 编辑器在 `EditorInfo` 里声明支持的手势类名（`onStartInput` 记录，用于能力判定与日志）。 */
+    private var editorSupportedGestures: List<String> = emptyList()
+
+    /** 编辑器声明支持的**可预览**手势类名。 */
+    private var editorSupportedPreviews: List<String> = emptyList()
+
     /**
      * 由 `onUpdateCursorAnchorInfo` 下发**编辑器可见文本行**（屏幕坐标）。
      *
@@ -762,6 +768,20 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             "stylus handwriting onStartInput: restarting=%b, sameEditor=%b, strokes=%d, key=%s",
             restarting, sameEditor, inkView.strokeCount, key,
         )
+        // 编辑器声明支持的手势/预览：决定手势不可用时能用哪些等价动作兜底
+        // （如编辑器不支持 `InsertModeGesture` 但支持 `InsertGesture`，插入模式就还能模拟）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            editorSupportedGestures = runCatching {
+                info.supportedHandwritingGestures.map { it.simpleName }
+            }.getOrDefault(emptyList())
+            editorSupportedPreviews = runCatching {
+                info.supportedHandwritingGesturePreviews.map { it.simpleName }
+            }.getOrDefault(emptyList())
+            Timber.d(
+                "stylus handwriting: editor gestures=%s previews=%s",
+                editorSupportedGestures, editorSupportedPreviews,
+            )
+        }
         // 同框 resync：原样保留书写窗口（会话结束一次性提交的模型下无需任何补救）
         if (restarting && sameEditor) return
         discardWindow()
@@ -1070,14 +1090,19 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             )
 
             // 尖角（`caret:above`/`caret:below`）与拱形（`arch:above`/`arch:below`）：进入插入模式
-            HandwritingStrokeKind.InsertMode -> sendGesture(
-                ic, executor, "",
-                InsertModeGesture.Builder()
-                    .setInsertionPoint(caretVertexPoint(points))
-                    .setCancellationSignal(android.os.CancellationSignal())
-                    .setFallbackText("")
-                    .build(),
-            )
+            HandwritingStrokeKind.InsertMode -> {
+                val vertex = caretVertexPoint(points)
+                sendGesture(
+                    ic, executor, "",
+                    InsertModeGesture.Builder()
+                        .setInsertionPoint(vertex)
+                        .setCancellationSignal(android.os.CancellationSignal())
+                        .setFallbackText("")
+                        .build(),
+                    // 编辑器不支持 `InsertModeGesture` 时用 `InsertGesture` 等价实现插入
+                    onNotHandled = { emulateInsertMode(ic, executor, vertex) },
+                )
+            }
 
             // 竖线（`verticalbar`）：添加/移除空格（`JoinOrSplitGesture` 在非空白处即插空格、
             // 画在已有空白处则删除它），作用点取笔画纵向中点
@@ -1116,6 +1141,44 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
 
             HandwritingStrokeKind.Character -> Unit
         }
+    }
+
+    /**
+     * 插入模式的等价实现（编辑器不支持 `InsertModeGesture` 时）。
+     *
+     * 借 `InsertGesture` 让**编辑器自己**把占位符插到尖角所指的文本偏移处——等于替本端做完了
+     * 「屏幕坐标点 → 文本偏移」的命中测试（`InputConnection` 没有这类接口）——随即把占位符删掉：
+     * 删除光标前一个字符后光标退回原偏移，于是光标停在用户所指位置，之后的书写自然插入在那里，
+     * 即插入模式的语义。占位符在同一个回调里删净，不在文本中留痕。
+     *
+     * 「先插入再删除」而非「直接改选区」是因为选区只能按偏移量移动，无从得知该点对应哪个偏移。
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    private fun emulateInsertMode(
+        ic: android.view.inputmethod.InputConnection,
+        executor: java.util.concurrent.Executor,
+        vertex: PointF,
+    ) {
+        Timber.d(
+            "stylus handwriting: insert mode unsupported by editor, emulate at %s (declares=%s)",
+            vertex, editorSupportedGestures,
+        )
+        sendGesture(
+            ic, executor, "",
+            InsertGesture.Builder()
+                .setTextToInsert(INSERT_MODE_PLACEHOLDER)
+                .setInsertionPoint(vertex)
+                .setFallbackText("")
+                .build(),
+            // 占位已落到尖角处：删掉它让光标停在该处
+            onHandled = {
+                val moved = service.replaceBeforeCursor(INSERT_MODE_PLACEHOLDER, "")
+                Timber.d("stylus handwriting: insert mode emulated at %s (caret moved=%b)", vertex, moved)
+            },
+            onNotHandled = {
+                Timber.d("stylus handwriting: editor supports no insert gesture, insert mode unavailable")
+            },
+        )
     }
 
     /**
@@ -1198,6 +1261,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      *   是空串，此时等于什么都没做，必须补上动作；
      * - `UNSUPPORTED`(2) / `FAILED`(3) / `UNKNOWN`(0) = 没做成，由本方法本地补上动作。
      *
+     * @param onHandled 手势被编辑器真正执行后的追加动作
      * @param onNotHandled 手势未被真正执行且无回落文本时的补救（按类型做本端等价动作）
      */
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
@@ -1206,6 +1270,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         executor: java.util.concurrent.Executor,
         fallbackText: String,
         gesture: HandwritingGesture,
+        onHandled: (() -> Unit)? = null,
         onNotHandled: (() -> Unit)? = null,
     ) {
         val consumer = IntConsumer { result ->
@@ -1217,7 +1282,10 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             val committedFallback = result ==
                     android.view.inputmethod.InputConnection.HANDWRITING_GESTURE_RESULT_FALLBACK &&
                     !gestureFallback.isNullOrEmpty()
-            if (handled || committedFallback) return@IntConsumer
+            if (handled || committedFallback) {
+                onHandled?.invoke()
+                return@IntConsumer
+            }
 
             val text = gestureFallback ?: fallbackText
             if (text == "\n") {
@@ -1471,6 +1539,14 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
 
         /** 插入模式手势的无操作超时（ms）：米系 `mGestureTimer` 同款 3000ms。 */
         const val INSERT_MODE_TIMEOUT_MS = 3000L
+
+        /**
+         * 插入模式等价实现的占位符：**零宽空格**（U+200B）。
+         *
+         * 借用 `InsertGesture` 让编辑器把光标移到尖角所指处，随后立即删除该占位符，
+         * 故它不应有任何视觉宽度与断行影响。
+         */
+        const val INSERT_MODE_PLACEHOLDER = "\u200B"
 
         /** 手势判定：未定（米系 `mCurrentState == 0`）。 */
         const val GESTURE_UNDECIDED = 0
