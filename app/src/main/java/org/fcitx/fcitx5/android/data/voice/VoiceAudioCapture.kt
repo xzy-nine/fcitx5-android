@@ -44,6 +44,13 @@ class VoiceAudioCapture(
     private var record: AudioRecord? = null
     private var thread: Thread? = null
 
+    /**
+     * release() 超时后把 recorder 移交回读线程：由 loop() 的 finally 块自行 release，
+     * 避免外部在它仍阻塞在 read() 里时释放设备。
+     */
+    @Volatile
+    private var recorderOwnedByThread = false
+
     @Volatile
     private var running = false
 
@@ -80,6 +87,7 @@ class VoiceAudioCapture(
             return false
         }
         record = recorder
+        recorderOwnedByThread = false
         return try {
             recorder.startRecording()
             if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
@@ -121,13 +129,19 @@ class VoiceAudioCapture(
         val t = thread
         thread = null
         if (t != null) {
-            // 读线程通常在下一次 read 返回后退出（分块 100ms）；卡在 push 时超时也照样释放设备，
-            // 让它的下一次 read 自然失败退出，避免原生录音会话残留
+            // 读线程通常在下一次 read 返回后退出（分块 100ms）；join 超时说明它还卡在
+            // read/push 上——此时不能从外部 release AudioRecord（原生录音会话残留、
+            // 且设备可能正被线程使用），改为把所有权移交线程，由 loop() 的 finally 收尾
             t.join(200)
-            if (t.isAlive) Timber.w("$TAG: capture thread still alive after stop, releasing anyway")
+            if (t.isAlive) {
+                recorderOwnedByThread = true
+                Timber.w("$TAG: capture thread still alive after stop, deferring release to thread")
+                return
+            }
         }
         record?.release()
         record = null
+        recorderOwnedByThread = false
     }
 
     private fun loop(recorder: AudioRecord) {
@@ -196,6 +210,13 @@ class VoiceAudioCapture(
                 if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) recorder.stop()
             } catch (e: Exception) {
                 Timber.w(e, "$TAG: stop in loop failed")
+            }
+            // release() 超时把设备移交给了本线程（recorder 已从 record 字段摘除）：
+            // 这里是它唯一会被释放的地方
+            if (recorderOwnedByThread) {
+                recorderOwnedByThread = false
+                recorder.release()
+                Timber.i("$TAG: deferred recorder released by capture thread")
             }
             Timber.i("$TAG: capture loop exited (chunks=$chunks)")
         }

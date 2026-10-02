@@ -50,21 +50,32 @@ object VoiceModelDownloader {
         onProgress: (VoiceModelDownloadState) -> Unit,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         val targetDir = VoiceModelStore.modelDir(context, model.id)
-        targetDir.mkdirs()
+        // 全部写入临时目录，成功后才晋升为 targetDir：
+        // 中途失败/取消不会留下残缺文件，避免「看起来已就绪但引擎解析不出 4 个文件」
+        val stagingDir = File(targetDir.parentFile, "${targetDir.name}.tmp-${System.currentTimeMillis()}")
         val throttle = ProgressThrottle(onProgress)
         val archiveUrl = model.archiveUrl
         try {
+            stagingDir.deleteRecursively()
+            stagingDir.mkdirs()
             if (!archiveUrl.isNullOrBlank()) {
-                downloadArchive(context, archiveUrl, targetDir) { throttle.emit(it) }
+                downloadArchive(context, archiveUrl, stagingDir) { throttle.emit(it) }
             } else {
-                downloadFiles(model.files, targetDir) { throttle.emit(it) }
+                downloadFiles(model.files, stagingDir) { throttle.emit(it) }
+            }
+            // 先清掉可能存在的旧目标目录，再把临时目录晋升为正式目录
+            targetDir.deleteRecursively()
+            if (!stagingDir.renameTo(targetDir)) {
+                stagingDir.deleteRecursively()
+                throw IOException("无法保存模型文件")
             }
             throttle.emit(VoiceModelDownloadState.Complete, force = true)
             Result.success(Unit)
         } catch (e: Exception) {
             Timber.e(e, "$TAG: download failed for ${model.id}")
-            val message = e.message ?: "下载失败"
-            throttle.emit(VoiceModelDownloadState.Error(message), force = true)
+            // 清理临时目录与可能被写入过一部分的旧目标目录
+            stagingDir.deleteRecursively()
+            throttle.emit(VoiceModelDownloadState.Error(e.message ?: "下载失败"), force = true)
             Result.failure(e)
         }
     }
@@ -132,8 +143,7 @@ object VoiceModelDownloader {
             } catch (e: Exception) {
                 lastError = e
                 Timber.w(e, "$TAG: attempt $attempt/$MAX_RETRIES failed")
-            } finally {
-                if (!tmp.exists()) tmp.delete()
+                tmp.delete()
             }
         }
         tmp.delete()
@@ -147,13 +157,27 @@ object VoiceModelDownloader {
     ) {
         if (files.isEmpty()) throw IOException("模型清单为空")
         files.forEachIndexed { index, file ->
-            downloadTo(file.url, File(targetDir, file.name)) { state ->
+            downloadTo(file.url, validatedFile(targetDir, file.name)) { state ->
                 if (state is VoiceModelDownloadState.Downloading) {
                     val overall = (index + state.progress) / files.size
                     onProgress(state.copy(progress = overall))
                 }
             }
         }
+    }
+
+    /**
+     * 目标文件校验：规范化后必须仍位于 [targetDir] 内，
+     * 拒绝远端清单文件名里的路径穿越（`..`、绝对路径、分隔符逃逸）。
+     */
+    private fun validatedFile(targetDir: File, name: String): File {
+        if (name.isBlank()) throw IOException("非法的文件名：空")
+        val base = targetDir.canonicalFile
+        val out = File(base, name).canonicalFile
+        if (out != base && !out.path.startsWith(base.path + File.separatorChar)) {
+            throw IOException("非法的文件名：$name")
+        }
+        return out
     }
 
     private fun downloadTo(
@@ -228,7 +252,8 @@ object VoiceModelDownloader {
                         val parts = raw.split("/", limit = 2)
                         val name = if (parts.size > 1) parts[1] else raw
                         if (name.isNotEmpty() && !entry.isDirectory) {
-                            val out = File(targetDir, name)
+                            // 剥掉首层目录后再校验：拒绝 `../` 穿越等逃逸出 targetDir 的条目
+                            val out = validatedFile(targetDir, name)
                             out.parentFile?.mkdirs()
                             FileOutputStream(out).use { os ->
                                 val buffer = ByteArray(BUFFER_SIZE)

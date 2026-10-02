@@ -36,6 +36,9 @@ class VoiceAsrService : Service() {
     private var stream: OnlineStream? = null
     private var callback: IVoiceAsrCallback? = null
 
+    /** 当前 recognizer 对应的模型文件路径（持锁读写），用于检测模型切换。 */
+    private var enginePaths: List<String> = emptyList()
+
     private val idleHandler = Handler(Looper.getMainLooper())
     private val idleReleaseRunnable = Runnable { releaseEngine() }
 
@@ -56,7 +59,13 @@ class VoiceAsrService : Service() {
             cb: IVoiceAsrCallback?,
         ): Boolean {
             cancelIdleRelease()
+            val paths = listOf(encoder, decoder, joiner, tokens)
             val ok = synchronized(lock) {
+                if (recognizer != null && enginePaths != paths) {
+                    // 模型已切换：释放旧 stream 与 recognizer，再用新路径重建
+                    Log.i(TAG, "model changed, rebuilding engine: $encoder")
+                    releaseEngineLocked()
+                }
                 if (recognizer == null && !createEngine(encoder, decoder, joiner, tokens)) {
                     return false
                 }
@@ -77,7 +86,16 @@ class VoiceAsrService : Service() {
             cb: IVoiceAsrCallback?,
         ): Boolean {
             cancelIdleRelease()
-            if (synchronized(lock) { recognizer } != null) {
+            val paths = listOf(encoder, decoder, joiner, tokens)
+            val ready = synchronized(lock) {
+                if (recognizer != null && enginePaths != paths) {
+                    // 模型已切换：旧引擎对新路径无效，先释放（后台线程会按新路径重建）
+                    Log.i(TAG, "model changed, releasing stale engine: $encoder")
+                    releaseEngineLocked()
+                }
+                recognizer != null
+            }
+            if (ready) {
                 runCatching { cb?.onEngineReady(true, "") }
                 return true
             }
@@ -180,22 +198,29 @@ class VoiceAsrService : Service() {
                 decodingMethod = "greedy_search",
             )
             recognizer = OnlineRecognizer(config = config)
+            enginePaths = files.map { it.path }
             true
         } catch (e: Throwable) {
             Log.e(TAG, "createEngine failed", e)
             recognizer = null
+            enginePaths = emptyList()
             false
         }
     }
 
+    /** 释放引擎并清除已记录的路径（外部入口：空闲超时 / releaseAsr / 销毁）。 */
     private fun releaseEngine() {
-        synchronized(lock) {
-            stream?.release()
-            stream = null
-            recognizer?.release()
-            recognizer = null
-            callback = null
-        }
+        synchronized(lock) { releaseEngineLocked() }
+    }
+
+    /** 须持 [lock] 调用；路径信息一并清掉，避免复用过期状态。 */
+    private fun releaseEngineLocked() {
+        stream?.release()
+        stream = null
+        recognizer?.release()
+        recognizer = null
+        enginePaths = emptyList()
+        callback = null
     }
 
     override fun onBind(intent: Intent?): IBinder = binder

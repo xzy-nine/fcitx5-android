@@ -139,7 +139,8 @@ class VoiceAsrClient(private val context: Context) {
             }
             try {
                 svc.prepareAsr(files.encoder, files.decoder, files.joiner, files.tokens, stub)
-                latch.await(timeoutSeconds, TimeUnit.SECONDS)
+                val finished = latch.await(timeoutSeconds, TimeUnit.SECONDS)
+                if (!finished) Timber.w("$TAG: prepare timed out after ${timeoutSeconds}s")
             } catch (e: Exception) {
                 Timber.e(e, "$TAG: prepare failed")
                 return@withContext false

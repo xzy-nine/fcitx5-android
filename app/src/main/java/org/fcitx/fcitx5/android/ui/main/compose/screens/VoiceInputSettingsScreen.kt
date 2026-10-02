@@ -63,16 +63,21 @@ fun VoiceInputSettingsScreen(
     val kbdPrefs = AppPrefs.getInstance().keyboard
 
     // ManagedPreference 不是 Compose State：用版本号驱动重组（与 ManagedPrefsScreen 同一做法）。
-    // AppPrefs 注册的 OnSharedPreferenceChangeListener 会在任意偏好写入后回调，无需手动刷新。
+    // 本页同时读 voice 与 keyboard 两个分类（preferredVoiceInput 属于 keyboard），
+    // 监听器须在两个 provider 上都注册——provider 的 fireChange 只通知注册在它自己身上的监听器。
     var version by remember { mutableIntStateOf(0) }
-    DisposableEffect(prefs) {
+    DisposableEffect(prefs, kbdPrefs) {
         val listener = object : ManagedPreferenceProvider.OnChangeListener {
             override fun onChange(key: String) {
                 version += 1
             }
         }
         prefs.registerOnChangeListener(listener)
-        onDispose { prefs.unregisterOnChangeListener(listener) }
+        kbdPrefs.registerOnChangeListener(listener)
+        onDispose {
+            prefs.unregisterOnChangeListener(listener)
+            kbdPrefs.unregisterOnChangeListener(listener)
+        }
     }
 
     val enabled = remember(version) { prefs.voiceInputEnabled.getValue() }
@@ -258,10 +263,9 @@ fun VoiceInputSettingsScreen(
                             title = info.loadLabel(context.packageManager).toString(),
                             selected = info.id == effectiveVoiceIme,
                             onClick = {
+                                // 写入 keyboard 分类的偏好；本页监听器已同时注册在 kbdPrefs 上，
+                                // 写入后 version 递增触发重组，无需手动 fireChange
                                 kbdPrefs.preferredVoiceInput.setValue(info.id)
-                                // 该偏好属于 keyboard 分类，本页监听的是 voice 分类：
-                                // 显式 fireChange 才会触发本页重组（与 ManagedPrefsScreen 同做法）
-                                kbdPrefs.fireChange(kbdPrefs.preferredVoiceInput.key)
                             },
                         )
                     }

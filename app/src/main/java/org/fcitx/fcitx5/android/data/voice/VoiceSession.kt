@@ -320,7 +320,11 @@ class VoiceSession(
         capture?.release()
         capture = null
         scope.cancel()
-        if (isUsingLocalEngine) client().unbind()
+        // 按是否持有 client 判断：本地引擎会话要解绑 :asr；在线会话也必须把
+        // 此前预热时绑定的 client 解绑并清引用，避免泄漏 ServiceConnection
+        val c = client
+        client = null
+        c?.unbind()
     }
 
     /** 关闭「本地识别」开关时调用：卸载 :asr 侧模型句柄。 */

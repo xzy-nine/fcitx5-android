@@ -22,8 +22,18 @@ object VoiceModelStore {
 
     fun modelsRoot(context: Context): File = File(context.filesDir, "models")
 
-    fun modelDir(context: Context, modelId: String): File =
-        File(modelsRoot(context), modelId)
+    /**
+     * 模型目录：id 来自远程索引，须先校验再拼路径，
+     * 拒绝空串、`.`/`..` 段与任意路径分隔符，防止逃出 [modelsRoot]。
+     */
+    fun modelDir(context: Context, modelId: String): File {
+        require(modelId.isNotBlank()) { "blank model id" }
+        require(!modelId.startsWith(".")) { "illegal model id: $modelId" }
+        require(!modelId.contains('/') && !modelId.contains('\\')) {
+            "illegal model id: $modelId"
+        }
+        return File(modelsRoot(context), modelId)
+    }
 
     /**
      * 解析模型目录下的 4 个文件；任一缺失返回 null。

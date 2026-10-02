@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import timber.log.Timber
 
 /**
@@ -51,6 +52,13 @@ object VoiceModelRepository {
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
+    /**
+     * 文件系统版本号：删除或下载完成后递增。
+     * 页面收集它来让 `isDownloaded` 等「读磁盘」的派生值重新计算。
+     */
+    private val _modelsVersion = MutableStateFlow(0)
+    val modelsVersion: StateFlow<Int> = _modelsVersion.asStateFlow()
+
     private var downloadJob: Job? = null
 
     /** 加载/刷新索引；失败时保留上一次成功结果。 */
@@ -88,6 +96,7 @@ object VoiceModelRepository {
                 _downloadState.value = state
             }.onSuccess {
                 _downloadingId.value = null
+                _modelsVersion.value += 1
             }.onFailure { e ->
                 // 失败时保留 downloadingId，使卡片继续显示错误与「重试下载」
                 _lastError.value = e.message ?: "下载失败"
@@ -102,8 +111,15 @@ object VoiceModelRepository {
         _downloadState.value = VoiceModelDownloadState.Idle
     }
 
-    fun deleteModel(context: Context, model: VoiceModelInfo): Boolean =
-        VoiceModelStore.delete(context.applicationContext, model.id)
+    fun deleteModel(context: Context, model: VoiceModelInfo): Boolean {
+        // 正在下载的模型不能删（临时目录/半成品会被并发读写）
+        if (_downloadingId.value == model.id) return false
+        // 正在使用的模型不能删
+        if (model.id == AppPrefs.getInstance().voice.voiceAsrModelId.getValue()) return false
+        val deleted = VoiceModelStore.delete(context.applicationContext, model.id)
+        if (deleted) _modelsVersion.value += 1
+        return deleted
+    }
 
     /** 「已下载」以引擎可解析出 4 个模型文件为准（而不是索引里的文件名清单）。 */
     fun isDownloaded(context: Context, model: VoiceModelInfo): Boolean =

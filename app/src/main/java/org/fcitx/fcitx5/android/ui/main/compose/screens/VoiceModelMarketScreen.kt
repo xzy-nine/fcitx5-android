@@ -77,6 +77,8 @@ fun VoiceModelMarketScreen(
     val downloadState by VoiceModelRepository.downloadState.collectAsState()
     val downloadingId by VoiceModelRepository.downloadingId.collectAsState()
     val lastError by VoiceModelRepository.lastError.collectAsState()
+    // 文件系统版本：删除/下载完成后递增，驱动下方 isDownloaded 缓存失效
+    val modelsVersion by VoiceModelRepository.modelsVersion.collectAsState()
     // 与引擎同口径（空值回落内置默认模型）
     val selectedModelId = remember(version) {
         prefs.voiceAsrModelId.getValue().ifBlank { VoiceModelCatalog.DEFAULT_ID }
@@ -154,7 +156,12 @@ fun VoiceModelMarketScreen(
         item { SmallTitle(stringResource(R.string.voice_models)) }
 
         items(displayed, key = { it.id }) { model ->
-            val downloaded = VoiceModelRepository.isDownloaded(context, model)
+            // isDownloaded 是同步磁盘遍历：remember 缓存，仅在该模型可下载/可删除
+            // 状态可能变化（下载完成、删除、版本号递增）时重新计算，
+            // 进度条触发的频繁重组不会反复扫盘
+            val downloaded = remember(model.id, downloadingId, modelsVersion) {
+                VoiceModelRepository.isDownloaded(context, model)
+            }
             val isTarget = downloadingId == model.id
             val inUse = model.id == selectedModelId
             val failed = isTarget && downloadState is VoiceModelDownloadState.Error
