@@ -53,7 +53,7 @@ object MlKitBundledModel {
      * 增删内置 pack 时必须 +1，否则已物化过的安装会整棵树跳过。重跑时目标文件仍逐个跳过
      * （已存在的不覆盖），因此只补齐新增内容。
      */
-    private const val BUNDLED_MODEL_REVISION = 2
+    private const val BUNDLED_MODEL_REVISION = 3
 
     /** 包内是否带内置模型。 */
     fun isBundled(context: Context): Boolean = runCatching {
