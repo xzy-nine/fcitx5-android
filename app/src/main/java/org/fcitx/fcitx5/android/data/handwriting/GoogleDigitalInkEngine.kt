@@ -143,15 +143,17 @@ object GoogleDigitalInkEngine {
      * 候选交给 [GoogleGestureLabels] 映射。模型未下载 / 不支持手势 / 调用失败一律返回
      * [HandwritingStrokeKind.Character]（＝按普通笔画处理）。
      *
-     * @param writingArea 笔画所在的书写区域（宽 × 高，与笔画同单位）。分类器据它判断笔迹尺度：
-     *   同一个闭合环在「整屏」和「一行字高」两种尺度下含义完全不同（前者可能是涂抹、后者才是
-     *   圈选）。为空则不传上下文，模型只能按原始坐标猜，尺度不同的手势会被混淆。
+     * @param writingArea 笔画所在的书写区域（**屏幕坐标矩形**，与 [stroke] 同一坐标系）。
+     *   分类器据它判断笔迹尺度：同一个闭合环在「整屏」和「一行字高」两种尺度下含义完全不同
+     *   （前者可能是涂抹、后者才是圈选）。**墨迹会被换算成该矩形的局部坐标**：`WritingArea`
+     *   只有宽高、没有原点，因此模型的输入必须是「相对书写区域左上角」的坐标，直接喂屏幕
+     *   绝对坐标会让笔迹落在错误的相对位置/尺度上。为空则不传上下文。
      * @param preContext 前文（光标前的少量文本），供模型区分「在文字上操作」与「在空白处书写」。
      */
     suspend fun classifyGesture(
         context: Context,
         stroke: List<StrokePoint>,
-        writingArea: Pair<Float, Float>? = null,
+        writingArea: android.graphics.RectF? = null,
         preContext: String? = null,
     ): HandwritingStrokeKind {
         if (stroke.isEmpty()) return HandwritingStrokeKind.Character
@@ -162,30 +164,42 @@ object GoogleDigitalInkEngine {
                 Timber.d("$TAG: gesture tag %s has no model, treat as character", tag)
                 return@withLock HandwritingStrokeKind.Character
             }
-            val ink = buildInk(listOf(stroke)) ?: return@withLock HandwritingStrokeKind.Character
+            // 墨迹换算到书写区域局部坐标（与下面传给模型的 WritingArea 同口径）
+            val localStroke = if (writingArea != null) {
+                stroke.map { StrokePoint(it.x - writingArea.left, it.y - writingArea.top, it.timeMs) }
+            } else {
+                stroke
+            }
+            val ink = buildInk(listOf(localStroke)) ?: return@withLock HandwritingStrokeKind.Character
             val client = gestureRecognizerFor(model, tag) ?: run {
                 Timber.d("$TAG: gesture recognizer unavailable for %s", tag)
                 return@withLock HandwritingStrokeKind.Character
             }
             val recognitionContext = buildRecognitionContext(writingArea, preContext)
-            val label = runCatching {
+            val candidates = runCatching {
                 val task = if (recognitionContext != null) {
                     client.recognize(ink, recognitionContext)
                 } else {
                     client.recognize(ink)
                 }
                 task.awaitValue().candidates
-                    .maxByOrNull { it.score ?: 0f }
-                    ?.text
             }.getOrElse {
                 // 手势模型未下载 / 引擎内部错误：只当作「本引擎本次判不出手势」
                 Timber.w(it, "$TAG: gesture classify failed for %s", tag)
                 return@withLock HandwritingStrokeKind.Character
             }
+            // ML Kit 的候选**已按匹配度升序返回**，`score` 是代价（0 = 最匹配），故取**第一个**
+            // 而非「分数最大者」。（对照 Gboard `jra.java` 的 `candidates.get(0)` 同款。）
+            val label = candidates.firstOrNull()?.text
             val kind = GoogleGestureLabels.classify(label)
+            val box = HandwritingStrokeFx.boxOf(stroke)
             Timber.d(
-                "$TAG: gesture classifier label=%s -> %s (points=%d, area=%s)",
-                label, kind, stroke.size, writingArea,
+                "$TAG: gesture classifier label=%s -> %s (points=%d, inkBox=[%.0f,%.0f][%.0f,%.0f], area=%s, pre=%s) candidates=[%s]",
+                label, kind, stroke.size,
+                box.minX, box.minY, box.maxX, box.maxY,
+                writingArea?.let { "[%.0f,%.0f][%.0f,%.0f]".format(it.left, it.top, it.right, it.bottom) } ?: "null",
+                preContext?.take(8) ?: "null",
+                candidates.joinToString { c -> "%s:%.2f".format(c.text, c.score ?: 0f) },
             )
             kind
         }
@@ -198,16 +212,15 @@ object GoogleDigitalInkEngine {
      * 上下文一致。
      */
     private fun buildRecognitionContext(
-        writingArea: Pair<Float, Float>?,
+        writingArea: android.graphics.RectF?,
         preContext: String?,
     ): RecognitionContext? {
-        val (w, h) = writingArea ?: (0f to 0f)
-        val hasArea = w > 0f && h > 0f
+        val hasArea = writingArea != null && writingArea.width() > 0f && writingArea.height() > 0f
         val hasPre = !preContext.isNullOrEmpty()
         if (!hasArea && !hasPre) return null
         return runCatching {
             RecognitionContext.builder().apply {
-                if (hasArea) setWritingArea(WritingArea(w, h))
+                if (hasArea) setWritingArea(WritingArea(writingArea!!.width(), writingArea.height()))
                 if (hasPre) setPreContext(preContext)
             }.build()
         }.getOrElse {

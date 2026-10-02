@@ -471,7 +471,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     }
 
     /**
-     * 手势分类要的**上下文**：书写区域（宽 × 高）+ 光标前文。
+     * 手势分类要的**上下文**：书写区域（屏幕坐标矩形）+ 光标前文。
      *
      * 分类器只有拿到尺度才知道「同一个闭合环」在整屏尺度下意味着涂抹、在一行字高下才是圈选；
      * 前文让它区分「在已有文字上操作」与「在空白处书写」（verticalbar 与数字 1/字母 l 同形）。
@@ -480,7 +480,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      * **必须在主线程调用**；`preContext` 走输入连接（跨进程），故只应在**会话结束**时取一次，
      * 预览路径请用 [gestureWritingArea]（纯本地几何，无 IPC）。
      */
-    private fun gestureRecognitionContext(): Pair<Pair<Float, Float>?, String?> {
+    private fun gestureRecognitionContext(): Pair<android.graphics.RectF?, String?> {
         val pre = runCatching {
             val ic = service.currentInputConnection ?: return@runCatching null
             ic.getTextBeforeCursor(GESTURE_PRE_CONTEXT_CHARS, 0)?.toString()?.takeIf { it.isNotEmpty() }
@@ -489,19 +489,28 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     }
 
     /**
-     * 书写区域（宽 × 高）：优先用编辑器声明的手写区域（即用户可下笔的范围 = 手势的实际尺度
-     * 基准），拿不到则退回墨迹视图自身尺寸。纯本地读取，无 IPC，预览路径可放心调用。
+     * 书写区域（**屏幕坐标矩形**）：优先用编辑器声明的手写区域（即用户可下笔的范围 = 手势的
+     * 实际尺度基准），拿不到则退回墨迹视图自身在屏幕上的位置。纯本地读取，无 IPC，
+     * 预览路径可放心调用。
+     *
+     * 返回的是矩形而非宽高：引擎要把墨迹换算成该矩形的局部坐标（`WritingArea` 只有宽高、
+     * 没有原点，故模型的输入必须是相对区域左上角的坐标）。
      */
-    private fun gestureWritingArea(): Pair<Float, Float>? = runCatching {
-        handwritingBounds?.let { b ->
-            val w = b.width()
-            val h = b.height()
-            if (w > 0f && h > 0f) return@let w to h
+    private fun gestureWritingArea(): android.graphics.RectF? = runCatching {
+        handwritingBounds?.takeIf { it.width() > 0f && it.height() > 0f }?.let {
+            return@runCatching android.graphics.RectF(it)
+        }
+        val loc = IntArray(2)
+        inkView.getLocationOnScreen(loc)
+        val w = inkView.width
+        val h = inkView.height
+        if (w > 0 && h > 0) {
+            android.graphics.RectF(
+                loc[0].toFloat(), loc[1].toFloat(),
+                (loc[0] + w).toFloat(), (loc[1] + h).toFloat(),
+            )
+        } else {
             null
-        } ?: run {
-            val w = inkView.width.toFloat()
-            val h = inkView.height.toFloat()
-            if (w > 0f && h > 0f) w to h else null
         }
     }.getOrNull()
 
