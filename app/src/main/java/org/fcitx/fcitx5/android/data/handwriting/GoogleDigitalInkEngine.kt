@@ -125,18 +125,6 @@ object GoogleDigitalInkEngine {
      */
     fun gestureTag(languageTag: String): String = "$languageTag$GESTURE_SUFFIX"
 
-    /** 当前识别语言是否有手势分类器（列表里 `-x-gesture` 的那一档）。 */
-    fun isGestureSupported(context: Context): Boolean =
-        isGestureSupportedForTag(gestureTag(languageTag(context)))
-
-    /** 指定手势 tag 是否有对应分类器。 */
-    private fun isGestureSupportedForTag(tag: String): Boolean =
-        runCatching { DigitalInkRecognitionModelIdentifier.fromLanguageTag(tag) }.getOrNull() != null
-
-    /** 当前语言的手势分类器模型是否已下载（手势路径的判定源，与文字模型分开查询）。 */
-    suspend fun isGestureModelDownloaded(context: Context): Boolean =
-        isModelDownloaded(context, gestureTag(languageTag(context)))
-
     /**
      * 单笔墨迹 → 手势类别（谷歌手势分类器）。
      *
@@ -147,22 +135,26 @@ object GoogleDigitalInkEngine {
     suspend fun classifyGesture(context: Context, stroke: List<StrokePoint>): HandwritingStrokeKind {
         if (stroke.isEmpty()) return HandwritingStrokeKind.Character
         val tag = gestureTag(languageTag(context))
-        val model = modelFor(tag) ?: return HandwritingStrokeKind.Character
+        val model = modelFor(tag) ?: run {
+            Timber.d("$TAG: gesture tag %s has no model, treat as character", tag)
+            return HandwritingStrokeKind.Character
+        }
         val ink = buildInk(listOf(stroke)) ?: return HandwritingStrokeKind.Character
-        val client = gestureRecognizerFor(model, tag) ?: return HandwritingStrokeKind.Character
+        val client = gestureRecognizerFor(model, tag) ?: run {
+            Timber.d("$TAG: gesture recognizer unavailable for %s", tag)
+            return HandwritingStrokeKind.Character
+        }
         val label = runCatching {
             client.recognize(ink).awaitValue().candidates
                 .maxByOrNull { it.score ?: 0f }
                 ?.text
         }.getOrElse {
             // 手势模型未下载 / 引擎内部错误：只当作「本引擎本次判不出手势」
-            Timber.w(it, "$TAG: gesture classify failed")
+            Timber.w(it, "$TAG: gesture classify failed for %s", tag)
             return HandwritingStrokeKind.Character
         }
         val kind = GoogleGestureLabels.classify(label)
-        Timber.d(
-            "$TAG: gesture classifier label=%s -> %s", label, kind,
-        )
+        Timber.d("$TAG: gesture classifier label=%s -> %s", label, kind)
         return kind
     }
 
