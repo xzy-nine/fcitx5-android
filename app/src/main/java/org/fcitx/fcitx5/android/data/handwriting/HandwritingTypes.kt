@@ -28,7 +28,7 @@ enum class HandwritingStrokeKind {
     /** 普通字符笔画：进识别窗口。 */
     Character,
 
-    /** 涂改（`scribble`/`strike`）→ 删除笔迹下的文本。 */
+    /** 涂改（`scribble`）→ 删除笔迹下的文本。 */
     Delete,
 
     /** 圈选（`circle`）→ 选中圈住的内容。 */
@@ -37,12 +37,9 @@ enum class HandwritingStrokeKind {
     /** 换行（`corner:downleft`，下行后向左收的 ⏎ 形）→ 插入换行。 */
     Newline,
 
-    /** 尖角（`caret:above`/`caret:below`，∧/∨）→ 进入插入模式（在顶点处插入）。 */
+    /** 插入（`caret:*` 尖角 ∧/∨ 与 `arch:*` 拱形 ∩/∪）→ 进入插入模式。 */
     InsertMode,
 
-    /** 拱形（`arch:*`）→ 删除空格（插入尖角的逆操作）。 */
-    RemoveSpace,
-
-    /** 竖线（`verticalbar`）→ 插入空格（画在已有空白处则删除该空白）。 */
+    /** 竖线（`verticalbar`）→ 添加/移除空格（画在已有空白处则删除该空白）。 */
     InsertSpace,
 }

@@ -282,11 +282,9 @@
     <string name="handwriting_gesture_select">圈选</string>
     <string name="handwriting_gesture_select_summary">用闭合的圈把文字圈起来即可选中</string>
     <string name="handwriting_gesture_insert_mode">插入模式</string>
-    <string name="handwriting_gesture_insert_mode_summary">在需要插入处画一个高瘦的尖角（∧ 或 ∨）</string>
+    <string name="handwriting_gesture_insert_mode_summary">在需要插入处画一个尖角（∧ 或 ∨）或拱形（∩）</string>
     <string name="handwriting_gesture_newline">换行</string>
     <string name="handwriting_gesture_newline_summary">画一个向左收笔的下行钩即可换行</string>
-    <string name="handwriting_gesture_remove_space">去掉空格</string>
-    <string name="handwriting_gesture_remove_space_summary">画一个拱形（∩）把两段词合并起来</string>
     <string name="handwriting_gesture_insert_space">插入空格</string>
     <string name="handwriting_gesture_insert_space_summary">在需要插入空格处画一条竖线</string>
     <string name="handwriting_gesture_try">试用</string>

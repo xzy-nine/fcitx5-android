@@ -114,15 +114,20 @@ object HandwritingRecognition {
      * 内部吞掉并返回 [HandwritingStrokeKind.Character]。
      *
      * ⚠️ 会做模型推理，**必须在后台线程调用**。
+     *
+     * @param writingArea 书写区域（宽 × 高，屏幕像素），见 [GoogleDigitalInkEngine.classifyGesture]。
+     * @param preContext 光标前文，用于区分「在文字上操作」与「在空白处书写」。
      */
     suspend fun classifyGesture(
         context: Context,
         stroke: List<StrokePoint>,
+        writingArea: Pair<Float, Float>? = null,
+        preContext: String? = null,
     ): HandwritingStrokeKind = withContext(Dispatchers.Default) {
         if (!engineChain().contains(HandwritingEngineKind.GoogleDigitalInk)) {
             return@withContext HandwritingStrokeKind.Character
         }
-        GoogleDigitalInkEngine.classifyGesture(context, stroke)
+        GoogleDigitalInkEngine.classifyGesture(context, stroke, writingArea, preContext)
     }
 
     /**

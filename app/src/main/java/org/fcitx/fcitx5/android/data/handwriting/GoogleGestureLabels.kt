@@ -13,18 +13,16 @@
  * | 类名 | 形状 | 本项目的编辑动作 |
  * |---|---|---|
  * | `scribble` | 来回涂抹 | 删除笔迹下的文本 |
- * | `strike` | 横向划线 | 删除划掉的文本 |
+ * | `strike` | 横向划线 | **不识别**（按普通书写处理） |
  * | `circle` | 圈选闭合环 | 选中圈住的内容 |
  * | `caret:above` / `caret:below` | 尖角（∧/∨） | 进入插入模式（插入点取尖角顶点） |
- * | `arch:above` / `arch:below` | 拱形（∩/∪） | 删除空格 |
- * | `verticalbar` | 竖线 | 插入空格（画在已有空白处则删除该空白） |
+ * | `arch:above` / `arch:below` | 拱形（∩/∪） | 进入插入模式（与尖角同为「插入」） |
+ * | `verticalbar` | 竖线 | 添加/移除空格（画在词间即插空格、画在已有空白处则删该空白） |
  * | `corner:downleft` | 左下角形（下行后向左收的 ⏎） | 插入换行 |
  * | `writing` | 普通书写 | **不是手势**（进文字识别） |
  *
- * ⚠️ 官方只定义**形状**、不定义每种形状对应的编辑动作；上表第三列是按形状语义映射到 AOSP
- * `HandwritingGesture` 的**工程选择**（`caret` 取「尖角指向插入点」= 插入模式、`arch` 取
- * 「合起来」= 去空格、`verticalbar` 取「立一根分隔」= 插空格、`corner:downleft` 取
- * 「下行后向左」= 换行）。编辑器不支持时由回落路径兜底。
+ * `strike` 与 `writing` 同属地识别，不自作主张删文本：横线常是手写的一部分（如「一」、
+ * 字母中的横），误判成删除的代价远大于漏判。
  *
  * 本对象只做「字符串 → [HandwritingStrokeKind]」的判定，几何与 AOSP 手势构造留在调用侧
  * （`StylusHandwritingController`），这样映射规则可以脱离设备单测。
@@ -47,25 +45,24 @@ object GoogleGestureLabels {
     fun classify(label: String?): HandwritingStrokeKind {
         val token = label?.trim()?.lowercase() ?: return HandwritingStrokeKind.Character
         return when (token) {
-            // 涂抹 / 划掉：都表示「删除这段文本」
-            "scribble", "strike" -> HandwritingStrokeKind.Delete
+            // 涂抹：删除这段文本
+            "scribble" -> HandwritingStrokeKind.Delete
 
             // 圈选：选中圈住的内容
             "circle" -> HandwritingStrokeKind.Select
 
-            // 尖角（∧/∨）：进入插入模式，在顶点处插入
-            "caret:above", "caret:below" -> HandwritingStrokeKind.InsertMode
+            // 尖角（∧/∨）与拱形（∩/∪）：都进入插入模式
+            "caret:above", "caret:below",
+            "arch:above", "arch:below",
+            -> HandwritingStrokeKind.InsertMode
 
-            // 拱形：删除空格（与尖角互为逆操作）
-            "arch:above", "arch:below" -> HandwritingStrokeKind.RemoveSpace
-
-            // 竖线：插入空格（画在已有空白处则删除该空白）
+            // 竖线：添加/移除空格（`JoinOrSplitGesture` 在非空白处插空格、画在空白处则删它）
             "verticalbar" -> HandwritingStrokeKind.InsertSpace
 
             // 左下角形（`corner:downleft`）：下行后向左收笔的 ⏎ 形 → 换行
             "corner:downleft" -> HandwritingStrokeKind.Newline
 
-            // 明确是书写（以及一切未知标签）：按普通字符笔画处理
+            // `strike`（横线）与 `writing` 一样按普通书写处理；未知标签同样保守回落
             else -> HandwritingStrokeKind.Character
         }
     }

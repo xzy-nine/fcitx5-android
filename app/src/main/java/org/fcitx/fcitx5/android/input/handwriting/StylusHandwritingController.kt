@@ -52,7 +52,6 @@ import android.view.inputmethod.HandwritingGesture
 import android.view.inputmethod.InsertGesture
 import android.view.inputmethod.InsertModeGesture
 import android.view.inputmethod.JoinOrSplitGesture
-import android.view.inputmethod.RemoveSpaceGesture
 import android.view.inputmethod.SelectGesture
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
@@ -472,6 +471,41 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     }
 
     /**
+     * 手势分类要的**上下文**：书写区域（宽 × 高）+ 光标前文。
+     *
+     * 分类器只有拿到尺度才知道「同一个闭合环」在整屏尺度下意味着涂抹、在一行字高下才是圈选；
+     * 前文让它区分「在已有文字上操作」与「在空白处书写」（verticalbar 与数字 1/字母 l 同形）。
+     * 两者都取不到就返回 (null, null)，此时按无上下文调用，行为与旧版一致。
+     *
+     * **必须在主线程调用**；`preContext` 走输入连接（跨进程），故只应在**会话结束**时取一次，
+     * 预览路径请用 [gestureWritingArea]（纯本地几何，无 IPC）。
+     */
+    private fun gestureRecognitionContext(): Pair<Pair<Float, Float>?, String?> {
+        val pre = runCatching {
+            val ic = service.currentInputConnection ?: return@runCatching null
+            ic.getTextBeforeCursor(GESTURE_PRE_CONTEXT_CHARS, 0)?.toString()?.takeIf { it.isNotEmpty() }
+        }.getOrNull()
+        return gestureWritingArea() to pre
+    }
+
+    /**
+     * 书写区域（宽 × 高）：优先用编辑器声明的手写区域（即用户可下笔的范围 = 手势的实际尺度
+     * 基准），拿不到则退回墨迹视图自身尺寸。纯本地读取，无 IPC，预览路径可放心调用。
+     */
+    private fun gestureWritingArea(): Pair<Float, Float>? = runCatching {
+        handwritingBounds?.let { b ->
+            val w = b.width()
+            val h = b.height()
+            if (w > 0f && h > 0f) return@let w to h
+            null
+        } ?: run {
+            val w = inkView.width.toFloat()
+            val h = inkView.height.toFloat()
+            if (w > 0f && h > 0f) w to h else null
+        }
+    }.getOrNull()
+
+    /**
      * 实时手势预览（米系 `previewHandwritingGesture` 同款）。
      *
      * 落笔过程中让引擎判一次手势，若是**可预览手势**（`SelectGesture`/`DeleteGesture` 等
@@ -488,8 +522,12 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         if (!systemEngineInUse()) {
             // 非系统引擎：用谷歌手势分类器（`-x-gesture`）判一次，可预览手势直接交编辑器预览。
             // 文字识别不参与，故这里只做分类、不提交任何内容。
+            // 只带书写区域（本地几何）：预览每帧都跑，绝不能在这里做 `getTextBeforeCursor` 这类 IPC。
+            val writingArea = gestureWritingArea()
             gesturePreviewJob = scope.launch(Dispatchers.Default) {
-                val kind = HandwritingRecognition.classifyGesture(service, points)
+                val kind = HandwritingRecognition.classifyGesture(
+                    service, points, writingArea, null,
+                )
                 if (kind == HandwritingStrokeKind.Character) return@launch
                 val gesture = buildPreviewGesture(kind, points) ?: return@launch
                 withContext(Dispatchers.Main) {
@@ -1022,7 +1060,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
                     .build(),
             )
 
-            // 尖角（`caret:above`/`caret:below`，∧/∨）：进入插入模式，插入点取尖角顶点
+            // 尖角（`caret:above`/`caret:below`）与拱形（`arch:above`/`arch:below`）：进入插入模式
             HandwritingStrokeKind.InsertMode -> sendGesture(
                 ic, executor, "",
                 InsertModeGesture.Builder()
@@ -1032,17 +1070,8 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
                     .build(),
             )
 
-            // 拱形（`arch:*`）：删除空格（米系/Gboard 同款「拱形＝把两段合起来」）
-            HandwritingStrokeKind.RemoveSpace -> sendGesture(
-                ic, executor, "",
-                RemoveSpaceGesture.Builder()
-                    .setPoints(PointF(rect.left, rect.centerY()), PointF(rect.right, rect.centerY()))
-                    .setFallbackText("")
-                    .build(),
-            )
-
-            // 竖线（`verticalbar`）：插入空格（米系 `GestureType.SPACE` 同款走 `JoinOrSplitGesture`——
-            // 该手势在非空白处即插空格、画在已有空白处则删除它），作用点取笔画纵向中点
+            // 竖线（`verticalbar`）：添加/移除空格（`JoinOrSplitGesture` 在非空白处即插空格、
+            // 画在已有空白处则删除它），作用点取笔画纵向中点
             HandwritingStrokeKind.InsertSpace -> sendGesture(
                 ic, executor, " ",
                 JoinOrSplitGesture.Builder()
@@ -1124,12 +1153,15 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      *
      * 与 [performLocalGesture] 的区别是只构造「可预览」的那几类（`PreviewableHandwritingGesture`，
      * 仅 `DeleteGesture`/`SelectGesture` 等），且回落文本一律留空——预览不应产生任何副作用。
-     * 返回 null 表示该类别没有可预览的手势。
+     * 返回 null 表示该类别没有可预览的手势，或当前笔画还不足以构成区域（刚落笔时包围盒为空，
+     * `DeleteGesture.Builder#build` 会因缺少删除区域抛 `IllegalArgumentException`）。
      */
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun buildPreviewGesture(kind: HandwritingStrokeKind, points: List<StrokePoint>): HandwritingGesture? {
         val box = HandwritingStrokeFx.boxOf(points)
         val rect = RectF(box.minX, box.minY, box.maxX, box.maxY)
+        // 笔画起手阶段包围盒为退化矩形，任何手势区域都还不成立
+        if (rect.isEmpty) return null
         return when (kind) {
             HandwritingStrokeKind.Delete -> DeleteGesture.Builder()
                 .setGranularity(DeleteGesture.GRANULARITY_CHARACTER)
@@ -1360,8 +1392,10 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         // 手势来源：系统引擎（小米 `getGoogleGesture`）→ 谷歌手势分类器（`-x-gesture`）。
         // 两条路径产出同一个 AOSP `HandwritingGesture`，下游执行/回落完全统一。
         if (!systemEngineInUse()) {
+            // 上下文在主线程取（读输入连接与视图尺寸），再进后台推理
+            val (writingArea, preContext) = gestureRecognitionContext()
             val kind = withContext(Dispatchers.Default) {
-                HandwritingRecognition.classifyGesture(service, last)
+                HandwritingRecognition.classifyGesture(service, last, writingArea, preContext)
             }
             if (kind == HandwritingStrokeKind.Character) {
                 Timber.d("stylus handwriting: no gesture (google classifier)")
@@ -1456,6 +1490,13 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
 
         /** 编辑框手写区域的判定余量（dp）：边界与实际落点常有小数像素误差。 */
         const val EDITOR_BOUNDS_MARGIN_DP = 8f
+
+        /**
+         * 手势分类时提供给模型的光标前文字符数。
+         *
+         * 只用于区分「在文字上操作」与「在空白处书写」，取一小段即可，无需整段上下文。
+         */
+        const val GESTURE_PRE_CONTEXT_CHARS = 32
 
         /**
          * 手写会话空闲超时（ms）——**米系同款 500ms 短会话**

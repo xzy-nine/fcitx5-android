@@ -31,7 +31,11 @@ import com.google.mlkit.vision.digitalink.recognition.DigitalInkRecognitionModel
 import com.google.mlkit.vision.digitalink.recognition.DigitalInkRecognizer
 import com.google.mlkit.vision.digitalink.recognition.DigitalInkRecognizerOptions
 import com.google.mlkit.vision.digitalink.recognition.Ink
+import com.google.mlkit.vision.digitalink.recognition.RecognitionContext
+import com.google.mlkit.vision.digitalink.recognition.WritingArea
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import timber.log.Timber
 import java.util.Locale
@@ -57,13 +61,20 @@ object GoogleDigitalInkEngine {
     private var recognizerTag: String? = null
 
     /** 手势分类器缓存（与文字识别器分开：模型不同、可同时持有）。 */
-    /** 手势分类器缓存（与文字识别器分开：模型不同、可同时持有）。 */
     private var gestureRecognizer: DigitalInkRecognizer? = null
     private var gestureRecognizerTag: String? = null
 
     /** 已下载语言 tag 的集合（模型市场用；由 [refreshDownloadedModels] 刷新）。 */
     @Volatile
     private var downloadedTags: Set<String> = emptySet()
+
+    /**
+     * 手势推理串行化。
+     *
+     * 实时预览与会话结束判定可能同时在跑，而两者共用同一个 native 识别器实例；
+     * 并发调用会让两次推理的结果互相串台（画圈那笔拿到上一笔的标签）。
+     */
+    private val gestureInferenceLock = Mutex()
 
     /**
      * 当前识别语言 tag：**优先用设置项选中的语言**（模型市场里选中），
@@ -131,31 +142,78 @@ object GoogleDigitalInkEngine {
      * 分类器输出的是**手势类名**（`scribble`/`circle`/`caret:above`…），不是文本；取分数最高的
      * 候选交给 [GoogleGestureLabels] 映射。模型未下载 / 不支持手势 / 调用失败一律返回
      * [HandwritingStrokeKind.Character]（＝按普通笔画处理）。
+     *
+     * @param writingArea 笔画所在的书写区域（宽 × 高，与笔画同单位）。分类器据它判断笔迹尺度：
+     *   同一个闭合环在「整屏」和「一行字高」两种尺度下含义完全不同（前者可能是涂抹、后者才是
+     *   圈选）。为空则不传上下文，模型只能按原始坐标猜，尺度不同的手势会被混淆。
+     * @param preContext 前文（光标前的少量文本），供模型区分「在文字上操作」与「在空白处书写」。
      */
-    suspend fun classifyGesture(context: Context, stroke: List<StrokePoint>): HandwritingStrokeKind {
+    suspend fun classifyGesture(
+        context: Context,
+        stroke: List<StrokePoint>,
+        writingArea: Pair<Float, Float>? = null,
+        preContext: String? = null,
+    ): HandwritingStrokeKind {
         if (stroke.isEmpty()) return HandwritingStrokeKind.Character
         val tag = gestureTag(languageTag(context))
-        val model = modelFor(tag) ?: run {
-            Timber.d("$TAG: gesture tag %s has no model, treat as character", tag)
-            return HandwritingStrokeKind.Character
+        // 串行化：预览与会话结束判定共用同一个 native 识别器，并发会让结果串台
+        return gestureInferenceLock.withLock {
+            val model = modelFor(tag) ?: run {
+                Timber.d("$TAG: gesture tag %s has no model, treat as character", tag)
+                return@withLock HandwritingStrokeKind.Character
+            }
+            val ink = buildInk(listOf(stroke)) ?: return@withLock HandwritingStrokeKind.Character
+            val client = gestureRecognizerFor(model, tag) ?: run {
+                Timber.d("$TAG: gesture recognizer unavailable for %s", tag)
+                return@withLock HandwritingStrokeKind.Character
+            }
+            val recognitionContext = buildRecognitionContext(writingArea, preContext)
+            val label = runCatching {
+                val task = if (recognitionContext != null) {
+                    client.recognize(ink, recognitionContext)
+                } else {
+                    client.recognize(ink)
+                }
+                task.awaitValue().candidates
+                    .maxByOrNull { it.score ?: 0f }
+                    ?.text
+            }.getOrElse {
+                // 手势模型未下载 / 引擎内部错误：只当作「本引擎本次判不出手势」
+                Timber.w(it, "$TAG: gesture classify failed for %s", tag)
+                return@withLock HandwritingStrokeKind.Character
+            }
+            val kind = GoogleGestureLabels.classify(label)
+            Timber.d(
+                "$TAG: gesture classifier label=%s -> %s (points=%d, area=%s)",
+                label, kind, stroke.size, writingArea,
+            )
+            kind
         }
-        val ink = buildInk(listOf(stroke)) ?: return HandwritingStrokeKind.Character
-        val client = gestureRecognizerFor(model, tag) ?: run {
-            Timber.d("$TAG: gesture recognizer unavailable for %s", tag)
-            return HandwritingStrokeKind.Character
-        }
-        val label = runCatching {
-            client.recognize(ink).awaitValue().candidates
-                .maxByOrNull { it.score ?: 0f }
-                ?.text
+    }
+
+    /**
+     * 组装识别上下文（`RecognitionContext`）：书写区域 + 前文。
+     *
+     * 两者都不是必需项，**都拿不到时返回 null**，此时按无上下文的旧路径调用，行为与不带
+     * 上下文一致。
+     */
+    private fun buildRecognitionContext(
+        writingArea: Pair<Float, Float>?,
+        preContext: String?,
+    ): RecognitionContext? {
+        val (w, h) = writingArea ?: (0f to 0f)
+        val hasArea = w > 0f && h > 0f
+        val hasPre = !preContext.isNullOrEmpty()
+        if (!hasArea && !hasPre) return null
+        return runCatching {
+            RecognitionContext.builder().apply {
+                if (hasArea) setWritingArea(WritingArea(w, h))
+                if (hasPre) setPreContext(preContext)
+            }.build()
         }.getOrElse {
-            // 手势模型未下载 / 引擎内部错误：只当作「本引擎本次判不出手势」
-            Timber.w(it, "$TAG: gesture classify failed for %s", tag)
-            return HandwritingStrokeKind.Character
+            Timber.w(it, "$TAG: build recognition context failed")
+            null
         }
-        val kind = GoogleGestureLabels.classify(label)
-        Timber.d("$TAG: gesture classifier label=%s -> %s", label, kind)
-        return kind
     }
 
     // ------------------------------------------------------------------

@@ -15,9 +15,10 @@ import org.junit.Test
 class GoogleGestureLabelsTest {
 
     @Test
-    fun `delete gestures map to delete`() {
+    fun `scribble maps to delete and strike is not a gesture`() {
         assertEquals(HandwritingStrokeKind.Delete, GoogleGestureLabels.classify("scribble"))
-        assertEquals(HandwritingStrokeKind.Delete, GoogleGestureLabels.classify("strike"))
+        // 横线常是手写的一部分（「一」、字母中的横），不当删除处理
+        assertEquals(HandwritingStrokeKind.Character, GoogleGestureLabels.classify("strike"))
     }
 
     @Test
@@ -26,14 +27,9 @@ class GoogleGestureLabelsTest {
     }
 
     @Test
-    fun `caret maps to insert mode and arch maps to remove space`() {
-        // 尖角 ∧/∨ = 插入模式（米系 INSERT_UP/INSERT_DOWN → InsertModeGesture）
-        for (tag in listOf("caret:above", "caret:below")) {
+    fun `caret and arch both map to insert mode`() {
+        for (tag in listOf("caret:above", "caret:below", "arch:above", "arch:below")) {
             assertEquals(tag, HandwritingStrokeKind.InsertMode, GoogleGestureLabels.classify(tag))
-        }
-        // 拱形 = 删除空格
-        for (tag in listOf("arch:above", "arch:below")) {
-            assertEquals(tag, HandwritingStrokeKind.RemoveSpace, GoogleGestureLabels.classify(tag))
         }
     }
 
@@ -55,14 +51,14 @@ class GoogleGestureLabelsTest {
             "circle", "corner:downleft", "scribble", "strike", "verticalbar", "writing",
         )
         val expected = mapOf(
-            "arch:above" to HandwritingStrokeKind.RemoveSpace,
-            "arch:below" to HandwritingStrokeKind.RemoveSpace,
+            "arch:above" to HandwritingStrokeKind.InsertMode,
+            "arch:below" to HandwritingStrokeKind.InsertMode,
             "caret:above" to HandwritingStrokeKind.InsertMode,
             "caret:below" to HandwritingStrokeKind.InsertMode,
             "circle" to HandwritingStrokeKind.Select,
             "corner:downleft" to HandwritingStrokeKind.Newline,
             "scribble" to HandwritingStrokeKind.Delete,
-            "strike" to HandwritingStrokeKind.Delete,
+            "strike" to HandwritingStrokeKind.Character,
             "verticalbar" to HandwritingStrokeKind.InsertSpace,
             "writing" to HandwritingStrokeKind.Character,
         )

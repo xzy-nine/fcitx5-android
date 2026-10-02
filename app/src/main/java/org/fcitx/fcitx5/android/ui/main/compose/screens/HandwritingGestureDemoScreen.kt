@@ -62,10 +62,6 @@ private enum class GestureDemo(val titleRes: Int, val summaryRes: Int) {
         R.string.handwriting_gesture_insert_mode_summary,
     ),
     Newline(R.string.handwriting_gesture_newline, R.string.handwriting_gesture_newline_summary),
-    RemoveSpace(
-        R.string.handwriting_gesture_remove_space,
-        R.string.handwriting_gesture_remove_space_summary,
-    ),
     InsertSpace(
         R.string.handwriting_gesture_insert_space,
         R.string.handwriting_gesture_insert_space_summary,
@@ -210,8 +206,6 @@ private fun GestureTryCanvas() {
                 HandwritingStrokeKind.InsertMode ->
                     stringResource(R.string.handwriting_gesture_insert_mode)
                 HandwritingStrokeKind.Newline -> stringResource(R.string.handwriting_gesture_newline)
-                HandwritingStrokeKind.RemoveSpace ->
-                    stringResource(R.string.handwriting_gesture_remove_space)
                 HandwritingStrokeKind.InsertSpace ->
                     stringResource(R.string.handwriting_gesture_insert_space)
             }

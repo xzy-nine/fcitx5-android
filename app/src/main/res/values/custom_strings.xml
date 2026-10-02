@@ -286,12 +286,10 @@
     <string name="handwriting_gesture_select">Circle to select</string>
     <string name="handwriting_gesture_select_summary">Draw a closed loop around text to select it</string>
     <string name="handwriting_gesture_insert_mode">Caret to insert here</string>
-    <string name="handwriting_gesture_insert_mode_summary">Draw a tall narrow “v” (∧ or ∨) where you want to insert</string>
+    <string name="handwriting_gesture_insert_mode_summary">Draw a caret (∧ or ∨) or an arch (∩) where you want to insert</string>
     <string name="handwriting_gesture_newline">Hook to insert a newline</string>
-    <string name="handwriting_gesture_remove_space">Arch to remove a space</string>
     <string name="handwriting_gesture_insert_space">Vertical bar to insert a space</string>
     <string name="handwriting_gesture_newline_summary">Draw a downward hook ending leftwards to insert a line break</string>
-    <string name="handwriting_gesture_remove_space_summary">Draw an arch (∩) to join two words by removing the space</string>
     <string name="handwriting_gesture_insert_space_summary">Draw a vertical bar where a space should be inserted</string>
     <string name="handwriting_gesture_try">Try it</string>
     <string name="handwriting_gesture_demo_hint">Draw the gesture below; the recognition result shows here</string>
