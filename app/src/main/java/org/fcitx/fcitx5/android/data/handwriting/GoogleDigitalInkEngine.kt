@@ -12,7 +12,9 @@
  *   留空时跟随应用/系统语言（见 [languageTag]）；
  * - 输入是「整段墨迹」（多笔），输出是若干**完整文本候选**（`RecognitionCandidate`：
  *   text + score），因此不需要本项目的叠写切分；
- * - 只做文字识别，**没有手势能力**（触控笔手势仍由系统内置引擎提供）。
+ * - **另有手势分类器**：[classifyGesture] 用 `<tag>-x-gesture` 模型把单笔判成手势类别
+ *   （输出同样是 `RecognitionCandidate`，但 `text` 是手势类名而非文字，见 [GoogleGestureLabels]），
+ *   供触控笔手势在**非小米设备**上替代本地几何启发式。
  *
  * 所有 ML Kit 调用都 `runCatching`：设备无 Google Play 服务 / ML Kit 未初始化 /
  * 模型未下载时只应表现为「本引擎不可用」，按引擎链回落到下一个后端。
@@ -41,13 +43,23 @@ object GoogleDigitalInkEngine {
     /** 单次识别向引擎要的候选上限（调用方再按 topK 截断；识别器复用，故取固定值）。 */
     private const val MAX_RESULTS = 10
 
-    /** 语言模型缓存（按语言 tag；ML Kit 的模型对象本身无状态，可复用）。 */
-    private var cachedModel: DigitalInkRecognitionModel? = null
-    private var cachedModelTag: String? = null
+    /**
+     * 模型对象缓存（按 tag；ML Kit 的模型对象本身无状态，可复用）。
+     *
+     * 用 map 而非单槽：文字 tag 与手势 tag（`<tag>-x-gesture`）会被交替查询，单槽会让两者
+     * 每次都判为「换语言」而重建。只放模型对象（轻量）；识别器另有两份独立缓存。
+     * 仅在 [Dispatchers.Default] 的识别/分类调用里读写，且重复构造同一模型对象无害。
+     */
+    private val modelCache = mutableMapOf<String, DigitalInkRecognitionModel>()
 
     /** 识别器缓存（构造会加载 native 算法库，必须常驻复用）。 */
     private var recognizer: DigitalInkRecognizer? = null
     private var recognizerTag: String? = null
+
+    /** 手势分类器缓存（与文字识别器分开：模型不同、可同时持有）。 */
+    /** 手势分类器缓存（与文字识别器分开：模型不同、可同时持有）。 */
+    private var gestureRecognizer: DigitalInkRecognizer? = null
+    private var gestureRecognizerTag: String? = null
 
     /** 已下载语言 tag 的集合（模型市场用；由 [refreshDownloadedModels] 刷新）。 */
     @Volatile
@@ -79,7 +91,7 @@ object GoogleDigitalInkEngine {
      * tag 经 ML Kit 解析后的**规范形式**（识别器实际使用的 tag）；不支持时 null。
      *
      * ⚠️ ML Kit 的 `fromLanguageTag` **不做回落**：`en-NZ` 这类官方表里没有的地区变体
-     * 会直接返回 null（而不是给出 `en`）。因此需要按候选链依次尝试 —— 见
+     * 返回 null（而**不是**给出 `en`），因此需要按候选链依次尝试 —— 见
      * [canonicalTagFallback]，单点判定请用它而不是本方法。
      */
     fun canonicalTag(tag: String): String? = runCatching {
@@ -101,6 +113,58 @@ object GoogleDigitalInkEngine {
 
     /** 当前语言是否有对应的数字墨水模型。 */
     fun isLanguageSupported(context: Context): Boolean = modelFor(context) != null
+
+    // ------------------------------------------------------------------
+    // 手势分类（触控笔手势的来源之一）
+    // ------------------------------------------------------------------
+
+    /**
+     * 手势分类器 tag：文本 tag + `-x-gesture`（官方约定，见 base-models 的 `-x-gesture` 扩展列）。
+     *
+     * 例：`zh-Hani` → `zh-Hani-x-gesture`、`en` → `en-x-gesture`。
+     */
+    fun gestureTag(languageTag: String): String = "$languageTag$GESTURE_SUFFIX"
+
+    /** 当前识别语言是否有手势分类器（列表里 `-x-gesture` 的那一档）。 */
+    fun isGestureSupported(context: Context): Boolean =
+        isGestureSupportedForTag(gestureTag(languageTag(context)))
+
+    /** 指定手势 tag 是否有对应分类器。 */
+    private fun isGestureSupportedForTag(tag: String): Boolean =
+        runCatching { DigitalInkRecognitionModelIdentifier.fromLanguageTag(tag) }.getOrNull() != null
+
+    /** 当前语言的手势分类器模型是否已下载（手势路径的判定源，与文字模型分开查询）。 */
+    suspend fun isGestureModelDownloaded(context: Context): Boolean =
+        isModelDownloaded(context, gestureTag(languageTag(context)))
+
+    /**
+     * 单笔墨迹 → 手势类别（谷歌手势分类器）。
+     *
+     * 分类器输出的是**手势类名**（`scribble`/`circle`/`caret:above`…），不是文本；取分数最高的
+     * 候选交给 [GoogleGestureLabels] 映射。模型未下载 / 不支持手势 / 调用失败一律返回
+     * [HandwritingStrokeKind.Character]（＝按普通笔画处理）。
+     */
+    suspend fun classifyGesture(context: Context, stroke: List<StrokePoint>): HandwritingStrokeKind {
+        if (stroke.isEmpty()) return HandwritingStrokeKind.Character
+        val tag = gestureTag(languageTag(context))
+        val model = modelFor(tag) ?: return HandwritingStrokeKind.Character
+        val ink = buildInk(listOf(stroke)) ?: return HandwritingStrokeKind.Character
+        val client = gestureRecognizerFor(model, tag) ?: return HandwritingStrokeKind.Character
+        val label = runCatching {
+            client.recognize(ink).awaitValue().candidates
+                .maxByOrNull { it.score ?: 0f }
+                ?.text
+        }.getOrElse {
+            // 手势模型未下载 / 引擎内部错误：只当作「本引擎本次判不出手势」
+            Timber.w(it, "$TAG: gesture classify failed")
+            return HandwritingStrokeKind.Character
+        }
+        val kind = GoogleGestureLabels.classify(label)
+        Timber.d(
+            "$TAG: gesture classifier label=%s -> %s", label, kind,
+        )
+        return kind
+    }
 
     // ------------------------------------------------------------------
     // 模型状态 / 下载 / 删除（模型市场用，按 tag 操作）
@@ -183,9 +247,10 @@ object GoogleDigitalInkEngine {
         strokes: List<List<StrokePoint>>,
         topK: Int,
     ): List<HandwritingCandidate> {
-        val model = modelFor(context) ?: return emptyList()
+        val textTag = languageTag(context)
+        val model = modelFor(textTag) ?: return emptyList()
         val ink = buildInk(strokes) ?: return emptyList()
-        val client = recognizerFor(model) ?: return emptyList()
+        val client = recognizerFor(model, textTag) ?: return emptyList()
         return runCatching {
             val result = client.recognize(ink).awaitValue()
             result.candidates.mapNotNull { candidate ->
@@ -205,6 +270,10 @@ object GoogleDigitalInkEngine {
         runCatching { recognizer?.close() }
         recognizer = null
         recognizerTag = null
+        runCatching { gestureRecognizer?.close() }
+        gestureRecognizer = null
+        gestureRecognizerTag = null
+        modelCache.clear()
     }
 
     // ------------------------------------------------------------------
@@ -217,24 +286,22 @@ object GoogleDigitalInkEngine {
 
     /** 指定语言对应的模型（解析失败 = 语言不支持）。 */
     private fun modelFor(tag: String): DigitalInkRecognitionModel? {
-        cachedModel?.let { if (cachedModelTag == tag) return it }
+        modelCache[tag]?.let { return it }
         val model = runCatching {
-            val identifier = DigitalInkRecognitionModelIdentifier.fromLanguageTag(tag)
-            identifier?.let { DigitalInkRecognitionModel.builder(it).build() }
+            // 声明为可空：官方表里没有的 tag 返回 null（见 canonicalTag 注释）
+            DigitalInkRecognitionModelIdentifier.fromLanguageTag(tag)?.let {
+                DigitalInkRecognitionModel.builder(it).build()
+            }
         }.getOrElse {
             Timber.w(it, "$TAG: unsupported language tag $tag")
             null
         }
-        if (model != null) {
-            cachedModel = model
-            cachedModelTag = tag
-        }
+        if (model != null) modelCache[tag] = model
         return model
     }
 
     /** 识别器（按语言 tag 复用；语言变化时重建）。 */
-    private fun recognizerFor(model: DigitalInkRecognitionModel): DigitalInkRecognizer? {
-        val tag = cachedModelTag
+    private fun recognizerFor(model: DigitalInkRecognitionModel, tag: String): DigitalInkRecognizer? {
         recognizer?.let { if (recognizerTag == tag) return it }
         val client = runCatching {
             recognizer?.let { runCatching { it.close() } }
@@ -249,6 +316,33 @@ object GoogleDigitalInkEngine {
         }
         recognizer = client
         recognizerTag = tag
+        return client
+    }
+
+    /** 手势分类器（按手势 tag 复用；与文字识别器分开持有）。
+     *
+     * tag 由调用方显式传入（**不能**从 [modelCache] 反查：文字与手势两条路径的 tag 交替出现，
+     * 靠「最近一次」判定会误命中）。
+     */
+    private fun gestureRecognizerFor(
+        model: DigitalInkRecognitionModel,
+        tag: String,
+    ): DigitalInkRecognizer? {
+        gestureRecognizer?.let { if (gestureRecognizerTag == tag) return it }
+        val client = runCatching {
+            gestureRecognizer?.let { runCatching { it.close() } }
+            DigitalInkRecognition.getClient(
+                DigitalInkRecognizerOptions.builder(model)
+                    // 手势要的是「哪一个手势」，一个候选够用（多留几个仅用于日志/调试）
+                    .setMaxResultCount(GESTURE_MAX_RESULTS)
+                    .build()
+            )
+        }.getOrElse {
+            Timber.w(it, "$TAG: gesture recognizer init failed")
+            null
+        }
+        gestureRecognizer = client
+        gestureRecognizerTag = tag
         return client
     }
 
@@ -284,4 +378,10 @@ object GoogleDigitalInkEngine {
 
     /** 中文（Han 脚本）模型 tag。 */
     private const val LANGUAGE_ZH_HANI = "zh-Hani"
+
+    /** 手势分类器的 tag 后缀（官方既定的 BCP-47 扩展位）。 */
+    private const val GESTURE_SUFFIX = "-x-gesture"
+
+    /** 手势分类向引擎要的候选数（只要最可信的那一个手势类别）。 */
+    private const val GESTURE_MAX_RESULTS = 3
 }

@@ -16,3 +16,33 @@ data class HandwritingCandidate(
     val char: String,
     val score: Float,
 )
+
+/**
+ * 单笔手势类别（[Character] = 普通字符笔画）。
+ *
+ * 由谷歌手势分类器（`-x-gesture` 模型，见 `GoogleGestureLabels`）或系统内置引擎判定；
+ * 判定结果用于构造标准 AOSP `HandwritingGesture` 交给编辑器执行
+ * （`InputConnection#performHandwritingGesture`，坐标一律屏幕坐标）。
+ */
+enum class HandwritingStrokeKind {
+    /** 普通字符笔画：进识别窗口。 */
+    Character,
+
+    /** 涂改（`scribble`/`strike`）→ 删除笔迹下的文本。 */
+    Delete,
+
+    /** 圈选（`circle`）→ 选中圈住的内容。 */
+    Select,
+
+    /** 换行（`corner:downleft`，下行后向左收的 ⏎ 形）→ 插入换行。 */
+    Newline,
+
+    /** 尖角（`caret:above`/`caret:below`，∧/∨）→ 进入插入模式（在顶点处插入）。 */
+    InsertMode,
+
+    /** 拱形（`arch:*`）→ 删除空格（插入尖角的逆操作）。 */
+    RemoveSpace,
+
+    /** 竖线（`verticalbar`）→ 插入空格（画在已有空白处则删除该空白）。 */
+    InsertSpace,
+}

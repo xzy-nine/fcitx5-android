@@ -66,6 +66,14 @@ object HandwritingRecognition {
     @Volatile
     private var googleModelReady = false
 
+    /**
+     * 谷歌**手势分类器**模型是否已就绪（最近一次探测结果）。
+     *
+     * 与 [googleModelReady] 是两个独立模型：`zh-Hani`（文字）与 `zh-Hani-x-gesture`（手势）。
+     */
+    @Volatile
+    private var googleGestureReady = false
+
     /** 最近一次实际产出结果的引擎（状态行回显用；还没出过结果时为 null）。 */
     @Volatile
     var lastUsedEngine: HandwritingEngineKind? = null
@@ -86,8 +94,8 @@ object HandwritingRecognition {
     /**
      * 系统内置引擎是否参与本次选择（引擎链里含它）。
      *
-     * 触控笔手势只有系统引擎能给，故手势能力也随该判定开关（选了谷歌时手势退回本地
-     * 几何启发式，见 `StylusHandwritingController`）。
+     * 触控笔手势的来源优先级：系统引擎（`getGoogleGesture`）→ 谷歌手势分类器（`-x-gesture`），
+     * 见 [classifyGesture] 与 `StylusHandwritingController`。
      */
     fun systemEngineRequested(): Boolean = engineChain().contains(HandwritingEngineKind.System)
 
@@ -99,6 +107,45 @@ object HandwritingRecognition {
 
     /** 谷歌数字墨水模型是否已就绪（最近一次探测结果）。 */
     val isGoogleModelReady: Boolean get() = googleModelReady
+
+    /**
+     * 谷歌手势分类器当前是否可用：引擎链里含谷歌（即系统引擎未接管手势）+ 该语言有
+     * `-x-gesture` 档 + **手势模型本身已就绪**（内置或已下载）。
+     *
+     * 不触发任何初始化/下载：模型没就绪时返回 false，调用侧按本地几何启发式处理。
+     */
+    fun googleGestureInUse(context: Context): Boolean =
+        engineChain().contains(HandwritingEngineKind.GoogleDigitalInk) &&
+                googleGestureReady &&
+                GoogleDigitalInkEngine.isGestureSupported(context)
+
+    /**
+     * 单笔墨迹 → 手势类别（触控笔手势的统一入口）。
+     *
+     * 来源优先级：系统内置引擎（小米随手写）→ 谷歌手势分类器：
+     * - 系统引擎可用：由调用方直接调 `XiaomiHandwritingEngine.recognizeGesture`（返回 AOSP 手势对象，
+     *   与本方法是两种不同产物，故不在此合并）；
+     * - 否则本方法用谷歌 `-x-gesture` 分类器判定（真正的模型推理）；分类器不可用/判不出时
+     *   返回 [HandwritingStrokeKind.Character]（按普通字符笔画处理）。
+     *
+     * ⚠️ 会做模型推理，**必须在后台线程调用**。
+     */
+    suspend fun classifyGesture(
+        context: Context,
+        stroke: List<StrokePoint>,
+    ): HandwritingStrokeKind = withContext(Dispatchers.Default) {
+        // 手势模型状态可能还没探测过（例：用户没进过手写设置页）——这里廉价地探一次，
+        // 否则内置了手势模型也不会被用上；探测失败只表现为判不出手势。
+        if (!googleGestureReady &&
+            engineChain().contains(HandwritingEngineKind.GoogleDigitalInk)
+        ) {
+            runCatching { refreshGoogleGestureModel(context) }
+        }
+        if (googleGestureInUse(context)) {
+            return@withContext GoogleDigitalInkEngine.classifyGesture(context, stroke)
+        }
+        HandwritingStrokeKind.Character
+    }
 
     /**
      * 识别后端是否已就绪：**引擎链上任一后端当前可用即可**（状态查询，不触发初始化）。
@@ -152,11 +199,23 @@ object HandwritingRecognition {
     }
 
     /**
+     * 刷新**手势分类器**模型状态（与文字模型分开：是同一语言下的另一个模型）。
+     *
+     * 两者的下载状态互相独立 —— 内置的也只有 `zh-Hani` 文字模型 + 全部手势模型，
+     * 故英文设备可能「手势可用而文字模型未下载」。手势判定不能借用 [googleModelReady]。
+     */
+    suspend fun refreshGoogleGestureModel(context: Context) {
+        googleGestureReady = GoogleDigitalInkEngine.isGestureModelDownloaded(context)
+    }
+
+    /**
      * 按引擎链把识别后端准备到**第一个可用**的（幂等）。
      *
      * @return 准备好的引擎；链上全不可用时 null（画布显示「引擎不可用」）
      */
     suspend fun prepare(context: Context): HandwritingEngineKind? = withContext(Dispatchers.IO) {
+        // 手势分类器是独立模型，顺手探一次：触控笔首次判定就不必再等探测
+        runCatching { refreshGoogleGestureModel(context) }
         for (kind in engineChain()) {
             when (kind) {
                 HandwritingEngineKind.System ->
@@ -239,6 +298,7 @@ object HandwritingRecognition {
         systemEngineGaveUp = false
         systemEmptyStreak = 0
         googleModelReady = false
+        googleGestureReady = false
         lastUsedEngine = null
         XiaomiHandwritingEngine.close()
         GoogleDigitalInkEngine.close()

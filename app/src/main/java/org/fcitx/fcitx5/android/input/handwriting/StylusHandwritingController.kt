@@ -21,7 +21,7 @@
  * 不做逐笔识别、不做叠写切分、不产生候选（米系同样只有单结果）。
  * 手势判定与识别后端解耦：**文字识别走统一入口
  * [org.fcitx.fcitx5.android.data.handwriting.HandwritingRecognition]**（系统引擎优先、回落
- * 谷歌数字墨水），手势走系统引擎，不可用时走本地几何启发式 `HandwritingGestures` + `HandwritingStrokeFx`。
+ * 谷歌数字墨水）；手势同样走该入口的 `classifyGesture`（系统引擎 → 谷歌手势分类器两档回落）。
  * 与键盘手写布局（`HandwritingKeyboardLayout`）是**并列的两条输入入口**：笔迹与会话状态各自持有，
  * 只有识别后端（引擎选择/模型加载/自降级）经 [HandwritingRecognition] 共用。
  *
@@ -50,6 +50,9 @@ import android.view.inputmethod.DeleteGesture
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.HandwritingGesture
 import android.view.inputmethod.InsertGesture
+import android.view.inputmethod.InsertModeGesture
+import android.view.inputmethod.JoinOrSplitGesture
+import android.view.inputmethod.RemoveSpaceGesture
 import android.view.inputmethod.SelectGesture
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
@@ -65,7 +68,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingCandidate
-import org.fcitx.fcitx5.android.data.handwriting.HandwritingGestures
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingRecognition
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingStrokeFx
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingStrokeKind
@@ -480,10 +482,31 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      * 投到 `mBackgroundHandler`，结果再 post 回主线程。这里用 [scope] + `Dispatchers.Default`。
      */
     private fun previewGestureIfPossible() {
-        if (!systemEngineInUse()) return
         // 屏幕坐标：手势区域要交给编辑器，必须是 screen coordinates（见 snapshotScreen）
         val points = inkView.currentPointsScreen() ?: return
         if (gesturePreviewJob?.isActive == true) return
+        if (!systemEngineInUse()) {
+            // 非系统引擎：用谷歌手势分类器（`-x-gesture`）判一次，可预览手势直接交编辑器预览。
+            // 文字识别不参与，故这里只做分类、不提交任何内容。
+            gesturePreviewJob = scope.launch(Dispatchers.Default) {
+                val kind = HandwritingRecognition.classifyGesture(service, points)
+                if (kind == HandwritingStrokeKind.Character) return@launch
+                val gesture = buildPreviewGesture(kind, points) ?: return@launch
+                withContext(Dispatchers.Main) {
+                    tailGesture = gesture
+                    tailGesturePointCount = points.size
+                    if (gesture !is android.view.inputmethod.PreviewableHandwritingGesture) {
+                        return@withContext
+                    }
+                    val ic = service.currentInputConnection ?: return@withContext
+                    cancelGesturePreview()
+                    val signal = android.os.CancellationSignal()
+                    gesturePreviewSignal = signal
+                    runCatching { ic.previewHandwritingGesture(gesture, signal) }
+                }
+            }
+            return
+        }
         gesturePreviewJob = scope.launch(Dispatchers.Default) {
             val gesture = XiaomiHandwritingEngine.recognizeGesture(points) ?: return@launch
             withContext(Dispatchers.Main) {
@@ -977,8 +1000,9 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     }
 
     /**
-     * 本地几何启发式手势（系统引擎不可用时的手势来源）。
+     * 手势类别 → 标准 AOSP `HandwritingGesture`（系统引擎不可用时的落点）。
      *
+     * 输入来自谷歌手势分类器（[HandwritingRecognition.classifyGesture] 的 `-x-gesture` 结果）；
      * 与系统引擎路径共用同一套屏幕坐标语义：入参 [points] 已是屏幕坐标。
      */
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
@@ -988,20 +1012,41 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         val rect = RectF(box.minX, box.minY, box.maxX, box.maxY)
         val executor = ContextCompat.getMainExecutor(service)
         when (kind) {
+            // 换行（`corner:downleft`）：插换行，插入点取笔画纵向中点
             HandwritingStrokeKind.Newline -> sendGesture(
                 ic, executor, "\n",
                 InsertGesture.Builder()
                     .setTextToInsert("\n")
-                    .setInsertionPoint(PointF(rect.centerX(), rect.bottom))
+                    .setInsertionPoint(verticalMiddlePoint(points))
                     .setFallbackText("\n")
                     .build(),
             )
 
-            HandwritingStrokeKind.Insert -> sendGesture(
+            // 尖角（`caret:above`/`caret:below`，∧/∨）：进入插入模式，插入点取尖角顶点
+            HandwritingStrokeKind.InsertMode -> sendGesture(
+                ic, executor, "",
+                InsertModeGesture.Builder()
+                    .setInsertionPoint(caretVertexPoint(points))
+                    .setCancellationSignal(android.os.CancellationSignal())
+                    .setFallbackText("")
+                    .build(),
+            )
+
+            // 拱形（`arch:*`）：删除空格（米系/Gboard 同款「拱形＝把两段合起来」）
+            HandwritingStrokeKind.RemoveSpace -> sendGesture(
+                ic, executor, "",
+                RemoveSpaceGesture.Builder()
+                    .setPoints(PointF(rect.left, rect.centerY()), PointF(rect.right, rect.centerY()))
+                    .setFallbackText("")
+                    .build(),
+            )
+
+            // 竖线（`verticalbar`）：插入空格（米系 `GestureType.SPACE` 同款走 `JoinOrSplitGesture`——
+            // 该手势在非空白处即插空格、画在已有空白处则删除它），作用点取笔画纵向中点
+            HandwritingStrokeKind.InsertSpace -> sendGesture(
                 ic, executor, " ",
-                InsertGesture.Builder()
-                    .setTextToInsert(" ")
-                    .setInsertionPoint(PointF(rect.centerX(), rect.centerY()))
+                JoinOrSplitGesture.Builder()
+                    .setJoinOrSplitPoint(verticalMiddlePoint(points))
                     .setFallbackText(" ")
                     .build(),
             )
@@ -1032,6 +1077,74 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             }
 
             HandwritingStrokeKind.Character -> Unit
+        }
+    }
+
+    /**
+     * 笔画「纵向中点」处的坐标（米系 `GestureParserUtils.getRightCenterYPoint` 同款算法）：
+     * 沿笔画找**穿过纵向中线**的那一点（符号变化处），找不到则退化为包围盒中心。
+     *
+     * 用于 `InsertGesture`（换行）与 `JoinOrSplitGesture` 的作用点——比直接用包围盒角点更贴合
+     * 用户实际落笔的位置（米系 `NewLineGestureParser`/`JoinOrSplitGestureParser` 都用它）。
+     */
+    private fun verticalMiddlePoint(points: List<StrokePoint>): PointF {
+        if (points.isEmpty()) return PointF()
+        val minY = points.minOf { it.y }
+        val maxY = points.maxOf { it.y }
+        val middleY = (minY + maxY) / 2f
+        var lastDiff = 0f
+        for (point in points) {
+            val diff = point.y - middleY
+            if (diff * lastDiff < 0f) return PointF(point.x, point.y)
+            lastDiff = diff
+        }
+        val minX = points.minOf { it.x }
+        val maxX = points.maxOf { it.x }
+        return PointF((minX + maxX) / 2f, middleY)
+    }
+
+    /**
+     * 尖角（∧/∨）的**顶点**坐标：即用户所指的插入位置。
+     *
+     * 米系按 `INSERT_UP`/`INSERT_DOWN` 分别取 `max`/`min`（`InsertModeGestureParser`），两者取的
+     * 都是**两条臂相交的那个尖**；这里由形状自动判定尖朝哪边：两端点（开口端）的中点上下各有
+     * 一段「凸出量」，**凸出更大的一侧**就是尖。
+     */
+    private fun caretVertexPoint(points: List<StrokePoint>): PointF {
+        if (points.isEmpty()) return PointF()
+        val openY = (points.first().y + points.last().y) / 2f
+        val upward = openY - points.minOf { it.y }
+        val downward = points.maxOf { it.y } - openY
+        val vertex = if (upward >= downward) points.minBy { it.y } else points.maxBy { it.y }
+        return PointF(vertex.x, vertex.y)
+    }
+
+    /**
+     * 只为**预览**构造手势（不提交、不回落）：谷歌手势路径的实时预览用。
+     *
+     * 与 [performLocalGesture] 的区别是只构造「可预览」的那几类（`PreviewableHandwritingGesture`，
+     * 仅 `DeleteGesture`/`SelectGesture` 等），且回落文本一律留空——预览不应产生任何副作用。
+     * 返回 null 表示该类别没有可预览的手势。
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    private fun buildPreviewGesture(kind: HandwritingStrokeKind, points: List<StrokePoint>): HandwritingGesture? {
+        val box = HandwritingStrokeFx.boxOf(points)
+        val rect = RectF(box.minX, box.minY, box.maxX, box.maxY)
+        return when (kind) {
+            HandwritingStrokeKind.Delete -> DeleteGesture.Builder()
+                .setGranularity(DeleteGesture.GRANULARITY_CHARACTER)
+                .setDeletionArea(rect)
+                .setFallbackText("")
+                .build()
+
+            HandwritingStrokeKind.Select -> SelectGesture.Builder()
+                .setGranularity(SelectGesture.GRANULARITY_CHARACTER)
+                .setSelectionArea(rect)
+                .setFallbackText("")
+                .build()
+
+            // 其余类别（换行/尖角插入模式/去空格/连拆）不是 PreviewableHandwritingGesture
+            else -> null
         }
     }
 
@@ -1153,7 +1266,8 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      * 否则把**整段累积墨迹**一次性出字。
      *
      * **与识别后端无关**：手势判定与文字识别都走同一条路径，
-     * 系统引擎（小米随手写）不可用时由谷歌数字墨水承担文字识别、由本地几何启发式承担手势。
+     * 系统引擎（小米随手写）不可用时由谷歌数字墨水承担文字识别、手势则由谷歌手势分类器承担
+     * （其模型不可用再退本地几何启发式）。
      *
      * **阈值与系统会话超时对齐**（米系 `mTextEditTimer` 同款 500ms）：平台判定「落笔已停」的
      * 唯一信号就是「距最后一个事件 500ms」（每个事件都会重排该计时），这正是「一个字写完」的天然边界。
@@ -1243,15 +1357,17 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         }
         val all = inkView.snapshotScreen()
         val last = all.lastOrNull()?.takeIf { it.isNotEmpty() } ?: return false
-        // 系统引擎可用 → 用引擎判手势；不可用（非小米设备/开关关闭/已降级）→ 本地几何启发式。
-        // 两条路径产出**同一个 AOSP `HandwritingGesture` 类型**，下游执行/回落完全统一。
+        // 手势来源：系统引擎（小米 `getGoogleGesture`）→ 谷歌手势分类器（`-x-gesture`）。
+        // 两条路径产出同一个 AOSP `HandwritingGesture`，下游执行/回落完全统一。
         if (!systemEngineInUse()) {
-            val kind = HandwritingGestures.detect(last, service.resources.displayMetrics.widthPixels)
+            val kind = withContext(Dispatchers.Default) {
+                HandwritingRecognition.classifyGesture(service, last)
+            }
             if (kind == HandwritingStrokeKind.Character) {
-                Timber.d("stylus handwriting: local heuristics say writing")
+                Timber.d("stylus handwriting: no gesture (google classifier)")
                 return false
             }
-            Timber.d("stylus handwriting: session end local gesture=%s", kind)
+            Timber.d("stylus handwriting: session end gesture=%s (non-system engine)", kind)
             clearWindowState()
             performLocalGesture(kind, last)
             return true

@@ -16,9 +16,11 @@
  *
  * assets 树根 = 应用 `dataDir` 下的相对路径（`files/...` 与 `shared_prefs/...`）：
  * - `files/mlkit_digital_ink_recognition/shared/datadownload/public/datadownloadfile_<ts>/`：
- *   模型本体（`chinese_lstm_4x192.tflite` + `qrnn.zh.reco_20191217.fst_none.recospec.local`）；
+ *   模型本体 —— **中文文字模型**（`lstm_chinese_4x192.tflite` +
+ *   `qrnn.zh.reco_20191217.fst_none.recospec.local`）与**全部手势分类器**
+ *   （27 种文字 × 2 个 pack 的 `scribe.<script>.<date>.{tflite,recospec}.local`）；
  * - `shared_prefs/gms_icing_mdd_*mlkit_digital_ink_recognition.xml`：MDD 文件组索引
- *   （`isModelDownloaded` 的判定源）；
+ *   （`isModelDownloaded` 的判定源；已包含全部 `-x-gesture` tag 的条目）；
  * - `files/mdd_pds_config/shared/`：MDD 日志状态。
  *
  * ⚠️ **必须在任何 ContentProvider 之前物化**（MDD 状态是 SharedPreferences，晚于它第一次
@@ -45,6 +47,14 @@ object MlKitBundledModel {
     /** 物化完成标记（放 filesDir；避免每次进程启动都遍历 assets）。 */
     private const val MARKER = "mlkit_bundled_model.stamp"
 
+    /**
+     * 内置模型内容的**修订号**：marker 记下它，不一致时重新物化一次。
+     *
+     * 增删内置 pack 时必须 +1，否则已物化过的安装会整棵树跳过。重跑时目标文件仍逐个跳过
+     * （已存在的不覆盖），因此只补齐新增内容。
+     */
+    private const val BUNDLED_MODEL_REVISION = 2
+
     /** 包内是否带内置模型。 */
     fun isBundled(context: Context): Boolean = runCatching {
         context.assets.list(ASSET_ROOT)?.isNotEmpty() == true
@@ -54,29 +64,35 @@ object MlKitBundledModel {
     fun isMaterialized(context: Context): Boolean =
         File(context.dataDir, MODEL_DIR).walkTopDown().any { it.isFile && it.name.endsWith(".tflite") }
 
+    /** 当前内置内容的修订号是否已物化过。 */
+    private fun isRevisionMaterialized(context: Context): Boolean =
+        runCatching {
+            File(context.filesDir, MARKER).readText().trim() == BUNDLED_MODEL_REVISION.toString()
+        }.getOrDefault(false)
+
     /**
      * 把内置模型与 MDD 状态物化到应用私有目录（幂等）。
      *
      * - 目标文件已存在则**跳过**（不覆盖真机已下载的模型 / MDD 状态）；
      * - 未内置模型（assets 为空）时直接返回；
+     * - **修订号变化时重跑**（补新增的 pack，见 [BUNDLED_MODEL_REVISION]）；
      * - 全程 runCatching：物化失败只应表现为「模型未下载」，不影响启动。
      *
      * @return 本次是否真的写入了文件
      */
     fun materializeIfNeeded(context: Context): Boolean {
         if (!isBundled(context)) return false
-        if (isMaterialized(context) && File(context.filesDir, MARKER).exists()) return false
+        if (isMaterialized(context) && isRevisionMaterialized(context)) return false
         val copied = runCatching { copyAssetTree(context, ASSET_ROOT, context.dataDir) }
             .getOrElse {
                 Timber.w(it, "$TAG: materialize failed")
                 return false
             }
-        if (copied <= 0) return false
+        // 即使本次没有新文件也要写 marker：修订号已对齐，避免每次启动都遍历 assets
         runCatching {
-            File(context.filesDir, MARKER).writeText(
-                "bundled digital ink model materialized (files=$copied, root=$ASSET_ROOT)\n"
-            )
+            File(context.filesDir, MARKER).writeText("$BUNDLED_MODEL_REVISION\n")
         }
+        if (copied <= 0) return false
         Timber.i("$TAG: bundled digital ink model materialized, new files=%d", copied)
         return true
     }
