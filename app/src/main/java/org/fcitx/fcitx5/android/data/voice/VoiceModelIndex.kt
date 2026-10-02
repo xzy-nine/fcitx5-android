@@ -78,6 +78,11 @@ object VoiceModelIndex {
         return models.items.mapNotNull { node ->
             val map = node as? YamlMap ?: return@mapNotNull null
             val id = (map["id"] as? YamlScalar)?.content ?: return@mapNotNull null
+            // 非法 id（空、`.`/`..`、含路径分隔符）直接剔除，不进市场页
+            if (!VoiceModelStore.isValidModelId(id)) {
+                Timber.w("$TAG: skip model with illegal id: $id")
+                return@mapNotNull null
+            }
             val name = (map["name"] as? YamlScalar)?.content ?: id
             val category = (map["category"] as? YamlScalar)?.content.orEmpty().lowercase()
             if (category != "asr") return@mapNotNull null

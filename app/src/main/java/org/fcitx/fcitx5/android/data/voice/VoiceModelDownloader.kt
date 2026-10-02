@@ -49,12 +49,19 @@ object VoiceModelDownloader {
         model: VoiceModelInfo,
         onProgress: (VoiceModelDownloadState) -> Unit,
     ): Result<Unit> = withContext(Dispatchers.IO) {
+        val throttle = ProgressThrottle(onProgress)
+        val archiveUrl = model.archiveUrl
+        // modelDir 可能因远程索引里的非法 id 返回 null：按「下载失败」安全退出而非抛异常
         val targetDir = VoiceModelStore.modelDir(context, model.id)
+        if (targetDir == null) {
+            val message = "非法的模型 id：${model.id}"
+            Timber.w("$TAG: $message")
+            throttle.emit(VoiceModelDownloadState.Error(message), force = true)
+            return@withContext Result.failure(IOException(message))
+        }
         // 全部写入临时目录，成功后才晋升为 targetDir：
         // 中途失败/取消不会留下残缺文件，避免「看起来已就绪但引擎解析不出 4 个文件」
         val stagingDir = File(targetDir.parentFile, "${targetDir.name}.tmp-${System.currentTimeMillis()}")
-        val throttle = ProgressThrottle(onProgress)
-        val archiveUrl = model.archiveUrl
         try {
             stagingDir.deleteRecursively()
             stagingDir.mkdirs()
@@ -63,17 +70,22 @@ object VoiceModelDownloader {
             } else {
                 downloadFiles(model.files, stagingDir) { throttle.emit(it) }
             }
-            // 先清掉可能存在的旧目标目录，再把临时目录晋升为正式目录
-            targetDir.deleteRecursively()
+            // 晋升：旧目录先改名留作备份，新目录就位后再删备份；
+            // rename 失败则恢复旧目录，绝不丢掉原本可用的模型
+            val backupDir =
+                File(targetDir.parentFile, "${targetDir.name}.old-${System.currentTimeMillis()}")
+            val hadOld = targetDir.renameTo(backupDir)
             if (!stagingDir.renameTo(targetDir)) {
+                if (hadOld) backupDir.renameTo(targetDir)
                 stagingDir.deleteRecursively()
                 throw IOException("无法保存模型文件")
             }
+            if (hadOld) backupDir.deleteRecursively()
             throttle.emit(VoiceModelDownloadState.Complete, force = true)
             Result.success(Unit)
         } catch (e: Exception) {
             Timber.e(e, "$TAG: download failed for ${model.id}")
-            // 清理临时目录与可能被写入过一部分的旧目标目录
+            // 清理临时目录（旧目标目录在晋升前不受影响）
             stagingDir.deleteRecursively()
             throttle.emit(VoiceModelDownloadState.Error(e.message ?: "下载失败"), force = true)
             Result.failure(e)

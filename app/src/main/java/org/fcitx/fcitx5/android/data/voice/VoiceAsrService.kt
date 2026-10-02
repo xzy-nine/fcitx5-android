@@ -103,6 +103,12 @@ class VoiceAsrService : Service() {
             Thread({
                 val ok = try {
                     synchronized(lock) {
+                        // 拿到锁后重新校验路径：期间可能又发生了模型切换，
+                        // 旧的 recognizer 对本次请求的路径无效，须先释放再按新路径创建
+                        if (recognizer != null && enginePaths != paths) {
+                            Log.i(TAG, "model changed during prepare, rebuilding: $encoder")
+                            releaseEngineLocked()
+                        }
                         recognizer != null || createEngine(encoder, decoder, joiner, tokens)
                     }
                 } catch (e: Throwable) {

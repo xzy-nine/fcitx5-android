@@ -44,13 +44,6 @@ class VoiceAudioCapture(
     private var record: AudioRecord? = null
     private var thread: Thread? = null
 
-    /**
-     * release() 超时后把 recorder 移交回读线程：由 loop() 的 finally 块自行 release，
-     * 避免外部在它仍阻塞在 read() 里时释放设备。
-     */
-    @Volatile
-    private var recorderOwnedByThread = false
-
     @Volatile
     private var running = false
 
@@ -87,7 +80,6 @@ class VoiceAudioCapture(
             return false
         }
         record = recorder
-        recorderOwnedByThread = false
         return try {
             recorder.startRecording()
             if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
@@ -130,18 +122,20 @@ class VoiceAudioCapture(
         thread = null
         if (t != null) {
             // 读线程通常在下一次 read 返回后退出（分块 100ms）；join 超时说明它还卡在
-            // read/push 上——此时不能从外部 release AudioRecord（原生录音会话残留、
-            // 且设备可能正被线程使用），改为把所有权移交线程，由 loop() 的 finally 收尾
+            // read/push 上——此时不能从外部 release AudioRecord（正被线程使用，且会残留
+            // 原生录音会话），交给 loop() 的 finally 无条件释放它持有的实例
             t.join(200)
             if (t.isAlive) {
-                recorderOwnedByThread = true
                 Timber.w("$TAG: capture thread still alive after stop, deferring release to thread")
                 return
             }
+            // 线程已退出：recorder 已由 loop() 的 finally 释放，这里只清引用
+            record = null
+        } else {
+            // 线程从未启动（启动失败路径残留）时由外部兜底释放
+            record?.release()
+            record = null
         }
-        record?.release()
-        record = null
-        recorderOwnedByThread = false
     }
 
     private fun loop(recorder: AudioRecord) {
@@ -204,19 +198,20 @@ class VoiceAudioCapture(
         } finally {
             // 读线程退出前把残余的语音前缓冲交出去，避免丢掉最后一段开头
             if (!speechDetected) flush(preRoll)
-            // 录音设备由**读线程自己**收尾：stop()/release() 从别的线程调用时，
-            // 可能正好卡在 read() 里，导致原生录音会话残留（日志里 audioRecordData 继续累加）
+            // 录音设备由**读线程自己**无条件收尾：stop()/release() 从别的线程调用时，
+            // 可能正好卡在 read() 里（外部 release 与 read 并发不安全，且会残留
+            // 原生录音会话）；本线程退出时 recorder 必然已无人使用，这里 release 即可。
+            // release() 侧只在线程已退出时才可能走到它的 record?.release()，
+            // 故同一实例不会被双重释放
             try {
                 if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) recorder.stop()
             } catch (e: Exception) {
                 Timber.w(e, "$TAG: stop in loop failed")
             }
-            // release() 超时把设备移交给了本线程（recorder 已从 record 字段摘除）：
-            // 这里是它唯一会被释放的地方
-            if (recorderOwnedByThread) {
-                recorderOwnedByThread = false
+            try {
                 recorder.release()
-                Timber.i("$TAG: deferred recorder released by capture thread")
+            } catch (e: Exception) {
+                Timber.w(e, "$TAG: release in loop failed")
             }
             Timber.i("$TAG: capture loop exited (chunks=$chunks)")
         }

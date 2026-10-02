@@ -246,7 +246,10 @@ object VolcengineAsrProvider : OnlineAsrProvider {
             val flags = data[1].toInt() and 0x0F
             val compression = data[2].toInt() and 0x0F
             val serialization = (data[2].toInt() shr 4) and 0x0F
-            var offset = headerSize
+            // 头[0] 低 4 位是「4 字节单位」的头长度（0x1 = 4 字节），不是字节偏移
+            val headerBytes = headerSize * 4
+            if (headerBytes < 4 || headerBytes > data.size) return
+            var offset = headerBytes
 
             fun need(n: Int) = offset + n <= data.size
 
@@ -260,7 +263,9 @@ object VolcengineAsrProvider : OnlineAsrProvider {
                 val code = if (need(4)) readInt32BE(data, offset).also { offset += 4 } else 0
                 val msg = if (need(4)) {
                     val len = readUint32BE(data, offset).also { offset += 4 }
-                    if (need(len)) String(data, offset, len, Charsets.UTF_8) else ""
+                    if (len >= 0 && len <= data.size - offset) {
+                        String(data, offset, len, Charsets.UTF_8)
+                    } else ""
                 } else ""
                 if (!done.get()) callback.onError("火山引擎错误 $code：$msg")
                 return
@@ -278,7 +283,8 @@ object VolcengineAsrProvider : OnlineAsrProvider {
             val payloadLen = if (hasPayload) readUint32BE(data, offset) else 0
             if (hasPayload) {
                 offset += 4
-                hasPayload = need(payloadLen)
+                // 用减法比较避免 offset+payloadLen 溢出；负值长度也一律拒绝
+                hasPayload = payloadLen >= 0 && payloadLen <= data.size - offset
             }
             if (hasPayload) {
                 var payload = data.copyOfRange(offset, offset + payloadLen)
