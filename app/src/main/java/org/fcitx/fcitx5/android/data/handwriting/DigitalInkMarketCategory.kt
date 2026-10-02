@@ -130,19 +130,23 @@ object DigitalInkMarketCategory :
      * 下载 = `RemoteModelManager.download()`（ML Kit 不提供进度，只报开始 / 完成 / 失败）。
      */
     override fun downloadModel(context: Context, model: MarketModel) {
-        if (downloadingId.value != null) return
+        // 只挡「下载进行中」：失败（Error）后 downloadingId 保留供卡片显示错误，
+        // 此时必须允许重试，否则错误态卡片永远无法再下载
+        if (downloadJob?.isActive == true) return
         val appContext = context.applicationContext
         setLastError(null)
         setDownloadingId(model.id)
         setDownloadState(MarketDownloadState.Downloading(0f, 0L, 0L))
-        scope.launch {
+        downloadJob = scope.launch {
             if (GoogleDigitalInkEngine.downloadModel(appContext, model.id)) {
+                if (downloadJob?.isActive != true) return@launch
                 setDownloadingId(null)
                 setDownloadState(MarketDownloadState.Complete)
                 // 让统一识别入口立刻用上（模型状态缓存同步刷新）
                 HandwritingRecognition.refreshGoogleModel(appContext)
             } else {
                 // 失败时保留 downloadingId：卡片继续显示错误与「重试下载」
+                if (downloadJob?.isActive != true) return@launch
                 val reason = appContext.getString(R.string.digital_ink_download_failed)
                 setLastError(reason)
                 setDownloadState(MarketDownloadState.Error(reason))

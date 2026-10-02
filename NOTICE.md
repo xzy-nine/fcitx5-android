@@ -15,7 +15,7 @@
 | 许可 | Apache License 2.0（全文见 [`LICENSES/Apache-2.0-sherpa-onnx.txt`](LICENSES/Apache-2.0-sherpa-onnx.txt)） |
 | 入库位置 | `app/libs/sherpa-onnx-1.13.8.aar`（`app/build.gradle.kts` 以本地文件依赖引入） |
 | 内容 | 官方 Kotlin/JNI 适配器（`com.k2fsa.sherpa.onnx.*`，`classes.jar`）+ 各 ABI 的 `libsherpa-onnx-jni/c-api/cxx-api.so` |
-| 内置依赖 | 该 AAR 同时携带 ONNX Runtime（MIT，见 [`LICENSES/MIT-onnxruntime.txt`](LICENSES/MIT-onnxruntime.txt)），因此本仓库不再单独抽取 `libonnxruntime.so` |
+| 内置依赖 | 构建期由 `SherpaOrtAlignPlugin` 产出**摘掉自带 `libonnxruntime.so` 的 AAR 副本**，并把 JNI 库的 ONNX Runtime 符号版本需求改写到 1.28.0；native 运行时由 `com.microsoft.onnxruntime:onnxruntime-android`（MIT，§3）单独提供，包内仅此一份 `libonnxruntime.so` |
 
 自有封装（LGPL-2.1-or-later，非上游代码）：`app/src/main/java/org/fcitx/fcitx5/android/data/voice/**`
 （`:asr` 服务/AIDL 客户端、音频采集、会话编排、模型存放与下载、频谱、平台 provider）。
@@ -35,26 +35,24 @@
 
 不含任何第三方插件框架（Lua/plugin-core）代码；平台凭据存本机偏好，不上传除平台接口外的任何数据。
 
-## 3. 手写识别（ochwpro 模型 + 官方 ONNX Runtime Java API）
+## 3. 手写识别 —— 系统内置引擎 + Google ML Kit Digital Ink
+
+当前手写识别有两档后端（自有桥代码，LGPL-2.1-or-later）：
 
 | 项 | 内容 |
 | --- | --- |
-| 模型 | ochwpro（StrokeTransformer，7356 类中文单字手写） |
-| 模型来源 | [ximeiorg/ochwpro](https://github.com/ximeiorg/ochwpro)（**MIT**，其 `model.py`/`dataset.py`/`export_onnx.py` 为训练侧参考实现）；权重托管于 ModelScope `bikeand/ochwpro` |
-| 本仓库用法 | **仅使用成品权重**，不复制 Xime（GPL-3.0）的任何运行时代码：JNI 推理、叠写切分、Compose 画布均为本仓库按公开契约独立实现（LGPL-2.1-or-later） |
-| 模型分发 | 运行时由模型市场按 `category: handwriting` 下载（`https://index.ximei.me/models/index.yaml` 或用户自填索引），**不随 APK 分发** |
-| 推理运行时 | `com.microsoft.onnxruntime:onnxruntime-android`（**MIT**，见 [`LICENSES/MIT-onnxruntime.txt`](LICENSES/MIT-onnxruntime.txt)）只取其 **Java 绑定**（`libonnxruntime4j_jni.so`）；native 运行时由 `packaging.jniLibs.pickFirsts` 保留 sherpa-onnx AAR 内置的那一份 `libonnxruntime.so`（§1），因此包内仅一份 runtime、且为 1.13.x 版本线 |
-| 训练数据 | 上游权重基于 CASIA-OLHWDB（学术申请制数据集），**本仓库不再训练、不再分发该数据集**；若后续改为自训权重，需重新评估数据授权 |
-
-> 权重与索引的许可状态：ximeiorg/ochwpro 的**代码**为 MIT，但其**权重**仓库（ModelScope）未声明许可，
-> 且 xime-index 为 CC BY-NC-SA 4.0。本分支为个人非商业 fork，按非商业使用；**若将来商用需先取得
-> 权重作者授权，或改用自训权重**（自训只需 `ochwpro` 的 MIT 代码 + 自采数据）。
+| 系统内置引擎 | 小米「随手写」Pencil Engine（设备预装，`/system_ext/framework/xiaomi-pencilengine-pad.jar`），经反射调用 `recognizeText` 整段识别与 `getGoogleGesture` 手势；该 jar 由设备厂商随系统分发，**不随本仓库或 APK 分发**，可用性随设备而定 |
+| Google ML Kit Digital Ink | `com.google.mlkit:digital-ink-recognition:19.0.0`（**Apache License 2.0**，随 Gradle 依赖引入；见 [`LICENSES/`](LICENSES/) 的 Apache-2.0 声明） |
+| ML Kit 模型 | 识别模型不随 SDK 分发：运行时由 GMS 模型下载（`RemoteModelManager.download()`）按语言拉取，来源 `https://dl.google.com/handwriting/models/...`；**随包内置**的中文（`zh-Hani`）文字模型与手势分类器 pack 由构建期任务（`DigitalInkModelPlugin`）从同一官方地址拉取、按官方 `manifest.json` 校验 md5 后打进 assets |
+| 模型使用条款 | 模型文件由 Google 托管并按 Google 的服务条款与隐私政策提供，仅供端上离线推理；下载/使用行为同样受 Google Play 服务条款约束。其余语言的模型由用户在应用内按需下载，模型市场清单为内置的官方语言表 |
+| ONNX Runtime | `com.microsoft.onnxruntime:onnxruntime-android`（**MIT**，见 [`LICENSES/MIT-onnxruntime.txt`](LICENSES/MIT-onnxruntime.txt)）在本分支仅作为**语音引擎（§1）的 native 运行时**提供 `libonnxruntime.so`； |
 
 自有实现（LGPL-2.1-or-later，非上游代码）：
 
+- `app/src/main/java/org/fcitx/fcitx5/android/data/handwriting/**`（引擎统一入口 / 系统引擎反射桥 / 谷歌数字墨水桥 / 内置模型物化）
 - `app/src/main/java/org/fcitx/fcitx5/android/data/market/**`（模型市场公共组件：索引解析 / 下载器 / 分类接口）
-- `app/src/main/java/org/fcitx/fcitx5/android/data/handwriting/**`（特征工程 / 叠写 DP 切分 / ONNX 会话 / 模型存放）
-- `app/src/main/java/org/fcitx/fcitx5/android/input/handwriting/**`（IME 覆盖层面板与画布）
+- `app/src/main/java/org/fcitx/fcitx5/android/input/handwriting/**`（IME 覆盖层面板与画布、触控笔手写会话）
+- `build-logic/convention/src/main/kotlin/DigitalInkModelPlugin.kt`（构建期拉取内置模型）
 
 ## 4. 其他 JVM 依赖
 
@@ -66,4 +64,4 @@
 
 `NOTICE.md` 与 `LICENSES/` 由 `app/src/main/cpp/CMakeLists.txt` 打进
 `usr/share/fcitx5/voice/`（随 APK 分发），满足 Apache-2.0 §4 / MIT 的许可与声明附带要求。
-其中 MIT 段同时覆盖手写识别用到的 ONNX Runtime（§3）。
+其中 MIT 段覆盖 `onnxruntime-android`。

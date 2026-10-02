@@ -695,6 +695,11 @@ class InputView(
     override fun onDetachedFromWindow() {
         advancedPrefs.unregisterOnChangeListener(onKeyboardSizeChangeListener)
         keyboardPrefs.unregisterOnChangeListener(onKeyboardSizeChangeListener)
+        // custom: 先摘掉手写候选投喂器并清空 feed，再 clear scope ——
+        // 否则 detach 后 emitter 仍指向旧视图的广播链，外部 set/publish 会打到失效组件
+        val feed = org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed
+        feed.emitter = null
+        feed.clear()
         // clear DynamicScope, implies that InputView should not be attached again after detached.
         scope.clear()
         super.onDetachedFromWindow()

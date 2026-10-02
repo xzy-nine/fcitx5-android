@@ -189,6 +189,15 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     private var lastCommittedText = ""
 
     /**
+     * 输入会话令牌：`onStartInput` 换框/新会话时递增（**同编辑器的 resync 不递增**，
+     * `onInputViewFinished` 也不递增——旧输入框里待补交的内容要还能落回原处）。
+     *
+     * 异步识别在启动时记下当时的令牌，提交文字前核对：会话已切换（令牌变了）
+     * 就丢弃结果，避免旧框写的字落到新框。
+     */
+    private var inputSessionToken: Long = 0L
+
+    /**
      * 最近一次识别的候选（挂浮动工具箱的候选行）。
      *
      * **识别完成、字已上屏后仍保留**（自带模型较弱，用户常需要点选纠错），
@@ -260,13 +269,18 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      */
     fun onToolStylus() {
         if (!isEnabled()) return
-        // 后端还没就绪：异步预热（引擎初始化要加载 native 库 + 模型，不能占主线程），
-        // 界面切换照做（键盘该撤就得撤），否则首次落笔时键盘还在
+        // 后端还没就绪：异步预热（引擎初始化要加载 native 库 + 模型，不能占主线程）。
+        // 预热与界面切换解耦：即便这次不进触控笔 UI，预热也要跑，落笔时后端才可能就绪
         warmUpSystemEngine()
         if (!backendReady()) ensureModelLoaded()
+        // 仅在「工具箱已启用 + 后端就绪 + 编辑器声明手写区域」时才撤键盘进触控笔 UI；
+        // 否则维持普通键盘（模型加载是异步的，加载完成后的首次落笔走 start() 再切换）
+        val toolboxEnabled = prefs.stylusToolboxEnabled.getValue()
+        val editorWritable = handwritingBounds?.let { it.width() > 0f && it.height() > 0f } == true
+        if (!toolboxEnabled || !backendReady() || !editorWritable) return
         // 撤下键盘 + 显示浮动工具箱（米系 setStylusMode(true) 的效果）
         service.enterStylusUi()
-        setToolboxVisible(prefs.stylusToolboxEnabled.getValue())
+        setToolboxVisible(true)
         // 候选跨会话保留 + 引擎文案（工具箱重建后必须重挂，否则候选行是空的）
         publishToolboxCandidates()
     }
@@ -525,6 +539,9 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      * 投到 `mBackgroundHandler`，结果再 post 回主线程。这里用 [scope] + `Dispatchers.Default`。
      */
     private fun previewGestureIfPossible() {
+        // `PreviewableHandwritingGesture` 与 `previewHandwritingGesture` 都是 API 34+：
+        // 低版本没有可预览手势协议，直接不预览
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
         // 屏幕坐标：手势区域要交给编辑器，必须是 screen coordinates（见 snapshotScreen）
         val points = inkView.currentPointsScreen() ?: return
         if (gesturePreviewJob?.isActive == true) return
@@ -784,6 +801,9 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         }
         // 同框 resync：原样保留书写窗口（会话结束一次性提交的模型下无需任何补救）
         if (restarting && sameEditor) return
+        // 换框/新会话：递增会话令牌，让旧框启动的异步识别不再提交（同框 resync 不递增，
+        // onInputViewFinished 也不递增——旧输入框待补交的内容要还能落回原处）
+        inputSessionToken++
         discardWindow()
         handwritingBounds = null
     }
@@ -891,7 +911,9 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             lastCommittedText = picked
         } else {
             // 回落：删掉刚上屏的那个字再提交选中的候选（不依赖 getTextBeforeCursor）
-            if (expected.isNotEmpty()) service.deleteBeforeCursor(expected.length)
+            if (expected.isNotEmpty()) {
+                service.deleteBeforeCursor(expected.codePointCount(0, expected.length))
+            }
             service.commitText(picked)
             lastCommittedText = picked
         }
@@ -956,8 +978,14 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             after?.invoke()
             return
         }
+        // 绑定启动识别时的输入会话：识别完成时连接/令牌已变就不再上屏
+        val session = captureInputSession()
         scope.launch {
             val candidates = withContext(Dispatchers.Default) { recognizeWholeInk(strokes) }
+            if (!isSessionAlive(session)) {
+                after?.invoke()
+                return@launch
+            }
             val text = candidates.firstOrNull()?.char
             if (!text.isNullOrEmpty()) {
                 service.commitText(text)
@@ -968,6 +996,21 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             after?.invoke()
         }
     }
+
+    /** 输入会话快照：提交前用它确认连接与令牌没有变化。 */
+    private class InputSessionSnapshot(
+        val ic: android.view.inputmethod.InputConnection?,
+        val token: Long,
+    )
+
+    private fun captureInputSession(): InputSessionSnapshot =
+        InputSessionSnapshot(service.currentInputConnection, inputSessionToken)
+
+    /** 会话仍有效：令牌未变且连接还在。 */
+    private fun isSessionAlive(session: InputSessionSnapshot): Boolean =
+        session.token == inputSessionToken &&
+                session.ic != null &&
+                service.currentInputConnection === session.ic
 
     /** 丢弃书写窗口（不提交）：换框/新会话时旧框的未完成笔画不应落到新框。 */
     private fun discardWindow() {
@@ -1023,8 +1066,11 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         if (inkView.strokeCount > 0) {
             clearWindowState()
         } else if (lastCommittedText.isNotEmpty()) {
-            // 按字符数删除上一次提交的内容（多为单字）
-            service.deleteBeforeCursor(lastCommittedText.length)
+            // 按码点数删除上一次提交的内容（多为单字）；deleteBeforeCursor 走删除键路径，
+            // 每次删一个码点，须传码点数而非 UTF-16 长度
+            service.deleteBeforeCursor(
+                lastCommittedText.codePointCount(0, lastCommittedText.length)
+            )
             lastCommittedText = ""
         } else {
             service.deleteBeforeCursor(1)
@@ -1334,9 +1380,11 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      * 即失败手势的回落同样走系统引擎（`recognizeText`），不使用任何本地判定。
      */
     private fun fallbackToSystemRecognition(strokes: List<List<StrokePoint>>) {
+        val session = captureInputSession()
         scope.launch {
             // 与文字路径同一套后端分派（系统引擎优先、不可用回落谷歌数字墨水）
             val candidates = withContext(Dispatchers.Default) { recognizeWholeInk(strokes) }
+            if (!isSessionAlive(session)) return@launch
             val text = candidates.firstOrNull()?.char
             if (text.isNullOrEmpty()) {
                 Timber.d("stylus handwriting: gesture unhandled and recognition empty")
@@ -1394,8 +1442,11 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             // 正有一笔在写（已 DOWN 未 UP）：绝不能把「写了一半」的笔画当成写完提交，
             // 该笔 UP 时会重新排定计时
             if (inkView.hasActiveStroke()) return@launch
-            // 手势优先；不是手势则整段墨迹一次性出字（米系二选一）
-            if (tryConsumeAsGesture()) return@launch
+            // 手势优先；不是手势则整段墨迹一次性出字（米系二选一）。
+            // 手势判定/执行依赖 API 34+（HandwritingGesture 协议），低版本直接走文字识别
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                tryConsumeAsGesture()
+            ) return@launch
             commitRecognition()
         }
     }
@@ -1416,6 +1467,11 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         clearWindowState()
         if (strokes.isEmpty()) return
         val candidates = withContext(Dispatchers.Default) { recognizeWholeInk(strokes) }
+        // 识别跑在后台：回来时会话可能已切换（换框/新输入连接），旧框的字不能落到新框
+        if (!isSessionAlive(captureInputSession())) {
+            Timber.d("stylus handwriting: session end recognition dropped, input session changed")
+            return
+        }
         if (candidates.isEmpty()) {
             Timber.d("stylus handwriting: session end, recognition empty (strokes=%d)", strokes.size)
             return

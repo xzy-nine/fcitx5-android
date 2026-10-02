@@ -311,4 +311,5 @@
     <string name="handwriting_system_engine_available">状态：本机可用</string>
     <string name="handwriting_system_engine_unavailable">状态：不可用，将使用内置模型</string>
     <string name="handwriting_system_engine_capabilities">文字 %1$s · 手势 %2$s</string>
+    <string name="handwriting_commit_failed">上屏失败：光标位置已变化</string>
 </resources>

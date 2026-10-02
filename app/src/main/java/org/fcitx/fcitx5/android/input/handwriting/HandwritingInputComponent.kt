@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CandidateWord
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingCandidate
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngineKind
@@ -253,7 +254,9 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
         if (prefs.handwritingAutoCommit.getValue()) {
             val applied = applyActive(text)
             if (applied) lastSegText = text
-            _state.value = _state.value.copy(error = if (applied) null else REPLACE_FAILED)
+            _state.value = _state.value.copy(
+                error = if (applied) null else context.getString(R.string.handwriting_commit_failed)
+            )
         } else {
             // 未开启边写边上屏：只在点选候选时上屏
             lastSegText = text
@@ -384,8 +387,6 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
     }
 
     private companion object {
-        const val REPLACE_FAILED = "上屏失败：光标位置已变化"
-
         /** 候选栏推送后的存活时长（ms）。 */
         const val CANDIDATES_LINGER_MS = 3000L
     }

@@ -315,4 +315,5 @@
     <string name="handwriting_system_engine_available">Status: available on this device</string>
     <string name="handwriting_system_engine_unavailable">Status: unavailable — using the built-in model</string>
     <string name="handwriting_system_engine_capabilities">Text %1$s · Gestures %2$s</string>
+    <string name="handwriting_commit_failed">Commit failed: cursor position changed</string>
 </resources>

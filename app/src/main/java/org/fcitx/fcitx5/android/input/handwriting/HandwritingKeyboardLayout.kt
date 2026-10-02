@@ -318,8 +318,10 @@ fun HandwritingKeyboardLayout(
                             .fillMaxSize()
                             .pointerInput(Unit) {
                                 awaitEachGesture {
-                                    if (!modelReadyState.value) return@awaitEachGesture
+                                    // 先等触摸开始再判就绪：检查放最前会让 awaitEachGesture
+                                    // 在模型未就绪时立即返回，每帧空转且拿不到新的就绪状态
                                     val down = awaitFirstDown(requireUnconsumed = false)
+                                    if (!modelReadyState.value) return@awaitEachGesture
                                     val startX = down.position.x
                                     val startY = down.position.y
                                     val startedAt = System.currentTimeMillis()

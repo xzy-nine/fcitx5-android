@@ -617,8 +617,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
      */
     internal fun replaceBeforeCursor(expected: String, replacement: String): Boolean {
         val ic = currentInputConnection ?: return false
-        // 手写与 fcitx 预编辑互斥：先结束可能存在的 composing，避免替换落在预编辑区间内
-        if (composing.isNotEmpty()) resetComposingState()
+        // 手写与 fcitx 预编辑互斥：先结束可能存在的 composing（含编辑器侧的下划线 span），
+        // 避免替换/提交落在预编辑区间内
+        if (composing.isNotEmpty()) finishComposing()
         val before = runCatching {
             ic.getTextBeforeCursor(expected.length, 0)?.toString()
         }.getOrNull()
@@ -626,12 +627,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         val target = selection.latest.start - expected.length + replacement.length
         selection.predict(target)
         ic.withBatchEdit {
+            // expected.length 是 UTF-16 长度，与上面 getTextBeforeCursor 的口径一致；
+            // deleteSurroundingTextInCodePoints 把它当码点数会多删（含增补字符时）
             if (expected.isNotEmpty()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    deleteSurroundingTextInCodePoints(expected.length, 0)
-                } else {
-                    deleteSurroundingText(expected.length, 0)
-                }
+                deleteSurroundingText(expected.length, 0)
             }
             if (replacement.isNotEmpty()) commitText(replacement, 1)
         }

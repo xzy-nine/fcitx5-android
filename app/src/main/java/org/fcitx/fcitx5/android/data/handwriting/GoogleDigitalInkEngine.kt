@@ -52,9 +52,9 @@ object GoogleDigitalInkEngine {
      *
      * 用 map 而非单槽：文字 tag 与手势 tag（`<tag>-x-gesture`）会被交替查询，单槽会让两者
      * 每次都判为「换语言」而重建。只放模型对象（轻量）；识别器另有两份独立缓存。
-     * 仅在 [Dispatchers.Default] 的识别/分类调用里读写，且重复构造同一模型对象无害。
+     * 识别/分类调用与 [close] 的清空可能并发，用并发 map 保证读写安全。
      */
-    private val modelCache = mutableMapOf<String, DigitalInkRecognitionModel>()
+    private val modelCache = java.util.concurrent.ConcurrentHashMap<String, DigitalInkRecognitionModel>()
 
     /** 识别器缓存（构造会加载 native 算法库，必须常驻复用）。 */
     private var recognizer: DigitalInkRecognizer? = null

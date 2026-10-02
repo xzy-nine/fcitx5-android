@@ -51,7 +51,8 @@ abstract class BaseMarketCategory(
     private val _revision = MutableStateFlow(0)
     final override val revision: StateFlow<Int> = _revision.asStateFlow()
 
-    private var downloadJob: Job? = null
+    // protected：子类（数字墨水走 ML Kit 下载）需按同一 Job 语义做取消安全的进度上报
+    protected var downloadJob: Job? = null
 
     /** 见 [MarketCategory.revision]（子类在状态变化后调用）。 */
     protected fun bumpRevision() {
@@ -131,11 +132,16 @@ abstract class BaseMarketCategory(
         setDownloadingId(model.id)
         setDownloadState(MarketDownloadState.Downloading(0f, 0L, 0L))
         downloadJob = scope.launch {
+            val job = coroutineContext[Job]
             ModelDownloader.download(appContext, model, targetDir(appContext, model)) { state ->
+                // 已被取消或已有更新的下载接管时，旧回调不得再改状态
+                if (downloadJob !== job) return@download
                 setDownloadState(state)
             }.onSuccess {
+                if (downloadJob !== job) return@onSuccess
                 setDownloadingId(null)
             }.onFailure { e ->
+                if (downloadJob !== job) return@onFailure
                 // 失败时保留 downloadingId，使卡片继续显示错误与「重试下载」
                 setLastError(e.message ?: "下载失败")
             }

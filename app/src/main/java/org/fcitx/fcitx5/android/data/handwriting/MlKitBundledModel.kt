@@ -107,8 +107,22 @@ object MlKitBundledModel {
             val target = File(targetRoot, relative)
             if (target.isFile && target.length() > 0L) return 0
             target.parentFile?.mkdirs()
-            assets.open(assetPath).use { input ->
-                target.outputStream().use { output -> input.copyTo(output) }
+            // 先写临时文件、写完整后原子改名：中断/崩溃不会留下半个模型文件
+            val temp = File(target.parentFile, "${target.name}.materialize")
+            runCatching {
+                assets.open(assetPath).use { input ->
+                    temp.outputStream().use { output -> input.copyTo(output) }
+                }
+                if (!temp.renameTo(target)) {
+                    // 改名失败（跨文件系统等）：退回直接复制，再清理临时文件
+                    if (!temp.copyTo(target, overwrite = true).isFile || target.length() == 0L) {
+                        throw java.io.IOException("materialize copy failed: $target")
+                    }
+                    temp.delete()
+                }
+            }.getOrElse { e ->
+                temp.delete()
+                throw e
             }
             return 1
         }

@@ -15,6 +15,7 @@ package org.fcitx.fcitx5.android.data.market
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -66,7 +67,7 @@ object ModelDownloader {
         }
     }
 
-    private fun downloadArchive(
+    private suspend fun downloadArchive(
         url: String,
         targetDir: File,
         onProgress: (MarketDownloadState) -> Unit,
@@ -84,14 +85,14 @@ object ModelDownloader {
         }
     }
 
-    private fun downloadFiles(
+    private suspend fun downloadFiles(
         files: List<MarketModelFile>,
         targetDir: File,
         onProgress: (MarketDownloadState) -> Unit,
     ) {
         val total = files.size.toLong()
         files.forEachIndexed { index, file ->
-            val target = File(targetDir, file.name)
+            val target = safeTarget(targetDir, file.name)
             val temp = File(targetDir, "${file.name}.download")
             downloadToFile(file.url, temp) { read, expected ->
                 val inFile = if (expected > 0) read.toFloat() / expected else 0f
@@ -113,8 +114,24 @@ object ModelDownloader {
         }
     }
 
+    /**
+     * 归档/清单里的相对路径 → [targetDir] 内的落点，并校验解析结果**不出目标目录**。
+     *
+     * 远程索引与压缩包内的条目名是不可信数据：`../` 段或绝对路径可能把文件写到
+     * 目标目录之外（zip-slip / tar-slip），一律拒绝。
+     */
+    private fun safeTarget(targetDir: File, relative: String): File {
+        val candidate = File(targetDir, relative)
+        val canonicalDir = targetDir.canonicalFile
+        val canonical = candidate.canonicalFile
+        if (canonical != canonicalDir && !canonical.startsWith(canonicalDir)) {
+            throw IllegalStateException("非法路径：$relative")
+        }
+        return candidate
+    }
+
     /** 下载到本地临时文件（带重试）。 */
-    private fun downloadToFile(
+    private suspend fun downloadToFile(
         url: String,
         target: File,
         onProgress: (read: Long, total: Long) -> Unit,
@@ -132,6 +149,8 @@ object ModelDownloader {
                             val buffer = ByteArray(BUFFER_SIZE)
                             var read = 0L
                             while (true) {
+                                // 阻塞读循环：定期挂起让协程调度检查取消，已取消的下载及时停止
+                                yield()
                                 val count = input.read(buffer)
                                 if (count <= 0) break
                                 output.write(buffer, 0, count)
@@ -156,7 +175,7 @@ object ModelDownloader {
      * 解压 tar.bz2，**剥掉首层目录**（官方 release 包形如 `<模型名>/encoder-….onnx`），
      * 使文件直接落在 [targetDir] 下，与索引里给出的清单形状一致。
      */
-    private fun extractTarBz2(
+    private suspend fun extractTarBz2(
         archive: File,
         targetDir: File,
         onProgress: (MarketDownloadState) -> Unit,
@@ -171,11 +190,13 @@ object ModelDownloader {
                         if (!entry.isDirectory && !name.startsWith("__MACOSX")) {
                             val relative = stripFirstSegment(name)
                             if (relative.isNotBlank()) {
-                                val outFile = File(targetDir, relative)
+                                // 剥完首段后仍须校验落点在目标目录内（tar 条目名不可信）
+                                val outFile = safeTarget(targetDir, relative)
                                 outFile.parentFile?.mkdirs()
                                 FileOutputStream(outFile).use { output ->
                                     val buffer = ByteArray(BUFFER_SIZE)
                                     while (true) {
+                                        yield()
                                         val count = tar.read(buffer)
                                         if (count <= 0) break
                                         output.write(buffer, 0, count)
