@@ -291,7 +291,11 @@ private fun ModelGroupCard(
     onToggle: () -> Unit,
 ) {
     val context = LocalContext.current
-    val downloaded = group.variants.count { category.isDownloaded(context, it) }
+    // 组内逐条 isDownloaded 都是磁盘遍历：随 revision 缓存，进度重组不反复扫盘
+    val revision by category.revision.collectAsState()
+    val downloaded = remember(revision, downloadingId) {
+        group.variants.count { category.isDownloaded(context, it) }
+    }
     val inUse = group.variants.any { it.id == selectedModelId }
     // 收起时预览的条数：正好让用户看清「最多 3 行」，多出来的在标题里报总数
     val preview = if (expanded) group.variants
@@ -403,7 +407,11 @@ private fun ModelRow(
     selectedModelId: String,
 ) {
     val context = LocalContext.current
-    val downloaded = category.isDownloaded(context, model)
+    // isDownloaded 是同步磁盘遍历：用 revision 缓存，下载进度触发的频繁重组不再反复扫盘
+    val revision by category.revision.collectAsState()
+    val downloaded = remember(revision, downloadingId, model.id) {
+        category.isDownloaded(context, model)
+    }
     val isTarget = downloadingId == model.id
     val inUse = model.id == selectedModelId
     val failed = isTarget && downloadState is MarketDownloadState.Error
@@ -509,7 +517,11 @@ private fun ModelCard(
     selectedModelId: String,
 ) {
     val context = LocalContext.current
-    val downloaded = category.isDownloaded(context, model)
+    // isDownloaded 是同步磁盘遍历：用 revision 缓存，进度条触发的频繁重组不反复扫盘
+    val revision by category.revision.collectAsState()
+    val downloaded = remember(revision, downloadingId, model.id) {
+        category.isDownloaded(context, model)
+    }
     val isTarget = downloadingId == model.id
     val inUse = model.id == selectedModelId
     val failed = isTarget && downloadState is MarketDownloadState.Error

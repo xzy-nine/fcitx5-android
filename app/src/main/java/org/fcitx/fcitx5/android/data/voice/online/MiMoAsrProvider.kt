@@ -95,6 +95,12 @@ object MiMoAsrProvider : OnlineAsrProvider {
 
         private val pcm = ByteArrayOutputStream()
         private val done = AtomicBoolean(false)
+
+        /** cancel() 置位后，SSE 迟到的回调一律忽略。 */
+        private val cancelled = AtomicBoolean(false)
+
+        /** onFinal / onError 只交付一次的终态闸门。 */
+        private val terminated = AtomicBoolean(false)
         private var source: EventSource? = null
         private var call: Call? = null
         private val text = StringBuilder()
@@ -103,6 +109,8 @@ object MiMoAsrProvider : OnlineAsrProvider {
             text.clear()
             pcm.reset()
             done.set(false)
+            cancelled.set(false)
+            terminated.set(false)
         }
 
         override fun pushAudio(samples: FloatArray) {
@@ -161,6 +169,7 @@ object MiMoAsrProvider : OnlineAsrProvider {
                         type: String?,
                         data: String,
                     ) {
+                        if (cancelled.get() || terminated.get()) return
                         if (data.isBlank() || data == "[DONE]") return
                         val delta = runCatching {
                             Json.parseToJsonElement(data).jsonObject["choices"]
@@ -176,6 +185,8 @@ object MiMoAsrProvider : OnlineAsrProvider {
                     }
 
                     override fun onClosed(eventSource: EventSource) {
+                        if (cancelled.get()) return
+                        if (!terminated.compareAndSet(false, true)) return
                         callback.onFinal(text.toString())
                     }
 
@@ -184,6 +195,8 @@ object MiMoAsrProvider : OnlineAsrProvider {
                         t: Throwable?,
                         response: Response?,
                     ) {
+                        if (cancelled.get()) return
+                        if (!terminated.compareAndSet(false, true)) return
                         val detail = t?.message
                             ?: response?.let { "HTTP ${it.code}" }
                             ?: "未知错误"
@@ -195,6 +208,7 @@ object MiMoAsrProvider : OnlineAsrProvider {
         }
 
         override fun cancel() {
+            cancelled.set(true)
             done.set(true)
             source?.cancel()
             source = null

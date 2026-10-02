@@ -142,11 +142,10 @@ object VolcengineAsrProvider : OnlineAsrProvider {
                     addHeader("X-Api-Request-Id", UUID.randomUUID().toString())
                 }
                 .build()
+            // 请求帧在 start() 内立即入队（seq=1）：既保证 start 返回后 pushAudio 的音频帧
+            // 能拿到后续序号（start 里同步分配 seq，不会与 onOpen 异步时序竞争），
+            // OkHttp WebSocket 也会在握手完成后才真正写出该帧
             socket = httpClient().newWebSocket(request, object : WebSocketListener() {
-                override fun onOpen(webSocket: WebSocket, response: Response) {
-                    webSocket.send(fullClientRequestFrame().toByteString())
-                }
-
                 override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
                     handleServerFrame(bytes)
                 }
@@ -165,6 +164,9 @@ object VolcengineAsrProvider : OnlineAsrProvider {
                     if (!done.getAndSet(true)) callback.onFinal(text)
                 }
             })
+            // newWebSocket 只是入队，此时 sock 尚未握手；把请求帧立刻 send 进队列，
+            // 它会在握手完成后作为第一条消息写出（OkHttp 保证顺序）
+            socket?.send(fullClientRequestFrame().toByteString())
         }
 
         override fun pushAudio(samples: FloatArray) {
@@ -244,7 +246,10 @@ object VolcengineAsrProvider : OnlineAsrProvider {
             val flags = data[1].toInt() and 0x0F
             val compression = data[2].toInt() and 0x0F
             val serialization = (data[2].toInt() shr 4) and 0x0F
-            var offset = headerSize
+            // 头[0] 低 4 位是「4 字节单位」的头长度（0x1 = 4 字节），不是字节偏移
+            val headerBytes = headerSize * 4
+            if (headerBytes < 4 || headerBytes > data.size) return
+            var offset = headerBytes
 
             fun need(n: Int) = offset + n <= data.size
 
@@ -258,52 +263,68 @@ object VolcengineAsrProvider : OnlineAsrProvider {
                 val code = if (need(4)) readInt32BE(data, offset).also { offset += 4 } else 0
                 val msg = if (need(4)) {
                     val len = readUint32BE(data, offset).also { offset += 4 }
-                    if (need(len)) String(data, offset, len, Charsets.UTF_8) else ""
+                    if (len >= 0 && len <= data.size - offset) {
+                        String(data, offset, len, Charsets.UTF_8)
+                    } else ""
                 } else ""
                 if (!done.get()) callback.onError("火山引擎错误 $code：$msg")
                 return
             }
             if (type != MSG_SERVER_RESPONSE) return
-            if (flags and FLAG_RESP_IS_LAST != 0) {
-                // 末包无 payload
-                return
+            // 末包状态：flags 位或 event==200 都表示识别结束；末包也可能携带
+            // seq 与 payload（含最终识别 JSON），不能在解析 payload 前提前返回
+            val isLast = flags and FLAG_RESP_IS_LAST != 0 || event == 200
+            if (flags and FLAG_POS_SEQUENCE != 0 || flags and FLAG_NEG_WITH_SEQUENCE != 0) {
+                // 服务端帧带 4 字节序列号，位于 payload 长度之前
+                if (!need(4)) return
+                offset += 4
             }
-            if (!need(4)) return
-            val payloadLen = readUint32BE(data, offset)
-            offset += 4
-            if (!need(payloadLen)) return
-            var payload = data.copyOfRange(offset, offset + payloadLen)
-            if (compression == COMPRESSION_GZIP) {
-                payload = runCatching { gunzip(payload) }.getOrNull() ?: return
+            var hasPayload = need(4)
+            val payloadLen = if (hasPayload) readUint32BE(data, offset) else 0
+            if (hasPayload) {
+                offset += 4
+                // 用减法比较避免 offset+payloadLen 溢出；负值长度也一律拒绝
+                hasPayload = payloadLen >= 0 && payloadLen <= data.size - offset
             }
-            if (serialization != SERIALIZATION_JSON) return
-            val json = runCatching {
-                Json.parseToJsonElement(String(payload, Charsets.UTF_8)).jsonObject
-            }.getOrNull() ?: return
-
-            // 老协议：result[0].text；新协议：result.text（含 utterances 分句）
-            val resultNode = json["result"]
-            val textNow = runCatching {
-                when {
-                    resultNode == null -> null
-                    resultNode is kotlinx.serialization.json.JsonArray ->
-                        resultNode.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
-
-                    else -> resultNode.jsonObject["text"]?.jsonPrimitive?.contentOrNull
-                        ?: resultNode.jsonObject["utterances"]?.jsonArray
-                            ?.mapNotNull {
-                                it.jsonObject["text"]?.jsonPrimitive?.contentOrNull
-                            }?.joinToString("")
+            if (hasPayload) {
+                var payload = data.copyOfRange(offset, offset + payloadLen)
+                if (compression == COMPRESSION_GZIP) {
+                    payload = runCatching { gunzip(payload) }.getOrNull()
+                        ?: return if (isLast) deliverFinal() else Unit
                 }
-            }.getOrNull()
+                if (serialization == SERIALIZATION_JSON) {
+                    val json = runCatching {
+                        Json.parseToJsonElement(String(payload, Charsets.UTF_8)).jsonObject
+                    }.getOrNull() ?: return if (isLast) deliverFinal() else Unit
 
-            if (!textNow.isNullOrEmpty() && textNow != text) {
-                text = textNow
-                callback.onPartial(text)
+                    // 老协议：result[0].text；新协议：result.text（含 utterances 分句）
+                    val resultNode = json["result"]
+                    val textNow = runCatching {
+                        when {
+                            resultNode == null -> null
+                            resultNode is kotlinx.serialization.json.JsonArray ->
+                                resultNode.firstOrNull()?.jsonObject?.get("text")
+                                    ?.jsonPrimitive?.contentOrNull
+
+                            else -> resultNode.jsonObject["text"]?.jsonPrimitive?.contentOrNull
+                                ?: resultNode.jsonObject["utterances"]?.jsonArray
+                                    ?.mapNotNull {
+                                        it.jsonObject["text"]?.jsonPrimitive?.contentOrNull
+                                    }?.joinToString("")
+                        }
+                    }.getOrNull()
+
+                    if (!textNow.isNullOrEmpty() && textNow != text) {
+                        text = textNow
+                        callback.onPartial(text)
+                    }
+                }
             }
-            if (event == 200 || flags and FLAG_RESP_IS_LAST != 0) {
-                if (done.compareAndSet(false, true)) callback.onFinal(text)
-            }
+            if (isLast) deliverFinal()
+        }
+
+        private fun deliverFinal() {
+            if (done.compareAndSet(false, true)) callback.onFinal(text)
         }
     }
 

@@ -91,8 +91,8 @@ abstract class BaseMarketCategory(
     /** 索引不可用时的内置清单。 */
     protected abstract val builtin: List<MarketModel>
 
-    /** 索引里请求的模型应落到的目录。 */
-    protected abstract fun targetDir(context: Context, model: MarketModel): File
+    /** 索引里请求的模型应落到的目录；id 非法时返回 null（不得拼出目标目录之外的路径）。 */
+    protected abstract fun targetDir(context: Context, model: MarketModel): File?
 
     /** 该模型在本地是否可用（由各分类定义自己的就绪条件）。 */
     abstract fun isReady(context: Context, modelId: String): Boolean
@@ -135,7 +135,18 @@ abstract class BaseMarketCategory(
         // LAZY 启动：先把 Job 赋给 downloadJob 再 start()，协程体里的身份比对不会失真
         downloadJob = scope.launch(start = CoroutineStart.LAZY) {
             val job = coroutineContext[Job]
-            ModelDownloader.download(appContext, model, targetDir(appContext, model)) { state ->
+            // 模型 id 来自远程索引：非法 id 拿不到目录，按「下载失败」收场而非抛异常
+            val dir = targetDir(appContext, model)
+            if (dir == null) {
+                if (downloadJob !== job) return@launch
+                val message = "非法的模型 id：${model.id}"
+                Timber.w("$id download rejected: $message")
+                setDownloadingId(null)
+                setLastError(message)
+                setDownloadState(MarketDownloadState.Error(message))
+                return@launch
+            }
+            ModelDownloader.download(appContext, model, dir) { state ->
                 // 已被取消或已有更新的下载接管时，旧回调不得再改状态
                 if (downloadJob !== job) return@download
                 setDownloadState(state)
@@ -160,8 +171,11 @@ abstract class BaseMarketCategory(
 
     /** 删除一个模型；默认实现删除 [targetDir]，分类可覆写（数字墨水走 ML Kit）。 */
     override fun deleteModel(context: Context, model: MarketModel): Boolean {
+        // 正在下载这个模型时不允许删（临时文件会被并发读写）；其余情况先取消再删
+        if (_downloadingId.value == model.id && downloadJob?.isActive == true) return false
         cancelDownload()
-        val deleted = targetDir(context.applicationContext, model).deleteRecursively()
+        val dir = targetDir(context.applicationContext, model) ?: return false
+        val deleted = dir.deleteRecursively()
         bumpRevision()
         return deleted
     }

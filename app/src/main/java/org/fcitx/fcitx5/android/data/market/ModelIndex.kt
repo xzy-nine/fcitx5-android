@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.data.voice.VoiceModelStore
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
@@ -90,6 +91,11 @@ object ModelIndex {
             val id = (map["id"] as? YamlScalar)?.content ?: return@mapNotNull null
             val entryCategory = (map["category"] as? YamlScalar)?.content.orEmpty().lowercase()
             if (entryCategory != category.lowercase()) return@mapNotNull null
+            // 非法 id（空、`.`/`..`、含路径分隔符）直接剔除，不进市场页
+            if (!VoiceModelStore.isValidModelId(id)) {
+                Timber.w("$TAG: skip model with illegal id: $id")
+                return@mapNotNull null
+            }
             val name = (map["name"] as? YamlScalar)?.content ?: id
 
             val versions = map["versions"] as? YamlList

@@ -101,7 +101,8 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
         permissionGranted = VoicePermissionState.has(context),
         useLocal = prefs.voiceUseLocal.getValue(),
         localModelReady = VoiceModelStore.isReady(context, prefs.voiceAsrModelId.getValue()),
-        onlineProviderReady = OnlineAsrRegistry.configured(context).isNotEmpty(),
+        onlineProviderReady = OnlineAsrRegistry.selected(context)
+            ?.isConfigured(context) == true,
         hasExternalVoiceIme = InputMethodUtil
             .findVoiceSubtype(kbdPrefs.preferredVoiceInput.getValue()) != null,
     )
@@ -180,6 +181,8 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
 
             override fun onSessionComplete() {
                 _spectrum.value = FloatArray(SPECTRUM_BARS)
+                // 会话结束即恢复媒体音量：stopRecognition 路径之外（超时/出错收尾）也能恢复
+                unmuteMedia()
                 // 空格长按进入：出字后自动收起面板回键盘（未出字，例如识别失败/无语音，则留在面板）
                 if (autoReturnOnCommit && committedThisSession) {
                     service.finishComposing()
@@ -275,6 +278,20 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
         session?.releaseLocalModel()
     }
 
+    /**
+     * 组件销毁（InputView 从窗口摘除）：释放语音会话资源并恢复媒体音量。
+     * 之后组件不应再被使用（DynamicScope 已随 detach 清空）。
+     */
+    fun release() {
+        panelVisibleListener = null
+        session?.release()
+        session = null
+        unmuteMedia()
+        _state.value = VoiceUiState()
+        _spectrum.value = FloatArray(SPECTRUM_BARS)
+        _panelVisible.value = false
+    }
+
     // ---- 录音时静音媒体音量 ----
 
     private fun audioManager(): AudioManager? =
@@ -282,6 +299,9 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
 
     private fun muteMedia() {
         val am = audioManager() ?: return
+        // 已保存过原始音量就不再重复静音：重复调用会先把当前（已置 0）的音量
+        // 存进 savedMediaVolume，恢复时反而把媒体音量设成 0
+        if (savedMediaVolume >= 0) return
         savedMediaVolume = am.getStreamVolume(AudioManager.STREAM_MUSIC)
         if (savedMediaVolume > 0) {
             am.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)

@@ -121,13 +121,21 @@ class VoiceAudioCapture(
         val t = thread
         thread = null
         if (t != null) {
-            // 读线程通常在下一次 read 返回后退出（分块 100ms）；卡在 push 时超时也照样释放设备，
-            // 让它的下一次 read 自然失败退出，避免原生录音会话残留
+            // 读线程通常在下一次 read 返回后退出（分块 100ms）；join 超时说明它还卡在
+            // read/push 上——此时不能从外部 release AudioRecord（正被线程使用，且会残留
+            // 原生录音会话），交给 loop() 的 finally 无条件释放它持有的实例
             t.join(200)
-            if (t.isAlive) Timber.w("$TAG: capture thread still alive after stop, releasing anyway")
+            if (t.isAlive) {
+                Timber.w("$TAG: capture thread still alive after stop, deferring release to thread")
+                return
+            }
+            // 线程已退出：recorder 已由 loop() 的 finally 释放，这里只清引用
+            record = null
+        } else {
+            // 线程从未启动（启动失败路径残留）时由外部兜底释放
+            record?.release()
+            record = null
         }
-        record?.release()
-        record = null
     }
 
     private fun loop(recorder: AudioRecord) {
@@ -190,12 +198,20 @@ class VoiceAudioCapture(
         } finally {
             // 读线程退出前把残余的语音前缓冲交出去，避免丢掉最后一段开头
             if (!speechDetected) flush(preRoll)
-            // 录音设备由**读线程自己**收尾：stop()/release() 从别的线程调用时，
-            // 可能正好卡在 read() 里，导致原生录音会话残留（日志里 audioRecordData 继续累加）
+            // 录音设备由**读线程自己**无条件收尾：stop()/release() 从别的线程调用时，
+            // 可能正好卡在 read() 里（外部 release 与 read 并发不安全，且会残留
+            // 原生录音会话）；本线程退出时 recorder 必然已无人使用，这里 release 即可。
+            // release() 侧只在线程已退出时才可能走到它的 record?.release()，
+            // 故同一实例不会被双重释放
             try {
                 if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) recorder.stop()
             } catch (e: Exception) {
                 Timber.w(e, "$TAG: stop in loop failed")
+            }
+            try {
+                recorder.release()
+            } catch (e: Exception) {
+                Timber.w(e, "$TAG: release in loop failed")
             }
             Timber.i("$TAG: capture loop exited (chunks=$chunks)")
         }

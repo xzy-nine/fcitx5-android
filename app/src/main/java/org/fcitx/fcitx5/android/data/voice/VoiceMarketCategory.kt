@@ -20,7 +20,8 @@ object VoiceMarketCategory : BaseMarketCategory(ModelIndex.CATEGORY_ASR, R.strin
 
     override val builtin: List<MarketModel> = VoiceModelCatalog.builtin
 
-    override fun targetDir(context: Context, model: MarketModel): File =
+    /** 非法 id（远程索引里可能有）返回 null，由基类按「下载失败 / 不可删除」处理。 */
+    override fun targetDir(context: Context, model: MarketModel): File? =
         VoiceModelStore.modelDir(context, model.id)
 
     override fun isReady(context: Context, modelId: String): Boolean =

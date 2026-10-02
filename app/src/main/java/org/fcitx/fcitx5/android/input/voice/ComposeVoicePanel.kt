@@ -379,41 +379,48 @@ private fun VoiceDeleteButton(
                             delay(REPEAT_INTERVAL_MS)
                         }
                     }
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        val position = change.position
-                        if (!change.pressed) {
-                            change.consume()
-                            repeatJob.cancel()
-                            if (accumulator.totalX != 0) {
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            val position = change.position
+                            if (!change.pressed) {
+                                change.consume()
+                                repeatJob.cancel()
+                                if (accumulator.totalX != 0) {
+                                    gestureListener?.onGesture(
+                                        ComposeKeyGestureEvent(
+                                            ComposeKeyGestureEvent.Type.Up, false,
+                                            position.x, position.y, 0, 0,
+                                            accumulator.totalX, 0,
+                                        )
+                                    )
+                                } else if (!repeatStarted) {
+                                    // 短按：抬手删除（与键盘 keyClick 一致）
+                                    sendBackspace()
+                                }
+                                break
+                            }
+                            val countX = accumulator.consumeX(position.x)
+                            if (countX != 0) {
+                                // 滑行生效：抑制长按/重复与抬手删除（与键盘 swipeRepeatEnabled 一致）
+                                swipeTriggered = true
+                                repeatJob.cancel()
                                 gestureListener?.onGesture(
                                     ComposeKeyGestureEvent(
-                                        ComposeKeyGestureEvent.Type.Up, false,
-                                        position.x, position.y, 0, 0,
+                                        ComposeKeyGestureEvent.Type.Move, false,
+                                        position.x, position.y, countX, 0,
                                         accumulator.totalX, 0,
                                     )
                                 )
-                            } else if (!repeatStarted) {
-                                // 短按：抬手删除（与键盘 keyClick 一致）
-                                sendBackspace()
                             }
-                            break
+                            if (swipeTriggered) change.consume()
                         }
-                        val countX = accumulator.consumeX(position.x)
-                        if (countX != 0) {
-                            // 滑行生效：抑制长按/重复与抬手删除（与键盘 swipeRepeatEnabled 一致）
-                            swipeTriggered = true
-                            repeatJob.cancel()
-                            gestureListener?.onGesture(
-                                ComposeKeyGestureEvent(
-                                    ComposeKeyGestureEvent.Type.Move, false,
-                                    position.x, position.y, countX, 0,
-                                    accumulator.totalX, 0,
-                                )
-                            )
-                        }
-                        if (swipeTriggered) change.consume()
+                    } finally {
+                        // 所有退出路径都要停掉连发：`?: break`（找不到 down.id 的指针事件，
+                        // 例如多点触控干扰）与手势取消（pointerInput 销毁，awaitPointerEvent
+                        // 抛 CancellationException）都不会走上面的 release 分支
+                        repeatJob.cancel()
                     }
                 }
             },

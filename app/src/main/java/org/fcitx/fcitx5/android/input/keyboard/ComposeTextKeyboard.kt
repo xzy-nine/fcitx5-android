@@ -421,7 +421,9 @@ fun ComposeTextKeyboard(
             }
 
             override fun onKeyActionRelease(action: KeyAction, source: KeyActionListener.Source) {
-                keyActionListener?.onKeyActionRelease(state.transformAction(action, source), source)
+                // release 原样透传：press 阶段 transformAction 已消费掉 Caps/Shift 状态，
+                // 这里再变换会把长按 Caps 的松手又当成一次状态切换（大写锁多按一次就掉回）
+                keyActionListener?.onKeyActionRelease(action, source)
             }
         }
     }

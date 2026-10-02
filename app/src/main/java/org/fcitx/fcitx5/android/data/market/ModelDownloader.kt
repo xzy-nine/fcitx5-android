@@ -27,6 +27,7 @@ import timber.log.Timber
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
@@ -49,21 +50,40 @@ object ModelDownloader {
         targetDir: File,
         onProgress: (MarketDownloadState) -> Unit,
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        targetDir.mkdirs()
+        // 全部写入临时目录，成功后才晋升为 targetDir：
+        // 中途失败/取消不会留下残缺文件，避免「看起来已就绪但引擎解析不出模型文件」
+        val stagingDir =
+            File(targetDir.parentFile, "${targetDir.name}.tmp-${System.currentTimeMillis()}")
         val throttle = ProgressThrottle(onProgress)
         try {
+            targetDir.parentFile?.mkdirs()
+            stagingDir.deleteRecursively()
+            stagingDir.mkdirs()
             val archiveUrl = model.archiveUrl
             if (!archiveUrl.isNullOrBlank()) {
-                downloadArchive(archiveUrl, targetDir) { throttle.emit(it) }
+                downloadArchive(archiveUrl, stagingDir) { throttle.emit(it) }
             } else {
-                downloadFiles(model.files, targetDir) { throttle.emit(it) }
+                downloadFiles(model.files, stagingDir) { throttle.emit(it) }
             }
+            // 晋升：旧目录先改名留作备份，新目录就位后再删备份；
+            // rename 失败则恢复旧目录，绝不丢掉原本可用的模型
+            val backupDir =
+                File(targetDir.parentFile, "${targetDir.name}.old-${System.currentTimeMillis()}")
+            val hadOld = targetDir.exists() && targetDir.renameTo(backupDir)
+            if (!stagingDir.renameTo(targetDir)) {
+                if (hadOld) backupDir.renameTo(targetDir)
+                throw IOException("无法保存模型文件")
+            }
+            if (hadOld) backupDir.deleteRecursively()
             throttle.emit(MarketDownloadState.Complete, force = true)
             Result.success(Unit)
         } catch (e: CancellationException) {
+            // 取消同样要清理半成品（旧目标目录在晋升前不受影响）
+            stagingDir.deleteRecursively()
             throw e
         } catch (e: Exception) {
             Timber.e(e, "$TAG: download failed for ${model.id}")
+            stagingDir.deleteRecursively()
             throttle.emit(MarketDownloadState.Error(e.message ?: "下载失败"), force = true)
             Result.failure(e)
         }

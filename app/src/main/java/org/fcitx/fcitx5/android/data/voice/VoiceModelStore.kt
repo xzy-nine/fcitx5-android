@@ -22,8 +22,20 @@ object VoiceModelStore {
 
     fun modelsRoot(context: Context): File = File(context.filesDir, "models")
 
-    fun modelDir(context: Context, modelId: String): File =
-        File(modelsRoot(context), modelId)
+    /** 模型 id 是否合法：非空、不以 `.` 开头、不含路径分隔符。 */
+    fun isValidModelId(modelId: String): Boolean =
+        modelId.isNotBlank() && !modelId.startsWith(".") &&
+                !modelId.contains('/') && !modelId.contains('\\')
+
+    /**
+     * 模型目录：id 来自远程索引，须先校验再拼路径，
+     * 拒绝空串、`.`/`..` 段与任意路径分隔符，防止逃出 [modelsRoot]。
+     * 非法 id 返回 null（市场页可能渲染远程目录里的任意条目，不能抛异常炸掉重组）。
+     */
+    fun modelDir(context: Context, modelId: String): File? {
+        if (!isValidModelId(modelId)) return null
+        return File(modelsRoot(context), modelId)
+    }
 
     /**
      * 解析模型目录下的 4 个文件；任一缺失返回 null。
@@ -32,7 +44,7 @@ object VoiceModelStore {
      * 市场页会在每次重组时按模型调用这里，避免每次都遍历整棵树。
      */
     fun resolve(context: Context, modelId: String): VoiceModelFiles? {
-        val dir = modelDir(context, modelId)
+        val dir = modelDir(context, modelId) ?: return null
         if (!dir.isDirectory) return null
         val direct = dir.listFiles()?.filter { it.isFile && it.length() > 0L }.orEmpty()
         match(direct)?.let { return it }
@@ -59,14 +71,14 @@ object VoiceModelStore {
 
     /** 该模型目录占用的字节数。 */
     fun sizeOnDisk(context: Context, modelId: String): Long {
-        val dir = modelDir(context, modelId)
+        val dir = modelDir(context, modelId) ?: return 0L
         if (!dir.isDirectory) return 0L
         return dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
     }
 
     /** 删除整个模型目录；返回是否成功。 */
     fun delete(context: Context, modelId: String): Boolean {
-        val dir = modelDir(context, modelId)
+        val dir = modelDir(context, modelId) ?: return false
         if (!dir.exists()) return false
         return dir.deleteRecursively()
     }

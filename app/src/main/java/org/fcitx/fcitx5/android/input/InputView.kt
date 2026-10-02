@@ -700,6 +700,8 @@ class InputView(
         val feed = org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed
         feed.emitter = null
         feed.clear()
+        // detach 即释放语音会话资源（:asr 绑定、录音、媒体音量恢复）
+        voiceInput.release()
         // clear DynamicScope, implies that InputView should not be attached again after detached.
         scope.clear()
         super.onDetachedFromWindow()
