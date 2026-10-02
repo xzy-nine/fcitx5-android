@@ -228,7 +228,13 @@
     <string name="voice_state_error">Recognition failed</string>
     <string name="voice_partial_hint">Recognized text is inserted as you speak</string>
     <string name="market_models">Models</string>
+    <string name="market_direct_hint">Your system language is not in the built-in list — download it directly from Google:</string>
     <string name="market_categories">Categories</string>
+    <string name="market_group_variants">%1$d variants</string>
+    <string name="market_group_downloaded">%1$d downloaded</string>
+    <string name="market_group_more">%1$d more variants — tap to expand</string>
+    <string name="market_group_expand">Expand</string>
+    <string name="market_group_collapse">Collapse</string>
     <string name="market_category_progress">%1$d / %2$d downloaded</string>
     <string name="market_category_selected">In use: %1$s</string>
     <string name="market_index_url">Index source URL</string>

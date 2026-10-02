@@ -75,6 +75,30 @@ object GoogleDigitalInkEngine {
     fun isLanguageSupported(tag: String): Boolean =
         runCatching { DigitalInkRecognitionModelIdentifier.fromLanguageTag(tag) }.getOrNull() != null
 
+    /**
+     * tag 经 ML Kit 解析后的**规范形式**（识别器实际使用的 tag）；不支持时 null。
+     *
+     * ⚠️ ML Kit 的 `fromLanguageTag` **不做回落**：`en-NZ` 这类官方表里没有的地区变体
+     * 会直接返回 null（而不是给出 `en`）。因此需要按候选链依次尝试 —— 见
+     * [canonicalTagFallback]，单点判定请用它而不是本方法。
+     */
+    fun canonicalTag(tag: String): String? = runCatching {
+        DigitalInkRecognitionModelIdentifier.fromLanguageTag(tag)?.languageTag
+    }.getOrNull()
+
+    /**
+     * 按「最具体 → 最一般」的候选链依次解析，返回**第一个能解析出来的**规范 tag。
+     *
+     * 用于清单外的系统语言（`en-SG`）：ML Kit 只收录到语言级 `en`，于是这里回落到 `en`，
+     * 模型市场据此显示一张**真能下载成功**的直接下载卡片（而不是一张永远失败的卡片）。
+     * 整条链都解析不出来 = 该语言 ML Kit 完全不支持，返回 null。
+     */
+    fun canonicalTagFallback(candidates: List<String>): String? =
+        candidates.firstNotNullOfOrNull { canonicalTag(it) }
+
+    /** 单个 tag 的模型（不做回落；解析失败 = 该 tag 不在 ML Kit 表里）。 */
+    fun modelForTag(tag: String): DigitalInkRecognitionModel? = modelFor(tag)
+
     /** 当前语言是否有对应的数字墨水模型。 */
     fun isLanguageSupported(context: Context): Boolean = modelFor(context) != null
 

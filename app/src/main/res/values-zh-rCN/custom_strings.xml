@@ -224,7 +224,13 @@
     <string name="voice_state_error">识别失败</string>
     <string name="voice_partial_hint">说话过程中识别结果会实时写入输入框</string>
     <string name="market_models">模型</string>
+    <string name="market_direct_hint">当前系统语言不在内置清单中——可向 Google 直接下载：</string>
     <string name="market_categories">分类</string>
+    <string name="market_group_variants">%1$d 个变体</string>
+    <string name="market_group_downloaded">已下载 %1$d</string>
+    <string name="market_group_more">还有 %1$d 个变体——点按展开</string>
+    <string name="market_group_expand">展开</string>
+    <string name="market_group_collapse">收起</string>
     <string name="market_category_progress">已下载 %1$d / %2$d</string>
     <string name="market_category_selected">使用中：%1$s</string>
     <string name="market_index_url">索引地址（留空使用内置）</string>

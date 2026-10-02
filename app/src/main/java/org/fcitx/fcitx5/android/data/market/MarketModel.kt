@@ -69,6 +69,14 @@ interface MarketCategory {
     /** 清单是否来自远程索引（否则为内置清单；市场页据此决定要不要显示索引地址输入框）。 */
     val usesRemoteIndex: Boolean get() = true
 
+    /**
+     * 清单是否按**语言变体**折叠展示（同一语言的地区变体收进一个可展开的分组）。
+     *
+     * 数字墨水有 361 条语言（`en`/`en-AU`/`en-GB`…）故打开；语音模型是不同尺寸的模型、
+     * 不是同一事物的变体，保持平铺。折叠逻辑见 [MarketModelGrouping]。
+     */
+    val groupsByLanguageVariant: Boolean get() = false
+
     /** 分类展示名（资源 id）。 */
     val titleRes: Int
 
@@ -115,6 +123,24 @@ interface MarketCategory {
     /** 已下载数量（父级「模型市场」页的摘要行用）。 */
     fun downloadedCount(context: Context): Int =
         models.value.count { isDownloaded(context, it) }
+
+    /**
+     * 当前系统（应用）语言对应的**基础语言键**集合（[MarketModelGrouping.baseTag] 口径）。
+     *
+     * 市场页据此把该语言**及其全部地区变体**排到最前：系统是 `zh-Hans-CN` 时数字墨水给出
+     * `zh-Hani`（于是 `zh-Hani` / `zh-Hani-CN` / `-HK` / `-TW` 整组前置）。
+     * 返回空集 = 不额外提权。
+     */
+    fun preferredLanguageKeys(context: Context): Set<String> = emptySet()
+
+    /**
+     * **清单之外**的「直接下载」条目：官方渠道按 tag 能取到、但内置清单未收录的模型。
+     *
+     * 市场页把它们固定在最前面独立成行，且**照样走本分类的下载/删除/选中**
+     * （数字墨水 = 直接向 Google 请求该语言的模型，见 `DigitalInkMarketCategory`）。
+     * 返回空表 = 没有这类条目。
+     */
+    fun directDownloadModels(context: Context): List<MarketModel> = emptyList()
 
     /**
      * 重查「已下载」状态并触发一次重组（父级市场页返回时调用）。

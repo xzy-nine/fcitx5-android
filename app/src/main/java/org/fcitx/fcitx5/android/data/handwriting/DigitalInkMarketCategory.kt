@@ -19,9 +19,12 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.market.BaseMarketCategory
 import org.fcitx.fcitx5.android.data.market.MarketDownloadState
 import org.fcitx.fcitx5.android.data.market.MarketModel
+import org.fcitx.fcitx5.android.data.market.MarketModelGrouping
 import org.fcitx.fcitx5.android.data.market.ModelIndex
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import java.io.File
+import java.util.Locale
+import timber.log.Timber
 
 object DigitalInkMarketCategory :
     BaseMarketCategory(ModelIndex.CATEGORY_DIGITAL_INK, R.string.digital_ink_models) {
@@ -31,6 +34,9 @@ object DigitalInkMarketCategory :
     /** 清单是官方语言表（内置），没有远程索引。 */
     override val usesRemoteIndex: Boolean = false
 
+    /** 331 个基础语言 + 地区变体：按语言变体折叠，避免一次平铺 361 条。 */
+    override val groupsByLanguageVariant: Boolean = true
+
     /** 官方语言表 = 全部可下载模型（`id` 就是 BCP-47 语言 tag）。 */
     override val builtin: List<MarketModel> = DigitalInkModelCatalog.languages.map {
         MarketModel(id = it.tag, name = it.name, description = it.tag)
@@ -39,6 +45,69 @@ object DigitalInkMarketCategory :
     /** ML Kit 自己管理模型文件；这里只是分类语义上要求的目录（不落文件）。 */
     override fun targetDir(context: Context, model: MarketModel): File =
         File(context.filesDir, "mlkit_digitalink/${model.id}")
+
+    /**
+     * 系统语言对应的**基础语言键**（`zh-Hani` / `en` / `ja`…）。
+     *
+     * 市场页用 `MarketModelGrouping.baseTag` 口径比对，因此系统是 `sr-Latn-RS` 时
+     * `sr-Latn`（`sr-Latn`/`sr-Latn-RS`）整组前置；中文 → `zh-Hani` 组
+     * （`zh-Hani`/`-CN`/`-HK`/`-TW`）整组前置。
+     */
+    override fun preferredLanguageKeys(context: Context): Set<String> {
+        // 用户已在市场里显式选过语言 = 那就是「当前语言」，优先于系统语言
+        val configured = runCatching {
+            AppPrefs.getInstance().handwriting.handwritingDigitalInkLanguage.getValue()
+        }.getOrNull().orEmpty()
+        if (configured.isNotBlank()) {
+            return setOf(MarketModelGrouping.baseTag(configured))
+        }
+        val locale = context.resources.configuration.locales.takeIf { !it.isEmpty() }?.get(0)
+            ?: return emptySet()
+        return setOf(
+            MarketModelGrouping.baseTag(systemCandidateTags(locale).firstOrNull().orEmpty())
+        ).filter { it.isNotBlank() }.toSet()
+    }
+
+    /**
+     * **清单之外**的系统语言/地区变体：给出「直接下载」条目（置顶单独成行）。
+     *
+     * 触发条件（严格按「语言或变体不在内置清单」）：
+     * 1. 系统最具体的候选 tag（如 `en-SG`）**不在** [builtin]；
+     * 2. 该 tag 能经 ML Kit 解析出规范 tag（`en-SG` → `en`）。
+     *
+     * 于是系统是 `en-SG` 时，顶部会出现一条「English (Singapore) · en-SG」的直接下载行；
+     * 它下载的实际是 ML Kit 的 `en` 模型（卡片 `id` 用规范 tag，就绪判定才认得出来）。
+     * 连规范 tag 都解析不出来 = ML Kit 完全不支持该语言，不给卡片（避免死卡片）。
+     */
+    override fun directDownloadModels(context: Context): List<MarketModel> {
+        val locale = context.resources.configuration.locales.takeIf { !it.isEmpty() }?.get(0)
+            ?: return emptyList()
+        val requested = systemCandidateTags(locale).firstOrNull() ?: return emptyList()
+        // 清单里已有该确切 tag → 它就在对应分组里，不重复给「直接下载」
+        if (builtin.any { it.id == requested }) return emptyList()
+        // ML Kit 不做回落，必须自己按候选链解析出真正能下载的 tag
+        val canonical = GoogleDigitalInkEngine.canonicalTagFallback(systemCandidateTags(locale))
+        if (canonical == null) {
+            Timber.d("digital ink: system language $requested unsupported by ML Kit, no direct row")
+            return emptyList()
+        }
+        return listOf(
+            MarketModel(
+                id = canonical,
+                name = DigitalInkModelCatalog.nameOf(requested),
+                // 描述保留原始系统 tag，用户能看出「这条是为我的系统语言准备的」
+                description = requested,
+            )
+        )
+    }
+
+    /** 系统 locale → 候选 tag（最具体 → 最一般；`zh` → `zh-Hani`）。 */
+    private fun systemCandidateTags(locale: Locale): List<String> =
+        DigitalInkSystemLanguage.candidateTags(
+            language = locale.language,
+            script = locale.script,
+            country = locale.country,
+        )
 
     /** 就绪 = ML Kit 认为该语言已下载（含随包内置并已物化的 `zh-Hani`）。 */
     override fun isReady(context: Context, modelId: String): Boolean =
