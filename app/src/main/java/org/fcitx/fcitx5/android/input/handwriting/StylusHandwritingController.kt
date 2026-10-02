@@ -1466,9 +1466,10 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         val strokes = inkView.snapshot()
         clearWindowState()
         if (strokes.isEmpty()) return
+        // 派发识别前先记下会话：识别回来时若连接/令牌已变（换框/新输入连接），结果不能落新框
+        val session = captureInputSession()
         val candidates = withContext(Dispatchers.Default) { recognizeWholeInk(strokes) }
-        // 识别跑在后台：回来时会话可能已切换（换框/新输入连接），旧框的字不能落到新框
-        if (!isSessionAlive(captureInputSession())) {
+        if (!isSessionAlive(session)) {
             Timber.d("stylus handwriting: session end recognition dropped, input session changed")
             return
         }

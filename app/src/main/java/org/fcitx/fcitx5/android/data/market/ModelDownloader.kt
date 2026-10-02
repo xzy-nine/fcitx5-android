@@ -15,8 +15,10 @@ package org.fcitx.fcitx5.android.data.market
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
@@ -94,6 +96,8 @@ object ModelDownloader {
         files.forEachIndexed { index, file ->
             val target = safeTarget(targetDir, file.name)
             val temp = File(targetDir, "${file.name}.download")
+            // name 含子路径（如 subdir/vocab.txt）时父目录可能还不存在：先建好再写
+            temp.parentFile?.mkdirs()
             downloadToFile(file.url, temp) { read, expected ->
                 val inFile = if (expected > 0) read.toFloat() / expected else 0f
                 val progress = ((index + inFile) / total).coerceIn(0f, 1f)
@@ -138,9 +142,13 @@ object ModelDownloader {
     ) {
         var lastError: Exception? = null
         repeat(MAX_RETRIES + 1) { attempt ->
+            // 取消时经 invokeOnCompletion 断开 OkHttp 连接：仅靠 yield() 查标志，
+            // 阻塞在 input.read(buffer) 上的 socket 读永远不会返回
+            val call = client.newCall(Request.Builder().url(url).build())
+            coroutineContext[Job]?.invokeOnCompletion { call.cancel() }
             try {
                 target.delete()
-                client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                call.execute().use { response ->
                     if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code}")
                     val body = response.body ?: throw IllegalStateException("响应为空")
                     val total = body.contentLength()
@@ -149,7 +157,7 @@ object ModelDownloader {
                             val buffer = ByteArray(BUFFER_SIZE)
                             var read = 0L
                             while (true) {
-                                // 阻塞读循环：定期挂起让协程调度检查取消，已取消的下载及时停止
+                                // 定期挂起检查取消；真正的中断靠上面 invokeOnCompletion 的 call.cancel()
                                 yield()
                                 val count = input.read(buffer)
                                 if (count <= 0) break

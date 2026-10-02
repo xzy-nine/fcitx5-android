@@ -14,6 +14,7 @@
 package org.fcitx.fcitx5.android.data.handwriting
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.market.BaseMarketCategory
@@ -137,7 +138,8 @@ object DigitalInkMarketCategory :
         setLastError(null)
         setDownloadingId(model.id)
         setDownloadState(MarketDownloadState.Downloading(0f, 0L, 0L))
-        downloadJob = scope.launch {
+        // LAZY 启动：先把 Job 赋给 downloadJob 再 start()，避免协程体在赋值前抢先运行
+        downloadJob = scope.launch(start = CoroutineStart.LAZY) {
             if (GoogleDigitalInkEngine.downloadModel(appContext, model.id)) {
                 if (downloadJob?.isActive != true) return@launch
                 setDownloadingId(null)
@@ -152,6 +154,7 @@ object DigitalInkMarketCategory :
                 setDownloadState(MarketDownloadState.Error(reason))
             }
         }
+        downloadJob?.start()
     }
 
     /** 删除 = `RemoteModelManager.deleteDownloadedModel()`（异步，删完再刷新列表）。 */

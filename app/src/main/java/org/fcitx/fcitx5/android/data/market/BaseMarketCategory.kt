@@ -12,6 +12,7 @@ package org.fcitx.fcitx5.android.data.market
 
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -131,7 +132,8 @@ abstract class BaseMarketCategory(
         setLastError(null)
         setDownloadingId(model.id)
         setDownloadState(MarketDownloadState.Downloading(0f, 0L, 0L))
-        downloadJob = scope.launch {
+        // LAZY 启动：先把 Job 赋给 downloadJob 再 start()，协程体里的身份比对不会失真
+        downloadJob = scope.launch(start = CoroutineStart.LAZY) {
             val job = coroutineContext[Job]
             ModelDownloader.download(appContext, model, targetDir(appContext, model)) { state ->
                 // 已被取消或已有更新的下载接管时，旧回调不得再改状态
@@ -146,6 +148,7 @@ abstract class BaseMarketCategory(
                 setLastError(e.message ?: "下载失败")
             }
         }
+        downloadJob?.start()
     }
 
     final override fun cancelDownload() {
