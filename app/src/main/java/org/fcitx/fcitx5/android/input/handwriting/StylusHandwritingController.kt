@@ -527,16 +527,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
                 if (kind == HandwritingStrokeKind.Character) return@launch
                 val gesture = buildPreviewGesture(kind, points) ?: return@launch
                 withContext(Dispatchers.Main) {
-                    tailGesture = gesture
-                    tailGesturePointCount = points.size
-                    if (gesture !is android.view.inputmethod.PreviewableHandwritingGesture) {
-                        return@withContext
-                    }
-                    val ic = service.currentInputConnection ?: return@withContext
-                    cancelGesturePreview()
-                    val signal = android.os.CancellationSignal()
-                    gesturePreviewSignal = signal
-                    runCatching { ic.previewHandwritingGesture(gesture, signal) }
+                    publishPreviewGesture(gesture, points.size)
                 }
             }
             return
@@ -544,19 +535,25 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         gesturePreviewJob = scope.launch(Dispatchers.Default) {
             val gesture = XiaomiHandwritingEngine.recognizeGesture(points) ?: return@launch
             withContext(Dispatchers.Main) {
-                // 记录末段判出的手势（供会话结束时兜底，见 [tailGesture]）
-                tailGesture = gesture
-                tailGesturePointCount = points.size
-                if (gesture !is android.view.inputmethod.PreviewableHandwritingGesture) {
-                    return@withContext
-                }
-                val ic = service.currentInputConnection ?: return@withContext
-                cancelGesturePreview()
-                val signal = android.os.CancellationSignal()
-                gesturePreviewSignal = signal
-                runCatching { ic.previewHandwritingGesture(gesture, signal) }
+                publishPreviewGesture(gesture, points.size)
             }
         }
+    }
+
+    /**
+     * 把可预览手势交给编辑器预览，并记录末段手势（供会话结束兜底，见 [tailGesture]）。
+     *
+     * 必须在主线程调用（读输入连接、改预览信号）。
+     */
+    private fun publishPreviewGesture(gesture: HandwritingGesture, pointCount: Int) {
+        tailGesture = gesture
+        tailGesturePointCount = pointCount
+        if (gesture !is android.view.inputmethod.PreviewableHandwritingGesture) return
+        val ic = service.currentInputConnection ?: return
+        cancelGesturePreview()
+        val signal = android.os.CancellationSignal()
+        gesturePreviewSignal = signal
+        runCatching { ic.previewHandwritingGesture(gesture, signal) }
     }
 
     /** 把落在工具箱卡片上的触控笔事件转派给工具箱；接管中的整笔都归它。 */
@@ -883,25 +880,17 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         }
     }
 
-    /**
-     * 工具箱「唤起键盘」：**退出触控笔 UI、恢复键盘，并收起浮动手写栏**。
-     *
-     * 触控笔 UI 下键盘是被撤下的，因此这里必须
-     * 先 `exitStylusUi()` 把键盘装回去，再结束系统手写会话；**浮动手写栏随之隐藏**
-     * （键盘已唤起，手写栏不应再悬浮在键盘之上）。
-     */
-    private fun onKeyboard() {
-        finalizeWindowInternal {
-            service.exitStylusUi()
-            setToolboxVisible(false)
-            runCatching { service.finishStylusHandwriting() }
-        }
-    }
+    /** 工具箱「唤起键盘」：退出触控笔 UI、恢复键盘、收起浮动手写栏。 */
+    private fun onKeyboard() = closeStylusSession()
+
+    /** 关闭浮动手写栏（由手指点击 / 点击非书写区域触发）。 */
+    private fun requestClose() = closeStylusSession()
 
     /**
-     * 关闭浮动手写栏（浮动手写栏已无「收起」按钮，由手指点击 / 点击非书写区域触发）。
+     * 退出触控笔 UI 的公共动作：先 `exitStylusUi()` 装回键盘，再结束系统手写会话；
+     * 浮动手写栏随之隐藏（键盘已唤起，手写栏不应再悬浮在键盘之上）。
      */
-    private fun requestClose() {
+    private fun closeStylusSession() {
         finalizeWindowInternal {
             service.exitStylusUi()
             setToolboxVisible(false)
@@ -927,21 +916,8 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             after?.invoke()
             return
         }
-        // 绑定启动识别时的输入会话：识别完成时连接/令牌已变就不再上屏
-        val session = captureInputSession()
         scope.launch {
-            val candidates = withContext(Dispatchers.Default) { recognizeWholeInk(strokes) }
-            if (!isSessionAlive(session)) {
-                after?.invoke()
-                return@launch
-            }
-            val text = candidates.firstOrNull()?.char
-            if (!text.isNullOrEmpty()) {
-                service.commitText(text)
-                lastCommittedText = text
-                lastSegCandidates = candidates
-                publishToolboxCandidates()
-            }
+            commitRecognized(strokes, logTag = "finalize")
             after?.invoke()
         }
     }
@@ -1038,6 +1014,12 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     // 一笔手势（系统引擎优先；不可用时退回本地几何启发式）
     // ------------------------------------------------------------------
 
+    /** 笔画包围盒 → 屏幕坐标 [RectF]（手势区域用）。 */
+    private fun strokeRect(points: List<StrokePoint>): RectF {
+        val box = HandwritingStrokeFx.boxOf(points)
+        return RectF(box.minX, box.minY, box.maxX, box.maxY)
+    }
+
     /**
      * 手势类别 → 标准 AOSP `HandwritingGesture`（系统引擎不可用时的落点）。
      *
@@ -1047,8 +1029,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun performLocalGesture(kind: HandwritingStrokeKind, points: List<StrokePoint>) {
         val ic = service.currentInputConnection ?: return
-        val box = HandwritingStrokeFx.boxOf(points)
-        val rect = RectF(box.minX, box.minY, box.maxX, box.maxY)
+        val rect = strokeRect(points)
         val executor = ContextCompat.getMainExecutor(service)
         when (kind) {
             // 换行（`corner:downleft`）：插换行，插入点取笔画纵向中点
@@ -1201,8 +1182,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      */
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun buildPreviewGesture(kind: HandwritingStrokeKind, points: List<StrokePoint>): HandwritingGesture? {
-        val box = HandwritingStrokeFx.boxOf(points)
-        val rect = RectF(box.minX, box.minY, box.maxX, box.maxY)
+        val rect = strokeRect(points)
         // 笔画起手阶段包围盒为退化矩形，任何手势区域都还不成立
         if (rect.isEmpty) return null
         return when (kind) {
@@ -1297,21 +1277,8 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      * （与文字路径同一套后端分派，不做本地判定）。
      */
     private fun fallbackToSystemRecognition(strokes: List<List<StrokePoint>>) {
-        val session = captureInputSession()
         scope.launch {
-            // 与文字路径同一套后端分派（系统引擎优先、不可用回落谷歌数字墨水）
-            val candidates = withContext(Dispatchers.Default) { recognizeWholeInk(strokes) }
-            if (!isSessionAlive(session)) return@launch
-            val text = candidates.firstOrNull()?.char
-            if (text.isNullOrEmpty()) {
-                Timber.d("stylus handwriting: gesture unhandled and recognition empty")
-                return@launch
-            }
-            Timber.d("stylus handwriting: gesture unhandled, recognized %s", text)
-            service.commitText(text)
-            lastCommittedText = text
-            lastSegCandidates = candidates
-            publishToolboxCandidates()
+            commitRecognized(strokes, logTag = "gesture unhandled")
         }
     }
 
@@ -1368,26 +1335,40 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         val strokes = inkView.snapshot()
         clearWindowState()
         if (strokes.isEmpty()) return
-        // 派发识别前先记下会话：识别回来时若连接/令牌已变（换框/新输入连接），结果不能落新框
+        commitRecognized(strokes, logTag = "session end")
+    }
+
+    /**
+     * 识别 → 存活校验 → 上屏 → 发布候选（三处共用的骨架）。
+     *
+     * @param strokes 已固化的墨迹（调用方负责 snapshot/清窗）
+     * @param logTag 日志标签，区分调用方（finalize / gesture unhandled / session end）
+     * @return 上屏的文本（null = 未上屏：会话失效或候选为空）
+     */
+    private suspend fun commitRecognized(
+        strokes: List<List<StrokePoint>>,
+        logTag: String,
+    ): String? {
         val session = captureInputSession()
         val candidates = withContext(Dispatchers.Default) { recognizeWholeInk(strokes) }
         if (!isSessionAlive(session)) {
-            Timber.d("stylus handwriting: session end recognition dropped, input session changed")
-            return
+            Timber.d("stylus handwriting: %s, recognition dropped (input session changed)", logTag)
+            return null
         }
-        if (candidates.isEmpty()) {
-            Timber.d("stylus handwriting: session end, recognition empty (strokes=%d)", strokes.size)
-            return
+        val text = candidates.firstOrNull()?.char
+        if (text.isNullOrEmpty()) {
+            Timber.d("stylus handwriting: %s, recognition empty (strokes=%d)", logTag, strokes.size)
+            return null
         }
-        val text = candidates.first().char
         Timber.d(
-            "stylus handwriting: session end, recognized %s (candidates=%s)",
-            text, candidates.joinToString("") { it.char },
+            "stylus handwriting: %s, recognized %s (candidates=%s)",
+            logTag, text, candidates.joinToString("") { it.char },
         )
         service.commitText(text)
         lastCommittedText = text
         lastSegCandidates = candidates
         publishToolboxCandidates()
+        return text
     }
 
     /**
