@@ -339,6 +339,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         if (inkView.isAttachedToWindow && sameWindow &&
             window.decorView.visibility == View.VISIBLE
         ) {
+            forceInkWindowFullscreen(window)
             return
         }
         (inkView.parent as? ViewGroup)?.removeView(inkView)
@@ -352,6 +353,8 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             )
             window.decorView.visibility = View.VISIBLE
         }
+        // `setContentView` 按窗口主题重写窗口参数，故必须在其之后恢复全屏
+        forceInkWindowFullscreen(window)
         // 挂载后手动 measure/layout：窗口尚未走布局时先按全屏尺寸定尺，
         // 首批笔画的绘制即有正确的视图宽高
         val metrics = service.resources.displayMetrics
@@ -360,6 +363,40 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             View.MeasureSpec.makeMeasureSpec(metrics.heightPixels, View.MeasureSpec.EXACTLY)
         )
         inkView.layout(0, 0, inkView.measuredWidth, inkView.measuredHeight)
+    }
+
+    /**
+     * 墨迹窗口与屏幕等大。
+     *
+     * 事件坐标按「窗口即全屏」换算（见 [StylusInkView.feed]），故窗口必须铺满屏幕；
+     * 墨迹窗口的主题链带 `windowIsFloating`，窗口参数会被改写成 `WRAP_CONTENT`。
+     *
+     * 该窗口没有 `Window.Callback`，`Window.setLayout` 不会下发到 WindowManager，
+     * 已挂载时须经 WindowManager 更新布局参数。
+     */
+    private fun forceInkWindowFullscreen(window: android.view.Window) {
+        val lp = window.attributes
+        if (lp.width == ViewGroup.LayoutParams.MATCH_PARENT &&
+            lp.height == ViewGroup.LayoutParams.MATCH_PARENT
+        ) {
+            return
+        }
+        lp.width = ViewGroup.LayoutParams.MATCH_PARENT
+        lp.height = ViewGroup.LayoutParams.MATCH_PARENT
+        val decor = window.decorView
+        val updated = runCatching {
+            if (decor.isAttachedToWindow) {
+                window.context.getSystemService(android.view.WindowManager::class.java)
+                    ?.updateViewLayout(decor, lp)
+                true
+            } else {
+                false
+            }
+        }.getOrDefault(false)
+        if (!updated) {
+            // 尚未挂载：属性已就地改好，随后的 addView 即按全屏生效
+            runCatching { window.attributes = lp }
+        }
     }
 
     /**
@@ -398,6 +435,10 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     /** 配置变化：浮窗重算安全区并夹取位置。 */
     fun onConfigurationChanged() {
         toolboxWindow.onConfigurationChanged()
+        // 旋转后窗口尺寸重算：墨迹窗口须仍与屏幕等大
+        runCatching { service.getStylusHandwritingWindow() }.getOrNull()?.let {
+            forceInkWindowFullscreen(it)
+        }
     }
 
     /** `onStylusHandwritingMotionEvent`：触控笔事件（主线程）。 */
