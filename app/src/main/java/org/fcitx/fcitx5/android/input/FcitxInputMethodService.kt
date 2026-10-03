@@ -1321,6 +1321,25 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
      * 因此语音链路不需要再自己做 deleteSurroundingText 之类的兜底。
      */
     fun setVoiceComposingText(text: String) {
+        setUnderlinedComposingText(text)
+    }
+
+    /**
+     * custom: 手写「边写边上屏」的 composing 写入。
+     *
+     * 手写每落一笔都会重写当前识别文本，交给 composing 让**编辑器自己管理替换**：
+     * 不依赖 `deleteSurroundingText` 与光标推算（部分应用的删除是延迟生效的，
+     * 删除与提交的落点会与我们的推算错位，导致替换校验永远失败）。
+     *
+     * 与语音共用同一套 composing 机制（[setUnderlinedComposingText]）；
+     * 书写结束时由 [finishComposing] 把 composing 提交为普通文本。
+     */
+    fun setHandwritingComposingText(text: String) {
+        setUnderlinedComposingText(text)
+    }
+
+    /** 以带下划线的 composing 文本写入当前输入框（语音/手写共用）。 */
+    private fun setUnderlinedComposingText(text: String) {
         if (text.isEmpty()) {
             finishComposing()
             return
