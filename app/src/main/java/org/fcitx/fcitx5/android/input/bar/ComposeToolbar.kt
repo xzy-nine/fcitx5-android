@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
@@ -43,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import org.fcitx.fcitx5.android.R
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Edit
 
 /**
  * 工具栏高度。
@@ -363,9 +366,9 @@ private fun ToolbarButtonsRow(
         }
         // custom: 手写输入（未启用或模型缺失时 onHandwritingInput 为 null，不显示）
         callbacks.onHandwritingInput?.let { onHandwritingInput ->
-            ToolbarIconButton(
+            ToolbarVectorIconButton(
                 onClick = onHandwritingInput,
-                iconRes = R.drawable.ic_handwriting,
+                imageVector = MiuixIcons.Edit,
                 iconColor = visuals.iconColor,
                 contentDescription = "Handwriting input",
             )
@@ -474,6 +477,52 @@ private fun ToolbarIconButton(
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
 ) {
+    ToolbarIconButtonImpl(
+        onClick = onClick,
+        iconColor = iconColor,
+        modifier = modifier,
+    ) { tint ->
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(24.dp),
+        )
+    }
+}
+
+/**
+ * 与 [ToolbarIconButton] 同形，图标来源为矢量图（如 miuix 图标集）。
+ */
+@Composable
+private fun ToolbarVectorIconButton(
+    onClick: () -> Unit,
+    imageVector: ImageVector,
+    iconColor: Color,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+) {
+    ToolbarIconButtonImpl(
+        onClick = onClick,
+        iconColor = iconColor,
+        modifier = modifier,
+    ) { tint ->
+        Icon(
+            imageVector = imageVector,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(24.dp),
+        )
+    }
+}
+
+@Composable
+private fun ToolbarIconButtonImpl(
+    onClick: () -> Unit,
+    iconColor: Color,
+    modifier: Modifier = Modifier,
+    icon: @Composable (Color) -> Unit,
+) {
     IconButton(
         onClick = onClick,
         modifier = modifier
@@ -483,11 +532,6 @@ private fun ToolbarIconButton(
         minWidth = LocalToolbarHeight.current,
         minHeight = LocalToolbarHeight.current,
     ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = contentDescription,
-            tint = iconColor,
-            modifier = Modifier.size(24.dp),
-        )
+        icon(iconColor)
     }
 }
