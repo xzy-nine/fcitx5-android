@@ -10,7 +10,7 @@
  *
  * 本地路径：`:asr` 进程内的官方 sherpa-onnx 引擎（见 [VoiceAsrService] / [VoiceAsrClient]）；
  * 在线路径：平台 provider（WebSocket / REST，按各平台官方文档实现）——
- *   迁移期暂时桥接旧的 Xime handler，provider 落地后删除（见 [legacyHandler]）。
+ *   迁移期暂时桥接旧 handler，provider 落地后删除（见 [legacyHandler]）。
  */
 package org.fcitx.fcitx5.android.data.voice
 

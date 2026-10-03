@@ -5,7 +5,7 @@
  * custom: 模型市场页（**唯一实现**，按 [MarketCategory] 泛化）。
  *
  * 通过 [MarketCategory] 拿到清单与下载状态，因此页面本身不认识任何具体模型：
- * 目前唯一分类是语音「语音模型市场」= `ModelMarketScreen(VoiceMarketCategory)`。
+ * 分类由 [MarketCategories] 注册。
  * 分类差异只体现在索引 category / 内置清单 / 就绪判定（见分类实现）。
  */
 package org.fcitx.fcitx5.android.ui.main.compose.screens
@@ -39,7 +39,6 @@ import org.fcitx.fcitx5.android.data.market.MarketDownloadState
 import org.fcitx.fcitx5.android.data.market.MarketModel
 import org.fcitx.fcitx5.android.data.market.MarketModelGroup
 import org.fcitx.fcitx5.android.data.market.MarketModelGrouping
-import org.fcitx.fcitx5.android.data.handwriting.DigitalInkModelCatalog
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -103,7 +102,7 @@ fun ModelMarketScreen(
         else MarketModelGrouping.group(
             models = orderedModels,
             rank = rank,
-            nameOf = { DigitalInkModelCatalog.nameOf(it) },
+            nameOf = { category.displayNameOf(it) ?: it },
         )
     }
     // 展开态：默认收起；首次拿到分组后**只自动展开一次**「正在使用」那一组，
@@ -345,7 +344,7 @@ private fun ModelGroupCard(
                 modifier = Modifier.size(20.dp),
             )
         }
-        // 卡内变体行：收起时预览，展开时全列；行间细分隔线（通知分组同款）
+        // 卡内变体行：收起时预览，展开时全列；行间细分隔线（卡内分组分隔）
         preview.forEachIndexed { index, model ->
             if (index > 0) {
                 HorizontalDivider(

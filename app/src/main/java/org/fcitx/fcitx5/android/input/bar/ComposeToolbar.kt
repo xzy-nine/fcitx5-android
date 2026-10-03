@@ -101,7 +101,7 @@ fun ComposeToolbar(
                 candidateContent = candidateContent,
                 visible = candidateVisible,
             )
-            // Idle 态用滑入/滑出 + 淡入/淡出（与 IdleContent 内部子态展开收起动画同款），
+            // Idle 态用滑入/滑出 + 淡入/淡出（与 IdleContent 内部子态展开收起动画一致），
             // 候选栏消失时工具栏从左滑入，候选栏出现时工具栏向左滑出。
             androidx.compose.animation.AnimatedVisibility(
                 visible = barState == KawaiiBarStateMachine.State.Idle,

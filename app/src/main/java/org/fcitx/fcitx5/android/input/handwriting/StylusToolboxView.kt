@@ -2,25 +2,10 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  *
- * custom: 触控笔手写浮动工具箱（**UI 完全仿照米系 `ImeMenuViewHolder` 的浮窗卡片**）。
+ * custom: 触控笔手写浮动工具箱（可拖动、位置按横竖屏持久化的卡片）。
  *
- * 米系参考（`E:\GitHubCode\05Decompilation\decompiled\input\sogou_xiaomi`）：
- * - 宿主：`ImeMenuViewHolder.initLayoutParams()` 用 `WindowManager.addView`，`type=2038`
- *   （TYPE_APPLICATION_OVERLAY）、`flags=296`（NOT_FOCUSABLE|NOT_TOUCH_MODAL|LAYOUT_IN_SCREEN）、
- *   `format=TRANSLUCENT`、透明全屏容器 + 卡片用 `MarginLayoutParams` 定位；
- *   靠 MIUI 私有 `LayoutParamUtils.setTrustedOverLay` 才拿到 overlay 权限。
- * - 交互：拖柄按下位移 >3px 才算拖动，位置按横竖屏分别写入 SharedPreferences
- *   （`keyboard_position_x_port` 等）；`checkAndUpdateKeyboardPosition` 把位置夹取到屏幕安全区；
- *   用隐藏 API `ViewTreeObserver.OnComputeInternalInsetsListener` 只把卡片矩形声明为可触摸区域。
- * - UI（布局 `iw.xml`）：卡片 194×116dp、圆角 18dp（`tm`）、白底（`td`）+ 阴影
- *   `#191a1a1a`（半径 14dp `u5`、dy 4dp `u7`）；**顶部 22dp 拖柄条**（`tn`）；
- *   中部 38dp 行（`tt`）：撤销 / 重做 / 键盘 / 回车；底部 32dp 行（`tk`）：删除 + 空格 + 收起。
- *
- * 本实现的差异（**必需**）：米系申请了 overlay 权限（`type=2038` + 私有
- * `setTrustedOverLay`）；本项目不申请该权限，改为**把工具箱加在 IME 窗口的 decorView 上**
- * （米系 `StylusUtils.addStylusToolbox` 的宿主 `oem.util.b.f()` 也是 IME decorView），
- * 并配合 `requestShowInputView()`（`requestShowSelf(0)`）**主动保持 IME 窗口显示**，
- * 工具箱因此不会被 IME 隐藏带走。UI 尺寸、颜色、圆角、阴影、拖动与位置持久化全部照抄米系。
+ * 宿主是 IME 窗口 decorView 的透明全屏容器；须配 `requestShowSelf()` 主动保持窗口显示，
+ * 工具箱因此不会被 IME 隐藏带走。
  */
 package org.fcitx.fcitx5.android.input.handwriting
 
@@ -48,7 +33,7 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.InputFeedbacks
 import kotlin.math.abs
 
-/** 工具箱按钮（对齐米系菜单项语义；「收起」已移除，改由手指点击/点非书写区关闭）。 */
+/** 工具箱按钮（「收起」已移除，改由手指点击/点非书写区关闭）。 */
 enum class StylusToolboxAction {
     Undo,
     Redo,
@@ -59,10 +44,9 @@ enum class StylusToolboxAction {
 }
 
 /**
- * 手写浮动工具箱：米系同款卡片 UI + 米系同款拖动/位置持久化。
+ * 手写浮动工具箱：可拖动的卡片（位置按横竖屏持久化）。
  *
- * 宿主是 IME 窗口 decorView 上的透明全屏容器（[rootView]），卡片用 margin 定位；
- * 卡片矩形经 [cardRectInWindow] 交给 IME 的 insets 声明为可触摸区域。
+ * 宿主是 IME 窗口 decorView 上的透明全屏容器（[rootView]），卡片用 margin 定位。
  */
 class StylusToolboxWindow(private val context: Context) {
 
@@ -81,7 +65,7 @@ class StylusToolboxWindow(private val context: Context) {
     private var x = 0
     private var y = 0
 
-    /** 拖动起点（米系 FloatingWindowOnTouchListener 同款）。 */
+    /** 拖动起点。 */
     private var startRawX = 0f
     private var startRawY = 0f
     private var startViewX = 0f
@@ -161,9 +145,8 @@ class StylusToolboxWindow(private val context: Context) {
     }
 
     /**
-     * 显示浮窗（幂等）：**米系 `StylusUtils.addStylusToolbox` 同款**——
-     * 把透明全屏容器 `addView` 到**传入的宿主 ViewGroup**（= IME 窗口的 decorView），
-     * 卡片用 margin 定位。
+     * 显示浮窗（幂等）：把透明全屏容器 `addView` 到**传入的宿主 ViewGroup**
+     * （= IME 窗口的 decorView），卡片用 margin 定位。
      *
      * 宿主必须是 IME 窗口 decorView：`TYPE_APPLICATION_ATTACHED_DIALOG` 之类的窗口
      * **依附父窗口**，IME 窗口一隐藏箱子窗口就跟着不可见。配合
@@ -205,7 +188,7 @@ class StylusToolboxWindow(private val context: Context) {
         container.post { applyPosition() }
     }
 
-    /** 隐藏并移除（幂等；米系在 `onFinishInputView` / `onDestroy` 才真正移除）。 */
+    /** 隐藏并移除（幂等）。 */
     fun hide() {
         if (!isShown) return
         isShown = false
@@ -225,14 +208,7 @@ class StylusToolboxWindow(private val context: Context) {
     }
 
     /**
-     * 卡片在屏幕坐标中的矩形（米系 `getTouchRegion()` 同义：用于判断触摸命中）。
-     *
-     * **优先取卡片的真实布局位置**（`getLocationOnScreen`），而不是逻辑 `x`/`y`：
-     * `x`/`y` 是**屏幕坐标**（`clampPosition()` 按 `screenArea` 夹取），却被 `applyPosition()`
-     * 当作**相对 decorView 的 margin** 使用 —— IME 窗口不在屏幕原点时（例如窗口上边缘在 y=92），
-     * 卡片实际画出来的位置会比 `x`/`y` 低一个 decor 原点偏移，
-     * 于是命中判定与 `touchableRegion` 整体偏上 ⇒ 点在画出来的卡片上却被判成「不在工具箱里」
-     * （触控笔被当成笔画、手指事件被路由给应用）。
+     * 取卡片在屏幕坐标中的实际布局矩形（含阴影外扩），未挂载时回落逻辑 [x]/[y]。
      */
     fun cardRectOnScreen(): Rect {
         val shadow = (SHADOW_MARGIN_DP * density()).toInt()
@@ -250,12 +226,12 @@ class StylusToolboxWindow(private val context: Context) {
         return Rect(x - shadow, y - shadow, x + cardSize.x + shadow, y + cardSize.y + shadow)
     }
 
-    /** 配置变化：重算安全区、夹取位置、跟随深浅色（米系 `onNewConfiguration` 同款）。 */
+    /** 配置变化：重算安全区、夹取位置、跟随深浅色。 */
     fun onConfigurationChanged() {
         val before = lastOrientation
         updateScreenInfo()
         if (before != lastOrientation) {
-            // 横竖屏切换回到默认位置（米系同款）
+            // 横竖屏切换回到默认位置
             x = (screenSize.x - cardSize.x) / 2
             y = (screenArea.bottom - DEFAULT_BOTTOM_OFFSET_DP * density()).toInt() - cardSize.y
         }
@@ -265,20 +241,8 @@ class StylusToolboxWindow(private val context: Context) {
         card?.applyTheme()
     }
 
-    /**
-     * 卡片在 **IME 窗口坐标**中的矩形（供 `onComputeInsets` 声明可触摸区域）。
-     *
-     * 独立浮窗无需并入 IME insets（触摸由本窗口自己处理），保留此方法供命中测试。
-     */
-    fun cardRectInWindow(hostLocationOnScreen: IntArray): Rect? {
-        if (!isShown) return null
-        val rect = cardRectOnScreen()
-        rect.offset(-hostLocationOnScreen[0], -hostLocationOnScreen[1])
-        return rect
-    }
-
     // ------------------------------------------------------------------
-    // 拖动（米系 FloatingWindowOnTouchListener 同款）
+    // 拖动
     // ------------------------------------------------------------------
 
     private fun onHandleTouch(event: MotionEvent): Boolean {
@@ -317,8 +281,7 @@ class StylusToolboxWindow(private val context: Context) {
      * 应用位置。
      *
      * **[x]/[y] 是屏幕坐标**（拖拽用 `rawX/rawY`、[clampPosition] 用屏幕坐标的 `screenArea`），
-     * 而 margin 是**相对 decorView** 的 —— 必须减去 decor 原点，绘制位置才会与 [x]/[y] 一致。
-     * 否则 IME 窗口不在屏幕原点时卡片会整体偏移，命中判定与 `touchableRegion` 也跟着偏。
+     * 而 margin 是**相对 decorView** 的 —— 应用时须减去 decor 原点，绘制位置才会与 [x]/[y] 一致。
      */
     private fun applyPosition() {
         val container = rootView ?: return
@@ -334,7 +297,7 @@ class StylusToolboxWindow(private val context: Context) {
         container.invalidate()
     }
 
-    /** 位置夹取到安全区（米系 `checkAndUpdateKeyboardPosition` 同款）。 */
+    /** 位置夹取到安全区。 */
     private fun clampPosition() {
         val cardW = cardSize.x
         val cardH = cardSize.y
@@ -397,18 +360,18 @@ class StylusToolboxWindow(private val context: Context) {
         const val KEY_X_LAND = "toolbox_x_land"
         const val KEY_Y_LAND = "toolbox_y_land"
 
-        /** 卡片尺寸（米系 `u8` × `to`）。 */
+        /** 卡片尺寸（dp）。 */
         const val CARD_WIDTH_DP = 194f
         const val CARD_HEIGHT_DP = 116f
 
-        /** 屏幕安全区内缩（米系 `e`/`f`/`d`）。 */
+        /** 屏幕安全区内缩（dp）。 */
         const val SCREEN_INSET_SIDE_DP = 8f
         const val SCREEN_INSET_BOTTOM_DP = 8f
 
         /** 默认距底部安全区高度。 */
         const val DEFAULT_BOTTOM_OFFSET_DP = 96f
 
-        /** 拖动判定阈值（dp，米系 MOVE_THRESHOLD = 3）。 */
+        /** 拖动判定阈值（dp）。 */
         const val DRAG_THRESHOLD_DP = 3f
 
         /** 阴影外扩（可触摸区域需含阴影）。 */
@@ -417,9 +380,9 @@ class StylusToolboxWindow(private val context: Context) {
 }
 
 /**
- * 米系同款阴影圆角卡片（对应 `ShadowLayout` + `iw.xml`）：
- * 白底、圆角 18dp、阴影 `#191a1a1a`（半径 14dp、dy 4dp）；
- * 顶部 22dp 拖柄条、中部 38dp 行（撤销/重做/键盘/回车）、底部 32dp 行（删除/空格/收起）。
+ * 阴影圆角卡片：白底、圆角 18dp、阴影 `#191a1a1a`（半径 14dp、dy 4dp）。
+ *
+ * 卡片 116dp = 拖柄 22 + 第一行 38 + 第二行 32 + 候选行 24。
  */
 private class ToolboxCardView @JvmOverloads constructor(
     context: Context,
@@ -673,8 +636,7 @@ private class ToolboxCardView @JvmOverloads constructor(
             },
             LayoutParams(LayoutParams.MATCH_PARENT, (BOTTOM_ROW_HEIGHT_DP * selfDensity).toInt()),
         )
-        // 候选行（米系工具箱没有，因为米系候选由系统手写面板承载；
-        // 我们把 IME 候选栏撤下后，候选挂在这里，避免随墨迹层一起消失）
+        // 候选行（候选挂在工具箱上而不在墨迹层：墨迹层随会话结束消失，工具箱跨会话常驻）
         candidateRow = LinearLayout(context).apply {
             orientation = HORIZONTAL
             layoutDirection = View.LAYOUT_DIRECTION_LTR
@@ -743,7 +705,7 @@ private class ToolboxCardView @JvmOverloads constructor(
         }
     }
 
-    /** 卡片底：圆角 + 阴影（米系 `ShadowLayout.onDraw` 同款；颜色随深浅色）。 */
+    /** 卡片底：圆角 + 阴影（颜色随深浅色）。 */
     override fun onDraw(canvas: Canvas) {
         val r = CORNER_RADIUS_DP * selfDensity
         canvas.drawRoundRect(RectF(0f, 0f, width.toFloat(), height.toFloat()), r, r, shadowPaint)
@@ -771,7 +733,7 @@ private class ToolboxCardView @JvmOverloads constructor(
         const val PILL_HEIGHT_DP = 30f
 
         /**
-         * 候选行高度：**必须正好填满米系卡片的剩余空间**。
+         * 候选行高度：**必须正好填满卡片的剩余空间**。
          *
          * 卡片 116dp = 拖柄 22 + 第一行 38 + 第二行 32 + **候选行 24**；
          * 若候选行高于 24dp 会越过卡片下沿被裁掉，越界部分既看不全也点不到。
@@ -790,7 +752,7 @@ private class ToolboxCardView @JvmOverloads constructor(
         const val EDGE_MARGIN_DP = 8f
 
         // ---- 深浅色（View 不在 Compose 树里，按 uiMode 取色；色号取 miuix `Colors.kt`）----
-        /** 卡片底：浅色 `background` 白（= 米系 `td`）/ 深色 `background` #242424。 */
+        /** 卡片底：浅色 `background` 白 / 深色 `background` #242424。 */
         const val CARD_COLOR_LIGHT = 0xFFFFFFFF.toInt()
         const val CARD_COLOR_DARK = 0xFF242424.toInt()
 
@@ -821,7 +783,7 @@ private class ToolboxCardView @JvmOverloads constructor(
         const val HANDLE_PRESSED_LIGHT = 0x66000000
         const val HANDLE_PRESSED_DARK = 0x66FFFFFF
 
-        /** 卡片阴影：米系浅色 `#191a1a1a`；深色用更重的黑。 */
+        /** 卡片阴影：浅色 `#191a1a1a`；深色用更重的黑。 */
         const val SHADOW_COLOR_LIGHT = 0x191A1A1A
         const val SHADOW_COLOR_DARK = 0x66000000
     }

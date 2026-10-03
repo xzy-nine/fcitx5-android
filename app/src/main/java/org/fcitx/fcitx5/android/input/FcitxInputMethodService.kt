@@ -146,18 +146,15 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
     }
 
-    // custom: 触控笔 UI 模式（**米系架构**）：进入后**撤下键盘**，IME 只剩浮动工具箱。
+    // custom: 触控笔 UI 模式：进入后**撤下键盘**，IME 只剩浮动工具箱。
     //
-    // 米系（搜狗小米版 `b0.java` case 5）在触控笔模式下把 IME 的输入视图整个换成空锚点视图：
-    //   t0().setInputView(stylusImeStub.getStylusAnchorView(), input_view_type);
-    // 并在 `MainImeServiceDel.onComputeInsets` 的 stylusmode 分支里把 IME 可见区压到 0、
-    // 可触摸区只留工具箱卡片矩形：
-    //   insets.touchableInsets = 3; insets.visibleTopInsets = iE(=屏幕高);
-    //   insets.contentTopInsets = iE; insets.touchableRegion.set(stylusImeStub.getTouchRegion());
-    // 讯飞小米版（`w63` 的 `mGestureRegion`）与 Gboard（把触控笔视图挂系统墨迹窗口覆盖全屏）同理。
+    // 触控笔模式下输入视图被整个换成空锚点视图，`onComputeInsets` 把 IME 可见区压到 0、
+    // 可触摸区只留工具箱卡片矩形，其余触摸交给应用：
+    //   insets.touchableInsets = TOUCHABLE_INSETS_REGION; insets.visibleTopInsets = 屏幕高;
+    //   insets.contentTopInsets = 屏幕高; insets.touchableRegion.set(工具箱卡片矩形);
     //
     // 因此「用手写笔点输入法功能按钮时不应仍在手写状态」是靠**键盘根本不在**实现的，
-    // 而不是靠把触控笔事件转发回键盘（那是错误做法，已移除）。
+    // 而不是靠把触控笔事件转发回键盘。
     internal val stylusUiActive = mutableStateOf(false)
 
     /** 进入触控笔 UI：撤下输入视图，只保留浮动工具箱（幂等）。 */
@@ -244,7 +241,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             setContent {
                 MiuixTheme(controller = remember { ThemeController(ColorSchemeMode.System) }) {
                     Box(Modifier.fillMaxSize()) {
-                        // custom: 触控笔 UI 模式下撤下键盘（米系 setInputView(空锚点) 的等价做法）：
+                        // custom: 触控笔 UI 模式下撤下键盘：
                         // 此时 IME 只剩浮动工具箱，墨迹由系统墨迹窗口承载；
                         // 因此用触控笔点「输入法功能按钮」不会再进入手写（键盘压根不在）。
                         if (!stylusUiActive.value) {
@@ -272,7 +269,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                             )
                             }
                         } else {
-                            // 触控笔 UI：键盘撤下后不再持有 InputView（与米系的空锚点视图等价）
+                            // 触控笔 UI：键盘撤下后不再持有 InputView
                             if (inputView.value != null) {
                                 inputDeviceMgr.clearInputView(inputView.value!!)
                                 inputView.value = null
@@ -753,7 +750,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         postFcitxJob { reset() }
-        // custom: 触控笔浮窗工具箱随配置变化重算安全区/夹取位置（米系 onNewConfiguration 同款）
+        // custom: 触控笔浮窗工具箱随配置变化重算安全区/夹取位置
         stylusHandwriting.onConfigurationChanged()
         /**
          * skip keyboard|keyboardHidden changes, because we have [inputDeviceMgr]
@@ -824,12 +821,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private var inputViewLocation = intArrayOf(0, 0)
 
     override fun onComputeInsets(outInsets: Insets) {
-        // custom: 触控笔 UI（**米系 `MainImeServiceDel` 的 stylusmode 分支同款**）：
+        // custom: 触控笔 UI：
         // IME 整体不占可见区（contentTopInsets = visibleTopInsets = 屏幕底），
         // 可触摸区只留浮动工具箱卡片矩形（`touchableInsets = TOUCHABLE_INSETS_REGION`），
-        // 其余区域触摸交给应用。米系原文：
-        //   insets.touchableInsets = 3; insets.visibleTopInsets = iE; insets.contentTopInsets = iE;
-        //   insets.touchableRegion.set(stylusImeStub.getTouchRegion());
+        // 其余区域触摸交给应用。
         if (stylusUiActive.value) {
             val bottom = decorView.height
             outInsets.apply {
@@ -934,12 +929,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     override fun onUpdateEditorToolType(toolType: Int) {
         super.onUpdateEditorToolType(toolType)
         inputDeviceMgr.evaluateOnUpdateEditorToolType(toolType, this)
-        // custom: **米系同款的触控笔 UI 进入时机**：检测到触控笔（TOOL_TYPE_STYLUS）就切到
-        // 触控笔界面（撤下键盘、只留浮动工具箱），而不是等系统手写会话开始。
-        // 米系 `StylusImeProxy.B(int)`（onUpdateEditorToolType）里：
-        //   boolean z = (i == 2) && o() && k();  // 2 = TOOL_TYPE_STYLUS
-        //   if (z != this.f) { this.f = z; c(true); }   // → setStylusMode(true) → 撤下 inputView
-        // 之前等 onStartStylusHandwriting 才撤键盘，会出现「键盘还在、触控笔事件却进了键盘」的冲突。
+        // custom: **触控笔 UI 的进入时机**：检测到触控笔（TOOL_TYPE_STYLUS）就切到
+        // 触控笔界面（撤下键盘、只留浮动工具箱），而不是等系统手写会话开始：
+        // 键盘必须在触控笔事件到达前撤下，否则两者会同时生效。
         when (toolType) {
             MotionEvent.TOOL_TYPE_STYLUS -> stylusHandwriting.onToolStylus()
             MotionEvent.TOOL_TYPE_FINGER -> stylusHandwriting.onToolFinger()
@@ -1144,10 +1136,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             )
             stylusHandwriting.onEditorBounds(screen)
         } ?: stylusHandwriting.onEditorBounds(null)
-        // custom: 「可见文本行」交给触控笔控制器 —— 米系用它判定一笔是**手势**还是**书写**：
+        // custom: 「可见文本行」交给触控笔控制器 —— 用它判定一笔是**手势**还是**书写**：
         // 手势（涂改删除/圈选）必须画在编辑器已有文字上，画在空白处就是写字。
         // `CursorAnchorInfo.getVisibleLineBounds()` 是 API 34 新增，且同样是 local coordinates，
-        // 必须经 info.matrix 映射（米系 `com.miui.ime.g.k()` / 讯飞 `w63.H()` 同款）。
+        // 必须经 info.matrix 映射后才能与屏幕坐标比较。
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             val lines = runCatching {
                 info.visibleLineBounds.map { r ->
@@ -1410,7 +1402,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         Timber.d("onFinishInputView: finishingInput=$finishingInput")
         // custom: 收起语音面板覆盖层并释放麦克风（IME 隐藏时不能继续录音）
         inputView.value?.voiceInput?.closePanel()
-        // custom: 输入视图结束 → 收起触控笔工具箱（米系在 onFinishInputView 里做同一件事）
+        // custom: 输入视图结束 → 收起触控笔工具箱
         stylusHandwriting.onInputViewFinished()
         // the session is over — a later InputView recreation must not replay it
         currentEditorInfo = null
@@ -1461,7 +1453,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         ThemeManager.removeOnChangedListener(onThemeChangeListener)
         // custom: 释放手写识别后端（系统引擎 / 谷歌数字墨水，避免 IME 重建时残留会话）
         inputView.value?.handwritingInput?.release()
-        // custom: 释放触控笔手写会话（协程与状态；不调用系统方法）
+        // custom: 释放触控笔手写会话（结束会话、隐藏工具箱、释放识别后端与协程）
         stylusHandwriting.release()
         super.onDestroy()
         // Fcitx might be used in super.onDestroy()

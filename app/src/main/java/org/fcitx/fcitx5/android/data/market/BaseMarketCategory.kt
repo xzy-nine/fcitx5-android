@@ -6,7 +6,7 @@
  *
  * 各分类（语音 / 手写）只声明：清单来源、待下载模型到本地目录的映射、内置兜底清单、
  * 以及「就绪判定」与「选中模型」两项分类语义；其余全部由本类复用，
- * 市场页 [org.fcitx.fcitx5.android.data.market.ModelMarketScreen] 只依赖 [MarketCategory]。
+ * 市场页 [org.fcitx.fcitx5.android.ui.main.compose.screens.ModelMarketScreen] 只依赖 [MarketCategory]。
  */
 package org.fcitx.fcitx5.android.data.market
 
@@ -127,40 +127,55 @@ abstract class BaseMarketCategory(
 
     /** 下载一个模型；默认实现是「文件下载器」，分类可覆写（数字墨水走 ML Kit）。 */
     override fun downloadModel(context: Context, model: MarketModel) {
-        if (downloadJob?.isActive == true) return
         val appContext = context.applicationContext
-        setLastError(null)
-        setDownloadingId(model.id)
-        setDownloadState(MarketDownloadState.Downloading(0f, 0L, 0L))
-        // LAZY 启动：先把 Job 赋给 downloadJob 再 start()，协程体里的身份比对不会失真
-        downloadJob = scope.launch(start = CoroutineStart.LAZY) {
-            val job = coroutineContext[Job]
+        runTrackedDownload(model) { job ->
             // 模型 id 来自远程索引：非法 id 拿不到目录，按「下载失败」收场而非抛异常
             val dir = targetDir(appContext, model)
             if (dir == null) {
-                if (downloadJob !== job) return@launch
+                if (!isCurrentDownload(job)) return@runTrackedDownload
                 val message = "非法的模型 id：${model.id}"
                 Timber.w("$id download rejected: $message")
                 setDownloadingId(null)
                 setLastError(message)
                 setDownloadState(MarketDownloadState.Error(message))
-                return@launch
+                return@runTrackedDownload
             }
             ModelDownloader.download(appContext, model, dir) { state ->
                 // 已被取消或已有更新的下载接管时，旧回调不得再改状态
-                if (downloadJob !== job) return@download
+                if (!isCurrentDownload(job)) return@download
                 setDownloadState(state)
             }.onSuccess {
-                if (downloadJob !== job) return@onSuccess
+                if (!isCurrentDownload(job)) return@onSuccess
                 setDownloadingId(null)
             }.onFailure { e ->
-                if (downloadJob !== job) return@onFailure
+                if (!isCurrentDownload(job)) return@onFailure
                 // 失败时保留 downloadingId，使卡片继续显示错误与「重试下载」
                 setLastError(e.message ?: "下载失败")
             }
         }
+    }
+
+    /**
+     * 跑一次带状态上报的下载：占用 [downloadJob]、置「下载中」、按 Job 身份写结果。
+     *
+     * 失败时保留 [downloadingId]（卡片继续显示错误与「重试下载」）；被取消或被更新的下载
+     * 接管后，旧协程不得再改状态（用 [isCurrentDownload] 判定）。
+     */
+    protected fun runTrackedDownload(model: MarketModel, body: suspend (Job) -> Unit) {
+        if (downloadJob?.isActive == true) return
+        setLastError(null)
+        setDownloadingId(model.id)
+        setDownloadState(MarketDownloadState.Downloading(0f, 0L, 0L))
+        // LAZY 启动：先把 Job 赋给 downloadJob 再 start()，协程体里的身份比对不会失真
+        downloadJob = scope.launch(start = CoroutineStart.LAZY) {
+            val job = coroutineContext[Job] ?: return@launch
+            body(job)
+        }
         downloadJob?.start()
     }
+
+    /** 该协程是否仍是当前下载（被取消或被更新的下载接管后为 false）。 */
+    protected fun isCurrentDownload(job: Job): Boolean = downloadJob === job
 
     final override fun cancelDownload() {
         downloadJob?.cancel()

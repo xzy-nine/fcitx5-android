@@ -45,23 +45,13 @@ object GoogleGestureLabels {
     fun classify(label: String?): HandwritingStrokeKind {
         val token = label?.trim()?.lowercase() ?: return HandwritingStrokeKind.Character
         return when (token) {
-            // 涂抹：删除这段文本
             "scribble" -> HandwritingStrokeKind.Delete
-
-            // 圈选：选中圈住的内容
             "circle" -> HandwritingStrokeKind.Select
-
-            // 尖角（∧/∨）与拱形（∩/∪）：都进入插入模式
             "caret:above", "caret:below",
             "arch:above", "arch:below",
             -> HandwritingStrokeKind.InsertMode
-
-            // 竖线：添加/移除空格（`JoinOrSplitGesture` 在非空白处插空格、画在空白处则删它）
             "verticalbar" -> HandwritingStrokeKind.InsertSpace
-
-            // 左下角形（`corner:downleft`）：下行后向左收笔的 ⏎ 形 → 换行
             "corner:downleft" -> HandwritingStrokeKind.Newline
-
             // `strike`（横线）与 `writing` 一样按普通书写处理；未知标签同样保守回落
             else -> HandwritingStrokeKind.Character
         }

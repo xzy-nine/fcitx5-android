@@ -184,7 +184,7 @@ class FcitxApplication : Application() {
             AutoDictSync.startDownloadLoop()
         }
         coroutineScope.launch {
-            // custom: 清理已下线的「手写 ONNX 引擎」遗留的模型文件（≈7MB）
+            // custom: 清理已废弃引擎的模型目录
             val removed = withContext(Dispatchers.IO) {
                 HandwritingLegacyCleanup.removeLegacyOnnxModels(ctx)
             }

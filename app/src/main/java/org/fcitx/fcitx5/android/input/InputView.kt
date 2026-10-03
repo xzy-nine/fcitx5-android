@@ -168,7 +168,7 @@ class InputView(
             // 置于当前窗口之上：后续 attachWindow 追加的窗口 View 不会盖住它
             elevation = 1f
             // 面板显示时必须**吃掉触摸**：Compose 内容里没有 pointer handler 的空白区域
-            // 默认不消费事件，会穿透到下层键盘（实测能点到下面的键）
+            // 默认不消费事件，会穿透到下层键盘
             isClickable = true
             isVisible = false
             voiceInput.panelVisibleListener = { visible -> isVisible = visible }
@@ -282,7 +282,7 @@ class InputView(
         scope += keyboardTune
         // custom: 语音输入会话组件（面板/工具栏/空格长按都通过它）
         scope += voiceInput
-        // custom: 手写输入会话组件（独立输入方案，覆盖层与语音同构）
+        // custom: 手写输入会话组件（第三种键盘布局，由 [KeyboardWindow] 切换）
         scope += handwritingInput
         // custom: 手写候选的投喂器：手写侧 set/publish 时经既有广播链刷新候选栏
         org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed.emitter = { words ->
@@ -307,8 +307,8 @@ class InputView(
      * 上一次 [startInput] 看到的输入框标识，用来区分「同一个框被应用重启输入连接」与「焦点换到了另一个框」。
      *
      * 两者在框架层都是 `onStartInputView(restarting = true)`，只看 `restarting` 分不开：
-     * 不少应用（例如 `io.legato.kazusa`）会在自己改动文本/选区之后重启输入连接做 resync，
-     * 此时把 Picker / 剪贴板等面板踢回主键盘是纯打扰。
+     * 应用可能在自己改动文本/选区后重启输入连接做 resync，此时**必须保留当前面板**，
+     * 按换框处理会把它误重置到主键盘。
      */
     private var lastEditorKey: EditorKey? = null
 
@@ -597,7 +597,7 @@ class InputView(
 
     /**
      * 候选操作菜单（Compose 覆盖层）：Compose 侧调用方经此路由到 `ComposeCandidateActionMenu`
-     * （anchor 为窗口绝对坐标 [Rect]，与弹窗层同款坐标抽象）。
+     * （anchor 为窗口绝对坐标 [Rect]，与弹窗层坐标口径一致）。
      */
     override fun showCandidateActionMenu(idx: Int, text: String, anchor: Rect) {
         candidateActionMenu.show(idx, text, anchor)

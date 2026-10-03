@@ -2,13 +2,13 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  *
- * custom: 模型市场 —— 按分类泛化的**公共组件**（目前唯一分类是语音 `asr`）。
+ * custom: 模型市场 —— 按分类泛化的**公共组件**（分类由 [MarketCategories] 注册）。
  *
  * 分层：
  * - 本文件：市场的数据类型（清单条目、下载状态）；
  * - [ModelIndex]：从远程索引 `models/index.yaml` 按 **category** 过滤出本分类的条目，
  *   索引不可用时回落各分类的内置清单；
- * - [ModelMarketScreen]：唯一的市场页 UI；
+ * - [org.fcitx.fcitx5.android.ui.main.compose.screens.ModelMarketScreen]：唯一的市场页 UI；
  * - [MarketCategory]：各分类的实现（谁提供清单、谁负责下载/删除/就绪判定）。
  *
  * 新增分类只需实现 [MarketCategory] 并在 [MarketCategories] 注册，页面无需改动。
@@ -17,6 +17,7 @@ package org.fcitx.fcitx5.android.data.market
 
 import android.content.Context
 import kotlinx.coroutines.flow.StateFlow
+import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 
 /** 清单里的一个可下载文件。 */
 data class MarketModelFile(
@@ -132,6 +133,22 @@ interface MarketCategory {
      * 返回空集 = 不额外提权。
      */
     fun preferredLanguageKeys(context: Context): Set<String> = emptySet()
+
+    /**
+     * 清单里某个**基础语言 tag**（[MarketModelGrouping.baseTag] 口径）的展示名。
+     *
+     * 返回 null = 本分类没有内置语言名，市场页回落成 tag 本身。
+     */
+    fun displayNameOf(baseTag: String): String? = null
+
+    /**
+     * 索引地址的覆盖值（默认读语音设置项 `voice_index_url`）；空串 = 用内置默认端点。
+     *
+     * 各分类可覆写成自己的偏好或常量，[ModelIndex] 据此决定拉取地址。
+     */
+    fun indexBaseUrlOverride(context: Context): String =
+        runCatching { AppPrefs.getInstance().voice.voiceIndexUrl.getValue() }
+            .getOrNull().orEmpty()
 
     /**
      * **清单之外**的「直接下载」条目：官方渠道按 tag 能取到、但内置清单未收录的模型。

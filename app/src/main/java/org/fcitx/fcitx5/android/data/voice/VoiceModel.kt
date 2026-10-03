@@ -5,7 +5,7 @@
  * custom: 本地语音模型（sherpa-onnx 流式 zipformer2 transducer 导出包）的元信息与内置清单。
  *
  * 内置清单全部指向官方 sherpa-onnx release 资产（Apache-2.0 模型），
- * 远程索引不可用时用它兜底（不再依赖第三方（Xime）索引或 ModelScope 镜像）。
+ * 远程索引不可用时用它兜底（不依赖第三方索引或 ModelScope 镜像）。
  */
 package org.fcitx.fcitx5.android.data.voice
 

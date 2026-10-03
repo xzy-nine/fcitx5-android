@@ -24,6 +24,7 @@ object MarketCategories {
     fun of(id: String): MarketCategory = when (id) {
         DIGITAL_INK -> DigitalInkMarketCategory
         ASR -> VoiceMarketCategory
+        // 路由 id 只会是上面两个常量；未知 id 按语音市场兜底（行为有意保持）
         else -> VoiceMarketCategory
     }
 

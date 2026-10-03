@@ -11,15 +11,13 @@
 package org.fcitx.fcitx5.android.data.handwriting
 
 import android.content.Context
+import org.fcitx.fcitx5.android.data.market.MarketPaths
 import timber.log.Timber
 import java.io.File
 
 object HandwritingLegacyCleanup {
 
     private const val TAG = "HandwritingLegacyCleanup"
-
-    /** 模型根目录（与语音共用）。 */
-    private const val MODELS_DIR = "models"
 
     /** 旧手写 ONNX 模型的标志文件（语音模型目录里不会出现）。 */
     private val LEGACY_MARKERS = listOf("ochwpro.onnx", "char_index.json")
@@ -30,7 +28,7 @@ object HandwritingLegacyCleanup {
      * @return 实际删除的目录数（诊断日志用）
      */
     fun removeLegacyOnnxModels(context: Context): Int {
-        val modelsRoot = File(context.filesDir, MODELS_DIR)
+        val modelsRoot = MarketPaths.modelsRoot(context)
         if (!modelsRoot.isDirectory) return 0
         var removed = 0
         modelsRoot.listFiles()?.forEach { dir ->

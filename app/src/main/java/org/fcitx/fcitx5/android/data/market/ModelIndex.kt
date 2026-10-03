@@ -2,11 +2,10 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  *
- * custom: 模型市场的远程索引（语音用；手写已改为端上引擎 + 随包内置模型，不再走市场）。
+ * custom: 模型市场的远程索引。
  *
- * 拉取 `<base>/models/index.yaml`，由调用方给出 **category**（语音取 `asr`，
- * 见 [org.fcitx.fcitx5.android.data.market.VoiceMarketCategory]）；
- * 索引不可用时由各分类回落到自己的内置清单。
+ * 拉取 `<base>/models/index.yaml`，由调用方给出 **category**（分类注册表见
+ * [MarketCategories]）；索引不可用时由各分类回落到自己的内置清单。
  */
 package org.fcitx.fcitx5.android.data.market
 
@@ -19,8 +18,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.fcitx.fcitx5.android.data.prefs.AppPrefs
-import org.fcitx.fcitx5.android.data.voice.VoiceModelStore
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
@@ -47,18 +44,18 @@ object ModelIndex {
         .followRedirects(true)
         .build()
 
-    /** 索引地址：语音的覆盖值 → 内置默认端点。 */
-    private fun baseUrl(): String {
-        val prefs = runCatching { AppPrefs.getInstance() }.getOrNull()
-        val voice = runCatching { prefs?.voice?.voiceIndexUrl?.getValue() }
-            .getOrNull().orEmpty()
-        return voice.ifBlank { DEFAULT_BASE_URL }.trimEnd('/')
+    /** 索引地址：分类给出的覆盖值 → 内置默认端点。 */
+    private fun baseUrl(context: android.content.Context, category: String): String {
+        val override = runCatching {
+            MarketCategories.of(category).indexBaseUrlOverride(context)
+        }.getOrNull().orEmpty()
+        return override.ifBlank { DEFAULT_BASE_URL }.trimEnd('/')
     }
 
     /** 拉取并解析指定分类的条目；失败返回空列表（调用方据此回落内置清单）。 */
     suspend fun load(context: android.content.Context, category: String): List<MarketModel> =
         withContext(Dispatchers.IO) {
-            val url = "${baseUrl()}/$INDEX_PATH"
+            val url = "${baseUrl(context, category)}/$INDEX_PATH"
             val text = runCatching { fetch(url) }.getOrElse {
                 Timber.w(it, "$TAG: fetch failed")
                 null
@@ -92,7 +89,7 @@ object ModelIndex {
             val entryCategory = (map["category"] as? YamlScalar)?.content.orEmpty().lowercase()
             if (entryCategory != category.lowercase()) return@mapNotNull null
             // 非法 id（空、`.`/`..`、含路径分隔符）直接剔除，不进市场页
-            if (!VoiceModelStore.isValidModelId(id)) {
+            if (!MarketModelId.isValid(id)) {
                 Timber.w("$TAG: skip model with illegal id: $id")
                 return@mapNotNull null
             }

@@ -6,6 +6,8 @@
 package org.fcitx.fcitx5.android.data.voice
 
 import android.content.Context
+import org.fcitx.fcitx5.android.data.market.MarketModelId
+import org.fcitx.fcitx5.android.data.market.MarketPaths
 import java.io.File
 
 /** 一次流式 zipformer2 transducer 推理需要的 4 个文件。 */
@@ -20,12 +22,10 @@ object VoiceModelStore {
 
     private const val TOKENS_FILE = "tokens.txt"
 
-    fun modelsRoot(context: Context): File = File(context.filesDir, "models")
+    fun modelsRoot(context: Context): File = MarketPaths.modelsRoot(context)
 
     /** 模型 id 是否合法：非空、不以 `.` 开头、不含路径分隔符。 */
-    fun isValidModelId(modelId: String): Boolean =
-        modelId.isNotBlank() && !modelId.startsWith(".") &&
-                !modelId.contains('/') && !modelId.contains('\\')
+    fun isValidModelId(modelId: String): Boolean = MarketModelId.isValid(modelId)
 
     /**
      * 模型目录：id 来自远程索引，须先校验再拼路径，
@@ -68,20 +68,6 @@ object VoiceModelStore {
     }
 
     fun isReady(context: Context, modelId: String): Boolean = resolve(context, modelId) != null
-
-    /** 该模型目录占用的字节数。 */
-    fun sizeOnDisk(context: Context, modelId: String): Long {
-        val dir = modelDir(context, modelId) ?: return 0L
-        if (!dir.isDirectory) return 0L
-        return dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-    }
-
-    /** 删除整个模型目录；返回是否成功。 */
-    fun delete(context: Context, modelId: String): Boolean {
-        val dir = modelDir(context, modelId) ?: return false
-        if (!dir.exists()) return false
-        return dir.deleteRecursively()
-    }
 
     /**
      * 在候选文件里挑出某个角色（encoder/decoder/joiner）的 onnx：

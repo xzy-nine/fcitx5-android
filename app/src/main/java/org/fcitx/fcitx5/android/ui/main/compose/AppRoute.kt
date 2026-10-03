@@ -92,7 +92,7 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object Theme : AppRoute
 
-    /** custom: 语音输入设置页（移植自 whisperIME 的语音设置页，内容为 Xime 引擎能力） */
+    /** custom: 语音输入设置页（内置离线/在线引擎的平台与模型配置） */
     @Serializable
     data object VoiceInputSettings : AppRoute
 
@@ -112,7 +112,7 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object HandwritingSettings : AppRoute
 
-    /** custom: 触控笔手势动作演示 + 试用页（Gboard 式设置页内演示） */
+    /** custom: 触控笔手势动作演示 + 试用页（设置页内直接演示） */
     @Serializable
     data object HandwritingGestureDemo : AppRoute
 }

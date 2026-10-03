@@ -8,8 +8,7 @@ package org.fcitx.fcitx5.android.input.candidates.horizontal
 import org.fcitx.fcitx5.android.core.CandidateWord
 
 /**
- * 候选栏状态定义
- * 参考 Xime 的 CandidateBarState 设计，适配 fcitx5 数据结构
+ * 候选栏状态定义（适配 fcitx5 数据结构）
  */
 sealed interface CandidateBarState {
 

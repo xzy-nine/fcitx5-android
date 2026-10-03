@@ -61,7 +61,7 @@ import org.mechdancer.dependency.manager.must
  * `expandedCandidateGridSpanCount` 偏好降级为列数上限。
  *
  * 职责分配（对标 View 侧 `BaseExpandedCandidateWindow`）：
- * - 窗口壳与生命周期：本类。类头与 `onCreateView()` 写法照抄 [KeyboardWindow]（非 essential
+ * - 窗口壳与生命周期：本类。类头与 `onCreateView()` 写法参照 [KeyboardWindow]（非 essential
  *   Compose 窗口每次 attach 都新建实例、detach 时 `disposeComposition()`）；
  * - 渲染：`ComposeExpandedCandidatesUi`（标签栏 + 表格 + 内嵌键盘）；
  * - 数据：`CandidatesPagingSource` 分页 + [ComposeCandidateComponent] 的 `total` /
