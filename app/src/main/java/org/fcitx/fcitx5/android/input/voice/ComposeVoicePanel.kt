@@ -126,7 +126,8 @@ fun VoicePanelHost(
         // 点按切换由组件按**真实会话状态**判断（PREPARING/PROCESSING 时点按＝结束）
         onMicToggle = { voice.toggleRecognition() },
         onMicStart = { voice.startRecognition() },
-        onMicStop = { voice.stopRecognition() },
+        // 长按松手：补 300ms 尾音窗口再停止（句尾丢字）；点按切换仍是立即停止
+        onMicStop = { voice.stopRecognitionWithTail() },
         onStopDiscard = { voice.cancelSession() },
         onGrantPermission = { VoicePermissionHelper.requestRecordAudioPermission(view.context) },
     )
