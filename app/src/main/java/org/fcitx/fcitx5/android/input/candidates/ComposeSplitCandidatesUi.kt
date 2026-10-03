@@ -33,6 +33,7 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.keyboard.BackspaceKey
 import org.fcitx.fcitx5.android.input.keyboard.ComposeKey
+import org.fcitx.fcitx5.android.input.keyboard.ComposeKeyColumn
 import org.fcitx.fcitx5.android.input.keyboard.ImageLayoutSwitchKey
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyActionListener
@@ -293,11 +294,6 @@ private fun SplitKeyboardColumn(
     popupActionListener: PopupActionListener?,
     modifier: Modifier = Modifier,
 ) {
-    val view = LocalView.current
-    val prefs = remember { AppPrefs.getInstance().keyboard }
-    val hapticOnRepeat = prefs.hapticOnRepeat.preferenceState()
-    val spaceSwipeMoveCursor = prefs.spaceSwipeMoveCursor.preferenceState()
-
     val backspaceKey = remember { BackspaceKey() }
     val returnKey = remember(returnDrawable) { returnKeyWithDrawable(returnDrawable) }
     val pageUpKey = remember {
@@ -314,73 +310,30 @@ private fun SplitKeyboardColumn(
             variant = KeyDef.Appearance.Variant.Alternative,
         )
     }
-    // 删除键的滑行（移动光标 / 删除选区）与主键盘一致；监听器经 rememberUpdatedState 取最新值
-    val listenerState = rememberUpdatedState(keyActionListener)
-    val backspaceSwipeSpec = remember(backspaceKey, spaceSwipeMoveCursor) {
-        backspaceKey.spaceAndBackspaceSwipeSpec(spaceSwipeMoveCursor)
-    }
-    val backspaceGesture = remember(backspaceKey, hapticOnRepeat) {
-        backspaceKey.spaceAndBackspaceGestureListener(
-            view = view,
-            onAction = { action ->
-                listenerState.value?.onKeyAction(action, KeyActionListener.Source.Keyboard)
-            },
-            hapticOnRepeat = hapticOnRepeat,
-        )
-    }
-    Column(modifier) {
-        ComposeKey(
-            def = backspaceKey,
-            keyId = SplitKeyboardKeyIdBase,
-            modifier = Modifier
-                .fillMaxSize()
-                .weight(1f),
-            keyActionListener = keyActionListener,
-            popupActionListener = popupActionListener,
-            swipeSpec = backspaceSwipeSpec,
-            onSwipeGesture = backspaceGesture,
-        )
-        ComposeKey(
-            def = pageUpKey,
-            keyId = SplitKeyboardKeyIdBase + 1,
-            modifier = Modifier
-                .fillMaxSize()
-                .weight(1f),
-            keyActionListener = keyActionListener,
-            popupActionListener = popupActionListener,
-            enabled = pageUpEnabled,
-        )
-        ComposeKey(
-            def = pageDownKey,
-            keyId = SplitKeyboardKeyIdBase + 2,
-            modifier = Modifier
-                .fillMaxSize()
-                .weight(1f),
-            keyActionListener = keyActionListener,
-            popupActionListener = popupActionListener,
-            enabled = pageDownEnabled,
-        )
-        ComposeKey(
-            def = returnKey,
-            keyId = SplitKeyboardKeyIdBase + 3,
-            modifier = Modifier
-                .fillMaxSize()
-                .weight(1f),
-            keyActionListener = keyActionListener,
-            popupActionListener = popupActionListener,
-        )
-        if (backToKeyboardKeyDef != null) {
-            ComposeKey(
-                def = backToKeyboardKeyDef,
-                keyId = SplitKeyboardKeyIdBase + 4,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-                keyActionListener = keyActionListener,
-                popupActionListener = popupActionListener,
-            )
+    val keys = remember(backspaceKey, pageUpKey, pageDownKey, returnKey, backToKeyboardKeyDef) {
+        buildList {
+            add(backspaceKey)
+            add(pageUpKey)
+            add(pageDownKey)
+            add(returnKey)
+            backToKeyboardKeyDef?.let { add(it) }
         }
     }
+    ComposeKeyColumn(
+        keys = keys,
+        modifier = modifier,
+        keyIdBase = SplitKeyboardKeyIdBase,
+        keyActionListener = keyActionListener,
+        popupActionListener = popupActionListener,
+        // 删除键的滑行（移动光标 / 删除选区）与长按连发由 ComposeKeyColumn 按主键盘口径接线
+        keyEnabled = { index ->
+            when (index) {
+                1 -> pageUpEnabled
+                2 -> pageDownEnabled
+                else -> true
+            }
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------

@@ -39,7 +39,11 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.TableInputMethodsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.ThemeScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WebDavSyncScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceInputSettingsScreen
-import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceModelMarketScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.ModelMarketHomeScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.ModelMarketScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingGestureDemoScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingSettingsScreen
+import org.fcitx.fcitx5.android.data.market.MarketCategories
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceProviderConfigScreen
 import org.fcitx.fcitx5.android.ui.main.compose.settings.ManagedPrefsScreen
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
@@ -107,7 +111,7 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                             }
 
                             org.fcitx.fcitx5.android.data.voice.VoiceRoutes.MODELS -> {
-                                navigateTo(AppRoute.VoiceModelMarket)
+                                navigateTo(AppRoute.ModelMarket(MarketCategories.ASR))
                                 return@collect
                             }
 
@@ -285,21 +289,51 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 entry<AppRoute.WebDavSync> {
                     WebDavSyncScreen(onBack = { backStack.removeLastOrNull() })
                 }
-                // custom: 语音输入设置页 / 模型市场
+                // custom: 语音输入设置页
                 entry<AppRoute.VoiceInputSettings> {
                     VoiceInputSettingsScreen(
                         onBack = { backStack.removeLastOrNull() },
-                        onOpenModels = { navigateTo(AppRoute.VoiceModelMarket) },
+                        onOpenModels = {
+                            navigateTo(AppRoute.ModelMarket(MarketCategories.ASR))
+                        },
                     )
                 }
-                entry<AppRoute.VoiceModelMarket> {
-                    VoiceModelMarketScreen(onBack = { backStack.removeLastOrNull() })
+                // custom: 模型市场父页（各分类入口）
+                entry<AppRoute.ModelMarketHome> {
+                    ModelMarketHomeScreen(
+                        onBack = { backStack.removeLastOrNull() },
+                        onOpenCategory = {
+                            navigateTo(AppRoute.ModelMarket(MarketCategories.routeOf(it)))
+                        },
+                    )
+                }
+                // custom: 模型市场分类子页（语音 asr / 数字墨水 digitalink）
+                entry<AppRoute.ModelMarket> { route ->
+                    ModelMarketScreen(
+                        category = MarketCategories.of(route.category),
+                        onBack = { backStack.removeLastOrNull() },
+                    )
                 }
                 entry<AppRoute.VoiceProviderConfig> { route ->
                     VoiceProviderConfigScreen(
                         providerId = route.providerId,
                         onBack = { backStack.removeLastOrNull() },
                     )
+                }
+                // custom: 手写输入设置页（引擎下拉 + 识别语言入口（模型市场）+ 手势演示）
+                entry<AppRoute.HandwritingSettings> {
+                    HandwritingSettingsScreen(
+                        onBack = { backStack.removeLastOrNull() },
+                        onOpenModels = {
+                            navigateTo(
+                                AppRoute.ModelMarket(MarketCategories.DIGITAL_INK)
+                            )
+                        },
+                        onOpenGestureDemo = { navigateTo(AppRoute.HandwritingGestureDemo) },
+                    )
+                }
+                entry<AppRoute.HandwritingGestureDemo> {
+                    HandwritingGestureDemoScreen(onBack = { backStack.removeLastOrNull() })
                 }
                 entry<AppRoute.RawConfigHost> { route ->
                     RawConfigHostScreen(

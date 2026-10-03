@@ -63,6 +63,7 @@ import org.fcitx.fcitx5.android.input.preedit.ComposePreeditComponent
 import androidx.core.view.isVisible
 import org.fcitx.fcitx5.android.input.voice.VoiceInputComponent
 import org.fcitx.fcitx5.android.input.voice.VoicePanelHost
+import org.fcitx.fcitx5.android.input.handwriting.HandwritingInputComponent
 import org.fcitx.fcitx5.android.input.wm.createComposeWindowView
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.unset
@@ -143,12 +144,15 @@ class InputView(
     // 键盘调音覆盖层（custom 特色：拖拽调键盘高度/边距/间隙，模糊键盘背景）：
     // 根组合（createComposeInputView）经 OverlayContent 渲染，故需对外可见
     internal val keyboardTune = KeyboardTuneCompose({ keyboardTuneMetrics() }) { setKeyboardTuneBlur(false) }
-    private val keyboardWindow = KeyboardWindow()
+    // custom: 供工具栏把布局切到手写（见 ComposeKawaiiBarComponent.onHandwritingInput）
+    internal val keyboardWindow = KeyboardWindow()
     private val symbolPicker = symbolPicker()
     private val emojiPicker = emojiPicker()
     private val emoticonPicker = emoticonPicker()
     // custom: 内置语音输入的会话组件
     internal val voiceInput = VoiceInputComponent()
+    // custom: 手写输入的会话组件（独立输入方案）
+    internal val handwritingInput = HandwritingInputComponent()
 
     /**
      * custom: 语音面板覆盖层宿主（挂在 [InputWindowManager.view] 里、当前窗口之上）。
@@ -278,6 +282,20 @@ class InputView(
         scope += keyboardTune
         // custom: 语音输入会话组件（面板/工具栏/空格长按都通过它）
         scope += voiceInput
+        // custom: 手写输入会话组件（独立输入方案，覆盖层与语音同构）
+        scope += handwritingInput
+        // custom: 手写候选的投喂器：手写侧 set/publish 时经既有广播链刷新候选栏
+        org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed.emitter = { words ->
+            broadcaster.onCandidateUpdate(
+                FcitxEvent.CandidateListEvent.Data(total = -1, candidates = words)
+            )
+        }
+        // custom: 手写候选被点选时替换式上屏（候选不在引擎候选表里，不能走 fcitx.select）
+        composeCandidate.onCandidatePicked = { index ->
+            if (org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed.isActive) {
+                handwritingInput.pickCandidate(index)
+            }
+        }
         broadcaster.onScopeSetupFinished(scope)
     }
 
@@ -606,7 +624,7 @@ class InputView(
         lastEditorKey = editorKey
         Timber.d("startInput: restarting=$restarting, sameEditor=$sameEditor, key=$editorKey")
         if (!restarting || (focusChangeResetKeyboard && !sameEditor)) {
-            // 收起语音面板覆盖层（若有）：会话丢弃、麦克风释放
+            // 收起语音/手写面板覆盖层（若有）：会话丢弃、资源释放
             voiceInput.closePanel()
             windowManager.attachWindow(KeyboardWindow)
         }
@@ -632,7 +650,19 @@ class InputView(
     override fun handleFcitxEvent(it: FcitxEvent<*>) {
         when (it) {
             is FcitxEvent.CandidateListEvent -> {
-                broadcaster.onCandidateUpdate(it.data)
+                // custom: 手写布局期间候选栏归手写（识别候选），不让 fcitx 的候选覆盖；
+                // 离开手写布局时 feed.clear()，自动恢复 fcitx 候选。
+                val feed = org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed
+                if (feed.isActive) {
+                    broadcaster.onCandidateUpdate(
+                        FcitxEvent.CandidateListEvent.Data(
+                            total = -1,
+                            candidates = feed.words,
+                        )
+                    )
+                } else {
+                    broadcaster.onCandidateUpdate(it.data)
+                }
             }
             is FcitxEvent.ClientPreeditEvent -> {
                 preeditEmptyState.updatePreeditEmptyState(clientPreedit = it.data)
@@ -665,51 +695,18 @@ class InputView(
     override fun onDetachedFromWindow() {
         advancedPrefs.unregisterOnChangeListener(onKeyboardSizeChangeListener)
         keyboardPrefs.unregisterOnChangeListener(onKeyboardSizeChangeListener)
+        // custom: 先摘掉手写候选投喂器并清空 feed，再 clear scope ——
+        // 否则 detach 后 emitter 仍指向旧视图的广播链，外部 set/publish 会打到失效组件
+        val feed = org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed
+        feed.emitter = null
+        feed.clear()
         // detach 即释放语音会话资源（:asr 绑定、录音、媒体音量恢复）
         voiceInput.release()
+        // detach 即释放手写组件会话（识别协程与识别后端；下次 prepare 惰性重建）
+        handwritingInput.release()
         // clear DynamicScope, implies that InputView should not be attached again after detached.
         scope.clear()
         super.onDetachedFromWindow()
     }
 
-}
-
-/**
- * 输入框标识（只取「换框会变、同框重启不变」的字段），用于 [InputView.startInput] 区分
- * 「同一输入框重启」与「焦点换框」。
- *
- * 刻意**不含** `initialSelStart/End`：应用重启输入连接时经常带上陈旧（甚至差一格）的选区，
- * 把它算进来会让「同框重启」永远被判成换框。
- *
- * `fieldId` 为 [View.NO_ID]（应用没给控件 id）时退化为只比较其余字段。
- */
-private class EditorKey(
-    private val packageName: String?,
-    private val fieldId: Int,
-    private val inputType: Int,
-    private val hintText: String?,
-    private val imeOptions: Int,
-) {
-
-    fun isSameAs(other: EditorKey?): Boolean = other != null &&
-            packageName == other.packageName &&
-            inputType == other.inputType &&
-            hintText == other.hintText &&
-            imeOptions == other.imeOptions &&
-            (fieldId == other.fieldId || fieldId == View.NO_ID)
-
-    override fun toString(): String =
-        "EditorKey(pkg=$packageName, fieldId=$fieldId, inputType=0x${inputType.toString(16)}, " +
-                "hint=$hintText, imeOptions=0x${imeOptions.toString(16)})"
-
-    companion object {
-        fun of(info: EditorInfo) = EditorKey(
-            packageName = info.packageName,
-            fieldId = info.fieldId,
-            inputType = info.inputType,
-            // hintText 可能是 Spanned，转成 String 再比较，避免同一段文字因实例类型不同而判成换框
-            hintText = info.hintText?.toString(),
-            imeOptions = info.imeOptions,
-        )
-    }
 }

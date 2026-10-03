@@ -4,9 +4,6 @@ kotlin = "2.4.10"
 ksp = "2.3.10"
 compileSdk = "37"
 minSdk = "26"
-# custom: 与 Xime 语音输入核心保持一致（Xime 用 okhttp 5.4.0）。
-# 不能停在 4.12.0：OkHttp 5 默认启用 fastFallback（多地址快速回退），
-# 4.x 只能逐个地址各等满 connectTimeout，遇到某个 IP 不通就会整段超时。
 okhttp = "5.4.0"
 jsoup = "1.17.2"
 hutool = "5.8.27"
@@ -19,9 +16,10 @@ aboutlibraries = "14.2.1"
 arrow = "2.2.3"
 miuix = "0.9.4-rc01"
 compose = "1.12.0"
-# custom: 语音输入（内置语音识别平台/模型市场）
 kaml = "0.104.0"
 commonsCompress = "1.28.0"
+onnxruntimeAndroid = "1.28.0"
+mlkitDigitalInk = "19.0.0"
 
 [libraries]
 android-gradlePlugin = { group = "com.android.tools.build", name = "gradle", version.ref = "androidGradlePlugin" }
@@ -90,15 +88,17 @@ miuix-icons-android = { module = "top.yukonga.miuix.kmp:miuix-icons-android", ve
 miuix-nav-android = { module = "top.yukonga.miuix.kmp:miuix-nav-android", version.ref = "miuix" }
 miuix-blur-android = { module = "top.yukonga.miuix.kmp:miuix-blur-android", version.ref = "miuix" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version = "1.13.0" }
-# custom: Google 官方 androidx Compose 构件，与 Notify-Relay / WebDAVPass 路线一致
 androidx-compose-runtime = { module = "androidx.compose.runtime:runtime", version.ref = "compose" }
 androidx-compose-foundation = { module = "androidx.compose.foundation:foundation", version.ref = "compose" }
 androidx-compose-ui = { module = "androidx.compose.ui:ui", version.ref = "compose" }
 jieba-analysis = { module = "com.huaban:jieba-analysis", version = "1.0.2" }
-# custom: 语音输入（模型索引 YAML / 模型归档解压 / SSE）
 kaml = { module = "com.charleskorn.kaml:kaml", version.ref = "kaml" }
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commonsCompress" }
 okhttp-sse = { module = "com.squareup.okhttp3:okhttp-sse", version.ref = "okhttp" }
+# custom: ONNX Runtime（语音 sherpa-onnx 的 AAR 副本摘掉了自带 runtime，由本依赖提供）
+onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntimeAndroid" }
+# custom: 手写识别（Google ML Kit 数字墨水；识别在端上，语言模型运行时下载）
+mlkit-digital-ink = { module = "com.google.mlkit:digital-ink-recognition", version.ref = "mlkitDigitalInk" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }

@@ -12,6 +12,7 @@ import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.InputFeedbacks.InputFeedbackMode
+import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngineKind
 import org.fcitx.fcitx5.android.data.voice.VoiceModelCatalog
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesMode
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesOrientation
@@ -609,6 +610,110 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         }
     }
 
+    /**
+     * custom: 手写输入（独立输入方案）。
+     *
+     * 识别后端 = 系统内置引擎（小米随手写）/ 谷歌数字墨水（ML Kit），两者都是端上整段识别，
+     * 不依赖外部模型文件；谷歌的中文模型随包内置（见 `MlKitBundledModel`）。
+     */
+    inner class Handwriting : ManagedPreferenceCategory(R.string.handwriting_input, sharedPreferences) {
+        /** 手写输入总开关（工具栏手写按钮的显示条件之一）。 */
+        val handwritingInputEnabled = switch(
+            R.string.handwriting_input_enabled,
+            "handwriting_input_enabled",
+            false,
+            summary = R.string.handwriting_input_enabled_summary
+        )
+
+        /** 边写边上屏（替换式）；关闭后只在点选候选时上屏。 */
+        val handwritingAutoCommit = switch(
+            R.string.handwriting_auto_commit,
+            "handwriting_auto_commit",
+            true,
+            summary = R.string.handwriting_auto_commit_summary
+        ) { handwritingInputEnabled.getValue() }
+
+        /** 触控笔书写时显示浮动工具箱（撤销/重做/空格/回车/退格/键盘/关闭）。 */
+        val stylusToolboxEnabled = switch(
+            R.string.handwriting_stylus_toolbox,
+            "stylus_toolbox_enabled",
+            true,
+            summary = R.string.handwriting_stylus_toolbox_summary
+        ) { handwritingInputEnabled.getValue() }
+
+        /**
+         * 手写识别引擎（下拉），**声明顺序即默认优先级**：系统内置（小米随手写）→ 谷歌数字墨水。
+         *
+         * 选中项优先，不可用时按该顺序继续回落；手写键盘与触控笔手写共用该选择。
+         */
+        val handwritingEngine = enumList(
+            R.string.handwriting_engine,
+            "handwriting_engine",
+            HandwritingEngineKind.System,
+        ) { handwritingInputEnabled.getValue() }
+
+        /**
+         * 谷歌数字墨水识别语言（在模型市场 `digitalink` 分类里选中）。
+         *
+         * BCP-47 tag，同时就是市场里的模型 id（清单见 `DigitalInkModelCatalog`）；
+         * **留空 = 跟随应用/系统语言**（中文取 `zh-Hani`）。
+         */
+        val handwritingDigitalInkLanguage = ManagedPreference.PString(
+            sharedPreferences, "handwriting_digital_ink_language", ""
+        ).apply { register() }
+
+        init {
+            migrateSystemEngineSwitch()
+            cleanupLegacyKeys()
+            groups = listOf(
+                SubGroup(
+                    R.string.group_handwriting,
+                    listOf(
+                        handwritingInputEnabled.key,
+                        handwritingAutoCommit.key,
+                        stylusToolboxEnabled.key,
+                        handwritingEngine.key,
+                    )
+                )
+            )
+        }
+
+        /**
+         * 旧「优先使用系统手写引擎」开关（PBool）→ 引擎下拉的一次性迁移。
+         *
+         * 旧值为 false（不用系统引擎）等价于「只用谷歌数字墨水」；为 true（默认）等价于
+         * 保持默认的「系统内置优先」。仅在新键还不存在时迁移一次。
+         */
+        private fun migrateSystemEngineSwitch() {
+            val legacyKey = "handwriting_system_engine_enabled"
+            if (sharedPreferences.contains(handwritingEngine.key)) return
+            if (!sharedPreferences.contains(legacyKey)) return
+            if (!sharedPreferences.getBoolean(legacyKey, true)) {
+                handwritingEngine.setValue(HandwritingEngineKind.GoogleDigitalInk)
+            }
+        }
+
+        /**
+         * 一次性清理**已移除功能**留下的配置键（避免孤儿配置长期留在用户数据里）。
+         *
+         * - `handwriting_system_engine_enabled`：已被引擎下拉取代（先迁移再清）；
+         * - `handwriting_model_id` / `handwriting_index_url`：ONNX 手写模型市场的模型 id
+         *   与索引地址，模型已改走端上引擎；
+         * - `handwriting_single_char_mode`：叠写切分下线后不再有该开关。
+         */
+        private fun cleanupLegacyKeys() {
+            val marker = "handwriting_legacy_cleanup_v1"
+            if (sharedPreferences.getBoolean(marker, false)) return
+            sharedPreferences.edit {
+                remove("handwriting_system_engine_enabled")
+                remove("handwriting_model_id")
+                remove("handwriting_index_url")
+                remove("handwriting_single_char_mode")
+                putBoolean(marker, true)
+            }
+        }
+    }
+
     private val providers = mutableListOf<ManagedPreferenceProvider>()
 
     fun <T : ManagedPreferenceProvider> registerProvider(
@@ -632,6 +737,8 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
     val advanced = Advanced().register()
     // custom: 语音输入（Xime 核心移植）
     val voice = Voice().register()
+    // custom: 手写输入（独立输入方案，端上引擎：系统内置 / 谷歌数字墨水）
+    val handwriting = Handwriting().register()
 
     @Keep
     private val onSharedPreferenceChangeListener =

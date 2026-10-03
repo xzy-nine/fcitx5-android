@@ -9,43 +9,7 @@
  */
 package org.fcitx.fcitx5.android.data.voice
 
-data class VoiceModelFile(
-    val name: String,
-    val url: String,
-)
-
-/** 一个可下载的本地模型（索引与内置清单共用）。 */
-data class VoiceModelInfo(
-    val id: String,
-    val name: String,
-    val description: String = "",
-    /** 人类可读体积（索引里给的是字符串）。 */
-    val size: String = "",
-    val version: String = "",
-    /** tar.bz2 归档地址；为空时按 [files] 逐个下载。 */
-    val archiveUrl: String? = null,
-    val files: List<VoiceModelFile> = emptyList(),
-)
-
-sealed class VoiceModelDownloadState {
-    data object Idle : VoiceModelDownloadState()
-    data class Downloading(
-        val progress: Float,
-        val bytesDownloaded: Long,
-        val totalBytes: Long,
-    ) : VoiceModelDownloadState()
-
-    /**
-     * 正在解压归档。
-     *
-     * tar.bz2 的 bzip2 解压是单线程 CPU 密集操作（100MB+ 包在手机上几十秒），
-     * 必须单独上报
-     */
-    data class Extracting(val progress: Float) : VoiceModelDownloadState()
-
-    data class Error(val message: String) : VoiceModelDownloadState()
-    data object Complete : VoiceModelDownloadState()
-}
+import org.fcitx.fcitx5.android.data.market.MarketModel
 
 object VoiceModelCatalog {
 
@@ -55,8 +19,8 @@ object VoiceModelCatalog {
     private const val RELEASE_BASE =
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models"
 
-    private fun official(asset: String, description: String, size: String): VoiceModelInfo =
-        VoiceModelInfo(
+    private fun official(asset: String, description: String, size: String): MarketModel =
+        MarketModel(
             id = asset.removeSuffix(".tar.bz2"),
             name = asset.removeSuffix(".tar.bz2"),
             description = description,
@@ -65,7 +29,7 @@ object VoiceModelCatalog {
         )
 
     /** 官方流式 zipformer2 transducer 模型（中文为主），索引不可用时的兜底清单。 */
-    val builtin: List<VoiceModelInfo> = listOf(
+    val builtin: List<MarketModel> = listOf(
         official(
             "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2",
             "中文流式 Zipformer（int8，识别质量优先）",

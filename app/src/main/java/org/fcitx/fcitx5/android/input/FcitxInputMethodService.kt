@@ -20,6 +20,7 @@ import android.util.LruCache
 import android.util.Size
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
@@ -78,6 +79,7 @@ import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.cursor.CursorRange
 import org.fcitx.fcitx5.android.input.cursor.CursorTracker
 import org.fcitx.fcitx5.android.input.clipboard.ClipboardDictFeeder
+import org.fcitx.fcitx5.android.input.handwriting.StylusHandwritingController
 import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import org.fcitx.fcitx5.android.utils.alpha
@@ -144,6 +146,46 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
     }
 
+    // custom: 触控笔 UI 模式（**米系架构**）：进入后**撤下键盘**，IME 只剩浮动工具箱。
+    //
+    // 米系（搜狗小米版 `b0.java` case 5）在触控笔模式下把 IME 的输入视图整个换成空锚点视图：
+    //   t0().setInputView(stylusImeStub.getStylusAnchorView(), input_view_type);
+    // 并在 `MainImeServiceDel.onComputeInsets` 的 stylusmode 分支里把 IME 可见区压到 0、
+    // 可触摸区只留工具箱卡片矩形：
+    //   insets.touchableInsets = 3; insets.visibleTopInsets = iE(=屏幕高);
+    //   insets.contentTopInsets = iE; insets.touchableRegion.set(stylusImeStub.getTouchRegion());
+    // 讯飞小米版（`w63` 的 `mGestureRegion`）与 Gboard（把触控笔视图挂系统墨迹窗口覆盖全屏）同理。
+    //
+    // 因此「用手写笔点输入法功能按钮时不应仍在手写状态」是靠**键盘根本不在**实现的，
+    // 而不是靠把触控笔事件转发回键盘（那是错误做法，已移除）。
+    internal val stylusUiActive = mutableStateOf(false)
+
+    /** 进入触控笔 UI：撤下输入视图，只保留浮动工具箱（幂等）。 */
+    fun enterStylusUi() {
+        stylusUiActive.value = true
+        requestInsetsRecompute()
+    }
+
+    /** 退出触控笔 UI：恢复键盘（幂等）。工具箱「键盘」按钮、输入结束、服务销毁时调用。 */
+    fun exitStylusUi() {
+        stylusUiActive.value = false
+        requestInsetsRecompute()
+    }
+
+    /**
+     * 请求重算 IME insets。
+     *
+     * 触控笔模式下 `onComputeInsets` 把 `touchableRegion` 收窄到工具箱卡片矩形；
+     * 该分支取决于 [stylusUiActive] 与工具箱是否已挂载，二者变化后**必须**重算，
+     * 否则区域停在旧值（此时可见区高度为 0 ⇒ 整个 IME 窗口不可触摸，点击全给应用）。
+     */
+    internal fun requestInsetsRecompute() {
+        runCatching { window?.window?.decorView?.requestApplyInsets() }
+    }
+
+    // custom: 触控笔手写会话（Android 13+ 触控笔手写协议；识别管线与手写键盘布局共用）
+    private val stylusHandwriting by lazy { StylusHandwritingController(this) }
+
     private var capabilityFlags = CapabilityFlags.DefaultFlags
 
     /**
@@ -202,7 +244,11 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             setContent {
                 MiuixTheme(controller = remember { ThemeController(ColorSchemeMode.System) }) {
                     Box(Modifier.fillMaxSize()) {
-                        key(themeState.value, recreateNonce.value) {
+                        // custom: 触控笔 UI 模式下撤下键盘（米系 setInputView(空锚点) 的等价做法）：
+                        // 此时 IME 只剩浮动工具箱，墨迹由系统墨迹窗口承载；
+                        // 因此用触控笔点「输入法功能按钮」不会再进入手写（键盘压根不在）。
+                        if (!stylusUiActive.value) {
+                            key(themeState.value, recreateNonce.value) {
                             AndroidView(
                                 factory = { _ ->
                                     InputView(this@FcitxInputMethodService, fcitx, themeState.value)
@@ -224,6 +270,13 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                                     inputDeviceMgr.clearInputView(view)
                                 }
                             )
+                            }
+                        } else {
+                            // 触控笔 UI：键盘撤下后不再持有 InputView（与米系的空锚点视图等价）
+                            if (inputView.value != null) {
+                                inputDeviceMgr.clearInputView(inputView.value!!)
+                                inputView.value = null
+                            }
                         }
                         // 按键弹窗层 / 候选操作菜单覆盖层：与 InputView 同处根单一 Composition。
                         // 弹窗层 Box 无 pointer handler → 触摸穿透到下方 AndroidView(InputView)；
@@ -552,6 +605,56 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     /**
+     * custom: 手写「替换式上屏」原语。
+     *
+     * 手写识别是高频替换上屏（每次落笔都可能重写屏上活动字），因此：
+     * - 先**只读**校验光标前文本是否等于 [expected]，对不上就什么都不做 ——
+     *   用户中途移动光标/退格后旧文本已失效，此时必须放弃本次替换而不是误删内容；
+     * - 命中时在同一 batchEdit 里删除旧文本并提交新文本，随后把本服务的 selection
+     *   预测同步到新光标位置（否则下一次 `onUpdateSelection` 会给出错位的光标）。
+     *
+     * 需在主线程调用，返回是否完成替换。
+     */
+    internal fun replaceBeforeCursor(expected: String, replacement: String): Boolean {
+        val ic = currentInputConnection ?: return false
+        // 手写与 fcitx 预编辑互斥：先结束可能存在的 composing（含编辑器侧的下划线 span），
+        // 避免替换/提交落在预编辑区间内
+        if (composing.isNotEmpty()) finishComposing()
+        val before = runCatching {
+            ic.getTextBeforeCursor(expected.length, 0)?.toString()
+        }.getOrNull()
+        if (before != expected) return false
+        val target = selection.latest.start - expected.length + replacement.length
+        selection.predict(target)
+        ic.withBatchEdit {
+            // expected.length 是 UTF-16 长度，与上面 getTextBeforeCursor 的口径一致；
+            // deleteSurroundingTextInCodePoints 把它当码点数会多删（含增补字符时）
+            if (expected.isNotEmpty()) {
+                deleteSurroundingText(expected.length, 0)
+            }
+            if (replacement.isNotEmpty()) commitText(replacement, 1)
+        }
+        return true
+    }
+
+    /**
+     * custom: 删除光标前 [count] 个字符（手写撤销活动字用）。
+     *
+     * 走删除键同一条路径（[sendDownUpKeyEvents] + [handleBackspaceKey]），
+     * 因此宿主输入框、内部编辑器、私有 IME 选项下的行为都与手按删除键一致。
+     * 需在主线程调用。
+     */
+    internal fun deleteBeforeCursor(count: Int) {
+        if (count <= 0) return
+        // handleBackspaceKey 内部已按场景选择「模拟按键」或「deleteSurroundingText」，
+        // 这里直接复用它，避免重复删除
+        repeat(count) { handleBackspaceKey() }
+    }
+
+    /** custom: 触控笔工具箱的回车键（与主键盘回车同口径，含编辑器 action）。 */
+    internal fun handleReturnKeyForStylus() = handleReturnKey()
+
+    /**
      * custom：`@` 上屏后触发邮箱域名联想。
      *
      * 域名数据为标准 QuickPhrase 词库（内置 `email.mb` 预置域名 + 用户词库自学习，见
@@ -650,6 +753,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         postFcitxJob { reset() }
+        // custom: 触控笔浮窗工具箱随配置变化重算安全区/夹取位置（米系 onNewConfiguration 同款）
+        stylusHandwriting.onConfigurationChanged()
         /**
          * skip keyboard|keyboardHidden changes, because we have [inputDeviceMgr]
          * skip uiMode (system light/dark mode) changes, because we have [onThemeChangeListener]
@@ -719,6 +824,34 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private var inputViewLocation = intArrayOf(0, 0)
 
     override fun onComputeInsets(outInsets: Insets) {
+        // custom: 触控笔 UI（**米系 `MainImeServiceDel` 的 stylusmode 分支同款**）：
+        // IME 整体不占可见区（contentTopInsets = visibleTopInsets = 屏幕底），
+        // 可触摸区只留浮动工具箱卡片矩形（`touchableInsets = TOUCHABLE_INSETS_REGION`），
+        // 其余区域触摸交给应用。米系原文：
+        //   insets.touchableInsets = 3; insets.visibleTopInsets = iE; insets.contentTopInsets = iE;
+        //   insets.touchableRegion.set(stylusImeStub.getTouchRegion());
+        if (stylusUiActive.value) {
+            val bottom = decorView.height
+            outInsets.apply {
+                contentTopInsets = bottom
+                visibleTopInsets = bottom
+                stylusHandwriting.toolboxRectInWindow()?.let { rect ->
+                    touchableRegion.set(rect)
+                    touchableInsets = Insets.TOUCHABLE_INSETS_REGION
+                    // 只在区域变化时打印：用于确认「手指点不到工具箱」时区域到底是哪个值
+                    if (rect != stylusRegionLogged) {
+                        stylusRegionLogged = android.graphics.Rect(rect)
+                        Timber.d("stylus ui: touchableRegion=%s", rect.toShortString())
+                    }
+                } ?: run {
+                    // 拿不到工具箱矩形 ⇒ 可见区高度为 0，整个 IME 窗口都不可触摸
+                    // （点击会被路由给应用）。这条日志用于定位「工具箱/候选词点不动」。
+                    Timber.w("stylus ui: toolbox rect unavailable, ime window becomes untouchable")
+                    touchableInsets = Insets.TOUCHABLE_INSETS_VISIBLE
+                }
+            }
+            return
+        }
         if (inputDeviceMgr.isVirtualKeyboard) {
             inputView.value?.keyboardView?.getLocationInWindow(inputViewLocation)
             outInsets.apply {
@@ -801,6 +934,37 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     override fun onUpdateEditorToolType(toolType: Int) {
         super.onUpdateEditorToolType(toolType)
         inputDeviceMgr.evaluateOnUpdateEditorToolType(toolType, this)
+        // custom: **米系同款的触控笔 UI 进入时机**：检测到触控笔（TOOL_TYPE_STYLUS）就切到
+        // 触控笔界面（撤下键盘、只留浮动工具箱），而不是等系统手写会话开始。
+        // 米系 `StylusImeProxy.B(int)`（onUpdateEditorToolType）里：
+        //   boolean z = (i == 2) && o() && k();  // 2 = TOOL_TYPE_STYLUS
+        //   if (z != this.f) { this.f = z; c(true); }   // → setStylusMode(true) → 撤下 inputView
+        // 之前等 onStartStylusHandwriting 才撤键盘，会出现「键盘还在、触控笔事件却进了键盘」的冲突。
+        when (toolType) {
+            MotionEvent.TOOL_TYPE_STYLUS -> stylusHandwriting.onToolStylus()
+            MotionEvent.TOOL_TYPE_FINGER -> stylusHandwriting.onToolFinger()
+        }
+    }
+
+    // custom: 触控笔手写协议（Android 13+，官方要求重写 onStartStylusHandwriting 即视为支持、
+    // 无需 Manifest 声明）：预热 / 进入会话（返回 boolean，false = 本次 no-op）/
+    // 接收触控笔事件（重写以不依赖墨迹窗口可见时机）/ 会话结束
+    @RequiresApi(33)
+    override fun onPrepareStylusHandwriting() {
+        stylusHandwriting.prepare()
+    }
+
+    @RequiresApi(33)
+    override fun onStartStylusHandwriting(): Boolean = stylusHandwriting.start()
+
+    @RequiresApi(33)
+    override fun onStylusHandwritingMotionEvent(motionEvent: MotionEvent) {
+        stylusHandwriting.onMotionEvent(motionEvent)
+    }
+
+    @RequiresApi(33)
+    override fun onFinishStylusHandwriting() {
+        stylusHandwriting.finish()
     }
 
     private var firstBindInput = true
@@ -875,6 +1039,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 "pkg=${attribute.packageName}, fieldId=${attribute.fieldId}, " +
                 "inputType=0x${attribute.inputType.toString(16)}"
         )
+        // custom: 触控笔手写与键盘侧同口径处理「应用 resync 重启输入连接」——
+        // 同框重启保留书写状态（只补交待提交内容），换框/新会话才复位。
+        stylusHandwriting.onStartInput(attribute, restarting)
         val isNullType = attribute.isTypeNull()
         // wait until InputContext created/activated
         postFcitxJob {
@@ -960,7 +1127,35 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     private val anchorPosition = floatArrayOf(0f, 0f, 0f, 0f)
 
+    /** 上次打印过的触控笔模式触摸区域（避免每帧刷屏）。 */
+    private var stylusRegionLogged: android.graphics.Rect? = null
+
     override fun onUpdateCursorAnchorInfo(info: CursorAnchorInfo) {
+        // custom: 把编辑框自己声明的「手写区域」交给触控笔控制器
+        // （`EditorBoundsInfo.getHandwritingBounds()`，API 33+；只有请求过 monitorCursorAnchor
+        //  才会下发）。**该边界是 local coordinates**，必须经 info.matrix 映射到屏幕坐标，
+        // 才能与触控笔事件的 rawX/rawY 比较。手写只应发生在系统提供的文本框内。
+        info.editorBoundsInfo?.handwritingBounds?.let { local ->
+            val pts = floatArrayOf(local.left, local.top, local.right, local.bottom)
+            info.matrix.mapPoints(pts)
+            val screen = android.graphics.RectF(
+                minOf(pts[0], pts[2]), minOf(pts[1], pts[3]),
+                maxOf(pts[0], pts[2]), maxOf(pts[1], pts[3]),
+            )
+            stylusHandwriting.onEditorBounds(screen)
+        } ?: stylusHandwriting.onEditorBounds(null)
+        // custom: 「可见文本行」交给触控笔控制器 —— 米系用它判定一笔是**手势**还是**书写**：
+        // 手势（涂改删除/圈选）必须画在编辑器已有文字上，画在空白处就是写字。
+        // `CursorAnchorInfo.getVisibleLineBounds()` 是 API 34 新增，且同样是 local coordinates，
+        // 必须经 info.matrix 映射（米系 `com.miui.ime.g.k()` / 讯飞 `w63.H()` 同款）。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val lines = runCatching {
+                info.visibleLineBounds.map { r ->
+                    android.graphics.RectF(r).also { info.matrix.mapRect(it) }
+                }
+            }.getOrDefault(emptyList())
+            stylusHandwriting.onVisibleLineBounds(lines)
+        }
         val bounds = info.getCharacterBounds(0)
         if (bounds != null) {
             // anchor to start of composing span instead of insertion mark if available
@@ -1215,6 +1410,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         Timber.d("onFinishInputView: finishingInput=$finishingInput")
         // custom: 收起语音面板覆盖层并释放麦克风（IME 隐藏时不能继续录音）
         inputView.value?.voiceInput?.closePanel()
+        // custom: 输入视图结束 → 收起触控笔工具箱（米系在 onFinishInputView 里做同一件事）
+        stylusHandwriting.onInputViewFinished()
         // the session is over — a later InputView recreation must not replay it
         currentEditorInfo = null
         currentRestarting = false
@@ -1235,6 +1432,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onFinishInput() {
         Timber.d("onFinishInput")
+        // custom: 框架会在 onFinishInput 时结束触控笔手写会话（可能不经 onFinishStylusHandwriting），
+        // 这里无条件复位会话态（工具箱的移除在 onFinishInputView / onDestroy）
+        stylusHandwriting.finish()
         postFcitxJob {
             focus(false)
         }
@@ -1259,6 +1459,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
         prefs.candidates.unregisterOnChangeListener(recreateCandidatesViewListener)
         ThemeManager.removeOnChangedListener(onThemeChangeListener)
+        // custom: 释放手写识别后端（系统引擎 / 谷歌数字墨水，避免 IME 重建时残留会话）
+        inputView.value?.handwritingInput?.release()
+        // custom: 释放触控笔手写会话（协程与状态；不调用系统方法）
+        stylusHandwriting.release()
         super.onDestroy()
         // Fcitx might be used in super.onDestroy()
         FcitxDaemon.disconnect(javaClass.name)

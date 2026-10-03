@@ -2,16 +2,14 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  *
- * custom: 本地语音模型的远程索引（YAML）。
+ * custom: 模型市场的远程索引（语音用；手写已改为端上引擎 + 随包内置模型，不再走市场）。
  *
- * 索引地址：`AppPrefs.voice.voiceIndexUrl` 优先，否则用 [DEFAULT_BASE_URL]；
- * 拉取 `<base>/models/index.yaml`，只取 `category: asr` 的条目。
- * 索引不可用时回落到 [VoiceModelCatalog.builtin]（官方 release 资产），
- * 保证市场页永远有内容可选、且不依赖第三方索引服务。
+ * 拉取 `<base>/models/index.yaml`，由调用方给出 **category**（语音取 `asr`，
+ * 见 [org.fcitx.fcitx5.android.data.market.VoiceMarketCategory]）；
+ * 索引不可用时由各分类回落到自己的内置清单。
  */
-package org.fcitx.fcitx5.android.data.voice
+package org.fcitx.fcitx5.android.data.market
 
-import android.content.Context
 import com.charleskorn.kaml.Yaml
 import com.charleskorn.kaml.YamlConfiguration
 import com.charleskorn.kaml.YamlList
@@ -22,14 +20,24 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.data.voice.VoiceModelStore
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
-object VoiceModelIndex {
+object ModelIndex {
 
-    private const val TAG = "VoiceModelIndex"
+    private const val TAG = "ModelIndex"
     private const val DEFAULT_BASE_URL = "https://index.ximei.me/"
     private const val INDEX_PATH = "models/index.yaml"
+
+    /** 分类 id（= 索引里的 `category` 字段值）。 */
+    const val CATEGORY_ASR = "asr"
+
+    /**
+     * 数字墨水分类 id：**没有远程索引**（清单是官方语言表，内置在
+     * `DigitalInkModelCatalog`），仅用于路由与注册表。
+     */
+    const val CATEGORY_DIGITAL_INK = "digitalink"
 
     private val yaml = Yaml(configuration = YamlConfiguration(strictMode = false))
 
@@ -39,26 +47,29 @@ object VoiceModelIndex {
         .followRedirects(true)
         .build()
 
+    /** 索引地址：语音的覆盖值 → 内置默认端点。 */
     private fun baseUrl(): String {
-        val override = runCatching {
-            AppPrefs.getInstance().voice.voiceIndexUrl.getValue()
-        }.getOrDefault("")
-        return override.ifBlank { DEFAULT_BASE_URL }.trimEnd('/')
+        val prefs = runCatching { AppPrefs.getInstance() }.getOrNull()
+        val voice = runCatching { prefs?.voice?.voiceIndexUrl?.getValue() }
+            .getOrNull().orEmpty()
+        return voice.ifBlank { DEFAULT_BASE_URL }.trimEnd('/')
     }
 
-    /** 拉取并解析索引；失败或空则返回内置清单。 */
-    suspend fun load(context: Context): List<VoiceModelInfo> = withContext(Dispatchers.IO) {
-        val url = "${baseUrl()}/$INDEX_PATH"
-        val text = runCatching { fetch(url) }.getOrElse {
-            Timber.w(it, "$TAG: fetch failed")
-            null
+    /** 拉取并解析指定分类的条目；失败返回空列表（调用方据此回落内置清单）。 */
+    suspend fun load(context: android.content.Context, category: String): List<MarketModel> =
+        withContext(Dispatchers.IO) {
+            val url = "${baseUrl()}/$INDEX_PATH"
+            val text = runCatching { fetch(url) }.getOrElse {
+                Timber.w(it, "$TAG: fetch failed")
+                null
+            }
+            text?.let {
+                runCatching { parse(it, category) }.getOrElse { e ->
+                    Timber.w(e, "$TAG: parse failed")
+                    emptyList()
+                }
+            }.orEmpty()
         }
-        val parsed = text?.let { runCatching { parse(it) }.getOrElse { e ->
-            Timber.w(e, "$TAG: parse failed")
-            emptyList()
-        } }.orEmpty()
-        if (parsed.isNotEmpty()) parsed else VoiceModelCatalog.builtin
-    }
 
     private fun fetch(url: String): String? {
         val response = client.newCall(Request.Builder().url(url).build()).execute()
@@ -71,21 +82,21 @@ object VoiceModelIndex {
         }
     }
 
-    /** 解析 `models:` 列表，只保留 `category: asr`。 */
-    internal fun parse(text: String): List<VoiceModelInfo> {
+    /** 解析 `models:` 列表，只保留 `category` 匹配的条目。 */
+    internal fun parse(text: String, category: String): List<MarketModel> {
         val root = yaml.parseToYamlNode(text) as? YamlMap ?: return emptyList()
         val models = root["models"] as? YamlList ?: return emptyList()
         return models.items.mapNotNull { node ->
             val map = node as? YamlMap ?: return@mapNotNull null
             val id = (map["id"] as? YamlScalar)?.content ?: return@mapNotNull null
+            val entryCategory = (map["category"] as? YamlScalar)?.content.orEmpty().lowercase()
+            if (entryCategory != category.lowercase()) return@mapNotNull null
             // 非法 id（空、`.`/`..`、含路径分隔符）直接剔除，不进市场页
             if (!VoiceModelStore.isValidModelId(id)) {
                 Timber.w("$TAG: skip model with illegal id: $id")
                 return@mapNotNull null
             }
             val name = (map["name"] as? YamlScalar)?.content ?: id
-            val category = (map["category"] as? YamlScalar)?.content.orEmpty().lowercase()
-            if (category != "asr") return@mapNotNull null
 
             val versions = map["versions"] as? YamlList
             val version = versions?.items?.firstOrNull() as? YamlMap
@@ -98,9 +109,13 @@ object VoiceModelIndex {
                 val fm = f as? YamlMap ?: return@mapNotNull null
                 val fileName = (fm["name"] as? YamlScalar)?.content ?: return@mapNotNull null
                 val fileUrl = (fm["url"] as? YamlScalar)?.content.orEmpty()
-                VoiceModelFile(fileName, fileUrl)
+                MarketModelFile(
+                    name = fileName,
+                    url = fileUrl,
+                    sha256 = (fm["sha256"] as? YamlScalar)?.content.orEmpty().lowercase(),
+                )
             }
-            VoiceModelInfo(
+            MarketModel(
                 id = id,
                 name = name,
                 description = (map["description"] as? YamlScalar)?.content.orEmpty(),

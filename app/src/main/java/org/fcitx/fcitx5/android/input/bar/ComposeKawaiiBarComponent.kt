@@ -119,6 +119,7 @@ class ComposeKawaiiBarComponent :
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var clipboardTimeoutJob: Job? = null
+    private var voicePanelJob: Job? = null
 
     private var isClipboardFresh: Boolean = false
     private var isInlineSuggestionPresent: Boolean = false
@@ -348,7 +349,7 @@ class ComposeKawaiiBarComponent :
                 else inputView.showKeyboardTune()
             },
             onTitleBack = {
-                // custom: 语音面板是覆盖层，不能只切窗口 —— 不然面板会盖在新键盘上
+                // custom: 语音/手写面板是覆盖层，不能只切窗口 —— 不然面板会盖在新键盘上
                 voiceInput.closePanel()
                 windowManager.attachWindow(
                     org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
@@ -383,6 +384,17 @@ class ComposeKawaiiBarComponent :
                 // 工具栏麦克风进入：留在语音页，方便连续说话
                 { voiceInput.onVoiceEntryClicked(returnToKeyboardOnCommit = false) }
             } else null,
+            onHandwritingInput = if (AppPrefs.getInstance().handwriting.handwritingInputEnabled.getValue()) {
+                {
+                    // 手写是第三种键盘布局：先确保键盘窗口在前台，再切布局
+                    windowManager.attachWindow(
+                        org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
+                    )
+                    inputView.keyboardWindow.switchLayout(
+                        org.fcitx.fcitx5.android.input.keyboard.KeyboardLayoutNames.Handwriting
+                    )
+                }
+            } else null,
         )
     }
 
@@ -407,7 +419,7 @@ class ComposeKawaiiBarComponent :
      * 这里直接把面板可见性映射成同一套状态机的转移，返回按钮的语义仍由工具栏统一提供。
      */
     private fun observeVoicePanel() {
-        scope.launch {
+        voicePanelJob = scope.launch {
             voiceInput.panelVisible.collect { visible ->
                 if (visible) {
                     _titleData.value = TitleData(
@@ -429,6 +441,7 @@ class ComposeKawaiiBarComponent :
         ClipboardManager.removeOnUpdateListener(onClipboardUpdateListener)
         splitKeyboardPref.unregisterOnChangeListener(splitKeyboardListener)
         clipboardTimeoutJob?.cancel()
+        voicePanelJob?.cancel()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             inlineRenderJob?.cancel()
             inlineSuggestionsUi.clear()

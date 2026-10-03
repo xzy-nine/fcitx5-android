@@ -143,6 +143,9 @@ class ComposeCandidateComponent :
 
     private var lastCandidateData = FcitxEvent.CandidateListEvent.Data()
 
+    /** custom: 候选被点选时的外部钩子（手写用它固化活动字）。 */
+    var onCandidatePicked: ((Int) -> Unit)? = null
+
     private val loadMoreBatch by lazy {
         maxSpanCountPref.getValue().coerceAtLeast(LOAD_MORE_BATCH_MIN)
     }
@@ -328,7 +331,13 @@ class ComposeCandidateComponent :
             visuals = getVisuals(),
             callbacks = CandidateBarCallbacks(
                 onCandidateSelect = { index ->
-                    fcitx.launchOnReady { it.select(index) }
+                    // custom: 手写布局期间候选来自手写（HandwritingCandidateFeed）。
+                    // 手写候选是识别结果本地构造的，**不在 fcitx 引擎候选表里**，
+                    // `select(index)` 会选到引擎的（无关/过期）候选，必须由手写侧替换式上屏。
+                    onCandidatePicked?.invoke(index)
+                    if (!org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed.isActive) {
+                        fcitx.launchOnReady { it.select(index) }
+                    }
                 },
                 onCandidateLongClick = { index, candidate, windowOffset ->
                     // windowOffset 已是「窗口绝对坐标」（由 CandidateItem 用自身

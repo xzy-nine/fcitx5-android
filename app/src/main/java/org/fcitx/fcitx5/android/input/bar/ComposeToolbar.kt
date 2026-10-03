@@ -361,6 +361,15 @@ private fun ToolbarButtonsRow(
                 contentDescription = "Voice input",
             )
         }
+        // custom: 手写输入（未启用或模型缺失时 onHandwritingInput 为 null，不显示）
+        callbacks.onHandwritingInput?.let { onHandwritingInput ->
+            ToolbarIconButton(
+                onClick = onHandwritingInput,
+                iconRes = R.drawable.ic_handwriting,
+                iconColor = visuals.iconColor,
+                contentDescription = "Handwriting input",
+            )
+        }
     }
 }
 
