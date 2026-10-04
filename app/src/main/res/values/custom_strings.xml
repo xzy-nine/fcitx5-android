@@ -4,6 +4,17 @@
     <!-- Custom: toolbar height -->
     <string name="toolbar_height">Toolbar height</string>
 
+    <!-- Custom: toolbar button layout (edited inside the IME more page) -->
+    <string name="toolbar_edit_layout">Edit toolbar layout</string>
+    <string name="toolbar_edit_done">Done</string>
+    <string name="toolbar_back_to_keyboard">Back to keyboard</string>
+    <string name="more_page_reset_layout">Reset layout</string>
+    <string name="more_page_reset_confirm_title">Reset toolbar layout</string>
+    <string name="more_page_reset_confirm_msg">Restore the default toolbar and more page button layout?</string>
+    <string name="more_page_settings">Input method settings</string>
+    <string name="more_page_editor_info">Editor info</string>
+    <string name="more_page_undo_redo_toggle">Undo/redo buttons</string>
+
     <!-- Custom: split keyboard -->
     <string name="split_keyboard">Split keyboard</string>
     <string name="split_keyboard_blank_ratio">Split keyboard blank ratio</string>

@@ -135,6 +135,8 @@ class InputView(
     private val commonKeyActionListener = CommonKeyActionListener()
     private val windowManager = InputWindowManager()
     private val composeKawaiiBar = ComposeKawaiiBarComponent()
+    // custom: 工具栏布局编辑会话（跨工具栏/更多页的布局草稿与落盘语义）
+    internal val toolbarEdit = org.fcitx.fcitx5.android.input.bar.ToolbarEditComponent()
     // Compose 实现的候选栏组件
     // 旧 View 实现：HorizontalCandidateComponent（已断开接线，保留供对比）
     private val composeCandidate = ComposeCandidateComponent()
@@ -144,7 +146,7 @@ class InputView(
     // 键盘调音覆盖层（custom 特色：拖拽调键盘高度/边距/间隙，模糊键盘背景）：
     // 根组合（createComposeInputView）经 OverlayContent 渲染，故需对外可见
     internal val keyboardTune = KeyboardTuneCompose({ keyboardTuneMetrics() }) { setKeyboardTuneBlur(false) }
-    // custom: 供工具栏把布局切到手写（见 ComposeKawaiiBarComponent.onHandwritingInput）
+    // custom: 供工具栏把布局切到手写（见 ComposeKawaiiBarComponent.onToolbarButtonClick）
     internal val keyboardWindow = KeyboardWindow()
     private val symbolPicker = symbolPicker()
     private val emojiPicker = emojiPicker()
@@ -276,6 +278,8 @@ class InputView(
         scope += windowManager
         // 旧 View 实现：scope += kawaiiBar（已断开接线，保留供对比）
         scope += composeKawaiiBar
+        // custom: 工具栏布局编辑会话（ComposeKawaiiBarComponent 与更多页共用）
+        scope += toolbarEdit
         // 旧 View 实现：scope += horizontalCandidate（已断开接线）
         scope += composeCandidate
         scope += candidateActionMenu
