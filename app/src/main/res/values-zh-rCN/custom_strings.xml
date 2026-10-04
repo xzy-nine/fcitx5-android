@@ -4,6 +4,17 @@
     <!-- Custom: toolbar height -->
     <string name="toolbar_height">工具栏高度</string>
 
+    <!-- Custom: toolbar button layout (edited inside the IME more page) -->
+    <string name="toolbar_edit_layout">编辑工具栏布局</string>
+    <string name="toolbar_edit_done">完成</string>
+    <string name="toolbar_back_to_keyboard">返回键盘</string>
+    <string name="more_page_reset_layout">重置布局</string>
+    <string name="more_page_reset_confirm_title">重置工具栏布局</string>
+    <string name="more_page_reset_confirm_msg">恢复默认的工具栏与更多页按钮布局？</string>
+    <string name="more_page_settings">输入法设置</string>
+    <string name="more_page_editor_info">编辑器信息</string>
+    <string name="more_page_undo_redo_toggle">撤销/重做按钮</string>
+
     <!-- Custom: split keyboard -->
     <string name="split_keyboard">分离式键盘</string>
     <string name="split_keyboard_blank_ratio">分离式键盘空白比例</string>

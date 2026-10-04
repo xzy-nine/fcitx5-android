@@ -19,6 +19,7 @@
 |---|---|
 | 分离式键盘 (split keyboard) | `BaseKeyboard.kt`(重建逻辑) + `keyboard/SplitKeyboardLayoutMath.kt`(纯计算) |
 | 工具栏高度自定义 | AppPrefs `toolbarHeight*`; `KawaiiBarComponent.HEIGHT` 是动态 getter 非 const |
+| 工具栏按钮布局自定义 + 更多页兼作编辑页 | 布局模型 `input/bar/ToolbarLayout.kt`(纯逻辑: `ToolbarButton`/`ToolbarLayoutState`(docked+pool 互斥二分区)/`sanitize` 自愈/`resolveDrop` 落点判定); 编辑会话 `input/bar/ToolbarEditComponent.kt`(草稿/commit/cancel/落盘语义, 偏好 `toolbarDockedButtons`·`toolbarPoolButtons`·`toolbarShowUndoRedo`, 不进任何 SubGroup 故应用设置页不出现条目); 渲染 `input/bar/ComposeToolbar.kt`(可停靠横向滚动行 + 右侧固定「更多/编辑」, 更多页强制显示该行且不隐藏为标题态) + `input/bar/ToolbarMovableButton.kt`; 拖动 `input/bar/ToolbarDragState.kt`(共享状态, 窗口绝对坐标槽位) + `ToolbarDragGestures.kt`(长按拖/边缘自滚) + `ToolbarDragOverlay.kt`(挂在 IME 根组合画幽灵图标+高亮, 不吃触摸); 更多页 `input/status/MorePageModel.kt`(纯逻辑: 池子在上/固定项在下) + `input/status/ComposeStatusArea.kt`(两段独立滚动网格) + `StatusAreaWindow.kt`(已移除主题/输入法选项/虚拟键盘三个跳转项, 设置与编辑器信息改为网格格子, 不再有 `onCreateBarExtension`) |
 | 横向候选滑动模式 | `HorizontalCandidateComponent.kt`（内联实现，勿轻拆） |
 | 剪贴板广播/配对 | 独立包 `data/broadcast/*` + `BroadcastPairingService.kt` + `IBroadcastPairingService.aidl` |
 | 设置搜索+高亮+分组 | `SettingsSearch*.kt`(`SettingsSearchManager.search()`+`SearchResult` 纯查询) + `PreferenceHighlightHelper.kt` + `PreferenceGroupUi.kt`; Compose 弹窗 `compose/screens/SettingsSearchScreen.kt`(View 版已移除) |

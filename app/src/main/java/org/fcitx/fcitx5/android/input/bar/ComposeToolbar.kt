@@ -389,7 +389,7 @@ private fun FixedTrailingRow(
         if (showMore) {
             IconButton(
                 onClick = callbacks.onMore,
-                // 更多页上该按钮只是一个位置标识：已在更多页，不再提供入口
+                // 更多页上该按钮只标示位置：已在目标页，不重复提供入口
                 enabled = !callbacks.morePageVisible,
                 modifier = Modifier
                     .size(LocalToolbarHeight.current)

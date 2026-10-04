@@ -53,8 +53,8 @@ import top.yukonga.miuix.kmp.overlay.OverlayDialog
  * 兼作工具栏布局的编辑页：上半是按钮池（未停靠的可移动按钮），下半是固定功能项
  * （撤销/重做显隐开关、重置布局、重载配置、输入法设置、编辑器信息、fcitx 引擎状态项）。
  *
- * 原「主题 / 输入法选项 / 虚拟键盘」三个跳转项已移除；原顶栏扩展区的设置入口与
- * 编辑器信息入口改为本页网格里的固定格子，因此本页不再提供 `onCreateBarExtension()`。
+ * 本页的入口全部落在网格格子里，因此不实现 `onCreateBarExtension()`：
+ * 顶栏右侧固定位留给工具栏布局的「编辑 / 完成」。
  */
 class StatusAreaWindow : InputWindow.ExtendedInputWindow<StatusAreaWindow>(),
     InputBroadcastReceiver, ComposeWindow {
