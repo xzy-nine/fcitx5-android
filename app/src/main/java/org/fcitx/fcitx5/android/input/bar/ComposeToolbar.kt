@@ -33,7 +33,9 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +51,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.input.keyboard.rememberActiveTheme
 import top.yukonga.miuix.kmp.basic.Icon
@@ -144,11 +147,14 @@ fun ComposeToolbar(
     CompositionLocalProvider(LocalToolbarHeight provides toolbarHeight) {
         // 「更多」只在可停靠按钮行真的可见时出现：收起态（Empty）与候选/剪贴板/数字行等
         // 子态里中间区不是按钮行，放一个更多按钮既无处安放也会与这些子态抢视觉重心。
-        // 更多页本身（Title 态 + morePageVisible）恒显示可停靠行，故更多按钮恒在。
+        // 语音页虽然也保留可停靠行，但不给更多入口 —— 语音面板是覆盖层，
+        // 切到更多页后窗口会被面板盖住，进去也看不见。
         val showMore = callbacks.morePageVisible ||
             (barState == KawaiiBarStateMachine.State.Idle && idleSubState == IdleSubState.Toolbar)
-        // 右侧固定槽位数：更多页为「更多 + 编辑/完成」，键盘页为「更多? + 收起键盘」
+        // 右侧固定槽位数：更多页为「更多 + 编辑/完成」，其余为「更多? + 收起键盘」
         val trailingSlots = if (callbacks.morePageVisible) 2 else if (showMore) 2 else 1
+        val isIdle = barState == KawaiiBarStateMachine.State.Idle
+        val hostView = androidx.compose.ui.platform.LocalView.current
         Box(
             modifier = modifier
                 .fillMaxWidth()
@@ -168,12 +174,29 @@ fun ComposeToolbar(
             // Idle 态用滑入/滑出 + 淡入/淡出（与 IdleContent 内部子态展开收起动画一致），
             // 候选栏消失时工具栏从左滑入，候选栏出现时工具栏向左滑出。
             AnimatedVisibility(
-                visible = barState == KawaiiBarStateMachine.State.Idle,
+                visible = isIdle,
                 enter = slideInHorizontally(animationSpec = androidx.compose.animation.core.tween(200)) { -it } +
                     fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
                 exit = slideOutHorizontally(animationSpec = androidx.compose.animation.core.tween(150)) { -it } +
                     fadeOut(animationSpec = androidx.compose.animation.core.tween(150)),
+                // 退出动画期间（旧段仍在树上）不得再接收触摸，否则与新生效的段争命中
+                modifier = Modifier.activeZIndex(isIdle),
             ) {
+                // 滑动收尾兜底：位移在动画期间作用于布局，命中区域随之同步；但收官那一帧若先于
+                // 终值布局落地，屏幕会停在动画中途 —— 整行残留一个位移量、行首按钮被推出可视区，
+                // 而命中已按终值布局判定，于是「看着的位置」与「点到的位置」错开，且不会自愈。
+                // 补画只在**滑动由运行转为停止**的那一个沿触发，且要等终值帧先自行提交一帧；
+                // 动画进行中与首次进入组合都不插手，以免干扰滑动本身的节奏。
+                LaunchedEffect(Unit) {
+                    var wasRunning = false
+                    snapshotFlow { transition.isRunning }.collect { running ->
+                        if (wasRunning && !running) {
+                            withFrameNanos { }
+                            hostView.invalidate()
+                        }
+                        wasRunning = running
+                    }
+                }
                 IdleContent(
                     subState = idleSubState,
                     callbacks = callbacks,
@@ -193,10 +216,14 @@ fun ComposeToolbar(
                 visible = barState == KawaiiBarStateMachine.State.Title,
                 enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
                 exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(150)),
+                // 同上：退出动画期间不得接收触摸
+                modifier = Modifier.activeZIndex(barState == KawaiiBarStateMachine.State.Title),
             ) {
-                if (callbacks.morePageVisible) {
-                    // 更多页兼作布局编辑页：顶栏不再是「返回 + 标题」，而是与键盘页同形的
-                    // 「返回 + 可停靠行」，这样工具栏按钮在该页照常可见、照常可拖动。
+                if (callbacks.morePageVisible || callbacks.voicePageVisible) {
+                    // 更多页 / 语音页：顶栏与键盘页同形 —— 「返回 + 可停靠行」。
+                    // 语音面板是覆盖层（不切窗口）却把顶栏切进了 Title 态，若不这样处理，
+                    // 左侧菜单键会被返回键取代、整行按钮消失，而返回键与菜单键位置重合，
+                    // 表现为「按钮没了、点下去触发了别的」。
                     MorePageBar(
                         callbacks = callbacks,
                         visuals = visuals,
@@ -215,13 +242,17 @@ fun ComposeToolbar(
                     )
                 }
             }
-            // 右侧固定元素：键盘页（Idle）与更多页（Title + morePageVisible）都要显示。
+            // 右侧固定元素：键盘页（Idle）、更多页与语音页（Title + 覆盖层页面）都要显示。
             // 不跟随可停靠行滚动 —— 「更多」因此恒在最右；也不跟随 Idle 的滑入/滑出，仅淡入/淡出。
+            // zIndex 抬到内容段之上：它与可停靠行在右侧是重叠的（行靠 padding 避让），
+            // 必须由固定元素赢得命中，否则「更多 / 收起键盘」会点不动。
             AnimatedVisibility(
                 visible = barState == KawaiiBarStateMachine.State.Idle ||
-                    (barState == KawaiiBarStateMachine.State.Title && callbacks.morePageVisible),
+                    (barState == KawaiiBarStateMachine.State.Title &&
+                        (callbacks.morePageVisible || callbacks.voicePageVisible)),
                 enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
                 exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(150)),
+                modifier = Modifier.zIndex(2f),
             ) {
                 FixedTrailingRow(
                     callbacks = callbacks,
@@ -236,6 +267,20 @@ fun ComposeToolbar(
 /** 右侧固定元素占用的最小宽度：按实际槽位数预留，中间内容据此避让。 */
 @Composable
 private fun trailingInset(slots: Int): Dp = LocalToolbarHeight.current * slots
+
+/**
+ * 让**当前生效**的内容段在命中测试中胜出。
+ *
+ * 顶栏的三段内容是并排的 `AnimatedVisibility`：切换时旧段要播 150ms 淡出，这期间两段
+ * 同时存在于组合树中、**同时可被命中**。而 Idle 的菜单键与覆盖层页/标题页的返回键占据
+ * 完全相同的矩形，声明在后的 Title 段又画在上层 —— 于是退出动画期间「看着是菜单键、
+ * 点下去命中返回键」。
+ *
+ * 修法是把生效段的 `zIndex` 抬到淡出段之上：Compose 的 z 序同时决定绘制与命中顺序，
+ * 因此按下的那一刻命中的就是**看得见的那一个**。不用消费事件，避免连带吞掉新段的点击。
+ */
+private fun Modifier.activeZIndex(active: Boolean): Modifier =
+    this.zIndex(if (active) 1f else 0f)
 
 @Composable
 private fun IdleContent(
@@ -319,7 +364,11 @@ private fun IdleContent(
 }
 
 /**
- * 更多页的顶栏：左侧返回（编辑模式下隐藏），中间与键盘页共用同一条可停靠行。
+ * 「覆盖层页面」的顶栏：左侧返回（编辑模式下隐藏），中间与键盘页共用同一条可停靠行。
+ *
+ * 服务于两类页面 —— 更多页（真实窗口）与语音页（覆盖层）。两者都必须保留可停靠行：
+ * 若退化成「返回 + 标题」，整行按钮会消失，而返回键恰好占着菜单键的位置，
+ * 表现为「按钮看着没了、点下去却触发了别的」。
  *
  * 编辑模式下左侧留空 —— 编辑期间不允许离开该页，必须先点「完成」或让页面被顶掉。
  */

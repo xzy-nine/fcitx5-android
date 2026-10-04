@@ -193,6 +193,16 @@ class ComposeKawaiiBarComponent :
         get() = _morePageVisible
 
     /**
+     * custom: 语音面板是否打开中。
+     *
+     * 与 [morePageVisible] 同规：面板打开时顶栏保留可停靠行、左侧放返回，
+     * 而不是退化成「返回 + 标题」把整行按钮藏起来。
+     */
+    private val _voicePageVisible = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val voicePageVisible: kotlinx.coroutines.flow.StateFlow<Boolean>
+        get() = _voicePageVisible
+
+    /**
      * custom: 按钮可用性版本号。
      *
      * 可用性依赖键盘几何（分体键盘的宽高比）与三项偏好，几何量本身不是 Compose 状态，
@@ -512,6 +522,7 @@ class ComposeKawaiiBarComponent :
     private fun observeVoicePanel() {
         voicePanelJob = scope.launch {
             voiceInput.panelVisible.collect { visible ->
+                _voicePageVisible.value = visible
                 if (visible) {
                     _titleData.value = TitleData(
                         title = context.getString(R.string.voice_input),
@@ -695,15 +706,17 @@ class ComposeKawaiiBarComponent :
         val layout by toolbarLayout.collectAsState()
         val showUndoRedo by showUndoRedo.collectAsState()
         val morePage by morePageVisible.collectAsState()
+        val voicePage by voicePageVisible.collectAsState()
         val isEditing by editing.collectAsState()
         // 可用性依赖非 Compose 的键盘几何，靠版本号驱动重算（见 notifyButtonUsabilityChanged）
         buttonUsabilityVersion.collectAsState()
 
-        // callbacks 依赖上面的状态（更多页/编辑中会改变顶栏行为），故以它们为 key 重建；
-        // 这些状态变化极低频（进出更多页、切换编辑模式），重建开销可忽略。
-        val callbacks = remember(morePage, isEditing, showUndoRedo) {
+        // callbacks 依赖上面的状态（更多页/语音页/编辑中会改变顶栏行为），故以它们为 key 重建；
+        // 这些状态变化极低频（进出覆盖层页面、切换编辑模式），重建开销可忽略。
+        val callbacks = remember(morePage, voicePage, isEditing, showUndoRedo) {
             createCallbacks().copy(
                 morePageVisible = morePage,
+                voicePageVisible = voicePage,
                 editing = isEditing,
                 showUndoRedo = showUndoRedo,
             )
