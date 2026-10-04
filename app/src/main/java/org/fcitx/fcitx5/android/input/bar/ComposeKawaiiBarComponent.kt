@@ -439,8 +439,8 @@ class ComposeKawaiiBarComponent :
      * 语音/手写看各自的启用偏好；分体键盘还要满足「非数字键盘且宽高比允许」，
      * 与更多页按钮池共用同一判定，避免两处表现不一致。
      */
-    private fun isButtonUsable(button: ToolbarButton): Boolean = when (button) {
-        ToolbarButton.Voice -> prefs.voice.voiceInputEnabled.getValue()
+    /** 可停靠按钮当前是否可用（更多页按钮池与本页共用同一判定，避免两处置灰状态不一致）。 */
+    fun isButtonUsable(button: ToolbarButton): Boolean = when (button) {        ToolbarButton.Voice -> prefs.voice.voiceInputEnabled.getValue()
         ToolbarButton.Handwriting -> prefs.handwriting.handwritingInputEnabled.getValue()
         ToolbarButton.SplitKeyboard -> isSplitKeyboardAvailable()
         else -> true
@@ -455,7 +455,7 @@ class ComposeKawaiiBarComponent :
     }
 
     /** 可移动按钮的行为（工具栏行与更多页按钮池共用）。 */
-    private fun onToolbarButtonClick(button: ToolbarButton) {
+    fun onToolbarButtonClick(button: ToolbarButton) {
         when (button) {
             ToolbarButton.TextEditing -> windowManager.attachWindow(
                 org.fcitx.fcitx5.android.input.editing.TextEditingWindow()
