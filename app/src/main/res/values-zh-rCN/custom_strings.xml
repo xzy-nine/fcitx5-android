@@ -140,6 +140,7 @@
     <string name="webdav_downloading_backup">正在下载偏好备份 %1$s…</string>
     <string name="webdav_importing_prefs">正在导入偏好设置…</string>
     <string name="webdav_reloading_dict">正在重新加载词库…</string>
+    <string name="webdav_local_network_permission_required">访问局域网中的 WebDAV 服务器需要「本地网络」权限（Android 17 起）</string>
     <!-- Custom: 高级页数据管理 -->
     <string name="data_management">数据</string>
     <string name="data_browse_summary">在系统文件管理中打开应用数据目录</string>

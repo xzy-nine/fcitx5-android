@@ -83,6 +83,11 @@ object AutoDictSync {
         if (stoppingForRestart) return
         val cfg = runCatching { WebDavSyncConfig.load() }.getOrNull() ?: return
         if (!cfg.dictAutoSync || cfg.serverUrl.isBlank()) return
+        // 后台自动同步无法弹出权限框：目标为局域网且未授权时静默跳过，留给手动入口处理
+        if (LocalNetworkGuard.isDenied(WebDavSyncEngine.cloudDirUrl(cfg))) {
+            Timber.i("$TAG auto upload skipped: local network permission not granted")
+            return
+        }
         runCatching {
             synchronized(uploadLock) {
                 // 锁内二次确认，防止与“排空退出”并发时排入退出后才会执行的上传
@@ -116,6 +121,11 @@ object AutoDictSync {
         val cfg = runCatching { WebDavSyncConfig.load() }.getOrNull() ?: return
         if (!cfg.dictAutoSync || cfg.serverUrl.isBlank()) return
         if (keyboardVisible) return
+        // 后台自动同步无法弹出权限框：目标为局域网且未授权时静默跳过，留给手动入口处理
+        if (LocalNetworkGuard.isDenied(WebDavSyncEngine.dictDirUrl(cfg))) {
+            Timber.i("$TAG auto download skipped: local network permission not granted")
+            return
+        }
         val result = WebDavSyncEngine.downloadDictFiles(cfg)
         val outcome = result.getOrNull()
         if (outcome == null) {

@@ -92,7 +92,12 @@ object WebDavSyncEngine {
     fun cloudDirUrl(cfg: WebDavSyncConfig): String =
         joinUrl(cfg.serverUrl, CLOUD_DIR_NAME)
 
-    private fun webDav(cfg: WebDavSyncConfig, url: String) = WebDav(url, auth(cfg))
+    private fun webDav(cfg: WebDavSyncConfig, url: String): WebDav {
+        // 所有远端访问的唯一入口：Android 17 起局域网需先取得「本地网络」权限，
+        // 缺失时在此快速失败并给出可操作文案（界面入口另有权限门主动申请）
+        LocalNetworkGuard.require(url)
+        return WebDav(url, auth(cfg))
+    }
 
     suspend fun testConnection(cfg: WebDavSyncConfig): Result<String> =
         withContext(Dispatchers.IO) {
@@ -322,6 +327,8 @@ object WebDavSyncEngine {
                 // 云端还没有 dict/ 目录时视为“暂无词库备份”，而不是失败
                 val remoteFiles = runCatching { listRemoteDictFiles(cfg, dirUrl) }
                     .onFailure {
+                        // 权限缺失不能当作“没有备份”，否则会静默跳过并显示为已是最新
+                        if (it is LocalNetworkPermissionRequiredException) throw it
                         Timber.w("$TAG listRemoteDictFiles failed: ${it.javaClass.name}: ${it.message}")
                     }
                     .getOrDefault(emptyList())
@@ -483,6 +490,9 @@ object WebDavSyncEngine {
                 all.filter { it.name.startsWith(PREFS_FILE_PREFIX) && it.name.endsWith(".zip") }
                     .sortedByDescending { it.name }
                     .also { Timber.i("$TAG listRemotePrefs matched ${it.size}") }
+            } catch (e: LocalNetworkPermissionRequiredException) {
+                // 权限缺失不是“云端没有备份”，必须抛给调用方而不是返回空列表
+                throw e
             } catch (e: Exception) {
                 Timber.e(
                     "$TAG listRemotePrefs failed: ${e.javaClass.name}, message=${e.message}, " +

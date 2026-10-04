@@ -143,6 +143,7 @@
     <string name="webdav_downloading_backup">Downloading preferences backup %1$s…</string>
     <string name="webdav_importing_prefs">Importing preferences…</string>
     <string name="webdav_reloading_dict">Reloading dictionaries…</string>
+    <string name="webdav_local_network_permission_required">Accessing a WebDAV server on the local network requires the Local network permission (Android 17 and later)</string>
     <!-- Custom: advanced page data management -->
     <string name="data_management">Data</string>
     <string name="data_browse_summary">Open the app data folder in DocumentsUI</string>
