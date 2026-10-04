@@ -6,11 +6,9 @@ package org.fcitx.fcitx5.android.input.status
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,8 +17,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -48,9 +49,15 @@ import androidx.compose.ui.unit.sp
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.Action
 import org.fcitx.fcitx5.android.input.bar.ToolbarButton
+import org.fcitx.fcitx5.android.input.bar.ToolbarButtonIcon
 import org.fcitx.fcitx5.android.input.bar.ToolbarButtonSpec
-import org.fcitx.fcitx5.android.input.bar.ToolbarIcon
+import org.fcitx.fcitx5.android.input.bar.ToolbarDragState
+import org.fcitx.fcitx5.android.input.bar.ToolbarLayout
 import org.fcitx.fcitx5.android.input.bar.inputFeedback
+import org.fcitx.fcitx5.android.input.bar.toolbarDockSlot
+import org.fcitx.fcitx5.android.input.bar.toolbarDragSource
+import org.fcitx.fcitx5.android.input.bar.toolbarDropViewport
+import org.fcitx.fcitx5.android.input.bar.toolbarEdgeAutoScroll
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
@@ -83,6 +90,9 @@ fun MorePageGrid(
     splitKeyboardEnabled: Boolean,
     editing: Boolean,
     showUndoRedo: Boolean,
+    // 布局拖动：仅编辑模式下由调用方注入（非编辑态传 null，不接管任何手势）
+    drag: ToolbarDragState?,
+    onDropButton: (ToolbarButton, ToolbarLayout.Drop?) -> Unit,
     onMoveableClick: (ToolbarButton) -> Unit,
     onFcitxClick: (Action) -> Unit,
     onFcitxMenuAction: (Action) -> Unit,
@@ -97,6 +107,8 @@ fun MorePageGrid(
             cells = poolCells,
             splitKeyboardEnabled = splitKeyboardEnabled,
             editing = editing,
+            drag = drag,
+            onDropButton = onDropButton,
             onMoveableClick = onMoveableClick,
             modifier = Modifier.weight(1f),
         )
@@ -120,17 +132,45 @@ fun MorePageGrid(
     }
 }
 
+/**
+ * 按钮池：未停靠的可移动按钮，参与拖动重排，也能接收从工具栏拖下来的按钮。
+ *
+ * 网格是纵向滚动的，拖动时的插入位按行主序取最近格中心；靠近上下边缘时自动滚动。
+ */
 @Composable
 private fun PoolSection(
     cells: List<MorePageCell.Movable>,
     splitKeyboardEnabled: Boolean,
     editing: Boolean,
+    drag: ToolbarDragState?,
+    onDropButton: (ToolbarButton, ToolbarLayout.Drop?) -> Unit,
     onMoveableClick: (ToolbarButton) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val gridState = rememberLazyGridState()
+    val density = LocalDensity.current
+
+    if (drag != null && editing) {
+        toolbarEdgeAutoScroll(
+            drag = drag,
+            inPool = true,
+            horizontal = false,
+            edgePx = with(density) { 48.dp.toPx() },
+            maxStepPx = with(density) { 20.dp.toPx() },
+            scrollBy = { gridState.scrollBy(it) },
+        )
+    }
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(4),
-        modifier = modifier.fillMaxWidth(),
+        state = gridState,
+        modifier = modifier
+            .fillMaxWidth()
+            // 视口登记在网格容器上：命中判定要的是「池子当前可见的范围」
+            .then(
+                if (drag != null) Modifier.toolbarDropViewport(drag, inPool = true)
+                else Modifier
+            ),
     ) {
         items(cells.size) { index ->
             val cell = cells[index]
@@ -138,6 +178,22 @@ private fun PoolSection(
                 cell = cell,
                 splitKeyboardEnabled = splitKeyboardEnabled,
                 editing = editing,
+                isDragging = drag?.dragging == cell.button,
+                modifier = Modifier
+                    .then(
+                        if (drag != null) Modifier.toolbarDockSlot(drag, cell.button, inPool = true)
+                        else Modifier
+                    )
+                    .then(
+                        if (drag != null) {
+                            Modifier.toolbarDragSource(
+                                drag = drag,
+                                button = cell.button,
+                                enabled = editing,
+                                onDrop = { target -> onDropButton(cell.button, target) },
+                            )
+                        } else Modifier
+                    ),
                 onClick = { onMoveableClick(cell.button) },
             )
         }
@@ -231,11 +287,13 @@ private fun MovableCell(
     cell: MorePageCell.Movable,
     splitKeyboardEnabled: Boolean,
     editing: Boolean,
+    isDragging: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val enabled = cell.usable && !editing
     Column(
-        modifier = Modifier.height(96.dp),
+        modifier = modifier.height(96.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(modifier = Modifier.height(4.dp))
@@ -249,24 +307,20 @@ private fun MovableCell(
             minWidth = 48.dp,
             minHeight = 48.dp,
         ) {
-            val tint = if (cell.usable) MiuixTheme.colorScheme.onSecondaryContainer
-            else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+            val tint = when {
+                // 被拖走时源位置留白，避免看起来复制了一份
+                isDragging -> MiuixTheme.colorScheme.onSecondaryContainer.copy(alpha = 0f)
+                cell.usable -> MiuixTheme.colorScheme.onSecondaryContainer
+                else -> MiuixTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+            }
             val label = stringResource(ToolbarButtonSpec.labelOf(cell.button))
             Box(Modifier.semantics { contentDescription = label }) {
-                when (val icon = ToolbarButtonSpec.iconOf(cell.button, splitKeyboardEnabled)) {
-                    is ToolbarIcon.Res -> Icon(
-                        painter = painterResource(icon.id),
-                        contentDescription = null,
-                        tint = tint,
-                        modifier = Modifier.size(24.dp),
-                    )
-                    is ToolbarIcon.Vector -> Icon(
-                        imageVector = icon.image,
-                        contentDescription = null,
-                        tint = tint,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
+                ToolbarButtonIcon(
+                    button = cell.button,
+                    tint = tint,
+                    splitKeyboardEnabled = splitKeyboardEnabled,
+                    modifier = Modifier.size(24.dp),
+                )
             }
         }
         Spacer(modifier = Modifier.height(6.dp))

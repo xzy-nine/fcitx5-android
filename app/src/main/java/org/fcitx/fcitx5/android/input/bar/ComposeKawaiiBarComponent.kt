@@ -496,6 +496,8 @@ class ComposeKawaiiBarComponent :
         }
         ClipboardManager.addOnUpdateListener(onClipboardUpdateListener)
         splitKeyboardPref.registerOnChangeListener(splitKeyboardListener)
+        // custom: 布局偏好被外部改写（恢复备份/同步）时让编辑会话重新读取
+        toolbarEdit.registerPreferenceListeners()
         splitKeyboardThresholdPref.registerOnChangeListener(splitThresholdUsabilityListener)
         voiceInputEnabledPref.registerOnChangeListener(voiceUsabilityListener)
         handwritingEnabledPref.registerOnChangeListener(handwritingUsabilityListener)
@@ -529,6 +531,7 @@ class ComposeKawaiiBarComponent :
     fun destroy() {
         ClipboardManager.removeOnUpdateListener(onClipboardUpdateListener)
         splitKeyboardPref.unregisterOnChangeListener(splitKeyboardListener)
+        toolbarEdit.unregisterPreferenceListeners()
         splitKeyboardThresholdPref.unregisterOnChangeListener(splitThresholdUsabilityListener)
         voiceInputEnabledPref.unregisterOnChangeListener(voiceUsabilityListener)
         handwritingEnabledPref.unregisterOnChangeListener(handwritingUsabilityListener)
@@ -789,6 +792,10 @@ class ComposeKawaiiBarComponent :
             modifier = modifier,
             toolbarHeight = toolbarHeight.dp,
             dockedButtons = layout.docked,
+            poolButtons = layout.pool,
+            // 非编辑态不注入拖动状态：避免普通点击/长按误触改动布局
+            drag = if (isEditing) toolbarEdit.drag else null,
+            onDropButton = { button, target -> toolbarEdit.applyDrop(button, target) },
             candidateVisible = candidateVisible,
             candidateContent = candidateContent,
             numberRowContent = numberRowContent,

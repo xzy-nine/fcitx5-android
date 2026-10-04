@@ -284,6 +284,13 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                             iv.candidateActionMenu.OverlayContent(Modifier.fillMaxSize())
                             // Custom: 键盘调校浮层（Compose IME 覆盖层，已迁出 keyboardView 子 View）
                             iv.keyboardTune.OverlayContent(Modifier.fillMaxSize())
+                            // Custom: 工具栏布局拖动浮层（幽灵图标 + 目标槽高亮）。
+                            // 挂在根组合是为了铺满整个 IME 窗口：被拖按钮与落点分处两个
+                            // ComposeView，只有窗口绝对坐标才能让两者互相命中。
+                            org.fcitx.fcitx5.android.input.bar.ToolbarDragOverlay(
+                                drag = iv.toolbarEdit.drag,
+                                modifier = Modifier.fillMaxSize(),
+                            )
                         }
                     }
                 }

@@ -30,6 +30,7 @@ import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.FcitxInputMethodService
 import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
 import org.fcitx.fcitx5.android.input.bar.ToolbarEditComponent
+import org.fcitx.fcitx5.android.input.bar.ToolbarLayout
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.dependency.fcitx
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
@@ -132,6 +133,9 @@ class StatusAreaWindow : InputWindow.ExtendedInputWindow<StatusAreaWindow>(),
             splitKeyboardEnabled = splitKeyboardEnabled,
             editing = editing,
             showUndoRedo = showUndoRedo,
+            // 非编辑态不注入拖动状态：避免普通浏览时误触改动布局
+            drag = if (editing) toolbarEdit.drag else null,
+            onDropButton = { button, target -> toolbarEdit.applyDrop(button, target) },
             onMoveableClick = { bar.onToolbarButtonClick(it) },
             onFcitxClick = ::activateAction,
             onFcitxMenuAction = ::activateAction,

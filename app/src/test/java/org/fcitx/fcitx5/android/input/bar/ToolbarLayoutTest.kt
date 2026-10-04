@@ -13,6 +13,7 @@ import org.fcitx.fcitx5.android.input.bar.ToolbarButton.Tune
 import org.fcitx.fcitx5.android.input.bar.ToolbarButton.Voice
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -315,5 +316,181 @@ class ToolbarLayoutTest {
                 assertTrue("($x,$y) -> $index", index in 0..cells.size)
             }
         }
+    }
+
+    // ---------------------------------------------------------------- 落点解析
+
+    /** 一行的两区布局：[TextEditing, Clipboard] 在工具栏，[Tune] 在池子。 */
+    private fun dropFixture() = object {
+        val docked = listOf(TextEditing, Clipboard)
+        val pool = listOf(Tune)
+        val dockedSlots = mapOf(
+            TextEditing to rect(50f, 100f),
+            Clipboard to rect(150f, 100f),
+        )
+        val poolSlots = mapOf(Tune to rect(50f, 300f))
+        val dockedViewport = ToolbarLayout.SlotRect(0f, 80f, 400f, 120f)
+        val poolViewport = ToolbarLayout.SlotRect(0f, 280f, 400f, 420f)
+    }
+
+    @Test
+    fun `drop inside the docked row resolves to a docked target`() {
+        val f = dropFixture()
+        val drop = ToolbarLayout.resolveDrop(
+            button = Tune,
+            x = 170f,
+            y = 100f,
+            docked = f.docked,
+            dockedSlots = f.dockedSlots,
+            dockedViewport = f.dockedViewport,
+            pool = f.pool,
+            poolSlots = f.poolSlots,
+            poolViewport = f.poolViewport,
+            rtl = false,
+        )!!
+        assertFalse(drop.inPool)
+        // 落在 Clipboard 中心（150）右侧 → 插在其后
+        assertEquals(2, drop.index)
+        assertNotNull(drop.anchor)
+    }
+
+    @Test
+    fun `drop inside the pool resolves to a pool target`() {
+        val f = dropFixture()
+        val drop = ToolbarLayout.resolveDrop(
+            button = TextEditing,
+            x = 50f,
+            y = 300f,
+            docked = f.docked,
+            dockedSlots = f.dockedSlots,
+            dockedViewport = f.dockedViewport,
+            pool = f.pool,
+            poolSlots = f.poolSlots,
+            poolViewport = f.poolViewport,
+            rtl = false,
+        )!!
+        assertTrue(drop.inPool)
+    }
+
+    @Test
+    fun `drop outside both viewports resolves to nothing`() {
+        val f = dropFixture()
+        val drop = ToolbarLayout.resolveDrop(
+            button = Tune,
+            x = 200f,
+            y = 600f,
+            docked = f.docked,
+            dockedSlots = f.dockedSlots,
+            dockedViewport = f.dockedViewport,
+            pool = f.pool,
+            poolSlots = f.poolSlots,
+            poolViewport = f.poolViewport,
+            rtl = false,
+        )
+        assertEquals(null, drop)
+    }
+
+    @Test
+    fun `drop is dropped entirely when a slot rectangle is missing`() {
+        val f = dropFixture()
+        // Clipboard 的矩形尚未上报：宁可不高亮，也不要算出会跳位的索引
+        val drop = ToolbarLayout.resolveDrop(
+            button = Tune,
+            x = 100f,
+            y = 100f,
+            docked = f.docked,
+            dockedSlots = mapOf(TextEditing to rect(50f, 100f)),
+            dockedViewport = f.dockedViewport,
+            pool = f.pool,
+            poolSlots = f.poolSlots,
+            poolViewport = f.poolViewport,
+            rtl = false,
+        )
+        assertEquals(null, drop)
+    }
+
+    @Test
+    fun `dragged button itself does not participate in its own landing decision`() {
+        val f = dropFixture()
+        // 拖动 TextEditing：它自己不参与，剩余只有 Clipboard 一个槽位，
+        // 因此「拖到自己原来的位置附近」也只能落在 Clipboard 前或后，不可能回到自己原来的索引
+        val drop = ToolbarLayout.resolveDrop(
+            button = TextEditing,
+            x = 50f,
+            y = 100f,
+            docked = f.docked,
+            dockedSlots = f.dockedSlots,
+            dockedViewport = f.dockedViewport,
+            pool = f.pool,
+            poolSlots = f.poolSlots,
+            poolViewport = f.poolViewport,
+            rtl = false,
+        )!!
+        assertEquals(0, drop.index)
+    }
+
+    @Test
+    fun `append position highlights just past the last slot`() {
+        val f = dropFixture()
+        val drop = ToolbarLayout.resolveDrop(
+            button = Tune,
+            x = 399f,
+            y = 100f,
+            docked = f.docked,
+            dockedSlots = f.dockedSlots,
+            dockedViewport = f.dockedViewport,
+            pool = f.pool,
+            poolSlots = f.poolSlots,
+            poolViewport = f.poolViewport,
+            rtl = false,
+        )!!
+        assertEquals(f.docked.size, drop.index)
+        // 高亮必须落在最后一槽右侧，而不是框住最后一个按钮
+        assertTrue("anchor=$drop", drop.anchor!!.left >= 150f)
+    }
+
+    @Test
+    fun `rtl flips the docked insertion direction`() {
+        val f = dropFixture()
+        // 指针在 Clipboard 中心（150）右侧 20px：LTR 下插到它之后，RTL 下插到它之前。
+        // 槽位坐标按列表顺序给出，rtl 只翻转「中心左右对应列表前后」这一比较方向。
+        fun dropAt(x: Float, rtl: Boolean) = ToolbarLayout.resolveDrop(
+            button = Tune,
+            x = x,
+            y = 100f,
+            docked = f.docked,
+            dockedSlots = f.dockedSlots,
+            dockedViewport = f.dockedViewport,
+            pool = f.pool,
+            poolSlots = f.poolSlots,
+            poolViewport = f.poolViewport,
+            rtl = rtl,
+        )!!.index
+
+        assertEquals(2, dropAt(170f, rtl = false))
+        assertEquals(1, dropAt(170f, rtl = true))
+    }
+
+    @Test
+    fun `applyDrop moves the button into the target region`() {
+        val state = ToolbarLayoutState(
+            docked = listOf(TextEditing, Clipboard),
+            pool = listOf(Tune),
+        )
+        val toPool = ToolbarLayout.applyDrop(
+            state,
+            Clipboard,
+            ToolbarLayout.Drop(inPool = true, index = 1, anchor = null),
+        )
+        assertEquals(listOf(TextEditing), toPool.docked)
+        assertEquals(listOf(Tune, Clipboard), toPool.pool)
+
+        val toDocked = ToolbarLayout.applyDrop(
+            state,
+            Tune,
+            ToolbarLayout.Drop(inPool = false, index = 0, anchor = null),
+        )
+        assertEquals(listOf(Tune, TextEditing, Clipboard), toDocked.docked)
+        assertTrue(toDocked.pool.isEmpty())
     }
 }

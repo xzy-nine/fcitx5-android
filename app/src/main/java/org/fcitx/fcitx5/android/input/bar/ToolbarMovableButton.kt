@@ -30,10 +30,13 @@ fun ToolbarMovableButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     splitKeyboardEnabled: Boolean = false,
+    /** 正在被拖动：源位置留白，避免看起来复制了一份。 */
+    dimmed: Boolean = false,
     contentDescription: String? = null,
     onClick: () -> Unit,
 ) {
     val label = stringResource(ToolbarButtonSpec.labelOf(button))
+    val tint = if (dimmed) contentColor.copy(alpha = 0f) else contentColor
     IconButton(
         onClick = onClick,
         enabled = enabled,
@@ -44,19 +47,42 @@ fun ToolbarMovableButton(
         minWidth = LocalToolbarHeight.current,
         minHeight = LocalToolbarHeight.current,
     ) {
-        when (val icon = ToolbarButtonSpec.iconOf(button, splitKeyboardEnabled)) {
-            is ToolbarIcon.Res -> Icon(
-                painter = painterResource(icon.id),
-                contentDescription = contentDescription ?: label,
-                tint = contentColor,
-                modifier = Modifier.size(24.dp),
-            )
-            is ToolbarIcon.Vector -> Icon(
-                imageVector = icon.image,
-                contentDescription = contentDescription ?: label,
-                tint = contentColor,
-                modifier = Modifier.size(24.dp),
-            )
-        }
+        ToolbarButtonIcon(
+            button = button,
+            tint = tint,
+            splitKeyboardEnabled = splitKeyboardEnabled,
+            contentDescription = contentDescription ?: label,
+            modifier = Modifier.size(24.dp),
+        )
+    }
+}
+
+/**
+ * 按 [ToolbarButtonSpec] 画一个按钮图标。
+ *
+ * 三个渲染区（工具栏可停靠行、更多页按钮池、拖动幽灵图标）共用，保证同一按钮
+ * 在三处永远是同一个图标；图标尺寸由调用方通过 [modifier] 决定。
+ */
+@Composable
+fun ToolbarButtonIcon(
+    button: ToolbarButton,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    splitKeyboardEnabled: Boolean = false,
+    contentDescription: String? = null,
+) {
+    when (val icon = ToolbarButtonSpec.iconOf(button, splitKeyboardEnabled)) {
+        is ToolbarIcon.Res -> Icon(
+            painter = painterResource(icon.id),
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = modifier,
+        )
+        is ToolbarIcon.Vector -> Icon(
+            imageVector = icon.image,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = modifier,
+        )
     }
 }

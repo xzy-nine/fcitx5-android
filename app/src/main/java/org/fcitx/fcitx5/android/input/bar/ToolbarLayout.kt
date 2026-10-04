@@ -174,4 +174,95 @@ object ToolbarLayout {
         }
         return nearest + if (x > cells[nearest].centerX) 1 else 0
     }
+
+    /** 落点解析结果：目标区 + 插入索引 + 用于高亮的目标槽矩形。 */
+    data class Drop(
+        val inPool: Boolean,
+        val index: Int,
+        val anchor: SlotRect?,
+    )
+
+    /**
+     * 由指针位置解析落点（纯函数，无 Compose 依赖，便于单测覆盖跨区/边缘/无效区）。
+     *
+     * 判定顺序：先看指针是否落在**可停靠行视口**内，再看按钮池视口；都不在则返回 null
+     * （调用方据此回弹、不高亮）。
+     *
+     * [docked] / [pool] 是当前渲染顺序；两区的槽位矩形与视口都必须是**窗口绝对坐标**
+     * （由两侧 `boundsInWindow()` 上报），否则跨区无法命中。
+     * 某区缺任一槽位矩形时该区判定作废（返回 null 而不是用残缺数据算出会跳位的索引）。
+     */
+    fun resolveDrop(
+        button: ToolbarButton,
+        x: Float,
+        y: Float,
+        docked: List<ToolbarButton>,
+        dockedSlots: Map<ToolbarButton, SlotRect>,
+        dockedViewport: SlotRect?,
+        pool: List<ToolbarButton>,
+        poolSlots: Map<ToolbarButton, SlotRect>,
+        poolViewport: SlotRect?,
+        rtl: Boolean,
+    ): Drop? {
+        if (dockedViewport != null && dockedViewport.contains(x, y)) {
+            val slots = orderedSlots(docked, button, dockedSlots) ?: return null
+            val index = insertionIndexByCenterX(slots.map { it.centerX }, x, rtl)
+            return Drop(inPool = false, index = index, anchor = anchorInRow(slots, index, y))
+        }
+        if (poolViewport != null && poolViewport.contains(x, y)) {
+            val slots = orderedSlots(pool, button, poolSlots) ?: return null
+            val index = insertionIndexByCellBounds(slots, x, y)
+            return Drop(inPool = true, index = index, anchor = anchorInGrid(slots, index))
+        }
+        return null
+    }
+
+    fun SlotRect.contains(x: Float, y: Float): Boolean =
+        x >= left && x <= right && y >= top && y <= bottom
+
+    /**
+     * 按 [order] 取出「除被拖动者之外」的槽位矩形。
+     *
+     * 任一槽位缺失即返回 null：宁可本次不高亮，也不要拿不完整的数据算出跳位的插入索引。
+     */
+    private fun orderedSlots(
+        order: List<ToolbarButton>,
+        dragging: ToolbarButton,
+        slots: Map<ToolbarButton, SlotRect>,
+    ): List<SlotRect>? {
+        val result = ArrayList<SlotRect>(order.size)
+        order.forEach { button ->
+            if (button == dragging) return@forEach
+            result += slots[button] ?: return null
+        }
+        return result
+    }
+
+    /**
+     * 横向插入位对应的高亮矩形。
+     *
+     * 插在末尾（index == 槽位数）时没有任何槽位可指，改为贴在最后一槽右侧生成一个同宽矩形，
+     * 高亮才落在「真的会去的位置」上，而不是错误地框住最后一个按钮。
+     */
+    private fun anchorInRow(slots: List<SlotRect>, index: Int, y: Float): SlotRect? {
+        slots.getOrNull(index)?.let { return it }
+        val last = slots.lastOrNull() ?: return null
+        val half = (last.bottom - last.top) / 2f
+        return SlotRect(last.right, y - half, last.right + (last.right - last.left), y + half)
+    }
+
+    /** 网格插入位对应的高亮矩形；插在末尾时贴最后一格（末尾就是「追加到它之后」）。 */
+    private fun anchorInGrid(slots: List<SlotRect>, index: Int): SlotRect? =
+        slots.getOrNull(index) ?: slots.lastOrNull()
+
+    /** 把按钮从 [from] 区移到 [to] 区（同一 [Drop] 语义），返回新布局。 */
+    fun applyDrop(
+        state: ToolbarLayoutState,
+        button: ToolbarButton,
+        drop: Drop,
+    ): ToolbarLayoutState = if (drop.inPool) {
+        moveToPool(state, button, drop.index)
+    } else {
+        moveToDocked(state, button, drop.index)
+    }
 }

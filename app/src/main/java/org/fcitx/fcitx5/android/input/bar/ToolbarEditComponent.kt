@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.mechdancer.dependency.Dependent
 import org.mechdancer.dependency.UniqueComponent
 import org.mechdancer.dependency.manager.ManagedHandler
@@ -63,25 +64,61 @@ class ToolbarEditComponent :
     val showUndoRedo: StateFlow<Boolean> = _showUndoRedo.asStateFlow()
 
     /**
-     * 当前生效布局的**快照**（编辑中用草稿，否则用已保存值）。
+     * 拖动的瞬时状态。
      *
-     * 供非 Compose 的一次性读取（如拖动落点判定的调用方）使用；Compose 侧要响应变化，
-     * 应分别 collect [editing] 与两个布局流后自行选择，才能触发重组。
+     * 放在会话里而不是各渲染区：工具栏行与更多页网格是两个独立 Composition，
+     * 只有共享同一份状态才能跨区命中（见 [ToolbarDragState]）。
      */
-    val effective: ToolbarLayoutState
-        get() = if (_editing.value) _draft.value else _committed.value
+    val drag = ToolbarDragState().apply {
+        // 拖动回调里现取当前布局，避免闭包捕获到重排前的陈旧列表
+        layoutProvider = { _draft.value }
+    }
 
-    /** 偏好被外部改写（导入备份、同步恢复）时刷新已保存值。 */
-    fun refreshFromPrefs() {
+    /** 布局偏好被外部改写（如恢复备份）时重读；编辑中被改写则以已保存值覆盖草稿。 */
+    private val layoutPrefListener = ManagedPreference.OnChangeListener<String> { _, _ ->
+        refreshFromPrefs()
+    }
+    private val undoRedoPrefListener = ManagedPreference.OnChangeListener<Boolean> { _, value ->
+        _showUndoRedo.value = value
+    }
+
+    fun registerPreferenceListeners() {
+        prefs.toolbarDockedButtons.registerOnChangeListener(layoutPrefListener)
+        prefs.toolbarPoolButtons.registerOnChangeListener(layoutPrefListener)
+        prefs.toolbarShowUndoRedo.registerOnChangeListener(undoRedoPrefListener)
+    }
+
+    fun unregisterPreferenceListeners() {
+        prefs.toolbarDockedButtons.unregisterOnChangeListener(layoutPrefListener)
+        prefs.toolbarPoolButtons.unregisterOnChangeListener(layoutPrefListener)
+        prefs.toolbarShowUndoRedo.unregisterOnChangeListener(undoRedoPrefListener)
+    }
+
+    /**
+     * 拖动松手：把按钮落到目标区，并立即写入草稿（不改偏好，偏好只在 [commit] 写）。
+     *
+     * [drop] 为 null 表示落在无效区域，直接回弹（草稿不变）。
+     */
+    fun applyDrop(button: ToolbarButton, drop: ToolbarLayout.Drop?) {
+        if (!_editing.value) return
+        if (drop == null) return
+        val current = _draft.value
+        val next = ToolbarLayout.applyDrop(current, button, drop)
+        if (next != current) _draft.value = next
+    }
+
+    /** 重读布局与撤销开关偏好。 */
+    private fun refreshFromPrefs() {
         val state = readPrefs()
         _committed.value = state
+        // 编辑中不让外部值覆盖草稿：用户手上的拖动结果更权威，cancel 时才回落到已保存值
         if (!_editing.value) _draft.value = state
-        _showUndoRedo.value = prefs.toolbarShowUndoRedo.getValue()
     }
 
     fun beginEdit() {
         if (_editing.value) return
         _draft.value = _committed.value
+        drag.clearGeometry()
         _editing.value = true
     }
 
@@ -91,6 +128,7 @@ class ToolbarEditComponent :
         val state = _draft.value
         _committed.value = state
         _editing.value = false
+        drag.cancel()
         writePrefs(state)
     }
 
@@ -99,11 +137,13 @@ class ToolbarEditComponent :
         if (!_editing.value) return
         _draft.value = _committed.value
         _editing.value = false
+        drag.cancel()
     }
 
     /** 草稿回到默认布局（仍需 [commit] 才落盘）。 */
     fun resetDraft() {
         if (!_editing.value) return
+        drag.cancel()
         _draft.value = ToolbarLayout.DEFAULT
     }
 
@@ -112,12 +152,6 @@ class ToolbarEditComponent :
         val next = !_showUndoRedo.value
         _showUndoRedo.value = next
         prefs.toolbarShowUndoRedo.setValue(next)
-    }
-
-    /** 更新草稿（拖动落地时调用）。非编辑态忽略。 */
-    fun updateDraft(state: ToolbarLayoutState) {
-        if (!_editing.value) return
-        _draft.value = state
     }
 
     private fun writePrefs(state: ToolbarLayoutState) {

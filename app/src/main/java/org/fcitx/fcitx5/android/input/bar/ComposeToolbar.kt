@@ -14,16 +14,16 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -40,12 +40,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.input.keyboard.rememberActiveTheme
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 
@@ -57,6 +62,41 @@ import top.yukonga.miuix.kmp.basic.IconButton
  * 默认值仅在脱离工具栏宿主单独使用 [ComposeToolbar] 时兜底。
  */
 val LocalToolbarHeight = staticCompositionLocalOf { ComposeKawaiiBarComponent.HEIGHT.dp }
+
+/**
+ * 工具栏视觉配置（背景薄层 + 前景色）。
+ *
+ * **背景是刻意的「反差薄层」**：工具栏与键盘背景要分开，做法是在键盘底色上叠一层
+ * **反色**的极低透明度 scrim（键盘深 → 叠白、键盘浅 → 叠黑，`alpha < 10%`），
+ * 再配圆角把它和键盘区在视觉上切开 —— 起分隔作用的是**下**两角
+ * （工具栏与键盘区的分界；IME 的下缘由屏幕自身圆角代劳，不在此列）。
+ *
+ * 深浅判断用**键盘背景色本身的明度**（`theme.keyboardColor`），而不是主题自报的
+ * `isDark` —— 用户名下的自定义主题常常与 `isDark` 不一致。背景图主题下该色不代表实际
+ * 画面明度，此时仍以此色为准（后续若要更准，可对背景图取平均亮度）。
+ *
+ * 图标/文字色同样随键盘明度取黑/白（工具栏是纯 Compose 区，不参与 fcitx 主题的键面配色；
+ * 不恒用 miuix onSurface —— miuix 主题明度与键盘主题可能不一致，会造成前景与底色反差不足）。
+ *
+ * 是独立函数而非工具栏私有，因为**拖动浮层挂在 IME 根组合**、与工具栏不在同一棵子树，
+ * 两处必须共用同一套配色，否则幽灵图标会与被拖按钮不同色。
+ */
+@Composable
+fun rememberToolbarVisuals(): ToolbarVisuals {
+    val theme = rememberActiveTheme()
+    val keyboardIsLight = Color(theme.keyboardColor).luminance() > 0.5f
+    val scrim = if (keyboardIsLight) Color.Black else Color.White
+    // 前景色随键盘明度取黑/白，确保与「键盘底色 + scrim」叠加后的工具栏底色对比足够
+    val foreground = if (keyboardIsLight) Color.Black else Color.White
+    return remember(keyboardIsLight) {
+        ToolbarVisuals(
+            // < 10%：只做「与键盘区分」的暗示，不遮挡背后的主题/背景图
+            barColor = scrim.copy(alpha = 0.08f),
+            iconColor = foreground,
+            textColor = foreground,
+        )
+    }
+}
 
 /**
  * Compose 工具栏
@@ -83,6 +123,11 @@ fun ComposeToolbar(
     toolbarHeight: Dp = LocalToolbarHeight.current,
     // 可停靠行的按钮（顺序即显示顺序），由宿主从布局偏好解出
     dockedButtons: List<ToolbarButton> = emptyList(),
+    // 更多页按钮池的按钮：拖动落点判定要同时知道两区的顺序
+    poolButtons: List<ToolbarButton> = emptyList(),
+    // 布局编辑：拖动状态与草稿落点提交
+    drag: ToolbarDragState? = null,
+    onDropButton: (ToolbarButton, ToolbarLayout.Drop?) -> Unit = { _, _ -> },
     // 候选栏可见性：由调用方按「候选内容就绪」驱动（默认按 barState，调用方覆盖以消除闪烁）
     candidateVisible: Boolean = barState == KawaiiBarStateMachine.State.Candidate,
     // 候选栏内容由外部传入
@@ -137,6 +182,8 @@ fun ComposeToolbar(
                     menuRotation = menuRotation,
                     dockedButtons = dockedButtons,
                     trailingSlots = trailingSlots,
+                    drag = drag,
+                    onDropButton = onDropButton,
                     numberRowContent = numberRowContent,
                     inlineSuggestionContent = inlineSuggestionContent,
                     clipboardContent = clipboardContent,
@@ -156,6 +203,8 @@ fun ComposeToolbar(
                         splitKeyboardEnabled = splitKeyboardEnabled,
                         dockedButtons = dockedButtons,
                         trailingSlots = trailingSlots,
+                        drag = drag,
+                        onDropButton = onDropButton,
                     )
                 } else {
                     TitleContent(
@@ -197,6 +246,8 @@ private fun IdleContent(
     menuRotation: Float,
     dockedButtons: List<ToolbarButton>,
     trailingSlots: Int,
+    drag: ToolbarDragState?,
+    onDropButton: (ToolbarButton, ToolbarLayout.Drop?) -> Unit,
     numberRowContent: @Composable () -> Unit,
     inlineSuggestionContent: @Composable () -> Unit,
     clipboardContent: @Composable () -> Unit,
@@ -248,6 +299,8 @@ private fun IdleContent(
                             visuals = visuals,
                             splitKeyboardEnabled = splitKeyboardEnabled,
                             dockedButtons = dockedButtons,
+                            drag = drag,
+                            onDropButton = onDropButton,
                         )
                     }
                     IdleSubState.Clipboard -> {
@@ -277,6 +330,8 @@ private fun MorePageBar(
     splitKeyboardEnabled: Boolean,
     dockedButtons: List<ToolbarButton>,
     trailingSlots: Int,
+    drag: ToolbarDragState?,
+    onDropButton: (ToolbarButton, ToolbarLayout.Drop?) -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -304,6 +359,8 @@ private fun MorePageBar(
                 visuals = visuals,
                 splitKeyboardEnabled = splitKeyboardEnabled,
                 dockedButtons = dockedButtons,
+                drag = drag,
+                onDropButton = onDropButton,
             )
         }
     }
@@ -375,11 +432,14 @@ private fun FixedTrailingRow(
 }
 
 /**
- * 可停靠按钮行：撤销/重做两个固定槽位（受偏好控制显隐，不参与拖动）之后，
+ * 可停靠按钮行：撤销/重做两个固定槽位（受偏好控制显隐，**不参与拖动**）之后，
  * 依次渲染布局里的可移动按钮。
  *
  * 横向滚动承载「按钮放不下」的情形 —— 图标不缩小、右侧固定元素不被挤压；
  * 「更多」不在本行内，故永远贴着可停靠区最右端。
+ *
+ * 编辑模式下每个可移动按钮可长按拖动（[ToolbarDragState]），并注册窗口矩形供跨区命中；
+ * 拖动到行的左右边缘时自动横向滚动，否则远端槽位够不到。
  */
 @Composable
 private fun DockedButtonsRow(
@@ -387,12 +447,41 @@ private fun DockedButtonsRow(
     visuals: ToolbarVisuals,
     splitKeyboardEnabled: Boolean,
     dockedButtons: List<ToolbarButton>,
+    drag: ToolbarDragState?,
+    onDropButton: (ToolbarButton, ToolbarLayout.Drop?) -> Unit,
 ) {
     val scrollState = rememberScrollState()
+    val density = LocalDensity.current
+
+    if (drag != null && callbacks.editing) {
+        toolbarEdgeAutoScroll(
+            drag = drag,
+            inPool = false,
+            horizontal = true,
+            edgePx = with(density) { 56.dp.toPx() },
+            maxStepPx = with(density) { 24.dp.toPx() },
+            scrollBy = { scrollState.scrollBy(it) },
+        )
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(LocalToolbarHeight.current)
+            // 视口登记在滚动容器上：命中判定要的是「行当前可见的范围」
+            .then(
+                if (drag != null) Modifier.toolbarDropViewport(drag, inPool = false)
+                else Modifier
+            )
+            // 横向插入方向只由本行决定（池子窗口被强制 LTR），故由本行上报
+            .then(
+                if (drag != null) {
+                    Modifier.toolbarDockedDirection(
+                        drag,
+                        LocalLayoutDirection.current == LayoutDirection.Rtl,
+                    )
+                } else Modifier
+            )
             .horizontalScroll(scrollState),
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
@@ -413,12 +502,31 @@ private fun DockedButtonsRow(
         }
         dockedButtons.forEach { button ->
             val usable = callbacks.buttonUsable(button)
+            val isDragging = drag?.dragging == button
             ToolbarMovableButton(
                 button = button,
                 // 不可用时置灰但仍占位：位置本身是布局信息，直接消失会让用户以为按钮丢失
                 contentColor = if (usable) visuals.iconColor else visuals.iconColor.copy(alpha = 0.35f),
-                enabled = usable,
+                // 编辑模式下按钮不可点，只能长按拖（与原功能区分，避免误触）
+                enabled = usable && !callbacks.editing,
                 splitKeyboardEnabled = splitKeyboardEnabled,
+                // 被拖走的按钮在源位置暂时留白，视觉上「跟手」而不是复制一份
+                dimmed = isDragging,
+                modifier = Modifier
+                    .then(
+                        if (drag != null) Modifier.toolbarDockSlot(drag, button, inPool = false)
+                        else Modifier
+                    )
+                    .then(
+                        if (drag != null) {
+                            Modifier.toolbarDragSource(
+                                drag = drag,
+                                button = button,
+                                enabled = callbacks.editing,
+                                onDrop = { target -> onDropButton(button, target) },
+                            )
+                        } else Modifier
+                    ),
                 onClick = { callbacks.onButtonClick(button) },
             )
         }
