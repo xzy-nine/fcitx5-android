@@ -234,7 +234,6 @@
     <string name="voice_download_ok">Model ready</string>
     <string name="voice_index_refresh">Refresh model list</string>
     <string name="voice_index_failed">Failed to load model list</string>
-    <string name="voice_index_using_builtin">Using the built-in model list</string>
     <string name="voice_record_permission">Microphone permission</string>
     <string name="voice_record_permission_missing">Microphone permission is required for voice input</string>
     <string name="voice_grant_permission">Grant permission</string>
@@ -256,7 +255,6 @@
     <string name="market_group_collapse">Collapse</string>
     <string name="market_category_progress">%1$d / %2$d downloaded</string>
     <string name="market_category_selected">In use: %1$s</string>
-    <string name="market_index_url">Index source URL</string>
     <string name="digital_ink_models">Digital ink models</string>
     <string name="digital_ink_recognition_language">Recognition language</string>
     <string name="digital_ink_recognition_language_summary">%1$s · %2$s</string>
@@ -283,7 +281,6 @@
     <string name="handwriting_state_loading">Loading model…</string>
     <string name="handwriting_state_recognizing">Recognizing…</string>
     <string name="market_index_failed">Failed to load model list</string>
-    <string name="market_index_using_builtin">Using the built-in model list</string>
     <string name="market_download_failed">Download failed</string>
     <string name="market_downloading">Downloading…</string>
 
@@ -296,6 +293,14 @@
     <string name="market_model_cancel_download">Cancel download</string>
     <string name="market_model_retry_download">Retry download</string>
     <string name="market_model_download_ok">Model ready</string>
+    <string name="market_model_import">Import model</string>
+    <string name="market_model_import_pick">Choose an archive to import</string>
+    <string name="market_model_import_hint">Import a sherpa-onnx streaming transducer package (.tar.bz2/.tar.gz/.zip) from a file. It is extracted into the app\'s private storage; nothing outside the app is touched and no storage permission is required.</string>
+    <string name="market_model_importing">Importing %1$s…</string>
+    <string name="market_model_imported">Imported</string>
+    <string name="market_model_import_unsupported">Unsupported archive: %1$s</string>
+    <string name="market_model_import_unreadable">Could not read the selected file</string>
+    <string name="market_model_import_invalid">The archive does not contain encoder/decoder/joiner ONNX files plus tokens.txt</string>
     <string name="market_index_refresh">Refresh model list</string>
     <!-- 触控笔手写：动作演示与试用（对齐 Gboard 设置页内演示，米系把试用放在系统设置里） -->
     <string name="handwriting_stylus_gestures">Stylus gestures</string>

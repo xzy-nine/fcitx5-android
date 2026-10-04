@@ -604,14 +604,10 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                 .apply { register() }
 
 
-        /** 当前选中的本地模型 id（模型市场索引里的 id）。 */
+        /** 当前选中的本地模型 id（内置清单或手动导入模型的 id）。 */
         val voiceAsrModelId = ManagedPreference.PString(
             sharedPreferences, "voice_asr_model_id", VoiceModelCatalog.DEFAULT_ID
         ).apply { register() }
-
-        /** 模型市场索引地址覆盖（空 = 用内置默认端点）。 */
-        val voiceIndexUrl = ManagedPreference.PString(sharedPreferences, "voice_index_url", "")
-            .apply { register() }
 
         /** 调试：把语音识别期间的录音落盘。 */
         val voiceDebugRecord = ManagedPreference.PBool(
@@ -628,7 +624,6 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                         voiceSimpleChinese.key,
                         voiceMuteDuringRecording.key,
                         voiceAsrModelId.key,
-                        voiceIndexUrl.key,
                         voiceDebugRecord.key
                     )
                 )

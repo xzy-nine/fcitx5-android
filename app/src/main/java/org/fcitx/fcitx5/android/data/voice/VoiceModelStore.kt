@@ -6,6 +6,7 @@
 package org.fcitx.fcitx5.android.data.voice
 
 import android.content.Context
+import org.fcitx.fcitx5.android.data.market.MarketArchive
 import org.fcitx.fcitx5.android.data.market.MarketModelId
 import org.fcitx.fcitx5.android.data.market.MarketPaths
 import java.io.File
@@ -24,11 +25,31 @@ object VoiceModelStore {
 
     fun modelsRoot(context: Context): File = MarketPaths.modelsRoot(context)
 
+    /**
+     * 模型根目录下的全部子目录名（不含临时/备份目录）。
+     *
+     * 模型 id 由目录名唯一确定：下载与手动导入都把模型直接落在 `<modelsRoot>/<id>/`，
+     * 中途失败的暂存目录带 `.tmp-` / `.old-` 前缀，一律排除。
+     */
+    fun modelDirs(root: File): List<String> {
+        if (!root.isDirectory) return emptyList()
+        return root.listFiles()
+            .orEmpty()
+            .filter {
+                it.isDirectory &&
+                        isValidModelId(it.name) &&
+                        // 暂存/备份目录带探针文件，且绝不能当成模型列出来
+                        !File(it, MarketArchive.STAGING_MARKER).exists()
+            }
+            .map { it.name }
+            .sorted()
+    }
+
     /** 模型 id 是否合法：非空、不以 `.` 开头、不含路径分隔符。 */
     fun isValidModelId(modelId: String): Boolean = MarketModelId.isValid(modelId)
 
     /**
-     * 模型目录：id 来自远程索引，须先校验再拼路径，
+     * 模型目录：id 来自清单或导入归档名，须先校验再拼路径，
      * 拒绝空串、`.`/`..` 段与任意路径分隔符，防止逃出 [modelsRoot]。
      * 非法 id 返回 null（市场页可能渲染远程目录里的任意条目，不能抛异常炸掉重组）。
      */

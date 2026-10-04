@@ -7,7 +7,7 @@
  * 与其他分类的差别：
  * - 模型文件由 **ML Kit/GMS 自己托管**（不落在 `filesDir` 里），因此下载 / 删除 / 就绪判定
  *   全部改走 `RemoteModelManager`（见 [GoogleDigitalInkEngine]），不走文件下载器；
- * - 清单来自内置目录 [DigitalInkModelCatalog]（官方语言表），**不拉远程索引**；
+ * - 清单来自内置目录 [DigitalInkModelCatalog]（官方语言表），**不联网拉取**；
  * - 「选中」= 设置识别语言 `AppPrefs.handwriting.handwritingDigitalInkLanguage`
  *   （留空则跟随应用/系统语言，见 `GoogleDigitalInkEngine.languageTag`）。
  */
@@ -17,22 +17,17 @@ import android.content.Context
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.market.BaseMarketCategory
+import org.fcitx.fcitx5.android.data.market.MarketCategoryIds
 import org.fcitx.fcitx5.android.data.market.MarketDownloadState
 import org.fcitx.fcitx5.android.data.market.MarketModel
 import org.fcitx.fcitx5.android.data.market.MarketModelGrouping
-import org.fcitx.fcitx5.android.data.market.ModelIndex
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import java.io.File
 import java.util.Locale
 import timber.log.Timber
 
 object DigitalInkMarketCategory :
-    BaseMarketCategory(ModelIndex.CATEGORY_DIGITAL_INK, R.string.digital_ink_models) {
-
-    override val indexCategory: String = ModelIndex.CATEGORY_DIGITAL_INK
-
-    /** 清单是官方语言表（内置），没有远程索引。 */
-    override val usesRemoteIndex: Boolean = false
+    BaseMarketCategory(MarketCategoryIds.DIGITAL_INK, R.string.digital_ink_models) {
 
     /** 331 个基础语言 + 地区变体：按语言变体折叠，避免一次平铺 361 条。 */
     override val groupsByLanguageVariant: Boolean = true
@@ -118,7 +113,7 @@ object DigitalInkMarketCategory :
 
     /**
      * 刷新 = 只用内置清单，外加**先刷新一次「已下载语言」**再上清单
-     * （本类没有远程索引；先刷新再上清单可让首次渲染就是正确状态）。
+     * （先刷新再上清单可让首次渲染就是正确状态）。
      */
     override fun refreshIndex(context: Context) {
         val appContext = context.applicationContext

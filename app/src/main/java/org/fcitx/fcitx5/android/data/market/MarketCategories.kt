@@ -12,11 +12,11 @@ import org.fcitx.fcitx5.android.data.voice.VoiceMarketCategory
 
 object MarketCategories {
 
-    /** 路由参数用的稳定分类 id（等于索引里的 `category` 值）。 */
-    const val ASR = ModelIndex.CATEGORY_ASR
+    /** 路由参数用的稳定分类 id。 */
+    const val ASR = MarketCategoryIds.ASR
 
-    /** 谷歌数字墨水语言模型（清单内置，不走远程索引）。 */
-    const val DIGITAL_INK = ModelIndex.CATEGORY_DIGITAL_INK
+    /** 谷歌数字墨水语言模型（清单内置，不走网络）。 */
+    const val DIGITAL_INK = MarketCategoryIds.DIGITAL_INK
 
     /** 全部分类（顺序 = 模型市场父页的展示顺序）。 */
     val all: List<MarketCategory> = listOf(VoiceMarketCategory, DigitalInkMarketCategory)

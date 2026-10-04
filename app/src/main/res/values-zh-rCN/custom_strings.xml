@@ -230,7 +230,6 @@
     <string name="voice_download_ok">模型已就绪</string>
     <string name="voice_index_refresh">刷新模型列表</string>
     <string name="voice_index_failed">模型列表加载失败</string>
-    <string name="voice_index_using_builtin">正在使用内置模型列表</string>
     <string name="voice_record_permission">麦克风权限</string>
     <string name="voice_record_permission_missing">语音输入需要录音权限</string>
     <string name="voice_grant_permission">授予权限</string>
@@ -252,7 +251,6 @@
     <string name="market_group_collapse">收起</string>
     <string name="market_category_progress">已下载 %1$d / %2$d</string>
     <string name="market_category_selected">使用中：%1$s</string>
-    <string name="market_index_url">索引地址（留空使用内置）</string>
     <string name="digital_ink_models">数字墨水模型</string>
     <string name="digital_ink_recognition_language">识别语言</string>
     <string name="digital_ink_recognition_language_summary">%1$s · %2$s</string>
@@ -279,7 +277,6 @@
     <string name="handwriting_state_loading">正在加载模型…</string>
     <string name="handwriting_state_recognizing">识别中…</string>
     <string name="market_index_failed">模型列表加载失败</string>
-    <string name="market_index_using_builtin">正在使用内置模型列表</string>
     <string name="market_download_failed">下载失败</string>
     <string name="market_downloading">下载中…</string>
 
@@ -292,6 +289,14 @@
     <string name="market_model_cancel_download">取消下载</string>
     <string name="market_model_retry_download">重新下载</string>
     <string name="market_model_download_ok">模型已就绪</string>
+    <string name="market_model_import">导入模型</string>
+    <string name="market_model_import_pick">选择归档文件导入</string>
+    <string name="market_model_import_hint">从文件导入 sherpa-onnx 流式 transducer 模型包（.tar.bz2/.tar.gz/.zip）。解压到应用私有目录，不触碰应用之外的任何文件，也不需要存储权限。</string>
+    <string name="market_model_importing">正在导入 %1$s…</string>
+    <string name="market_model_imported">已导入</string>
+    <string name="market_model_import_unsupported">不支持的归档格式：%1$s</string>
+    <string name="market_model_import_unreadable">无法读取所选文件</string>
+    <string name="market_model_import_invalid">归档里凑不齐 encoder/decoder/joiner 的 ONNX 与 tokens.txt</string>
     <string name="market_index_refresh">刷新模型列表</string>
     <!-- 触控笔手写：动作演示与试用 -->
     <string name="handwriting_stylus_gestures">手写笔手势</string>

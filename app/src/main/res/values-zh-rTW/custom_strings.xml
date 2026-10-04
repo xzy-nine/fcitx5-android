@@ -113,7 +113,6 @@
     <string name="voice_download_ok">模型已就緒</string>
     <string name="voice_index_refresh">重新整理模型清單</string>
     <string name="voice_index_failed">模型清單載入失敗</string>
-    <string name="voice_index_using_builtin">正在使用內建模型清單</string>
     <string name="voice_record_permission">麥克風權限</string>
     <string name="voice_record_permission_missing">語音輸入需要錄音權限</string>
     <string name="voice_grant_permission">授予權限</string>
@@ -125,7 +124,14 @@
     <string name="voice_state_processing">正在辨識…</string>
     <string name="voice_state_error">辨識失敗</string>
     <string name="voice_partial_hint">說話過程中辨識結果會即時寫入輸入框</string>
-    <string name="voice_index_url">索引位址（留空使用內建）</string>
+    <string name="market_model_import">匯入模型</string>
+    <string name="market_model_import_pick">選擇壓縮檔匯入</string>
+    <string name="market_model_import_hint">從檔案匯入 sherpa-onnx 串流 transducer 模型包（.tar.bz2/.tar.gz/.zip）。解壓到應用私有目錄，不碰應用之外的任何檔案，也不需要儲存權限。</string>
+    <string name="market_model_importing">正在匯入 %1$s…</string>
+    <string name="market_model_imported">已匯入</string>
+    <string name="market_model_import_unsupported">不支援的壓縮格式：%1$s</string>
+    <string name="market_model_import_unreadable">無法讀取所選檔案</string>
+    <string name="market_model_import_invalid">壓縮檔裡湊不齊 encoder/decoder/joiner 的 ONNX 與 tokens.txt</string>
     <string name="voice_in_use">使用中</string>
     <string name="voice_use_this">使用</string>
     <string name="voice_permission_granted">已授予</string>

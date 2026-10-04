@@ -195,10 +195,9 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.ui)
     implementation(libs.jieba.analysis)
-    // custom: 语音输入 —— 在线识别（okhttp/SSE）、模型索引（kaml）、归档解压（commons-compress）
+    // custom: 语音输入 —— 在线识别（okhttp/SSE）、模型归档解压（commons-compress）
     implementation(libs.okhttp)
     implementation(libs.okhttp.sse)
-    implementation(libs.kaml)
     implementation(libs.commons.compress)
     // custom: ONNX Runtime —— 语音（sherpa-onnx）用：它的 AAR 副本已被摘掉自带的
     // libonnxruntime.so，native runtime 由本依赖提供（见上方 sherpa-ort-align 说明）

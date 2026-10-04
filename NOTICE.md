@@ -56,7 +56,7 @@
 
 ## 4. 其他 JVM 依赖
 
-`com.squareup.okhttp3`（Apache-2.0，含 `okhttp-sse`）、`com.charleskorn.kaml`（Apache-2.0）、
+`com.squareup.okhttp3`（Apache-2.0，含 `okhttp-sse`）、
 `org.apache.commons:commons-compress`（Apache-2.0）等由 Gradle 依赖声明引入，
 构建产物的许可清单由应用内「关于 → 许可」页（AboutLibraries）自动汇总。
 
