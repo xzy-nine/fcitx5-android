@@ -30,6 +30,7 @@ import org.fcitx.fcitx5.android.data.quickphrase.BuiltinQuickPhrase
 import org.fcitx.fcitx5.android.data.quickphrase.CustomQuickPhrase
 import org.fcitx.fcitx5.android.data.quickphrase.QuickPhrase
 import org.fcitx.fcitx5.android.data.quickphrase.QuickPhraseManager
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.ui.common.BaseDynamicListUi
 import org.fcitx.fcitx5.android.ui.common.OnItemChangedListener
 import org.fcitx.fcitx5.android.ui.main.EditDeleteMenuProvider
@@ -323,6 +324,7 @@ class QuickPhraseListFragment : Fragment(), OnItemChangedListener<QuickPhrase> {
 
     override fun onItemRemoved(idx: Int, item: QuickPhrase) {
         item.file.delete()
+        AutoDictSync.notifyDictChanged()
         dustman.remove(item.name)
     }
 

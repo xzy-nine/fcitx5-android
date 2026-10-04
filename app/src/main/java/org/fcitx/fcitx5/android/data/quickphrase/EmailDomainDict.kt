@@ -6,6 +6,7 @@
 package org.fcitx.fcitx5.android.data.quickphrase
 
 import org.fcitx.fcitx5.android.core.data.DataManager
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.sync.webdav.DictReload
 import org.fcitx.fcitx5.android.utils.appContext
 import timber.log.Timber
@@ -70,6 +71,8 @@ object EmailDomainDict {
         }
         saveEntries(entries)
         reload()
+        // 用户词库已落盘：通知自动同步上传（热重载只影响本机引擎）
+        AutoDictSync.notifyDictChanged()
         Timber.tag(TAG).d("Learned domains: $domains")
     }
 

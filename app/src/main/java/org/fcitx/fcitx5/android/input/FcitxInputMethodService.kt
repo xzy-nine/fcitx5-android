@@ -1474,6 +1474,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         inputView.value?.handwritingInput?.release()
         // custom: 释放触控笔手写会话（结束会话、隐藏工具箱、释放识别后端与协程）
         stylusHandwriting.release()
+        // custom: IME 被回收时可能不经 onFinishInputView，复位键盘可见态，
+        // 否则自动同步会一直以为键盘在用而永久跳过
+        AutoDictSync.setKeyboardVisible(false)
         super.onDestroy()
         // Fcitx might be used in super.onDestroy()
         FcitxDaemon.disconnect(javaClass.name)

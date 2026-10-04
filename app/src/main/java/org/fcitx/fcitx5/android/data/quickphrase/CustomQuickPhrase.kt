@@ -6,6 +6,7 @@ package org.fcitx.fcitx5.android.data.quickphrase
 
 import kotlinx.parcelize.Parcelize
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.utils.errorArg
 import java.io.File
 
@@ -53,6 +54,7 @@ class CustomQuickPhrase(
         file.renameTo(newFile)
         file = newFile
         isEnabled = true
+        AutoDictSync.notifyDictChanged()
     }
 
     override fun disable() {
@@ -62,6 +64,7 @@ class CustomQuickPhrase(
         file.renameTo(newFile)
         file = newFile
         isEnabled = false
+        AutoDictSync.notifyDictChanged()
     }
 
     override fun saveData(data: QuickPhraseData) =

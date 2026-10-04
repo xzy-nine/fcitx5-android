@@ -181,7 +181,7 @@ class FcitxApplication : Application() {
             ContextCompat.RECEIVER_EXPORTED
         )
         if (!isDirectBootMode) {
-            AutoDictSync.startDownloadLoop()
+            AutoDictSync.startAutoSync()
         }
         coroutineScope.launch {
             // custom: 清理已废弃引擎的模型目录

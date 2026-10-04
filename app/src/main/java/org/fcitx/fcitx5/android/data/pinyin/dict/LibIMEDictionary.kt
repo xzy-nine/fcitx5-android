@@ -6,6 +6,7 @@ package org.fcitx.fcitx5.android.data.pinyin.dict
 
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.pinyin.PinyinDictManager
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.utils.errorArg
 import java.io.File
 
@@ -43,6 +44,7 @@ class LibIMEDictionary(file: File) : PinyinDictionary() {
         file.renameTo(newFile)
         file = newFile
         isEnabled = true
+        AutoDictSync.notifyDictChanged()
     }
 
     fun disable() {
@@ -52,6 +54,7 @@ class LibIMEDictionary(file: File) : PinyinDictionary() {
         file.renameTo(newFile)
         file = newFile
         isEnabled = false
+        AutoDictSync.notifyDictChanged()
     }
 
     override fun toTextDictionary(dest: File): TextDictionary {

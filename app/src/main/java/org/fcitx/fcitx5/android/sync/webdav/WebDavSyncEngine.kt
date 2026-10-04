@@ -17,6 +17,7 @@ import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncConfig.Companion.PREFS_FIL
 import org.fcitx.fcitx5.android.utils.appContext
 import timber.log.Timber
 import java.io.File
+import java.io.IOException
 import java.net.URLEncoder
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -173,6 +174,15 @@ object WebDavSyncEngine {
         "$PREFS_FILE_PREFIX$todayStr-${sanitizeFileNamePart(cfg.deviceName)}.zip"
 
     /**
+     * 自动设置备份文件名：`fcitx5-settings_auto-<device>.zip`（固定名，同日/跨日都覆盖同一份）。
+     *
+     * 仍以 [PREFS_FILE_PREFIX] 开头，因此会出现在手动恢复列表里可被手动恢复；
+     * 设备名进文件名使各设备的备份天然互不冲突。
+     */
+    fun settingsFileName(cfg: WebDavSyncConfig): String =
+        "${PREFS_FILE_PREFIX}auto-${sanitizeFileNamePart(cfg.deviceName)}.zip"
+
+    /**
      * 串行化所有读写同步状态的操作（手动与自动各一条链路），覆盖
      * “读配置 → 网络传输 → 回写配置”全过程，避免并发下的读-改-写互相覆盖。
      */
@@ -221,6 +231,51 @@ object WebDavSyncEngine {
                 }
             } catch (e: Exception) {
                 Timber.e(e, "uploadPrefs failed: ${e.javaClass.simpleName}")
+                Result.failure(e)
+            }
+        }
+    }
+
+    /**
+     * 上传“仅设置”备份（自动备份链路，单向上传，绝不下载/恢复）。
+     *
+     * 内容为 shared_prefs + external/config（不含 databases），文件名固定为
+     * [settingsFileName]（按设备名区分，同名覆盖）。以内容指纹判断是否变化：
+     * 指纹一致且上次上传的就是该文件名时跳过，避免重复传输。
+     *
+     * 不能用 zip 字节摘要判重：zip 内含导出时间戳，每次打包都不同。
+     */
+    suspend fun uploadSettingsBackup(
+        cfg: WebDavSyncConfig,
+        onProgress: suspend (String) -> Unit = {}
+    ): Result<String> = withContext(Dispatchers.IO) {
+        syncMutex.withLock {
+            try {
+                val dirUrl = cloudDirUrl(cfg)
+                val name = settingsFileName(cfg)
+                val fingerprint = PrefsCollector.currentFingerprint()
+                val stored = persistedConfig(cfg)
+                if (stored.lastSettingsUploadName == name &&
+                    stored.lastSettingsFingerprint == fingerprint
+                ) {
+                    Result.success(text(R.string.webdav_settings_unchanged_skip))
+                } else {
+                    val zipFile = File(tempDir, name)
+                    onProgress(text(R.string.webdav_packing_settings))
+                    BackupZips.buildSettingsZip(zipFile).getOrThrow()
+                    onProgress(text(R.string.webdav_uploading_file, name))
+                    uploadFile(cfg, dirUrl, name, zipFile)
+                    commitConfig(stored) {
+                        it.copy(
+                            lastSettingsUploadName = name,
+                            lastSettingsFingerprint = fingerprint,
+                            lastSyncDescription = text(R.string.webdav_last_settings_uploaded, name)
+                        )
+                    }
+                    Result.success(text(R.string.webdav_settings_uploaded, name))
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "$TAG uploadSettingsBackup failed: ${e.javaClass.simpleName}")
                 Result.failure(e)
             }
         }
@@ -295,11 +350,40 @@ object WebDavSyncEngine {
         }
     }
 
-    /** 词库下载结果：[downloaded] 为实际更新文件数，[kinds] 供 [DictReload] 决定如何生效。 */
+    /**
+     * 词库下载结果。
+     *
+     * [downloaded] 为实际更新文件数；[kinds] 供 [DictReload] 决定如何生效；
+     * [mergedRels] 为本轮做过「组合叠加」的文件（相对 data/ 的路径）——其本地内容
+     * 已比云端多出条目，调用方应随后上传以把并集推回云端；
+     * [deferredRels] 为本轮**刻意跳过**、需等引擎停机后再叠加的文件（见
+     * [DictReload.Kind.USER_DICT]）：引擎在保存时用内存内容覆写这些文件，
+     * 运行中叠加会被随即覆盖，故必须延后处理。
+     */
     data class DictDownloadOutcome(
         val downloaded: Int,
-        val kinds: Set<DictReload.Kind>
+        val kinds: Set<DictReload.Kind>,
+        val mergedRels: Set<String> = emptySet(),
+        val deferredRels: Set<String> = emptySet()
     )
+
+    /**
+     * 云端词库目录下的文件总数（递归）；目录不存在时视为 0，读取失败返回 null。
+     *
+     * 供自动同步判断“云端是否已有词库备份”：全新设备本地没有同步记录时，
+     * 只有确认云端为空才敢上传，否则会用本地默认词库覆盖云端备份。
+     */
+    suspend fun remoteDictFileCount(cfg: WebDavSyncConfig): Int? = withContext(Dispatchers.IO) {
+        try {
+            listRemoteDictFiles(cfg, dictDirUrl(cfg)).size
+        } catch (e: LocalNetworkPermissionRequiredException) {
+            // 权限缺失不能当作“云端没有备份”，否则会被误判为可以安全上传
+            throw e
+        } catch (e: Exception) {
+            Timber.w("$TAG remoteDictFileCount failed: ${e.javaClass.name}: ${e.message}")
+            null
+        }
+    }
 
     /**
      * 下载词库文件（逐文件 GET，覆盖本地同名文件）。
@@ -383,8 +467,32 @@ object WebDavSyncEngine {
                 }
                 // 每替换一个本地文件前先备份原内容；中途失败时按相反顺序还原
                 val replaced = mutableListOf<Pair<File, File?>>()
+                // 叠加用的工作目录：与暂存目录分开，避免与待落盘文件互相覆盖
+                val mergeWorkDir = File(tempDir, "merge_work").apply {
+                    if (exists()) deleteRecursively()
+                    mkdirs()
+                }
+                // 本轮发生叠加（并集 ≠ 云端内容）的文件：本地已比云端多出条目，
+                // 必须让随后的上传重新推送，否则并集永远只停留在本机
+                val mergedRels = mutableSetOf<String>()
+                // 引擎自持词库（user.dict）：运行期间叠加会被引擎的保存抹掉，改为暂存待延后处理
+                val deferredRels = mutableSetOf<String>()
                 try {
                     staged.forEach { (rel, current, stagedFile, local) ->
+                        // 引擎自持文件：只暂存云端副本并登记，等引擎停机后再叠加。
+                        // 绝不能在引擎运行时写本地——内存内容会在下次保存时覆盖它。
+                        if (DictMerger.isEngineOwned(rel)) {
+                            if (PendingDictMerge.stage(rel, stagedFile)) {
+                                deferredRels += rel
+                                snapshot[rel] = current
+                                // 记录当前本地摘要：叠加完成前不上传本地内容，
+                                // 避免把尚未合并的 user.dict 抢先推到云端。
+                                // 叠加成功后 PendingDictMerge 会清掉该摘要，令并集被推送。
+                                // 本地缺失时不记摘要（无内容可推），叠加阶段会直接采用云端副本。
+                                if (local.isFile) digests[rel] = BackupZips.digest(local)
+                            }
+                            return@forEach
+                        }
                         local.parentFile?.mkdirs()
                         val backup = if (local.exists()) {
                             File.createTempFile("dict_bak_", ".tmp", backupDir).also {
@@ -392,7 +500,26 @@ object WebDavSyncEngine {
                             }
                         } else null
                         replaced += local to backup
-                        Files.move(stagedFile.toPath(), local.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                        // 叠加策略与 force 无关：force 只表示“忽略本地快照、重新下载”，
+                        // 落盘一律走叠加（并集），任何路径都不会丢弃本地独有条目
+                        val strategy = DictMerger.strategyFor(rel)
+                        // 本地不存在时无可叠加，直接落盘；否则按策略叠加或覆盖
+                        val applied = if (local.exists() &&
+                            strategy != DictMerger.Strategy.OVERWRITE
+                        ) {
+                            val merged = DictMerger.merge(stagedFile, local, strategy, mergeWorkDir)
+                            if (merged) mergedRels += rel
+                            merged
+                        } else {
+                            Files.move(
+                                stagedFile.toPath(), local.toPath(),
+                                StandardCopyOption.REPLACE_EXISTING
+                            )
+                            true
+                        }
+                        // 叠加失败时保持本地原文件（绝不用云端内容覆盖本地，否则会丢本地词条），
+                        // 交由回滚还原后下次重试
+                        if (!applied) throw IOException("Failed to merge dictionary: $rel")
                         snapshot[rel] = current
                         digests[rel] = BackupZips.digest(local)
                     }
@@ -408,12 +535,21 @@ object WebDavSyncEngine {
                     }
                     throw e
                 } finally {
+                    if (mergeWorkDir.exists()) mergeWorkDir.deleteRecursively()
                     if (backupDir.exists()) backupDir.deleteRecursively()
                 }
+                // 叠加过的文件：清掉本地内容摘要，使下一次上传必定推送并集。
+                // 若保留摘要，上传会认为“内容未变”而跳过，云端将永远停留在旧内容，
+                // 并集只存在于本机（换设备即丢失）。
+                mergedRels.forEach { digests.remove(it) }
                 commitConfig(stored) {
                     it.copy(
                         dictFileDigests = digests,
                         dictRemoteSnapshot = snapshot,
+                        // 登记延后叠加项：引擎停机后由 PendingDictMerge 完成并上传并集
+                        pendingDictMerges = it.pendingDictMerges + deferredRels.associateWith { rel ->
+                            DictMerger.pendingFileNameFor(rel)
+                        },
                         lastSyncDescription = if (downloaded == 0) {
                             it.lastSyncDescription
                         } else {
@@ -421,8 +557,11 @@ object WebDavSyncEngine {
                         }
                     )
                 }
-                Timber.i("$TAG downloadDictFiles: downloaded=$downloaded skipped=$skipped kinds=$kinds")
-                Result.success(DictDownloadOutcome(downloaded, kinds))
+                Timber.i(
+                    "$TAG downloadDictFiles: downloaded=$downloaded skipped=$skipped " +
+                        "kinds=$kinds merged=$mergedRels deferred=$deferredRels"
+                )
+                Result.success(DictDownloadOutcome(downloaded, kinds, mergedRels, deferredRels))
             } catch (e: Exception) {
                 Timber.e(
                     "$TAG downloadDictFiles failed: ${e.javaClass.name}, message=${e.message}, " +

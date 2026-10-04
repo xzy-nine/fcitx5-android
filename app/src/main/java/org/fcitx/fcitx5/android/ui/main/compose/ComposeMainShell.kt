@@ -10,6 +10,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.ui.main.MainActivity
 import org.fcitx.fcitx5.android.ui.main.settings.SearchResult
 import org.fcitx.fcitx5.android.ui.setup.SetupActivity
@@ -61,6 +62,8 @@ class ComposeMainShell(private val activity: MainActivity) {
 
     fun onStop() {
         fcitx.runIfReady { save() }
+        // custom: 用户可能刚改完词库/设置就离开界面，立即触发一次自动同步，不必等周期 tick
+        AutoDictSync.requestSyncNow()
     }
 
     /**

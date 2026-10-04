@@ -44,6 +44,7 @@ import org.fcitx.fcitx5.android.data.quickphrase.QuickPhrase
 import org.fcitx.fcitx5.android.data.quickphrase.QuickPhraseData
 import org.fcitx.fcitx5.android.data.quickphrase.QuickPhraseEntry
 import org.fcitx.fcitx5.android.data.quickphrase.QuickPhraseManager
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleTwoFieldDialog
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -104,6 +105,7 @@ fun QuickPhraseEditScreen(
             saveMutex.withLock {
                 withContext(Dispatchers.IO) { qp.saveData(data) }
             }
+            AutoDictSync.notifyDictChanged()
         }
     }
 

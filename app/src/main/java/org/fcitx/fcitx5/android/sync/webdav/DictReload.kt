@@ -4,6 +4,7 @@
  */
 package org.fcitx.fcitx5.android.sync.webdav
 
+import org.fcitx.fcitx5.android.core.reloadPinyinCustomPhrase
 import org.fcitx.fcitx5.android.core.reloadPinyinDict
 import org.fcitx.fcitx5.android.core.reloadQuickPhrase
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
@@ -24,30 +25,45 @@ object DictReload {
 
     private const val TAG = "DictReload"
 
-    enum class Kind { PINYIN, QUICKPHRASE, TABLE }
+    enum class Kind { PINYIN, CUSTOM_PHRASE, QUICKPHRASE, USER_DICT, TABLE }
 
-    /** 由“相对 data/ 的路径”推断词库类型。 */
-    fun kindOf(relativeUnderData: String): Kind = when (relativeUnderData.substringBefore('/')) {
-        "pinyin" -> Kind.PINYIN
-        "quickphrase" -> Kind.QUICKPHRASE
+    /**
+     * 由“相对 data/ 的路径”推断词库类型。
+     *
+     * - `pinyin/user.dict` 单列一类：引擎在构造时把它读进内存，之后只会在自动保存/退出时
+     *   用内存内容覆盖磁盘，且没有任何热重载入口（`reloadPinyinDict` 只重载
+     *   `pinyin/dictionaries` 下的附加词库）。因此外部改动必须靠重建进程才不会被引擎写回覆盖。
+     * - `pinyin/customphrase` 是独立的热重载入口（`reloadPinyinCustomPhrase`），
+     *   与 `pinyin/dictionaries` 的 `reloadPinyinDict` 互不覆盖。
+     * - 用户 QuickPhrase 词库位于 `data/quickphrase.d/`（相对 `data/` 的路径即以 `data/` 开头），
+     *   与 `pinyin` 目录下可热重载的词库一样，无需重建进程。
+     */
+    fun kindOf(relativeUnderData: String): Kind = when {
+        relativeUnderData == "pinyin/user.dict" -> Kind.USER_DICT
+        relativeUnderData == "pinyin/customphrase" -> Kind.CUSTOM_PHRASE
+        relativeUnderData.substringBefore('/') == "pinyin" -> Kind.PINYIN
+        relativeUnderData.startsWith("data/quickphrase.d/") -> Kind.QUICKPHRASE
+        relativeUnderData.substringBefore('/') == "quickphrase" -> Kind.QUICKPHRASE
         else -> Kind.TABLE
     }
 
     /**
      * 是否必须重建进程才能让词库生效（`table/` 目录下的词库——五笔、郑码、双拼方案等被改动）。
      *
-     * 触发条件：本轮同步命中的文件相对 `data/` 的路径落在未知目录或 `table/` 下（保守按 table 处理）。
-     * 复现：覆盖任一 table 词库后只做热重载或 `FcitxDaemon.restartFcitx()`（引擎重启成功但
-     * IME 与引擎的连接不复位），随后输入表现为“按键有反馈却无法上屏”，只有重建进程才恢复。
+     * 触发条件：本轮同步命中的文件相对 `data/` 的路径落在未知目录或 `table/` 下（保守按 table 处理），
+     * 或命中了由引擎持有在内存中的 `pinyin/user.dict`（见 [kindOf]）。
+     *
+     * table 类词库没有热重载入口；且引擎重启后 IME 与引擎之间的连接状态不复位，
+     * 只重建引擎无法恢复输入，因此必须重建进程。
      *
      * 调用方差异：
      * - [AutoDictSync]：先 `stopFcitx()` 再 `AppUtil.exit()`（键盘隐藏且已排空待处理上传后）；
-     * - `WebDavSyncScreen` 的 table 分支：当前仅发重启通知并调用 `AppUtil.exit()`，
+     * - `WebDavSyncScreen` 的 table 分支：发重启通知后 `AppUtil.exit()`，
      *   由进程退出连带回收引擎。
      *
-     * 注意：不要为 `restartFcitx()` 失败增加回退逻辑——恢复后的生效路径只依赖进程重建。
+     * 注意：不要为 `restartFcitx()` 失败增加回退逻辑——生效路径只依赖进程重建。
      */
-    fun needsRestart(kinds: Set<Kind>): Boolean = Kind.TABLE in kinds
+    fun needsRestart(kinds: Set<Kind>): Boolean = Kind.TABLE in kinds || Kind.USER_DICT in kinds
 
     /**
      * 让引擎重新加载可热更新的词库。
@@ -64,6 +80,12 @@ object DictReload {
             connection.runIfReady {
                 Timber.i("$TAG reloadPinyinDict")
                 reloadPinyinDict()
+            }
+        }
+        if (Kind.CUSTOM_PHRASE in kinds) {
+            connection.runIfReady {
+                Timber.i("$TAG reloadPinyinCustomPhrase")
+                reloadPinyinCustomPhrase()
             }
         }
         if (Kind.QUICKPHRASE in kinds) {

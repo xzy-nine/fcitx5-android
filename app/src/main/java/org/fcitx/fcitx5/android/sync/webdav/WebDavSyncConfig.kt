@@ -29,6 +29,18 @@ data class WebDavSyncConfig(
     /** 词库自动同步开关（事件+常驻驱动，仅进程存活时生效） */
     val dictAutoSync: Boolean = false,
     /**
+     * 设置自动备份开关：仅把设置打包上传到云端（不自动下载/恢复）。
+     * 恢复必然要重建进程，且各设备的备份文件名不同不会互相冲突，故只做单向备份。
+     */
+    val prefsAutoSync: Boolean = false,
+    /**
+     * 设置自动备份：最近一次上传的设置内容指纹（shared_prefs + external/config 的文件摘要）。
+     * 与 zip 字节摘要不同——zip 内含导出时间戳，每次打包都不同，无法用于判断“内容未变”。
+     */
+    var lastSettingsFingerprint: String = "",
+    /** 设置自动备份：最近一次上传的文件名（用于确认云端确实存在该设备的备份） */
+    var lastSettingsUploadName: String = "",
+    /**
      * 词库逐文件同步：最近一次上传成功的本地文件内容摘要（相对 data/ 的路径 -> SHA-256）。
      * 与 [dictRemoteSnapshot] 同时存在才认为该文件“已同步且未变化”，可跳过上传。
      */
@@ -38,6 +50,14 @@ data class WebDavSyncConfig(
      * 用于判断远端是否被其它设备改过，只有快照变化才下载覆盖本地。
      */
     var dictRemoteSnapshot: Map<String, String> = emptyMap(),
+    /**
+     * 词库逐文件同步：待叠加的引擎自持词库（相对 data/ 的路径 -> 已落盘的云端副本文件名）。
+     *
+     * `pinyin/user.dict` 由引擎在内存中持有，运行期间的保存（自动保存与退出前保存）都会用
+     * 内存内容覆写磁盘，因此不能在引擎运行时就地叠加——会被立刻覆盖。改为先把云端副本存到
+     * 暂存目录并在此登记，等引擎**停机之后**再与本地叠加，随后上传并集。
+     */
+    var pendingDictMerges: Map<String, String> = emptyMap(),
     /** 最近一次成功上传的偏好 zip 文件名与内容摘要（同日同名同内容则跳过） */
     var lastPrefsUploadName: String = "",
     var lastPrefsUploadDigest: String = "",

@@ -37,9 +37,11 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.sync.webdav.DictReload
 import org.fcitx.fcitx5.android.sync.webdav.LocalNetworkPermissionRequiredException
+import org.fcitx.fcitx5.android.sync.webdav.PendingDictMerge
 import org.fcitx.fcitx5.android.sync.webdav.SyncRestorer
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncConfig
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncEngine
@@ -244,6 +246,7 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         mutableStateOf(initial.deviceName.ifBlank { WebDavSyncConfig.defaultDeviceName() })
     }
     var autoDict by remember { mutableStateOf(initial.dictAutoSync) }
+    var autoPrefs by remember { mutableStateOf(initial.prefsAutoSync) }
     // 已持久化的同步状态（指纹/远端 mtime/摘要）：界面保存配置时原样保留，
     // 否则每次操作前的 save() 都会清掉引擎写入的“内容未变则跳过”凭据
     var syncState by remember { mutableStateOf(initial) }
@@ -265,6 +268,7 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         password = password,
         deviceName = deviceName.ifBlank { WebDavSyncConfig.defaultDeviceName() },
         dictAutoSync = autoDict,
+        prefsAutoSync = autoPrefs,
     )
 
     /** 保存配置；失败时提示并记日志，返回是否成功。 */
@@ -377,6 +381,12 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                     progress = context.getString(R.string.webdav_reloading_dict)
                     DictReload.applyReloadable(outcome.kinds)
                     syncState = WebDavSyncConfig.load()
+                    // 叠加过的文件本地已比云端多出条目：推回云端，避免并集只留在本机
+                    if (outcome.mergedRels.isNotEmpty()) {
+                        WebDavSyncEngine.uploadDictFiles(cfg).onFailure {
+                            logFailure("push merged dict", it)
+                        }
+                    }
                     if (DictReload.needsRestart(outcome.kinds)) {
                         // custom: table 词库被改动，引擎没有热重载接口；且引擎重启后
                         // IME 与引擎之间的连接状态不会复位（按键可响应但无法上屏），
@@ -384,6 +394,18 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                         context.toast(R.string.webdav_dict_restored)
                         AppUtil.showRestartNotification(context)
                         delay(500)
+                        // 引擎自持词库（user.dict）只能在引擎停机后叠加：
+                        // 否则引擎退出前的保存会用内存内容覆写刚合并的结果。
+                        // 这里先停机、再叠加、再推回云端，最后才退出进程。
+                        if (outcome.deferredRels.isNotEmpty()) {
+                            FcitxDaemon.stopFcitx()
+                            val applied = PendingDictMerge.applyPending(cfg)
+                            if (applied.isNotEmpty()) {
+                                WebDavSyncEngine.uploadDictFiles(cfg).onFailure {
+                                    logFailure("push deferred merged dict", it)
+                                }
+                            }
+                        }
                         AppUtil.exit()
                     } else {
                         context.toast(R.string.webdav_dict_restored)
@@ -436,6 +458,22 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                     onClick = {
                         runOperation(context.getString(R.string.webdav_uploading_prefs)) { cfg, onProgress ->
                             WebDavSyncEngine.uploadPrefs(cfg, onProgress)
+                        }
+                    },
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.webdav_auto_prefs_enable),
+                    summary = stringResource(R.string.webdav_auto_prefs_summary),
+                    checked = autoPrefs,
+                    onCheckedChange = { value ->
+                        // 先持久化成功再更新开关状态，失败时保持原状态并提示
+                        val cfg = currentCfg().copy(prefsAutoSync = value)
+                        if (!persistCfg(cfg)) return@SwitchPreference
+                        autoPrefs = value
+                        if (value) {
+                            AutoDictSync.startAutoSync()
+                            AutoDictSync.requestSyncNow()
+                            context.toast(R.string.webdav_auto_prefs_on)
                         }
                     },
                 )
@@ -494,7 +532,8 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                         if (!persistCfg(cfg)) return@SwitchPreference
                         autoDict = value
                         if (value) {
-                            AutoDictSync.startDownloadLoop()
+                            AutoDictSync.startAutoSync()
+                            AutoDictSync.requestSyncNow()
                             context.toast(R.string.webdav_auto_dict_on)
                         }
                     },
@@ -546,6 +585,7 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                     password = newPass,
                     deviceName = newDevice.ifBlank { WebDavSyncConfig.defaultDeviceName() },
                     dictAutoSync = autoDict,
+                    prefsAutoSync = autoPrefs,
                 )
                 // 持久化成功才更新界面字段，失败则保持原配置
                 if (persistCfg(cfg)) {
