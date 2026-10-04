@@ -14,6 +14,7 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.InputFeedbacks.InputFeedbackMode
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngineKind
 import org.fcitx.fcitx5.android.data.voice.VoiceModelCatalog
+import org.fcitx.fcitx5.android.input.bar.ToolbarLayout
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesMode
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesOrientation
 import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateMode
@@ -391,6 +392,31 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                     expandedCandidateGridSpanCountLandscape.key,
                 )),
             )
+        }
+
+        // custom: 工具栏按钮布局（两段式：docked = 工具栏可停靠行，pool = 更多页按钮池）。
+        // 刻意不进任何 SubGroup —— 布局由 IME 内的更多页编辑，不在应用设置里暴露条目；
+        // 键必须以逗号分隔的 ToolbarButton.id 形式存放，解码/自愈见 ToolbarLayout.sanitize。
+        val toolbarDockedButtons: ManagedPreference.PString
+        val toolbarPoolButtons: ManagedPreference.PString
+        val toolbarShowUndoRedo: ManagedPreference.PBool
+
+        init {
+            toolbarDockedButtons = ManagedPreference.PString(
+                sharedPreferences,
+                "toolbar_docked_buttons",
+                ToolbarLayout.encode(ToolbarLayout.DEFAULT_DOCKED)
+            ).apply { register() }
+            toolbarPoolButtons = ManagedPreference.PString(
+                sharedPreferences,
+                "toolbar_pool_buttons",
+                ToolbarLayout.encode(ToolbarLayout.DEFAULT_POOL)
+            ).apply { register() }
+            toolbarShowUndoRedo = ManagedPreference.PBool(
+                sharedPreferences,
+                "toolbar_show_undo_redo",
+                true
+            ).apply { register() }
         }
 
     }
