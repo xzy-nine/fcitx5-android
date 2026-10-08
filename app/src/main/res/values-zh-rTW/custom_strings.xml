@@ -131,7 +131,7 @@
     <string name="market_model_imported">已匯入</string>
     <string name="market_model_import_unsupported">不支援的壓縮格式：%1$s</string>
     <string name="market_model_import_unreadable">無法讀取所選檔案</string>
-    <string name="market_model_import_invalid">壓縮檔裡湊不齊 encoder/decoder/joiner 的 ONNX 與 tokens.txt</string>
+    <string name="market_model_import_invalid">壓縮檔裡缺少 tokens.txt，或沒有任何模型檔案</string>
     <string name="voice_in_use">使用中</string>
     <string name="voice_use_this">使用</string>
     <string name="voice_permission_granted">已授予</string>

@@ -24,6 +24,7 @@ import org.fcitx.fcitx5.android.data.market.MarketArchive
 import org.fcitx.fcitx5.android.data.market.MarketCategoryIds
 import org.fcitx.fcitx5.android.data.market.MarketDownloadState
 import org.fcitx.fcitx5.android.data.market.MarketModel
+import org.fcitx.fcitx5.android.data.market.ModelDownloader
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.utils.queryFileName
 import timber.log.Timber
@@ -75,8 +76,15 @@ object VoiceMarketCategory :
     private val _importingName = MutableStateFlow<String?>(null)
     override val importingName: StateFlow<String?> = _importingName.asStateFlow()
 
+    /**
+     * 「已下载」只看文件形状（tokens + 至少一个模型文件）。
+     *
+     * **不能**用 [VoiceModelStore.resolve]：家族判定要顺序跳过整个 onnx 才能读到元数据，
+     * 而本方法在市场页每次重组时都会按模型调用一次。
+     * 家族是否受支持留到真正起会话时报错。
+     */
     override fun isReady(context: Context, modelId: String): Boolean =
-        VoiceModelStore.resolve(context, modelId) != null
+        VoiceModelStore.isReady(context, modelId)
 
     override fun selectedModelId(context: Context): String =
         AppPrefs.getInstance().voice.voiceAsrModelId.getValue()
@@ -160,7 +168,7 @@ object VoiceMarketCategory :
                                 },
                             )
                         }
-                        // 解出来的目录凑不出 transducer 四件套 = 不是能用的模型：回滚
+                        // 解出来的目录凑不出「tokens.txt + 至少一个模型 onnx」= 用不了：回滚
                         if (!VoiceModelStore.isReady(appContext, modelId)) {
                             dir.deleteRecursively()
                             throw IllegalArgumentException(

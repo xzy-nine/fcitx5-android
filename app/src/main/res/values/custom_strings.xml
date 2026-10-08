@@ -300,7 +300,7 @@
     <string name="market_model_imported">Imported</string>
     <string name="market_model_import_unsupported">Unsupported archive: %1$s</string>
     <string name="market_model_import_unreadable">Could not read the selected file</string>
-    <string name="market_model_import_invalid">The archive does not contain encoder/decoder/joiner ONNX files plus tokens.txt</string>
+    <string name="market_model_import_invalid">The archive has no tokens.txt or no model files</string>
     <string name="market_index_refresh">Refresh model list</string>
     <!-- 触控笔手写：动作演示与试用（对齐 Gboard 设置页内演示，米系把试用放在系统设置里） -->
     <string name="handwriting_stylus_gestures">Stylus gestures</string>

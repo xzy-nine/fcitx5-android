@@ -68,5 +68,21 @@ object VoiceModelCatalog {
             "中英双语流式 Zipformer（移动端轻量，非量化）",
             "341.1 MB",
         ),
+        // --- 整段（离线）家族：说完一段后一次解码，识别质量通常更好、延迟更高 ---
+        official(
+            "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2",
+            "SenseVoice 多语整段识别（中英日韩粤，int8）",
+            "155.4 MB",
+        ),
+        official(
+            "sherpa-onnx-dolphin-base-ctc-multi-lang-int8-2025-04-02.tar.bz2",
+            "Dolphin 多语整段 CTC（int8）",
+            "76.9 MB",
+        ),
+        official(
+            "sherpa-onnx-whisper-tiny.tar.bz2",
+            "Whisper tiny 多语整段识别",
+            "110.8 MB",
+        ),
     )
 }

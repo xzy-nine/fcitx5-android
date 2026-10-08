@@ -296,7 +296,7 @@
     <string name="market_model_imported">已导入</string>
     <string name="market_model_import_unsupported">不支持的归档格式：%1$s</string>
     <string name="market_model_import_unreadable">无法读取所选文件</string>
-    <string name="market_model_import_invalid">归档里凑不齐 encoder/decoder/joiner 的 ONNX 与 tokens.txt</string>
+    <string name="market_model_import_invalid">归档里缺少 tokens.txt，或没有任何模型文件</string>
     <string name="market_index_refresh">刷新模型列表</string>
     <!-- 触控笔手写：动作演示与试用 -->
     <string name="handwriting_stylus_gestures">手写笔手势</string>

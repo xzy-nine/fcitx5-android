@@ -94,15 +94,33 @@ class VoiceAsrClient(private val context: Context) {
         connected && service != null
     }
 
-    /** 开始一次会话：模型不存在时由 :asr 侧加载（失败返回 false）。 */
-    suspend fun start(files: VoiceModelFiles, callback: Callback): Boolean =
+    /**
+     * 按 [VoiceModelSpec] 组装 AIDL 平行数组。
+     *
+     * 家族判定由 app 侧完成后**原样传递**：`:asr` 侧不猜家族（判错会让原生构造函数
+     * 直接结束进程）。
+     */
+    private fun specArgs(spec: VoiceModelSpec): Pair<Array<String>, Array<String>> {
+        val roles = spec.files.keys.toTypedArray()
+        val paths = roles.map { spec.files.getValue(it) }.toTypedArray()
+        return roles to paths
+    }
+
+    /** 开始一次会话：模型缺失/家族不支持时由 :asr 侧加载（失败返回 false）。 */
+    suspend fun start(spec: VoiceModelSpec, callback: Callback): Boolean =
         withContext(Dispatchers.IO) {
             if (!ensureBound()) return@withContext false
             callbackStub.attach(callback)
             val svc = service ?: return@withContext false
+            val (roles, paths) = specArgs(spec)
             try {
                 svc.startAsr(
-                    files.encoder, files.decoder, files.joiner, files.tokens, callbackStub
+                    spec.family.name,
+                    roles,
+                    paths,
+                    spec.language,
+                    spec.useInverseTextNormalization,
+                    callbackStub,
                 )
             } catch (e: Exception) {
                 Timber.e(e, "$TAG: start failed")
@@ -117,7 +135,7 @@ class VoiceAsrClient(private val context: Context) {
      * 阻塞在 IO 线程上可接受（UI 由 PREPARING 状态提示），换来后续 start/finish
      * 不会排在模型加载后面。
      */
-    suspend fun prepare(files: VoiceModelFiles, timeoutSeconds: Long = 60L): Boolean =
+    suspend fun prepare(spec: VoiceModelSpec, timeoutSeconds: Long = 60L): Boolean =
         withContext(Dispatchers.IO) {
             if (!ensureBound()) return@withContext false
             val svc = service ?: return@withContext false
@@ -137,8 +155,16 @@ class VoiceAsrClient(private val context: Context) {
                     latch.countDown()
                 }
             }
+            val (roles, paths) = specArgs(spec)
             try {
-                svc.prepareAsr(files.encoder, files.decoder, files.joiner, files.tokens, stub)
+                svc.prepareAsr(
+                    spec.family.name,
+                    roles,
+                    paths,
+                    spec.language,
+                    spec.useInverseTextNormalization,
+                    stub,
+                )
                 val finished = latch.await(timeoutSeconds, TimeUnit.SECONDS)
                 if (!finished) Timber.w("$TAG: prepare timed out after ${timeoutSeconds}s")
             } catch (e: Exception) {

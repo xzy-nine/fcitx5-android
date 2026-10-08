@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.voice.online.OnlineAsrCallback
 import org.fcitx.fcitx5.android.data.voice.online.OnlineAsrProvider
@@ -121,8 +122,9 @@ class VoiceSession(
     fun warmUp() {
         if (!isUsingLocalEngine) return
         if (enginePrepared) return
-        val files = VoiceModelStore.resolve(context, prefs.voiceAsrModelId.getValue())
-        if (files == null) return   // 模型缺失由 startRecognition 报错引导
+        // 先做便宜的「文件是否齐全」判断，避免为缺文件的模型白起一次协程
+        val modelId = prefs.voiceAsrModelId.getValue()
+        if (!VoiceModelStore.isReady(context, modelId)) return
         updateState {
             it.copy(
                 engineName = LOCAL_ENGINE_NAME,
@@ -131,9 +133,10 @@ class VoiceSession(
             )
         }
         scope.launch {
+            val spec = resolveSpec(modelId) ?: return@launch
             val bound = runCatching { client().ensureBound() }.getOrDefault(false)
             if (!bound) return@launch
-            val ok = runCatching { client().prepare(files) }.getOrDefault(false)
+            val ok = runCatching { client().prepare(spec) }.getOrDefault(false)
             enginePrepared = ok
             mainHandler.post {
                 if (!running && _state.value.recognitionState == VoiceRecognitionState.PREPARING) {
@@ -155,12 +158,6 @@ class VoiceSession(
         if (!isUsingLocalEngine) return startOnlineSession()
 
         val modelId = prefs.voiceAsrModelId.getValue()
-        val files = VoiceModelStore.resolve(context, modelId)
-        if (files == null) {
-            publishError("离线语音模型未下载，请先到模型市场下载")
-            return false
-        }
-
         val seq = sessionSeq.incrementAndGet()
         lastPartial = ""
         sessionFinished = false
@@ -178,6 +175,26 @@ class VoiceSession(
         }
 
         scope.launch {
+            // 家族判定要扫 onnx 头部区域，必须在 IO 线程上做
+            val spec = resolveSpec(modelId)
+            if (spec == null) {
+                if (seq == sessionSeq.get()) {
+                    val reason = withContext(Dispatchers.IO) {
+                        VoiceModelStore.resolveDetailed(context, modelId)
+                    }
+                    running = false
+                    publishError(
+                        when (reason) {
+                            // 文件在，但架构无法从模型自身还原（sherpa 侧需用户显式指定配置）
+                            is VoiceModelClassifier.Result.Unknown ->
+                                "该模型的架构无法自动识别，暂不支持"
+
+                            else -> "离线语音模型不可用，请先到模型市场下载或导入"
+                        }
+                    )
+                }
+                return@launch
+            }
             val bound = client().ensureBound()
             if (!bound) {
                 if (seq == sessionSeq.get()) {
@@ -186,7 +203,7 @@ class VoiceSession(
                 }
                 return@launch
             }
-            val started = client().start(files, object : VoiceAsrClient.Callback {
+            val started = client().start(spec, object : VoiceAsrClient.Callback {
                 override fun onPartial(text: String) {
                     if (seq != sessionSeq.get() || text.isEmpty() || text == lastPartial) return
                     lastPartial = text
@@ -218,6 +235,15 @@ class VoiceSession(
         }
         return true
     }
+
+    /**
+     * 按 [VoiceModelSpec] 解析并构造引擎规格。
+     *
+     * 家族判定要顺序跳过整个 onnx 才能读到元数据（protobuf 的 metadata_props 排在 graph
+     * 之后），因此**只能在 IO 线程调用**——面板打开的预热路径与开始识别路径都已经是协程。
+     */
+    private suspend fun resolveSpec(modelId: String): VoiceModelSpec? =
+        withContext(Dispatchers.IO) { VoiceModelStore.resolve(context, modelId) }
 
     /**
      * 松手/再次点击：停止采集并提交最终结果。

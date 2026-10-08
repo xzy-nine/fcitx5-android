@@ -4,8 +4,10 @@
  *
  * custom: 本地离线语音识别服务（运行在 :asr 独立进程）。
  *
- * 进程边界只传「模型文件绝对路径 + 16kHz float 采样」——:asr 进程不初始化 AppPrefs /
- * 用户数据目录（见 FcitxApplication 的进程守卫），因此模型定位一律由 app 侧解析后传入。
+ * 进程边界只传「已判定的模型家族 + 角色→文件绝对路径 + 多语参数 + 16kHz float 采样」——
+ * :asr 进程不初始化 AppPrefs / 用户数据目录（见 FcitxApplication 的进程守卫），
+ * 因此模型定位与**家族判定**一律由 app 侧完成后传入：家族判错会让原生构造函数直接
+ * 结束 :asr 进程，所以这里不接受「让服务自己猜」的用法。
  */
 package org.fcitx.fcitx5.android.data.voice;
 
@@ -15,15 +17,19 @@ interface IVoiceAsrService {
     /**
      * 创建/复用识别器并开始一次会话。
      *
-     * @param encoder/decoder/joiner/tokens 模型文件绝对路径
-     * @param useLocal true=本地离线引擎
+     * @param family 模型家族名（[org.fcitx.fcitx5.android.data.voice.VoiceModelFamily] 的 name）
+     * @param roles 文件角色名数组（与 [paths] 一一对应，含 tokens）
+     * @param paths 模型文件绝对路径数组
+     * @param language 多语模型（Whisper / SenseVoice）的语种提示，空 = 用默认
+     * @param inverseTextNormalization SenseVoice 的逆文本正则化开关
      * @return 是否成功
      */
     boolean startAsr(
-        in String encoder,
-        in String decoder,
-        in String joiner,
-        in String tokens,
+        in String family,
+        in String[] roles,
+        in String[] paths,
+        in String language,
+        in boolean inverseTextNormalization,
         in IVoiceAsrCallback callback
     );
 
@@ -35,10 +41,11 @@ interface IVoiceAsrService {
      * 因此后续 push/finish 不会被它阻塞。
      */
     boolean prepareAsr(
-        in String encoder,
-        in String decoder,
-        in String joiner,
-        in String tokens,
+        in String family,
+        in String[] roles,
+        in String[] paths,
+        in String language,
+        in boolean inverseTextNormalization,
         in IVoiceAsrCallback callback
     );
 
