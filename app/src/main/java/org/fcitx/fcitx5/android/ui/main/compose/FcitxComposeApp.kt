@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import org.fcitx.fcitx5.android.BuildConfig
 import org.fcitx.fcitx5.android.ui.main.MainActivity
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.DictImportDialog
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.NotificationPermissionFlow
@@ -45,6 +46,7 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingGestureDemoSc
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingSettingsScreen
 import org.fcitx.fcitx5.android.data.market.MarketCategories
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceProviderConfigScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.VoicePreprocessDebugScreen
 import org.fcitx.fcitx5.android.ui.main.compose.settings.ManagedPrefsScreen
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.utils.parcelable
@@ -296,7 +298,16 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         onOpenModels = {
                             navigateTo(AppRoute.ModelMarket(MarketCategories.ASR))
                         },
+                        onOpenPreprocessDebug = {
+                            navigateTo(AppRoute.VoicePreprocessDebug)
+                        },
                     )
+                }
+                // custom: 整段语音预处理测试页（仅 debug 构建注册；入口同理只在 debug 显示）
+                if (BuildConfig.DEBUG) {
+                    entry<AppRoute.VoicePreprocessDebug> {
+                        VoicePreprocessDebugScreen(onBack = { backStack.removeLastOrNull() })
+                    }
                 }
                 // custom: 模型市场父页（各分类入口）
                 entry<AppRoute.ModelMarketHome> {
