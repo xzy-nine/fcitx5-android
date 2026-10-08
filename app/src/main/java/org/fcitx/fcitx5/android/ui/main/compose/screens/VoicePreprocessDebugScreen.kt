@@ -4,9 +4,13 @@
  *
  * custom: 语音预处理测试页（**仅 debug 构建**从语音输入设置页进入）。
  *
- * 用途：在真正接入识别链路之前，先用真人录音调出合适的「VAD + 停顿压缩 + 响度均衡」参数——
+ * 用途：在真正接入识别链路之前，先用真人录音调出合适的「VAD + 停顿压缩 + 整段快进 + 响度均衡」参数——
  * 录一段带静音的话，页面把原始与处理后两段音频并排画出来，可以分别试听；
- * 参数（门限余量、停顿保留、留白、响度目标等）改动后立即重算，所见即所得。
+ * 参数（门限余量、停顿保留、留白、快进倍速、响度目标等）改动后立即重算，所见即所得。
+ *
+ * 顶部下拉可在**本地离线模型与在线平台之间切换识别目标**，原始与处理后各自带一个识别按钮，
+ * 用来判断预处理（尤其是整段快进）之后云端/本地还能不能认出来。该选择只作用于本页的按钮，
+ * 不写回语音输入设置。
  *
  * 原始波形上叠出三类区间：语音段高亮、整段切除压暗、快进压缩橙色，与统计里的时长拆解对应。
  *
@@ -17,6 +21,7 @@
  */
 package org.fcitx.fcitx5.android.ui.main.compose.screens
 
+import android.content.Context
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -57,8 +62,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.data.voice.VoiceModelStore
 import org.fcitx.fcitx5.android.data.voice.VoicePermissionHelper
 import org.fcitx.fcitx5.android.data.voice.VoicePermissionState
+import org.fcitx.fcitx5.android.data.voice.VoiceRecognitionTarget
+import org.fcitx.fcitx5.android.data.voice.VoiceUtteranceRecognizer
+import org.fcitx.fcitx5.android.data.voice.online.OnlineAsrRegistry
 import org.fcitx.fcitx5.android.data.voice.preprocess.VoiceEmptyPolicy
 import org.fcitx.fcitx5.android.data.voice.preprocess.VoicePcmPlayer
 import org.fcitx.fcitx5.android.data.voice.preprocess.VoicePreprocessConfig
@@ -77,6 +87,7 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.File
 import java.util.Locale
@@ -102,8 +113,7 @@ private const val SPEED_SLIDER_STEP = 0.05f
 private const val MERGE_GAP_MIN_MS = 100
 private const val MERGE_GAP_MAX_MS = 800
 
-/**
- * 「压缩后保留停顿」的上限（毫秒）：必须短于停顿合并阈值。
+/** 「压缩后保留停顿」的上限（毫秒）：必须短于停顿合并阈值。
  *
  * 间隔要先长于合并阈值才算「长停顿」；保留时长一旦不小于阈值，能被压缩的就只剩「阈值 + 两侧留白」
  * 以上的停顿，阈值刚认定的那批长停顿反而原样保留，旋钮失去意义。留一个步长的余量，
@@ -112,11 +122,74 @@ private const val MERGE_GAP_MAX_MS = 800
 private fun maxKeptSilenceMs(mergeGapMs: Int): Int =
     (mergeGapMs - MS_SLIDER_STEP).coerceAtLeast(0)
 
+/**
+ * 默认识别目标的下标：与语音输入设置当前选中的引擎一致（本地开关 + 在线平台偏好）。
+ *
+ * 下标 0 固定是本地离线模型，之后依次是注册表里的在线平台；本地开关打开时即 0。
+ */
+private fun defaultEngineIndex(context: Context): Int {
+    if (AppPrefs.getInstance().voice.voiceUseLocal.getValue()) return 0
+    val selected = OnlineAsrRegistry.selected(context)?.id
+    val index = OnlineAsrRegistry.providers.indexOfFirst { it.id == selected }
+    return if (index >= 0) index + 1 else 0
+}
+
 /** 试听目标。 */
 private enum class PlayTarget { None, Original, Processed }
 
 /** 试听用的落盘文件。 */
 private data class AudioFiles(val original: File, val processed: File)
+
+/**
+ * 本页的识别试验状态。
+ *
+ * 原始与处理后的识别结果分开存：两边都要能各自看到文本，才能对比预处理是否让识别变差。
+ * [running] 复用 [PlayTarget] 表示「正在识别哪一段」，用 [PlayTarget.None] 作为空闲值。
+ *
+ * 两段音频各有自己的代次：原始音频只在重新录音时变，处理后音频还会随参数变，
+ * 代次用于丢弃「音频已经换过、结果不再对应当前内容」的在途识别。
+ */
+private data class RecognitionTrial(
+    val running: PlayTarget = PlayTarget.None,
+    val originalText: String? = null,
+    val processedText: String? = null,
+    val originalSeq: Int = 0,
+    val processedSeq: Int = 0,
+) {
+
+    /** 取某一段已得到的识别文本。 */
+    fun textOf(target: PlayTarget): String? = when (target) {
+        PlayTarget.Original -> originalText
+        PlayTarget.Processed -> processedText
+        PlayTarget.None -> null
+    }
+
+    /** 取某一段当前的音频代次。 */
+    fun seqOf(target: PlayTarget): Int = when (target) {
+        PlayTarget.Original -> originalSeq
+        PlayTarget.Processed -> processedSeq
+        PlayTarget.None -> 0
+    }
+
+    /** 写入某一段的识别文本。 */
+    fun withText(target: PlayTarget, text: String): RecognitionTrial = when (target) {
+        PlayTarget.Original -> copy(originalText = text)
+        PlayTarget.Processed -> copy(processedText = text)
+        PlayTarget.None -> this
+    }
+
+    /**
+     * 作废某一段：代次加一，清掉旧文本。
+     *
+     * 不动 [running]——引擎一次只能跑一个会话，正在进行的识别必须自己跑完并清标记，
+     * 否则作废之后立刻又发起一次会让两个会话在同一个引擎上交错。
+     */
+    fun invalidate(target: PlayTarget): RecognitionTrial = when (target) {
+        PlayTarget.Original -> copy(originalSeq = originalSeq + 1, originalText = null)
+        PlayTarget.Processed -> copy(processedSeq = processedSeq + 1, processedText = null)
+        PlayTarget.None -> this
+    }
+}
 
 @Composable
 fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
@@ -139,6 +212,10 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
     var playTarget by remember { mutableStateOf(PlayTarget.None) }
     var progress by remember { mutableFloatStateOf(0f) }
 
+    var trial by remember { mutableStateOf(RecognitionTrial()) }
+    // 识别代次：波形/参数变化后作废在途识别，避免旧结果落到新音频名下
+    var trialSeq by remember { mutableIntStateOf(0) }
+
     val permissionGranted by VoicePermissionState.granted.collectAsState()
     LaunchedEffect(Unit) { VoicePermissionState.refresh(context) }
 
@@ -152,7 +229,63 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
         onDispose {
             player.stop()
             recorder.release()
+            // 本页用完就解绑 :asr（模型句柄由那边空闲超时释放）
+            VoiceUtteranceRecognizer.releaseLocal()
             File(context.cacheDir, AUDIO_DIR).deleteRecursively()
+        }
+    }
+
+    // ---- 识别引擎（仅本页试验用） ----
+    // 只在本页切换识别目标，不写回语音输入设置：初值与上级设置一致，之后随本页选择走
+    val localModelId = remember { AppPrefs.getInstance().voice.voiceAsrModelId.getValue() }
+    val engineTargets = remember(localModelId) {
+        buildList {
+            add(VoiceRecognitionTarget.Local(localModelId))
+            OnlineAsrRegistry.providers.forEach { add(VoiceRecognitionTarget.Online(it.id)) }
+        }
+    }
+    var engineIndex by remember(localModelId) { mutableIntStateOf(defaultEngineIndex(context)) }
+    val engineLabels = engineTargets.map { target ->
+        when (target) {
+            is VoiceRecognitionTarget.Local -> if (VoiceModelStore.isReady(context, target.modelId)) {
+                stringResource(R.string.voice_preprocess_engine_local, target.modelId)
+            } else {
+                stringResource(R.string.voice_preprocess_engine_local_missing, target.modelId)
+            }
+
+            is VoiceRecognitionTarget.Online -> {
+                val provider = OnlineAsrRegistry.byId(target.providerId)
+                val name = provider?.let { stringResource(it.nameRes) }.orEmpty()
+                if (provider?.isConfigured(context) == true) name
+                else stringResource(R.string.voice_preprocess_engine_online_unconfigured, name)
+            }
+        }
+    }
+
+    fun recognize(target: PlayTarget, samples: FloatArray?) {
+        val engine = engineTargets.getOrNull(engineIndex)
+        if (samples == null || samples.isEmpty() || engine == null) return
+        if (trial.running != PlayTarget.None) return
+        val seq = trial.seqOf(target)
+        trial = trial.copy(running = target)
+        scope.launch {
+            val outcome = VoiceUtteranceRecognizer.recognize(context, engine, samples)
+            // 无论结果是否作废都要清「识别中」：引擎已空闲，留着会让页面再也发不出识别
+            trial = trial.copy(running = PlayTarget.None)
+            // 音频或引擎已换过：这份结果不再对应当前内容，直接丢弃
+            if (seq != trial.seqOf(target)) return@launch
+            val text = outcome.fold(
+                onSuccess = {
+                    it.ifBlank { context.getString(R.string.voice_preprocess_recognize_blank) }
+                },
+                onFailure = {
+                    context.getString(
+                        R.string.voice_preprocess_recognize_failed,
+                        it.message.orEmpty(),
+                    )
+                },
+            )
+            trial = trial.withText(target, text)
         }
     }
 
@@ -166,6 +299,8 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
         raw = null
         result = null
         files = null
+        // 两段音频都换了：在途识别全部作废（代次加一），旧文本也不再有意义
+        trial = trial.invalidate(PlayTarget.Original).invalidate(PlayTarget.Processed)
         limitReached = false
         recordedMs = 0
         level = 0f
@@ -212,6 +347,9 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
 
     // 结果变化 → 重新落盘试听文件（原始 + 处理后）
     LaunchedEffect(result) {
+        // 处理后音频变了：在途识别作废，处理后的旧结果也不再对应当前音频。
+        // 原始音频不受参数影响，它的识别结果继续保留。
+        trial = trial.invalidate(PlayTarget.Processed)
         val current = result
         val samples = raw
         if (current == null || samples == null) {
@@ -253,6 +391,9 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
 
     val stats = result?.stats
     val rawSamples = raw
+    // 识别按钮：有音频、不在录音、参数已算完，且没有另一次识别正在进行（引擎是串行使用的）
+    val canRecognize = rawSamples != null && !recording && !processing &&
+            trial.running == PlayTarget.None
     // 常量空数组：避免每次重组都换掉 WaveformBlock 的 remember 键，白白重算包络
     val noSamples = remember { FloatArray(0) }
     val rawMs = if (rawSamples != null) rawSamples.size * 1000 / sampleRate else 0
@@ -277,6 +418,30 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
                 fontSize = 13.sp,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
+        }
+
+        // ---- 识别引擎（仅本页试验用） ----
+        item { SmallTitle(text = stringResource(R.string.voice_preprocess_engine)) }
+        item {
+            Card(
+                modifier = Modifier.padding(horizontal = 12.dp),
+                colors = CardDefaults.defaultColors(
+                    color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                ),
+            ) {
+                WindowDropdownPreference(
+                    items = engineLabels,
+                    selectedIndex = engineIndex.coerceIn(0, (engineLabels.size - 1).coerceAtLeast(0)),
+                    title = stringResource(R.string.voice_preprocess_engine_target),
+                    summary = stringResource(R.string.voice_preprocess_engine_summary),
+                    onSelectedIndexChange = { index ->
+                        engineIndex = index
+                        // 换引擎后旧文本不再来自当前引擎：两段都作废，重新识别
+                        trial = trial.invalidate(PlayTarget.Original)
+                            .invalidate(PlayTarget.Processed)
+                    },
+                )
+            }
         }
 
         // ---- 录音 ----
@@ -525,6 +690,12 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
                             enabled = files != null && !preparing && !recording,
                         )
                         Spacer(Modifier.width(8.dp))
+                        TextButton(
+                            text = stringResource(R.string.voice_preprocess_recognize_original),
+                            onClick = { recognize(PlayTarget.Original, rawSamples) },
+                            enabled = canRecognize,
+                        )
+                        Spacer(Modifier.width(8.dp))
                         if (playTarget == PlayTarget.Original) {
                             Text(
                                 text = "${(progress * 100).toInt()}%",
@@ -533,6 +704,11 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
                             )
                         }
                     }
+                    RecognitionResult(
+                        target = PlayTarget.Original,
+                        trial = trial,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
 
                     Spacer(Modifier.height(12.dp))
                     val processedMs = result?.stats?.processedMs ?: 0
@@ -564,6 +740,12 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
                             enabled = files != null && !preparing && !recording,
                         )
                         Spacer(Modifier.width(8.dp))
+                        TextButton(
+                            text = stringResource(R.string.voice_preprocess_recognize_processed),
+                            onClick = { recognize(PlayTarget.Processed, result?.processed) },
+                            enabled = canRecognize && result != null,
+                        )
+                        Spacer(Modifier.width(8.dp))
                         if (playTarget == PlayTarget.Processed) {
                             Text(
                                 text = "${(progress * 100).toInt()}%",
@@ -572,6 +754,11 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
                             )
                         }
                     }
+                    RecognitionResult(
+                        target = PlayTarget.Processed,
+                        trial = trial,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
 
                     Row(
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
@@ -834,6 +1021,36 @@ private fun WaveformBlock(
             )
         }
     }
+}
+
+/**
+ * 某一段音频的识别试验结果（识别中 / 已得文本 / 失败原因）。
+ *
+ * 没有结果且不在识别中时整块不占位，避免录音后先出现两行空文本。
+ */
+@Composable
+private fun RecognitionResult(
+    target: PlayTarget,
+    trial: RecognitionTrial,
+    modifier: Modifier = Modifier,
+) {
+    val running = trial.running == target
+    val text = trial.textOf(target)
+    if (!running && text == null) return
+    Text(
+        text = if (running) {
+            stringResource(R.string.voice_preprocess_recognizing)
+        } else {
+            stringResource(R.string.voice_preprocess_recognize_result, text.orEmpty())
+        },
+        color = if (running) {
+            MiuixTheme.colorScheme.onSurfaceVariantSummary
+        } else {
+            MiuixTheme.colorScheme.onSurface
+        },
+        fontSize = 13.sp,
+        modifier = modifier,
+    )
 }
 
 @Composable
