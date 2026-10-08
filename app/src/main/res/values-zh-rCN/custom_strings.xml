@@ -336,7 +336,7 @@
     <string name="handwriting_system_engine_unavailable">状态：不可用，将使用内置模型</string>
     <string name="handwriting_system_engine_capabilities">文字 %1$s · 手势 %2$s</string>
     <string name="voice_preprocess_debug">语音预处理测试</string>
-    <string name="voice_preprocess_debug_summary">整段 VAD 与静音切除的前后对比试听（仅 debug 构建可见）</string>
+    <string name="voice_preprocess_debug_summary">整段 VAD、静音切除与响度均衡的前后对比试听（仅 debug 构建可见）</string>
     <string name="voice_preprocess_record">录音</string>
     <string name="voice_preprocess_start">开始录音</string>
     <string name="voice_preprocess_stop">停止录音</string>
@@ -345,16 +345,19 @@
     <string name="voice_preprocess_no_audio">还没有录音</string>
     <string name="voice_preprocess_limit_reached">已达单次录音上限（%1$d 秒），已自动停止</string>
     <string name="voice_preprocess_params">预处理参数</string>
-    <string name="voice_preprocess_mode">静音切除方式</string>
-    <string name="voice_preprocess_mode_edges">只切首尾</string>
-    <string name="voice_preprocess_mode_compress">压缩长停顿</string>
-    <string name="voice_preprocess_mode_remove">移除长停顿</string>
     <string name="voice_preprocess_margin">门限余量（dB）</string>
     <string name="voice_preprocess_min_speech">最小语音段（毫秒）</string>
     <string name="voice_preprocess_merge_gap">停顿合并阈值（毫秒）</string>
-    <string name="voice_preprocess_kept_silence">压缩后保留停顿（毫秒）</string>
+    <string name="voice_preprocess_kept_silence">长停顿压缩后保留（毫秒，0 = 移除；须小于合并阈值）</string>
     <string name="voice_preprocess_lead_pad">段前留白（毫秒）</string>
     <string name="voice_preprocess_tail_pad">段尾留白（毫秒）</string>
+    <string name="voice_preprocess_speed">整段快进</string>
+    <string name="voice_preprocess_speed_rate">快进倍速（×，上限 2）</string>
+    <string name="voice_preprocess_loudness">响度均衡</string>
+    <string name="voice_preprocess_normalize">启用响度均衡</string>
+    <string name="voice_preprocess_normalize_summary">按语音段 RMS 把整段拉齐到固定响度，减小音量差异对识别的影响</string>
+    <string name="voice_preprocess_target_rms">目标响度（dB）</string>
+    <string name="voice_preprocess_peak_ceiling">峰值上限（dB）</string>
     <string name="voice_preprocess_reset">恢复默认参数</string>
     <string name="voice_preprocess_waveform">波形</string>
     <string name="voice_preprocess_original">原始 %1$d 毫秒</string>
@@ -365,8 +368,14 @@
     <string name="voice_preprocess_preparing_audio">正在准备音频…</string>
     <string name="voice_preprocess_stats">统计</string>
     <string name="voice_preprocess_saved">节省 %1$d%%（%2$d 毫秒）</string>
+    <string name="voice_preprocess_saved_source">其中整段切除 %1$d 毫秒 · 停顿压缩原时长 %2$d 毫秒</string>
+    <string name="voice_preprocess_speed_saved">整段 %1$s× 快进 · 省 %2$d 毫秒</string>
     <string name="voice_preprocess_segments">语音段 %1$d 段</string>
     <string name="voice_preprocess_level">噪声底 %1$s dB · 峰值 %2$s dB · 门限 %3$s dB</string>
+    <string name="voice_preprocess_gain">增益 %1$s dB（语音 RMS %2$s → %3$s dB）</string>
+    <string name="voice_preprocess_output_peak">输出峰值 %1$s dB</string>
+    <string name="voice_preprocess_gain_limited">受增益范围或峰值上限限制，未达目标响度</string>
+    <string name="voice_preprocess_waveform_hint">高亮 = 语音段 · 压暗 = 整段切除 · 橙色 = 快进压缩</string>
     <string name="voice_preprocess_fallback_too_short">音频过短，未做处理</string>
     <string name="voice_preprocess_fallback_no_speech">未检测到语音，已保留原始音频</string>
     <string name="voice_preprocess_fallback_no_speech_dropped">未检测到语音，已丢弃</string>

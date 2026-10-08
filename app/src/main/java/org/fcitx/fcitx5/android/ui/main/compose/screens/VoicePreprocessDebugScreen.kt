@@ -4,9 +4,11 @@
  *
  * custom: 语音预处理测试页（**仅 debug 构建**从语音输入设置页进入）。
  *
- * 用途：在真正接入识别链路之前，先用真人录音判断「VAD + 静音切除」的效果——
+ * 用途：在真正接入识别链路之前，先用真人录音调出合适的「VAD + 停顿压缩 + 响度均衡」参数——
  * 录一段带静音的话，页面把原始与处理后两段音频并排画出来，可以分别试听；
- * 参数（切除方式、门限余量、留白等）改动后立即重算，所见即所得。
+ * 参数（门限余量、停顿保留、留白、响度目标等）改动后立即重算，所见即所得。
+ *
+ * 原始波形上叠出三类区间：语音段高亮、整段切除压暗、快进压缩橙色，与统计里的时长拆解对应。
  *
  * 试听音频只写 cacheDir 下的临时 WAV，不导出、不持久化：进入页面先清理上次残留，离开页面再清一次。
  *
@@ -45,6 +47,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -63,7 +66,6 @@ import org.fcitx.fcitx5.android.data.voice.preprocess.VoicePreprocessFallback
 import org.fcitx.fcitx5.android.data.voice.preprocess.VoicePreprocessResult
 import org.fcitx.fcitx5.android.data.voice.preprocess.VoiceSilenceTrimmer
 import org.fcitx.fcitx5.android.data.voice.preprocess.VoiceSpan
-import org.fcitx.fcitx5.android.data.voice.preprocess.VoiceTrimMode
 import org.fcitx.fcitx5.android.data.voice.preprocess.VoiceUtteranceRecorder
 import org.fcitx.fcitx5.android.data.voice.preprocess.VoiceWaveform
 import org.fcitx.fcitx5.android.data.voice.preprocess.VoiceWavWriter
@@ -74,7 +76,7 @@ import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.preference.RadioButtonPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.File
 import java.util.Locale
@@ -89,6 +91,26 @@ private const val RECORD_POLL_MS = 100L
 
 /** 落盘目录（cache 下的临时试听文件 / 导出目录）。 */
 private const val AUDIO_DIR = "voice-preprocess"
+
+/** 毫秒类滑块的步长；停顿合并阈值与压缩后保留停顿必须共用同一步长，才能保证夹取值落回刻度上。 */
+private const val MS_SLIDER_STEP = 20
+
+/** 整段快进倍速的步长。 */
+private const val SPEED_SLIDER_STEP = 0.05f
+
+/** 停顿合并阈值的可调范围（毫秒）。 */
+private const val MERGE_GAP_MIN_MS = 100
+private const val MERGE_GAP_MAX_MS = 800
+
+/**
+ * 「压缩后保留停顿」的上限（毫秒）：必须短于停顿合并阈值。
+ *
+ * 间隔要先长于合并阈值才算「长停顿」；保留时长一旦不小于阈值，能被压缩的就只剩「阈值 + 两侧留白」
+ * 以上的停顿，阈值刚认定的那批长停顿反而原样保留，旋钮失去意义。留一个步长的余量，
+ * 让上限本身也落在滑块刻度上。
+ */
+private fun maxKeptSilenceMs(mergeGapMs: Int): Int =
+    (mergeGapMs - MS_SLIDER_STEP).coerceAtLeast(0)
 
 /** 试听目标。 */
 private enum class PlayTarget { None, Original, Processed }
@@ -341,20 +363,6 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
                 ),
             ) {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Text(
-                        text = stringResource(R.string.voice_preprocess_mode),
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    VoiceTrimMode.entries.forEach { mode ->
-                        RadioButtonPreference(
-                            title = stringResource(modeTitleRes(mode)),
-                            selected = config.mode == mode,
-                            onClick = { config = config.copy(mode = mode) },
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
                     NumberSliderInput(
                         value = config.snrMarginDb,
                         onValueChange = { config = config.copy(snrMarginDb = it) },
@@ -372,20 +380,26 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
                     )
                     NumberSliderInput(
                         value = config.mergeGapMs.toFloat(),
-                        onValueChange = { config = config.copy(mergeGapMs = it.toInt()) },
+                        onValueChange = {
+                            val mergeGapMs = it.toInt()
+                            config = config.copy(
+                                mergeGapMs = mergeGapMs,
+                                keptSilenceMs = config.keptSilenceMs.coerceAtMost(
+                                    maxKeptSilenceMs(mergeGapMs)
+                                ),
+                            )
+                        },
                         label = stringResource(R.string.voice_preprocess_merge_gap),
-                        range = 100f..800f,
-                        step = 20f,
+                        range = MERGE_GAP_MIN_MS.toFloat()..MERGE_GAP_MAX_MS.toFloat(),
+                        step = MS_SLIDER_STEP.toFloat(),
                     )
-                    if (config.mode == VoiceTrimMode.CompressInternal) {
-                        NumberSliderInput(
-                            value = config.keptSilenceMs.toFloat(),
-                            onValueChange = { config = config.copy(keptSilenceMs = it.toInt()) },
-                            label = stringResource(R.string.voice_preprocess_kept_silence),
-                            range = 0f..500f,
-                            step = 20f,
-                        )
-                    }
+                    NumberSliderInput(
+                        value = config.keptSilenceMs.toFloat(),
+                        onValueChange = { config = config.copy(keptSilenceMs = it.toInt()) },
+                        label = stringResource(R.string.voice_preprocess_kept_silence),
+                        range = 0f..maxKeptSilenceMs(config.mergeGapMs).toFloat(),
+                        step = MS_SLIDER_STEP.toFloat(),
+                    )
                     NumberSliderInput(
                         value = config.leadPadMs.toFloat(),
                         onValueChange = { config = config.copy(leadPadMs = it.toInt()) },
@@ -400,6 +414,51 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
                         range = 0f..600f,
                         step = 20f,
                     )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.voice_preprocess_speed),
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    NumberSliderInput(
+                        value = config.fastForwardRate,
+                        onValueChange = { config = config.copy(fastForwardRate = it) },
+                        label = stringResource(R.string.voice_preprocess_speed_rate),
+                        range = 1f..VoicePreprocessConfig.MAX_FAST_FORWARD_RATE,
+                        step = SPEED_SLIDER_STEP,
+                        decimals = 2,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.voice_preprocess_loudness),
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    SwitchPreference(
+                        title = stringResource(R.string.voice_preprocess_normalize),
+                        summary = stringResource(R.string.voice_preprocess_normalize_summary),
+                        checked = config.normalizeLoudness,
+                        onCheckedChange = { config = config.copy(normalizeLoudness = it) },
+                    )
+                    if (config.normalizeLoudness) {
+                        NumberSliderInput(
+                            value = config.targetRmsDb,
+                            onValueChange = { config = config.copy(targetRmsDb = it) },
+                            label = stringResource(R.string.voice_preprocess_target_rms),
+                            range = -32f..-12f,
+                            step = 1f,
+                        )
+                        NumberSliderInput(
+                            value = config.peakCeilingDb,
+                            onValueChange = { config = config.copy(peakCeilingDb = it) },
+                            label = stringResource(R.string.voice_preprocess_peak_ceiling),
+                            range = -6f..0f,
+                            step = 0.5f,
+                            decimals = 1,
+                        )
+                    }
                     TextButton(
                         text = stringResource(R.string.voice_preprocess_reset),
                         onClick = { config = VoicePreprocessConfig() },
@@ -429,7 +488,8 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
                     }
 
                     val speechSpans = result?.speechSpans.orEmpty()
-                    val removedSpans = result?.removedSpans(rawSamples.size).orEmpty()
+                    val droppedSpans = result?.droppedSpans(rawSamples.size).orEmpty()
+                    val compressedSpans = result?.compressedSpans.orEmpty()
 
                     Text(
                         text = stringResource(R.string.voice_preprocess_original, rawMs),
@@ -440,13 +500,20 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
                     WaveformBlock(
                         samples = rawSamples,
                         speechSpans = speechSpans,
-                        removedSpans = removedSpans,
+                        droppedSpans = droppedSpans,
+                        compressedSpans = compressedSpans,
                         thresholdAmp = thresholdAmp,
                         progress = progress,
                         showProgress = playTarget == PlayTarget.Original,
                         barColor = MiuixTheme.colorScheme.primary,
                         dimColor = MiuixTheme.colorScheme.dividerLine,
                         modifier = Modifier.padding(top = 6.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.voice_preprocess_waveform_hint),
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 4.dp),
                     )
                     Row(
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
@@ -478,7 +545,8 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
                     WaveformBlock(
                         samples = result?.processed ?: noSamples,
                         speechSpans = emptyList(),
-                        removedSpans = emptyList(),
+                        droppedSpans = emptyList(),
+                        compressedSpans = emptyList(),
                         thresholdAmp = null,
                         progress = progress,
                         showProgress = playTarget == PlayTarget.Processed,
@@ -557,10 +625,28 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
                             label = stringResource(
                                 R.string.voice_preprocess_saved,
                                 (stats.savedRatio * 100).toInt(),
-                                stats.removedMs,
+                                stats.savedMs,
                             ),
                             value = "",
                         )
+                        StatRow(
+                            label = stringResource(
+                                R.string.voice_preprocess_saved_source,
+                                stats.droppedMs,
+                                stats.compressedSourceMs,
+                            ),
+                            value = "",
+                        )
+                        if (stats.speedSavedMs > 0) {
+                            StatRow(
+                                label = stringResource(
+                                    R.string.voice_preprocess_speed_saved,
+                                    formatRate(config.effectiveFastForwardRate),
+                                    stats.speedSavedMs,
+                                ),
+                                value = "",
+                            )
+                        }
                         StatRow(
                             label = stringResource(R.string.voice_preprocess_segments, stats.segmentCount),
                             value = "${stats.speechMs} ms",
@@ -569,11 +655,29 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
                             label = stringResource(
                                 R.string.voice_preprocess_level,
                                 formatDb(stats.noiseFloorDb),
-                                formatDb(stats.peakDb),
+                                formatDb(stats.samplePeakDb),
                                 formatDb(stats.thresholdDb),
                             ),
                             value = "",
                         )
+                        StatRow(
+                            label = stringResource(
+                                R.string.voice_preprocess_gain,
+                                formatDb(stats.loudnessGainDb),
+                                formatDb(stats.speechRmsDb),
+                                formatDb(stats.outputSpeechRmsDb),
+                            ),
+                            value = stringResource(
+                                R.string.voice_preprocess_output_peak,
+                                formatDb(stats.outputPeakDb),
+                            ),
+                        )
+                        if (stats.loudnessLimited) {
+                            StatRow(
+                                label = stringResource(R.string.voice_preprocess_gain_limited),
+                                value = "",
+                            )
+                        }
                         if (stats.lowLevel) {
                             StatRow(
                                 label = stringResource(R.string.voice_preprocess_low_level),
@@ -634,14 +738,16 @@ private fun LevelBar(level: Float) {
 /**
  * 波形块：按像素桶画峰值包络。
  *
- * [speechSpans] 非空时高亮落在语音段内的桶（其余压暗），[removedSpans] 叠一层淡色遮罩表示被切除，
- * [thresholdAmp] 画出门限参考线（归一化幅度，0..1），[showProgress] 时画播放进度线。
+ * [speechSpans] 非空时高亮落在语音段内的桶（其余压暗），[droppedSpans] 叠一层淡色遮罩表示整段没有
+ * 进入输出，[compressedSpans] 叠一层更深的遮罩表示该段被快进压缩，[thresholdAmp] 画出门限参考线
+ * （归一化幅度，0..1），[showProgress] 时画播放进度线。
  */
 @Composable
 private fun WaveformBlock(
     samples: FloatArray,
     speechSpans: List<VoiceSpan>,
-    removedSpans: List<VoiceSpan>,
+    droppedSpans: List<VoiceSpan>,
+    compressedSpans: List<VoiceSpan>,
     thresholdAmp: Float?,
     progress: Float,
     showProgress: Boolean,
@@ -652,7 +758,8 @@ private fun WaveformBlock(
     val peaks = remember(samples) {
         VoiceWaveform.peaks(samples, PEAK_BUCKETS, normalize = true)
     }
-    val removedOverlay = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.16f)
+    val droppedOverlay = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.16f)
+    val compressedOverlay = colorResource(R.color.voice_preprocess_compressed).copy(alpha = 0.30f)
     val thresholdColor = MiuixTheme.colorScheme.primary.copy(alpha = 0.7f)
     val progressColor = MiuixTheme.colorScheme.onSurface
 
@@ -690,10 +797,16 @@ private fun WaveformBlock(
             )
         }
 
-        for (span in removedSpans) {
+        for (span in droppedSpans) {
             val x = span.start.toFloat() / sampleCount * width
             val w = span.length.toFloat() / sampleCount * width
-            drawRect(color = removedOverlay, topLeft = Offset(x, 0f), size = Size(w, height))
+            drawRect(color = droppedOverlay, topLeft = Offset(x, 0f), size = Size(w, height))
+        }
+
+        for (span in compressedSpans) {
+            val x = span.start.toFloat() / sampleCount * width
+            val w = span.length.toFloat() / sampleCount * width
+            drawRect(color = compressedOverlay, topLeft = Offset(x, 0f), size = Size(w, height))
         }
 
         if (thresholdAmp != null && thresholdAmp > 0f) {
@@ -747,14 +860,11 @@ private fun StatRow(label: String, value: String) {
     }
 }
 
-private fun modeTitleRes(mode: VoiceTrimMode): Int = when (mode) {
-    VoiceTrimMode.TrimEdges -> R.string.voice_preprocess_mode_edges
-    VoiceTrimMode.CompressInternal -> R.string.voice_preprocess_mode_compress
-    VoiceTrimMode.RemoveInternal -> R.string.voice_preprocess_mode_remove
-}
-
 private fun formatSeconds(ms: Int): String =
     String.format(Locale.US, "%.1f s", ms / 1000f)
 
 private fun formatDb(db: Float): String =
     String.format(Locale.US, "%.1f", db)
+
+private fun formatRate(rate: Float): String =
+    String.format(Locale.US, "%.2f", rate)
