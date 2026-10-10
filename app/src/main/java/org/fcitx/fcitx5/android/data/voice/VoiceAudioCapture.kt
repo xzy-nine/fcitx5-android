@@ -28,6 +28,13 @@ class VoiceAudioCapture(
     private val onAmplitude: (Float) -> Unit,
     private val onSpectrum: (FloatArray) -> Unit,
     private val onError: (String) -> Unit,
+    /**
+     * 逐块弱信号增益。
+     *
+     * 非流式路径先缓冲整段、再统一做响度均衡，逐块增益会按块改写相对电平（静音块被抬得比语音块更多），
+     * 破坏 VAD 的噪声底估计，故该路径关闭它。
+     */
+    private val applyInputGain: Boolean = true,
 ) {
 
     companion object {
@@ -223,9 +230,9 @@ class VoiceAudioCapture(
 
     private fun isSpeech(peak: Int): Boolean = peak > SPEECH_PEAK
 
-    /** short → float(±1)，弱信号按块常量增益。 */
+    /** short → float(±1)，弱信号按块常量增益（[applyInputGain] 关闭时原样转换）。 */
     private fun toFloatSamples(samples: ShortArray, length: Int, peak: Int): FloatArray {
-        val gain = if (peak in 1 until LOW_LEVEL_PEAK) {
+        val gain = if (applyInputGain && peak in 1 until LOW_LEVEL_PEAK) {
             (LOW_LEVEL_PEAK.toFloat() / peak).coerceAtMost(MAX_GAIN)
         } else {
             1f

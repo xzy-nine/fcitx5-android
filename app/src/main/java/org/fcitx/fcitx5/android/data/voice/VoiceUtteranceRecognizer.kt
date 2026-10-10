@@ -42,17 +42,6 @@ object VoiceUtteranceRecognizer {
     private const val TAG = "VoiceUtteranceRecognizer"
 
     /**
-     * 单次送入引擎的采样数（100 ms @16kHz）。
-     *
-     * 本地路径受 AIDL 事务大小限制，在线流式平台也按小块收音频（与采集链路同粒度），
-     * 因此两条路径共用同一分块，全程只在这一处决定块大小。
-     */
-    private const val PUSH_CHUNK_SAMPLES = 1600
-
-    /** 分块对应的音频时长（毫秒）：16kHz 下 [PUSH_CHUNK_SAMPLES] 恰好是 100ms。 */
-    private const val PUSH_CHUNK_MS = 100L
-
-    /**
      * 在线平台在收尾之后既没成功也没失败时的等待上限。
      *
      * 计时从音频送完（流式平台的实时节奏等待已经结束）开始，因此这里不需要再叠加音频时长。
@@ -136,7 +125,7 @@ object VoiceUtteranceRecognizer {
         )
         if (!started) throw IllegalStateException("离线语音模型加载失败")
         // push 是同步 IPC：放在 IO 线程上，整段音频的送入不会卡住调用方（可能的主线程）
-        withContext(Dispatchers.IO) { pushInChunks(samples) { client.push(it) } }
+        withContext(Dispatchers.IO) { samples.forEachPushChunk { client.push(it) } }
         val text = client.finish()
         if (text.isBlank()) failure.get()?.let { throw IllegalStateException(it) }
         return text
@@ -182,7 +171,7 @@ object VoiceUtteranceRecognizer {
                     if (offset < samples.size) delay(PUSH_CHUNK_MS)
                 }
             } else {
-                pushInChunks(samples) { session.pushAudio(it) }
+                samples.forEachPushChunk { session.pushAudio(it) }
             }
             session.finish()
             // 计时从收尾之后开始：实时送音频的等待已经结束，这里只等结果本身
@@ -190,16 +179,6 @@ object VoiceUtteranceRecognizer {
                 ?: throw IllegalStateException("在线识别超时")
         } finally {
             runCatching { session.release() }
-        }
-    }
-
-    /** 按 [PUSH_CHUNK_SAMPLES] 分块送入（每次都是独立数组，跨进程/异步消费都不共享缓冲）。 */
-    private inline fun pushInChunks(samples: FloatArray, push: (FloatArray) -> Unit) {
-        var offset = 0
-        while (offset < samples.size) {
-            val end = (offset + PUSH_CHUNK_SAMPLES).coerceAtMost(samples.size)
-            push(samples.copyOfRange(offset, end))
-            offset = end
         }
     }
 

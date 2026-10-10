@@ -144,5 +144,24 @@ data class VoicePreprocessConfig(
 
         /** 整段快进倍速上限：再快语音细节损失过多。 */
         const val MAX_FAST_FORWARD_RATE = 2f
+
+        /**
+         * 正常语音输入键盘的非流式路径使用的参数。
+         *
+         * 停顿合并阈值 180ms 与压缩后保留 60ms 同档：能进压缩的是「阈值 + 两侧留白」以上的停顿，
+         * 保留值远小于阈值，故阈值刚认定的那批长停顿仍会被明显压缩。
+         */
+        val VOICE_INPUT = VoicePreprocessConfig(
+            snrMarginDb = 9f,
+            minSpeechMs = 160,
+            mergeGapMs = 180,
+            keptSilenceMs = 60,
+            leadPadMs = 60,
+            tailPadMs = 100,
+            fastForwardRate = 1.25f,
+            normalizeLoudness = true,
+            targetRmsDb = -20f,
+            peakCeilingDb = -1f,
+        )
     }
 }
