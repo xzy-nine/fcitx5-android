@@ -152,6 +152,9 @@ class FcitxApplication : Application() {
 
         Timber.d("isDirectBootMode=$isDirectBootMode")
 
+        // custom: 后台预热 kotlin-reflect，见 ReflectionPrewarm
+        org.fcitx.fcitx5.android.input.ReflectionPrewarm.prewarmAsync()
+
         AppPrefs.init(sharedPrefs)
         // record last pid for crash logs
         AppPrefs.getInstance().internal.pid.apply {

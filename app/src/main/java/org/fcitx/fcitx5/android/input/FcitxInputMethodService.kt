@@ -41,10 +41,13 @@ import androidx.autofill.inline.common.ViewStyle
 import androidx.autofill.inline.v1.InlineSuggestionUi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.updateLayoutParams
@@ -240,7 +243,17 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         val composeView = ComposeView(this).apply {
             setContent {
                 MiuixTheme(controller = remember { ThemeController(ColorSchemeMode.System) }) {
-                    Box(Modifier.fillMaxSize()) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            // 冷启动阶段计时：根组合每次测量都计数
+                            .layout { measurable, constraints ->
+                                ColdStartTrace.pass("rootMeasured")
+                                val placeable = measurable.measure(constraints)
+                                layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+                            }
+                            .onSizeChanged { ColdStartTrace.markOnce("rootBoxSized") }
+                    ) {
                         // custom: 触控笔 UI 模式下撤下键盘：
                         // 此时 IME 只剩浮动工具箱，墨迹由系统墨迹窗口承载；
                         // 因此用触控笔点「输入法功能按钮」不会再进入手写（键盘压根不在）。
@@ -281,9 +294,12 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                         val iv = inputView.value
                         if (iv != null) {
                             iv.popup.PopupOverlayContent(Modifier.fillMaxSize())
+                            ColdStartTrace.markOnce("overlay:popup")
                             iv.candidateActionMenu.OverlayContent(Modifier.fillMaxSize())
+                            ColdStartTrace.markOnce("overlay:candidateMenu")
                             // Custom: 键盘调校浮层（Compose IME 覆盖层，已迁出 keyboardView 子 View）
                             iv.keyboardTune.OverlayContent(Modifier.fillMaxSize())
+                            ColdStartTrace.markOnce("overlay:keyboardTune")
                             // Custom: 工具栏布局拖动浮层（幽灵图标 + 目标槽高亮）。
                             // 挂在根组合是为了铺满整个 IME 窗口：被拖按钮与落点分处两个
                             // ComposeView，只有窗口绝对坐标才能让两者互相命中。
@@ -291,6 +307,12 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                                 drag = iv.toolbarEdit.drag,
                                 modifier = Modifier.fillMaxSize(),
                             )
+                            ColdStartTrace.markOnce("overlay:toolbarDrag")
+                        }
+                        // 冷启动阶段计时：根组合首次完成（含 AndroidView 工厂与各覆盖层）
+                        SideEffect {
+                            ColdStartTrace.markOnce("compose")
+                            ColdStartTrace.pass("root")
                         }
                     }
                 }
@@ -791,16 +813,22 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onCreateInputView(): View? {
+        ColdStartTrace.begin()
         navbarMgr.evaluate(window.window!!, inputDeviceMgr.isVirtualKeyboard)
         // `themeState` is lazily initialized, so it may still hold a theme from before the very
         // first composition. Read the active theme once and make both sides (Compose InputView
         // and the View-based CandidatesView) agree on it.
         val theme = ThemeManager.activeTheme
         themeState.value = theme
+        ColdStartTrace.mark("theme")
         replaceCandidateView(theme)
+        ColdStartTrace.mark("candidatesView")
         // Return a ComposeView root that embeds the existing InputView via AndroidView.
         // The framework calls `setInputView(composeView)` for us afterwards.
-        return createComposeInputView()
+        return createComposeInputView().also {
+            ColdStartTrace.mark("composeViewCreated")
+            it.traceFirstPreDraw("firstPreDraw")
+        }
     }
 
     override fun setInputView(view: View) {
@@ -1062,6 +1090,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         Timber.d("onStartInputView: restarting=$restarting")
+        ColdStartTrace.mark("onStartInputView")
         AutoDictSync.setKeyboardVisible(true)
         postFcitxJob {
             focus(true)

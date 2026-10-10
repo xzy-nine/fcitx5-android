@@ -683,6 +683,11 @@ class ComposeKawaiiBarComponent :
      */
     @Composable
     fun ToolbarContent(modifier: Modifier = Modifier) {
+        // 冷启动阶段计时：工具栏/候选栏内容完成首次组合
+        androidx.compose.runtime.SideEffect {
+            org.fcitx.fcitx5.android.input.ColdStartTrace.markOnce("toolbarComposed")
+            org.fcitx.fcitx5.android.input.ColdStartTrace.pass("toolbar")
+        }
         val barState by _barState.collectAsState()
         val idleSubState by _idleSubState.collectAsState()
         val titleData by _titleData.collectAsState()
