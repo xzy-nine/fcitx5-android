@@ -35,6 +35,14 @@ object ColdStartTrace {
     private val marks = ArrayList<Int>(MAX_STAGES)
     private val passes = HashMap<String, Int>()
 
+    /**
+     * 计时是否进行中。
+     *
+     * 供调用点在做参数构造（字符串拼接、栈抓取等）之前短路：这些参数在区间外无人消费，
+     * 而调用点可能位于测量/布局等热路径上。
+     */
+    val isActive: Boolean get() = active
+
     /** 开始一次计时并清空上次结果。 */
     fun begin() {
         synchronized(lock) {
@@ -49,6 +57,7 @@ object ColdStartTrace {
 
     /** 记录一个阶段；未在计时区间内则忽略。 */
     fun mark(stage: String) {
+        if (!active) return
         synchronized(lock) {
             if (!active) return
             if (stages.size >= MAX_STAGES) return
@@ -64,6 +73,7 @@ object ColdStartTrace {
 
     /** 同一计时区间内最多记录一次的 [mark]，供每次重组都会执行的位置使用。 */
     fun markOnce(stage: String) {
+        if (!active) return
         synchronized(lock) {
             if (!active || stages.contains(stage)) return
         }
@@ -72,6 +82,7 @@ object ColdStartTrace {
 
     /** 记录一次组合/重组（每次计数），用于识别首帧内的重复组合。 */
     fun pass(stage: String) {
+        if (!active) return
         synchronized(lock) {
             if (!active) return
             val count = (passes[stage] ?: 0) + 1
@@ -85,6 +96,7 @@ object ColdStartTrace {
 
     /** 记录一次带耗时的重复操作（每次测量），用于识别重复的整树测量与单次代价。 */
     fun duration(stage: String, durationMs: Long) {
+        if (!active) return
         synchronized(lock) {
             if (!active) return
             val count = (passes[stage] ?: 0) + 1

@@ -631,6 +631,11 @@ class InputView(
             ColdStartTrace.pass("inputViewMeasureZeroSkipped")
             return
         }
+        // 计时区间外不构造参数：本方法位于测量热路径
+        if (!ColdStartTrace.isActive) {
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+            return
+        }
         val started = android.os.SystemClock.uptimeMillis()
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         // 冷启动阶段计时：整树测量次数、单次代价与约束

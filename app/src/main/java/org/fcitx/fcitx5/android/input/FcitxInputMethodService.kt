@@ -41,11 +41,11 @@ import androidx.autofill.inline.common.ViewStyle
 import androidx.autofill.inline.v1.InlineSuggestionUi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.updateLayoutParams
@@ -127,12 +127,11 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private val themeState by lazy { mutableStateOf(ThemeManager.activeTheme) }
     private val recreateNonce by lazy { mutableStateOf(0) }
 
+    // `inputView` 作为 Compose 状态：覆盖层据此读取当前 InputView 的组件。
+    // InputView 的创建与移除由覆盖层组合内的 DisposableEffect 驱动（键 = 主题/重建计数/触控笔态），
+    // 因此它的存活期与组合一致：组合被销毁（宿主 detach）或键变化时旧实例即被移除，
+    // 不会出现「引用仍指向已 detach 实例」的情况。
     private val inputView = mutableStateOf<InputView?>(null)
-
-    // InputView 宿主容器与当前挂载实例；主题/重建计数变化时按 key 重建
-    private var inputViewHost: FrameLayout? = null
-    private var hostedInputView: InputView? = null
-    private var hostedInputViewKey: Pair<Theme, Int>? = null
 
     private val navbarMgr = NavigationBarManager()
     private val inputDeviceMgr = InputDeviceManager { isVirtualKeyboard ->
@@ -238,8 +237,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
      * Embedding the [InputView] through `AndroidView` instead costs a full extra measure of the
      * whole keyboard subtree per frame (`AndroidViewHolder.remeasure`), so it is a direct child.
      *
-     * Theme changes and pref-driven rebuilds are handled by updating [themeState]/[recreateNonce];
-     * [syncHostedInputView] observes them during composition and rebuilds the child accordingly.
+     * The child's lifetime is driven by [DisposableEffect] inside the overlay composition, keyed on
+     * the theme / rebuild counter / stylus mode: a key change (or the composition itself being
+     * disposed when this host is replaced) removes the old instance and installs a fresh one.
      */
     private fun createComposeInputView(): View {
         val container = FrameLayout(this)
@@ -249,21 +249,43 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                     Box(
                         Modifier
                             .fillMaxSize()
-                            // 冷启动阶段计时：根组合每次测量都计数
-                            .layout { measurable, constraints ->
-                                ColdStartTrace.pass("rootMeasured")
-                                val placeable = measurable.measure(constraints)
-                                layout(placeable.width, placeable.height) { placeable.place(0, 0) }
-                            }
                             .onSizeChanged { ColdStartTrace.markOnce("rootBoxSized") }
                     ) {
-                        // InputView 先于覆盖层同步：覆盖层据此读取当前 InputView 的组件。
-                        // 触控笔 UI 模式下 InputView 会被撤下（键盘压根不在）。
-                        syncHostedInputView(
-                            themeState.value,
-                            recreateNonce.value,
-                            stylusUiActive.value,
-                        )
+                        val theme = themeState.value
+                        val nonce = recreateNonce.value
+                        val stylusUi = stylusUiActive.value
+                        // InputView 由组合生命周期驱动：键变化或组合销毁时移除旧实例。
+                        // 触控笔 UI 下不创建（键盘压根不在，触摸交给应用）。
+                        DisposableEffect(container, theme, nonce, stylusUi) {
+                            if (!stylusUi) {
+                                val created = InputView(this@FcitxInputMethodService, fcitx, theme)
+                                inputView.value = created
+                                inputDeviceMgr.setInputView(created)
+                                // A recreated InputView is blank: [InputView.startInput] only ever
+                                // runs from onStartInputView, so replay the ongoing session here to
+                                // feed EditorInfo/capFlags to the keyboard components and to the
+                                // return key drawable.
+                                currentEditorInfo?.let { info ->
+                                    created.startInput(info, capabilityFlags, currentRestarting)
+                                }
+                                // 插到最底层：覆盖层 ComposeView 必须压在 InputView 之上
+                                container.addView(
+                                    created,
+                                    0,
+                                    FrameLayout.LayoutParams(
+                                        FrameLayout.LayoutParams.MATCH_PARENT,
+                                        FrameLayout.LayoutParams.MATCH_PARENT
+                                    )
+                                )
+                                onDispose {
+                                    if (inputView.value === created) inputView.value = null
+                                    inputDeviceMgr.clearInputView(created)
+                                    container.removeView(created)
+                                }
+                            } else {
+                                onDispose { }
+                            }
+                        }
                         ColdStartTrace.markOnce("inputViewSynced")
                         // 按键弹窗层 / 候选操作菜单覆盖层：宿主在 InputView 之上，
                         // 无 pointer handler 的区域触摸穿透到下层 InputView。
@@ -301,53 +323,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
         )
-        inputViewHost = container
         return container
-    }
-
-    /**
-     * 按当前状态同步 [inputViewHost] 里的 [InputView]。
-     *
-     * - 触控笔 UI：[InputView] 撤下（键盘不在，触摸交给应用）；
-     * - 主题 / 重建计数变化：整体重建（等价于原 `replaceInputView`）；
-     * - 其余情况：保持既有实例，不触碰视图树。
-     */
-    private fun syncHostedInputView(theme: Theme, nonce: Int, stylusUi: Boolean) {
-        val host = inputViewHost ?: return
-        val current = hostedInputView
-        if (stylusUi) {
-            if (current != null) detachHostedInputView(host, current)
-            return
-        }
-        if (current != null && hostedInputViewKey == theme to nonce) return
-        current?.let { detachHostedInputView(host, it) }
-        val created = InputView(this, fcitx, theme)
-        hostedInputView = created
-        hostedInputViewKey = theme to nonce
-        inputView.value = created
-        inputDeviceMgr.setInputView(created)
-        // A recreated InputView is blank: [InputView.startInput] only ever runs from
-        // onStartInputView, so replay the ongoing session here to feed EditorInfo/capFlags to the
-        // keyboard components and to the return key drawable.
-        currentEditorInfo?.let { info -> created.startInput(info, capabilityFlags, currentRestarting) }
-        // 插到最底层：覆盖层 ComposeView 必须压在 InputView 之上
-        host.addView(
-            created,
-            0,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        )
-    }
-
-    /** 摘掉当前 [InputView]：清空状态引用并从宿主移除。 */
-    private fun detachHostedInputView(host: FrameLayout, view: InputView) {
-        if (inputView.value === view) inputView.value = null
-        inputDeviceMgr.clearInputView(view)
-        host.removeView(view)
-        hostedInputView = null
-        hostedInputViewKey = null
     }
 
     private fun replaceCandidateView(theme: Theme): CandidatesView {
