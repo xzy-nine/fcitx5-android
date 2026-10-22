@@ -22,13 +22,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
-import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
-import org.fcitx.fcitx5.android.data.prefs.AppPrefs
-import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.data.broadcast.BroadcastSecurityManager
+import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
 import org.fcitx.fcitx5.android.data.handwriting.GoogleDigitalInkEngine
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingLegacyCleanup
 import org.fcitx.fcitx5.android.data.handwriting.MlKitBundledModel
+import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.ui.main.LogActivity
 import org.fcitx.fcitx5.android.utils.AppUtil
@@ -94,7 +94,7 @@ class FcitxApplication : Application() {
         // **必须早于 ContentProvider**：ML Kit / GMS MDD 的「模型已下载」状态存在
         // shared_prefs，而 ML Kit 的 MlKitInitProvider 会在 Application.onCreate 之前跑。
         // `:asr` 独立进程不涉及手写，跳过以免多进程同时写同一份 shared_prefs。
-        if (!Application.getProcessName().endsWith(ASR_PROCESS_SUFFIX)) {
+        if (!getProcessName().endsWith(ASR_PROCESS_SUFFIX)) {
             MlKitBundledModel.materializeIfNeeded(newBase)
         }
     }
@@ -105,11 +105,11 @@ class FcitxApplication : Application() {
         // 该进程只需要能 dlopen 原生库并读模型文件，绝不能初始化剪贴板 Room 数据库、
         // WebDAV 自动同步、主题/广播/偏好等主进程子系统 —— 否则会出现多进程同时打开同一个
         // Room 库、以及在 `:asr` 里凭空启动网络同步等严重问题。
-        if (Application.getProcessName().endsWith(ASR_PROCESS_SUFFIX)) {
+        if (getProcessName().endsWith(ASR_PROCESS_SUFFIX)) {
             instance = this
             return
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !userManager.isUserUnlocked) {
+        if (!userManager.isUserUnlocked) {
             isDirectBootMode = true
             registerReceiver(unlockReceiver, IntentFilter(Intent.ACTION_USER_UNLOCKED))
         }
@@ -155,6 +155,9 @@ class FcitxApplication : Application() {
         // custom: 后台预热 kotlin-reflect，见 ReflectionPrewarm
         org.fcitx.fcitx5.android.input.ReflectionPrewarm.prewarmAsync()
 
+        // custom: 提前在后台同步数据目录，见 DataSyncPreloader
+        org.fcitx.fcitx5.android.core.data.DataSyncPreloader.start()
+
         AppPrefs.init(sharedPrefs)
         // record last pid for crash logs
         AppPrefs.getInstance().internal.pid.apply {
@@ -171,7 +174,7 @@ class FcitxApplication : Application() {
         ThemeManager.init(resources.configuration)
         Locales.onLocaleChange(resources.configuration)
         registerReceiver(shutdownReceiver, IntentFilter(Intent.ACTION_SHUTDOWN))
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !isDirectBootMode) {
+        if (!isDirectBootMode) {
             AppPrefs.getInstance().syncToDeviceEncryptedStorage()
             ThemeManager.syncToDeviceEncryptedStorage()
         }
