@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import org.fcitx.fcitx5.android.BuildConfig
 import org.fcitx.fcitx5.android.data.voice.VoicePermissionHelper
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
@@ -57,6 +58,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 fun VoiceInputSettingsScreen(
     onBack: () -> Unit,
     onOpenModels: () -> Unit,
+    onOpenPreprocessDebug: () -> Unit,
 ) {
     val context = LocalContext.current
     val prefs = AppPrefs.getInstance().voice
@@ -269,6 +271,25 @@ fun VoiceInputSettingsScreen(
                             },
                         )
                     }
+                }
+            }
+        }
+
+        // 仅调试构建：整段语音预处理（VAD + 静音切除）的对比试听入口
+        if (BuildConfig.DEBUG) {
+            item { SmallTitle(text = stringResource(R.string.voice_preprocess_debug)) }
+            item {
+                Card(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    colors = CardDefaults.defaultColors(
+                        color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                    ),
+                ) {
+                    ArrowPreference(
+                        title = stringResource(R.string.voice_preprocess_debug),
+                        summary = stringResource(R.string.voice_preprocess_debug_summary),
+                        onClick = onOpenPreprocessDebug,
+                    )
                 }
             }
         }

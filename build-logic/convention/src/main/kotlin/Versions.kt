@@ -15,7 +15,9 @@ object Versions {
     // custom: bump minSdk to 33 to support miuix-blur (RenderEffect/API 33) for the frosted top bar
     const val compileSdk = 37
     const val minSdk = 33
-    const val targetSdk = 36
+    // custom: 目标 SDK 37 才会启用 Android 17 的本地网络访问限制
+    // （targetSdk < 37 时局域网访问由 INTERNET 隐式授予，ACCESS_LOCAL_NETWORK 不生效）
+    const val targetSdk = 37
 
     const val defaultCMake = "3.31.6"
     const val defaultNDK = "28.0.13004108"

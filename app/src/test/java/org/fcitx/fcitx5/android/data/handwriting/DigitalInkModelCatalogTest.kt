@@ -41,9 +41,9 @@ class DigitalInkModelCatalogTest {
 
     @Test
     fun `bundled chinese model is part of the catalog`() {
-        val bundled = DigitalInkModelCatalog.find(DigitalInkModelCatalog.BUNDLED_TAG)
+        val bundled = DigitalInkModelCatalog.find(DigitalInkSystemLanguage.TAG_ZH_HANI)
         assertNotNull("随包内置的中文模型必须能在市场清单里看到", bundled)
-        assertEquals("zh-Hani", DigitalInkModelCatalog.BUNDLED_TAG)
+        assertEquals("zh-Hani", DigitalInkSystemLanguage.TAG_ZH_HANI)
     }
 
     @Test

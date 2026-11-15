@@ -4,6 +4,17 @@
     <!-- Custom: toolbar height -->
     <string name="toolbar_height">工具栏高度</string>
 
+    <!-- Custom: toolbar button layout (edited inside the IME more page) -->
+    <string name="toolbar_edit_layout">编辑工具栏布局</string>
+    <string name="toolbar_edit_done">完成</string>
+    <string name="toolbar_back_to_keyboard">返回键盘</string>
+    <string name="more_page_reset_layout">重置布局</string>
+    <string name="more_page_reset_confirm_title">重置工具栏布局</string>
+    <string name="more_page_reset_confirm_msg">恢复默认的工具栏与更多页按钮布局？</string>
+    <string name="more_page_settings">输入法设置</string>
+    <string name="more_page_editor_info">编辑器信息</string>
+    <string name="more_page_undo_redo_toggle">撤销/重做按钮</string>
+
     <!-- Custom: split keyboard -->
     <string name="split_keyboard">分离式键盘</string>
     <string name="split_keyboard_blank_ratio">分离式键盘空白比例</string>
@@ -94,14 +105,17 @@
     <string name="webdav_auto_dict_enable">启用词库自动同步</string>
     <string name="webdav_auto_dict_summary">仅词库在应用进程存活时自动同步：词库变更后自动上传，云端更新时自动下载。</string>
     <string name="webdav_auto_dict_on">已启用词库自动同步</string>
+    <string name="webdav_auto_prefs_enable">自动备份设置</string>
+    <string name="webdav_auto_prefs_summary">仅在应用进程存活时自动备份设置，且只上传不自动恢复：恢复会重启应用，各设备在云端各存一份备份互不冲突。</string>
+    <string name="webdav_auto_prefs_on">已启用设置自动备份</string>
     <string name="webdav_upload_prefs">上传偏好设置备份</string>
     <string name="webdav_upload_prefs_summary">按日期+设备名命名，内容未变化时自动跳过</string>
     <string name="webdav_download_prefs">从云端恢复偏好设置</string>
     <string name="webdav_download_prefs_summary">选择一份云端偏好备份进行导入</string>
     <string name="webdav_upload_dict">上传词库备份</string>
-    <string name="webdav_upload_dict_summary">固定名单文件，内容未变化时自动跳过</string>
+    <string name="webdav_upload_dict_summary">逐文件同步，内容未变化时自动跳过</string>
     <string name="webdav_download_dict">下载并恢复词库</string>
-    <string name="webdav_download_dict_summary">用云端词库覆盖本地词库</string>
+    <string name="webdav_download_dict_summary">把云端词库叠加到本地词库，本地独有的条目会保留</string>
     <string name="webdav_last_sync">上次同步</string>
     <string name="webdav_busy">正在处理…</string>
     <string name="webdav_need_server">请先填写服务器地址与用户名</string>
@@ -110,7 +124,7 @@
     <string name="webdav_restore_title">恢复偏好设置</string>
     <string name="webdav_restore_msg">恢复会停止输入法并在之后重启应用，是否继续？</string>
     <string name="webdav_restore_dict_title">恢复词库</string>
-    <string name="webdav_restore_dict_msg">将用云端词库覆盖当前本地词库，是否继续？</string>
+    <string name="webdav_restore_dict_msg">云端词库会叠加到当前本地词库：两侧各自独有的条目都会保留，是否继续？</string>
     <string name="webdav_restoring">正在恢复…</string>
     <string name="webdav_uploading_prefs">正在上传偏好设置…</string>
     <string name="webdav_uploading_dict">正在上传词库…</string>
@@ -137,9 +151,14 @@
     <string name="webdav_downloading_dict_file">正在下载 %1$s（%2$s）</string>
     <string name="webdav_last_dict_uploaded">词库已上传：%1$s</string>
     <string name="webdav_last_dict_downloaded">词库已下载：%1$s</string>
+    <string name="webdav_packing_settings">正在打包设置…</string>
+    <string name="webdav_settings_uploaded">设置已上传：%1$s</string>
+    <string name="webdav_settings_unchanged_skip">设置未发生变化，已跳过上传</string>
+    <string name="webdav_last_settings_uploaded">设置已上传：%1$s</string>
     <string name="webdav_downloading_backup">正在下载偏好备份 %1$s…</string>
     <string name="webdav_importing_prefs">正在导入偏好设置…</string>
     <string name="webdav_reloading_dict">正在重新加载词库…</string>
+    <string name="webdav_local_network_permission_required">访问局域网中的 WebDAV 服务器需要「本地网络」权限（Android 17 起）</string>
     <!-- Custom: 高级页数据管理 -->
     <string name="data_management">数据</string>
     <string name="data_browse_summary">在系统文件管理中打开应用数据目录</string>
@@ -211,7 +230,6 @@
     <string name="voice_download_ok">模型已就绪</string>
     <string name="voice_index_refresh">刷新模型列表</string>
     <string name="voice_index_failed">模型列表加载失败</string>
-    <string name="voice_index_using_builtin">正在使用内置模型列表</string>
     <string name="voice_record_permission">麦克风权限</string>
     <string name="voice_record_permission_missing">语音输入需要录音权限</string>
     <string name="voice_grant_permission">授予权限</string>
@@ -233,7 +251,6 @@
     <string name="market_group_collapse">收起</string>
     <string name="market_category_progress">已下载 %1$d / %2$d</string>
     <string name="market_category_selected">使用中：%1$s</string>
-    <string name="market_index_url">索引地址（留空使用内置）</string>
     <string name="digital_ink_models">数字墨水模型</string>
     <string name="digital_ink_recognition_language">识别语言</string>
     <string name="digital_ink_recognition_language_summary">%1$s · %2$s</string>
@@ -260,7 +277,6 @@
     <string name="handwriting_state_loading">正在加载模型…</string>
     <string name="handwriting_state_recognizing">识别中…</string>
     <string name="market_index_failed">模型列表加载失败</string>
-    <string name="market_index_using_builtin">正在使用内置模型列表</string>
     <string name="market_download_failed">下载失败</string>
     <string name="market_downloading">下载中…</string>
 
@@ -273,6 +289,14 @@
     <string name="market_model_cancel_download">取消下载</string>
     <string name="market_model_retry_download">重新下载</string>
     <string name="market_model_download_ok">模型已就绪</string>
+    <string name="market_model_import">导入模型</string>
+    <string name="market_model_import_pick">选择归档文件导入</string>
+    <string name="market_model_import_hint">从文件导入 sherpa-onnx 流式 transducer 模型包（.tar.bz2/.tar.gz/.zip）。解压到应用私有目录，不触碰应用之外的任何文件，也不需要存储权限。</string>
+    <string name="market_model_importing">正在导入 %1$s…</string>
+    <string name="market_model_imported">已导入</string>
+    <string name="market_model_import_unsupported">不支持的归档格式：%1$s</string>
+    <string name="market_model_import_unreadable">无法读取所选文件</string>
+    <string name="market_model_import_invalid">归档里缺少 tokens.txt，或没有任何模型文件</string>
     <string name="market_index_refresh">刷新模型列表</string>
     <!-- 触控笔手写：动作演示与试用 -->
     <string name="handwriting_stylus_gestures">手写笔手势</string>
@@ -311,5 +335,62 @@
     <string name="handwriting_system_engine_available">状态：本机可用</string>
     <string name="handwriting_system_engine_unavailable">状态：不可用，将使用内置模型</string>
     <string name="handwriting_system_engine_capabilities">文字 %1$s · 手势 %2$s</string>
-    <string name="handwriting_commit_failed">上屏失败：光标位置已变化</string>
+    <string name="voice_preprocess_debug">语音预处理测试</string>
+    <string name="voice_preprocess_debug_summary">整段 VAD、静音切除与响度均衡的前后对比试听（仅 debug 构建可见）</string>
+    <string name="voice_preprocess_record">录音</string>
+    <string name="voice_preprocess_start">开始录音</string>
+    <string name="voice_preprocess_stop">停止录音</string>
+    <string name="voice_preprocess_record_hint">录音不做门限与增益处理，完整保留静音——这样前后对比才有意义。</string>
+    <string name="voice_preprocess_engine">识别引擎（仅本页测试）</string>
+    <string name="voice_preprocess_engine_target">识别目标</string>
+    <string name="voice_preprocess_engine_summary">只影响本页的识别按钮，不改动语音输入设置</string>
+    <string name="voice_preprocess_engine_local">本地离线 · %1$s</string>
+    <string name="voice_preprocess_engine_local_missing">本地离线 · %1$s（模型不可用）</string>
+    <string name="voice_preprocess_engine_online_unconfigured">%1$s（未配置）</string>
+    <string name="voice_preprocess_recognize_original">识别原始</string>
+    <string name="voice_preprocess_recognize_processed">识别处理后</string>
+    <string name="voice_preprocess_recognizing">识别中…</string>
+    <string name="voice_preprocess_recognize_result">识别结果：%1$s</string>
+    <string name="voice_preprocess_recognize_blank">（无文本）</string>
+    <string name="voice_preprocess_recognize_failed">识别失败：%1$s</string>
+    <string name="voice_preprocess_recorded">已录 %1$s</string>
+    <string name="voice_preprocess_no_audio">还没有录音</string>
+    <string name="voice_preprocess_limit_reached">已达单次录音上限（%1$d 秒），已自动停止</string>
+    <string name="voice_preprocess_params">预处理参数</string>
+    <string name="voice_preprocess_margin">门限余量（dB）</string>
+    <string name="voice_preprocess_min_speech">最小语音段（毫秒）</string>
+    <string name="voice_preprocess_merge_gap">停顿合并阈值（毫秒）</string>
+    <string name="voice_preprocess_kept_silence">长停顿压缩后保留（毫秒，0 = 移除；须小于合并阈值）</string>
+    <string name="voice_preprocess_lead_pad">段前留白（毫秒）</string>
+    <string name="voice_preprocess_tail_pad">段尾留白（毫秒）</string>
+    <string name="voice_preprocess_speed">整段快进</string>
+    <string name="voice_preprocess_speed_rate">快进倍速（×，上限 2）</string>
+    <string name="voice_preprocess_loudness">响度均衡</string>
+    <string name="voice_preprocess_normalize">启用响度均衡</string>
+    <string name="voice_preprocess_normalize_summary">按语音段 RMS 把整段拉齐到固定响度，减小音量差异对识别的影响</string>
+    <string name="voice_preprocess_target_rms">目标响度（dB）</string>
+    <string name="voice_preprocess_peak_ceiling">峰值上限（dB）</string>
+    <string name="voice_preprocess_reset">恢复默认参数</string>
+    <string name="voice_preprocess_waveform">波形</string>
+    <string name="voice_preprocess_original">原始 %1$d 毫秒</string>
+    <string name="voice_preprocess_processed">处理后 %1$d 毫秒</string>
+    <string name="voice_preprocess_play_original">播放原始</string>
+    <string name="voice_preprocess_play_processed">播放处理后</string>
+    <string name="voice_preprocess_stop_play">停止播放</string>
+    <string name="voice_preprocess_preparing_audio">正在准备音频…</string>
+    <string name="voice_preprocess_stats">统计</string>
+    <string name="voice_preprocess_saved">节省 %1$d%%（%2$d 毫秒）</string>
+    <string name="voice_preprocess_saved_source">其中整段切除 %1$d 毫秒 · 停顿压缩原时长 %2$d 毫秒</string>
+    <string name="voice_preprocess_speed_saved">整段 %1$s× 快进 · 省 %2$d 毫秒</string>
+    <string name="voice_preprocess_segments">语音段 %1$d 段</string>
+    <string name="voice_preprocess_level">噪声底 %1$s dB · 峰值 %2$s dB · 门限 %3$s dB</string>
+    <string name="voice_preprocess_gain">增益 %1$s dB（语音 RMS %2$s → %3$s dB）</string>
+    <string name="voice_preprocess_output_peak">输出峰值 %1$s dB</string>
+    <string name="voice_preprocess_gain_limited">受增益范围或峰值上限限制，未达目标响度</string>
+    <string name="voice_preprocess_waveform_hint">高亮 = 语音段 · 压暗 = 整段切除 · 橙色 = 快进压缩</string>
+    <string name="voice_preprocess_fallback_too_short">音频过短，未做处理</string>
+    <string name="voice_preprocess_fallback_no_speech">未检测到语音，已保留原始音频</string>
+    <string name="voice_preprocess_fallback_no_speech_dropped">未检测到语音，已丢弃</string>
+    <string name="voice_preprocess_low_level">拾音电平偏低，门限按相对值推算</string>
+    <string name="voice_preprocess_truncated">已按输出上限截断</string>
 </resources>

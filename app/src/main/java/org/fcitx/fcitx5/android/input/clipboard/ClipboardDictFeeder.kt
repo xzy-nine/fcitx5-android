@@ -115,7 +115,7 @@ object ClipboardDictFeeder {
     /**
      * 返回词典对应的文本词库文件：
      * - .dict（libime 二进制）：pinyinDictConv 反编译，按源 mtime 缓存；
-     * - .scel（搜狗）：先 sougouDictConv 转 bin 再 pinyinDictConv 转文本；
+     * - .scel（SCEL 二进制词库格式）：先 sougouDictConv 转 bin 再 pinyinDictConv 转文本；
      * - .txt（文本词库）：直接返回源文件。
      */
     private fun textCacheFor(dict: PinyinDictionary, cacheDir: File): File? {

@@ -96,7 +96,7 @@ fun SetupScreen(onFinish: () -> Unit) {
         onDispose { resolver.unregisterContentObserver(observer) }
     }
 
-    // Belt-and-suspenders: poll while not finished (matches Xime's 2s loop) in case the observer
+    // Belt-and-suspenders: poll while not finished in case the observer
     // is throttled or coalesced on some ROMs. Stops as soon as every step is done.
     LaunchedEffect(Unit) {
         while (!SetupPage.entries.all { it.isDone() }) {

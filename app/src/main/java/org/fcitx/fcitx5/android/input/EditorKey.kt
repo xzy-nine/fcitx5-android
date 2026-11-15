@@ -12,12 +12,10 @@ import android.view.inputmethod.EditorInfo
  * 输入框标识（只取「换框会变、同框重启不变」的字段），用来区分
  * 「同一输入框被应用重启输入连接（resync）」与「焦点换到了另一个框」。
  *
- * 两者在框架层都是 `onStartInputView(restarting = true)`，只看 `restarting` 分不开：
- * 不少应用（例如 `io.legato.kazusa`、B 站弹幕框）会在自己改动文本/选区之后重启输入连接做
- * resync，此时把面板/书写状态踢掉是纯打扰。
+ * 两者在框架层都是 `onStartInputView(restarting = true)`，只看 `restarting` 分不开，
+ * 须比较本标识判定是否同框。
  *
- * 刻意**不含** `initialSelStart/End`：应用重启输入连接时经常带上陈旧（甚至差一格）的选区，
- * 把它算进来会让「同框重启」永远被判成换框。
+ * 不含 `initialSelStart/End`：同框重启常带陈旧选区，计入会让同框重启被误判为换框。
  *
  * `fieldId` 为 [View.NO_ID]（应用没给控件 id）时退化为只比较其余字段。
  *

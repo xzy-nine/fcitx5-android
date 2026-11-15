@@ -91,21 +91,40 @@ object BackupZips {
 
     fun buildPrefsZip(dest: File, timestamp: Long = System.currentTimeMillis()): Result<File> =
         runCatching {
-            dest.parentFile?.mkdirs()
-            ZipOutputStream(dest.outputStream().buffered()).use { zip ->
-                zip.zipTree(sharedPrefsDir, "shared_prefs")
+            writePartitions(dest, timestamp, includeDatabases = true)
+        }
+
+    /**
+     * 打包“仅设置”zip：shared_prefs + external/config，**不含 databases**。
+     *
+     * 用于设置自动备份（单向上传）：剪贴板历史等数据库频繁变动，打包进来会让
+     * 备份体积与重传频率都失去意义。分区结构与 [buildPrefsZip] 一致（含
+     * metadata.json 硬校验字段），因此仍可被 [UserDataManager.import] 导入，
+     * 缺失的 databases 分区按既有软容忍逻辑跳过。
+     */
+    fun buildSettingsZip(dest: File, timestamp: Long = System.currentTimeMillis()): Result<File> =
+        runCatching {
+            writePartitions(dest, timestamp, includeDatabases = false)
+        }
+
+    private fun writePartitions(dest: File, timestamp: Long, includeDatabases: Boolean): File {
+        dest.parentFile?.mkdirs()
+        ZipOutputStream(dest.outputStream().buffered()).use { zip ->
+            zip.zipTree(sharedPrefsDir, "shared_prefs")
+            if (includeDatabases) {
                 // databases（剔除剪切板广播“已配对应用”库：配对密钥在本机 Keystore，不随备份迁移）
                 zip.zipTree(databasesDir, "databases") { f ->
                     BroadcastBackupFilter.isBroadcastDatabaseFile(f.name)
                 }
-                if (externalConfigDir.exists()) {
-                    zip.addDirEntry("external")
-                    zip.zipTree(externalConfigDir, "external/config")
-                }
-                zip.writeMetadata(timestamp)
             }
-            dest
+            if (externalConfigDir.exists()) {
+                zip.addDirEntry("external")
+                zip.zipTree(externalConfigDir, "external/config")
+            }
+            zip.writeMetadata(timestamp)
         }
+        return dest
+    }
 
     /** 文件内容 SHA-256 摘要，用于“内容未变则跳过上传”。流式读取，避免整文件进内存。 */
     fun digest(file: File): String {

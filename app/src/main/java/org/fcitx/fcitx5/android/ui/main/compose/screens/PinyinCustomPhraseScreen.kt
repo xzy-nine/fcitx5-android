@@ -35,6 +35,7 @@ import org.fcitx.fcitx5.android.data.pinyin.CustomPhraseManager
 import org.fcitx.fcitx5.android.data.pinyin.customphrase.PinyinCustomPhrase
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleThreeFieldDialog
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -116,6 +117,7 @@ fun PinyinCustomPhraseScreen(onBack: () -> Unit) {
             withContext(Dispatchers.IO) {
                 CustomPhraseManager.save(entries.toTypedArray())
             }
+            AutoDictSync.notifyDictChanged()
             fcitx.runOnReady { reloadPinyinCustomPhrase() }
         }
     }

@@ -58,7 +58,6 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * Glassmorphism tuning overlay shown **on top of the keyboard area only**.
- * Reference: Xime `KeyboardResizeOverlay`.
  *
  * - The keyboard behind is blurred (RenderEffect on API 31+) while tuning.
  * - Frosted cards mark the adjustable regions. You drag a card to tune:

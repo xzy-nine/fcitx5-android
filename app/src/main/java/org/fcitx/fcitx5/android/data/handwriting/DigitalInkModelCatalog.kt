@@ -4,9 +4,8 @@
  *
  * custom: 谷歌数字墨水（ML Kit digital ink）支持的语言模型清单。
  *
- * 来源：ML Kit 官方「Supported languages」表的**文字识别** BCP-47 码（手势分类器码本项目不用；
- * 三个图形分类器 Emoji/Autodraw/Shapes 也非文本识别，未收录）。清单从
- * `.workbuddy-ai/数字墨水模型列表.md` 整理而来，语言名保持官方英文写法。
+ * 清单是 ML Kit 官方「Supported languages」表的**文字识别** BCP-47 码（手势分类器码与
+ * 三个图形分类器 Emoji/Autodraw/Shapes 非文本识别，均未收录），语言名保持官方英文写法。
  *
  * 模型不随 SDK 分发：按语言在**模型市场**里下载（`DigitalInkMarketCategory`），
  * 中文 `zh-Hani` 已随包内置（见 `MlKitBundledModel`）。
@@ -22,9 +21,6 @@ data class DigitalInkLanguage(
 )
 
 object DigitalInkModelCatalog {
-
-    /** 随包内置（已物化）的语言，见 `MlKitBundledModel`。 */
-    const val BUNDLED_TAG = "zh-Hani"
 
     /** 官方支持的全部文字识别语言（保持文档顺序）。 */
     val languages: List<DigitalInkLanguage> = listOf(

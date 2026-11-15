@@ -6,6 +6,8 @@ package org.fcitx.fcitx5.android.input.voice
 
 import android.content.Context
 import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,6 +49,14 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
     companion object {
         /** 可视化条数（与 VoiceSpectrum 的频段数一致）。 */
         const val SPECTRUM_BARS = 16
+
+        /**
+         * 长按模式（空格长按 / 面板麦克风长按）松手后的尾部采集时长。
+         *
+         * 抬手瞬间采集线程可能还停在一次 `read()` 上，最后一个 100ms 分块与
+         * 引擎的收尾解码都需要时间；立即停止会让句尾一两个字丢失。
+         */
+        const val HOLD_RELEASE_TAIL_MS = 300L
     }
 
     private val context by manager.context()
@@ -69,6 +79,16 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
 
     private var session: VoiceSession? = null
     private var savedMediaVolume = -1
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * 长按松手后的尾音延迟停止任务。
+     *
+     * 长按路径的松手先延时 [HOLD_RELEASE_TAIL_MS] 再真正停止，让尾音进入引擎；
+     * 期间若面板被收起/取消/重新开录，取消该任务并直接收尾。
+     */
+    private var pendingHoldStop: Runnable? = null
 
     /** 本次面板由空格长按进入（出字后自动回主键盘）。 */
     private var autoReturnOnCommit = false
@@ -133,6 +153,7 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
      *   false（工具栏麦克风）时不自动开录，等用户点按/长按麦克风。
      */
     fun openPanel(returnToKeyboardOnCommit: Boolean = false) {
+        cancelPendingHoldStop()
         autoReturnOnCommit = returnToKeyboardOnCommit
         committedThisSession = false
         _panelVisible.value = true
@@ -146,6 +167,7 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
     /** 收起面板（回到键盘）：丢弃未结束的会话，迟到结果不得上屏。 */
     fun closePanel() {
         if (!_panelVisible.value) return
+        cancelPendingHoldStop()
         _panelVisible.value = false
         panelVisibleListener?.invoke(false)
         autoReturnOnCommit = false
@@ -206,6 +228,8 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
 
     /** 按下麦克风/空格长按进入：开始识别。 */
     fun startRecognition() {
+        // 尾音窗口内再次开始：取消待执行的停止，让本次录音继续
+        cancelPendingHoldStop()
         if (prefs.voiceMuteDuringRecording.getValue()) muteMedia()
         session().startRecognition()
         _state.value = _state.value.copy(isVoiceMode = true)
@@ -213,6 +237,7 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
 
     /** 抬起/再次点击麦克风/物理松手：先提交已识别的部分，再停止。 */
     fun stopRecognition() {
+        cancelPendingHoldStop()
         val s = session
         if (s == null) {
             unmuteMedia()
@@ -221,6 +246,28 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
         if (!s.isSessionActive()) s.commitPendingOnRelease()
         s.stopRecognition()
         unmuteMedia()
+    }
+
+    /**
+     * 长按模式（空格长按 / 面板麦克风长按）松手：延时 [HOLD_RELEASE_TAIL_MS] 再停止采集。
+     *
+     * 采集与识别都继续跑这 300ms，让句尾的字进入引擎后再收尾；重复调用（多次松手通知）
+     * 只保留最早的一次，避免尾音窗口被不断顺延。
+     */
+    fun stopRecognitionWithTail() {
+        if (pendingHoldStop != null) return
+        val task = Runnable {
+            pendingHoldStop = null
+            stopRecognition()
+        }
+        pendingHoldStop = task
+        mainHandler.postDelayed(task, HOLD_RELEASE_TAIL_MS)
+    }
+
+    /** 取消尚未到期的尾音停止（面板收起/取消会话/重新开录时收尾立即生效）。 */
+    private fun cancelPendingHoldStop() {
+        pendingHoldStop?.let { mainHandler.removeCallbacks(it) }
+        pendingHoldStop = null
     }
 
     /**
@@ -235,6 +282,7 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
 
     /** 取消本次会话（停止识别并丢弃尚未上屏的文本），面板保留。 */
     fun cancelSession() {
+        cancelPendingHoldStop()
         val s = session
         s?.cancelPreStart()
         s?.abandonSession()
@@ -257,6 +305,7 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
 
     /** 面板隐藏相关收尾（收起面板、输入框切换、IME 退出）。 */
     fun onPanelHidden() {
+        cancelPendingHoldStop()
         val s = session
         s?.cancelPreStart()
         s?.abandonSession()
@@ -283,6 +332,7 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
      * 之后组件不应再被使用（DynamicScope 已随 detach 清空）。
      */
     fun release() {
+        cancelPendingHoldStop()
         panelVisibleListener = null
         session?.release()
         session = null

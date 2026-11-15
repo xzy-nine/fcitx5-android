@@ -2,10 +2,9 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
  *
- * custom: 触控笔手势「动作演示 + 试用」页（Gboard 式设置页内演示）。
+ * custom: 触控笔手势「动作演示 + 试用」页（设置页内直接演示）。
  *
- * 米系把试用放在**系统设置**里，输入法设置页只列开关；这里参考 Gboard 的做法，
- * 把演示/试用做进输入法自己的设置页：每条手势一行说明，底部画布可直接画一笔，
+ * 这里把演示/试用做进输入法自己的设置页：每条手势一行说明，底部画布可直接画一笔，
  * 实时显示判定结果（复用 [HandwritingRecognition.classifyGesture] 同一套判定，所见即所得）。
  *
  * 纯 Compose；判定经统一手势入口（系统引擎或谷歌手势分类器），因此需要设备具备其一。

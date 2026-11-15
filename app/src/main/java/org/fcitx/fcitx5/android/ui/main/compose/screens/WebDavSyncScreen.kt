@@ -37,13 +37,17 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.sync.webdav.DictReload
+import org.fcitx.fcitx5.android.sync.webdav.LocalNetworkPermissionRequiredException
+import org.fcitx.fcitx5.android.sync.webdav.PendingDictMerge
 import org.fcitx.fcitx5.android.sync.webdav.SyncRestorer
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncConfig
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncEngine
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncEngine.RemoteEntry
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleConfirmDialog
+import org.fcitx.fcitx5.android.ui.main.compose.rememberLocalNetworkPermissionGate
 import org.fcitx.fcitx5.android.utils.AppUtil
 import org.fcitx.fcitx5.android.utils.formatDateTime
 import org.fcitx.fcitx5.android.utils.toast
@@ -80,6 +84,10 @@ private const val TAG = "WebDavSync"
  * 此时至少能把异常类名暴露出来，便于定位。
  */
 private fun Throwable.readable(): String {
+    // 本地网络权限异常自带面向用户的完整文案，直接展示（不拼异常类名）
+    if (this is LocalNetworkPermissionRequiredException) {
+        return message ?: javaClass.simpleName
+    }
     val msg = message?.takeIf { it.isNotBlank() }
     return if (msg == null) javaClass.simpleName else "${javaClass.simpleName}: $msg"
 }
@@ -98,6 +106,8 @@ private fun WebDavLoginDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // Android 17 起访问局域网 WebDAV 服务器需要「本地网络」权限
+    val localNetworkGate = rememberLocalNetworkPermissionGate()
     var show by remember { mutableStateOf(true) }
     var serverUrl by remember { mutableStateOf(initial.serverUrl) }
     var username by remember { mutableStateOf(initial.username) }
@@ -181,6 +191,11 @@ private fun WebDavLoginDialog(
                         deviceName = deviceName.ifBlank { WebDavSyncConfig.defaultDeviceName() },
                     )
                     scope.launch {
+                        // 局域网地址需先取得「本地网络」权限，否则连接只会静默超时
+                        if (!localNetworkGate.ensure(cfg.serverUrl)) {
+                            testing = false
+                            return@launch
+                        }
                         val result = WebDavSyncEngine.testConnection(cfg)
                         testing = false
                         result.onSuccess { connectionResult = it }
@@ -220,6 +235,8 @@ private fun WebDavLoginDialog(
 fun WebDavSyncScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // Android 17 起访问局域网 WebDAV 服务器需要「本地网络」权限
+    val localNetworkGate = rememberLocalNetworkPermissionGate()
     val initial = remember { WebDavSyncConfig.load() }
 
     var serverUrl by remember { mutableStateOf(initial.serverUrl) }
@@ -229,6 +246,7 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         mutableStateOf(initial.deviceName.ifBlank { WebDavSyncConfig.defaultDeviceName() })
     }
     var autoDict by remember { mutableStateOf(initial.dictAutoSync) }
+    var autoPrefs by remember { mutableStateOf(initial.prefsAutoSync) }
     // 已持久化的同步状态（指纹/远端 mtime/摘要）：界面保存配置时原样保留，
     // 否则每次操作前的 save() 都会清掉引擎写入的“内容未变则跳过”凭据
     var syncState by remember { mutableStateOf(initial) }
@@ -250,6 +268,7 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         password = password,
         deviceName = deviceName.ifBlank { WebDavSyncConfig.defaultDeviceName() },
         dictAutoSync = autoDict,
+        prefsAutoSync = autoPrefs,
     )
 
     /** 保存配置；失败时提示并记日志，返回是否成功。 */
@@ -280,6 +299,12 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         progress = busyMessage
         scope.launch {
             val cfg = currentCfg()
+            // 局域网服务器需先取得「本地网络」权限，否则同步只会静默超时
+            if (!localNetworkGate.ensure(WebDavSyncEngine.cloudDirUrl(cfg))) {
+                busy = false
+                progress = null
+                return@launch
+            }
             if (!persistCfg(cfg)) {
                 busy = false
                 progress = null
@@ -308,6 +333,8 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         scope.launch {
             try {
                 val cfg = currentCfg()
+                // 局域网服务器需先取得「本地网络」权限（finally 会复位 busy/progress）
+                if (!localNetworkGate.ensure(entry.url)) return@launch
                 // 文件名来自远端，先清洗成单段文件名再落盘，防止路径穿越覆盖缓存其它文件
                 val dest = File(
                     context.cacheDir,
@@ -340,6 +367,8 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
         scope.launch {
             try {
                 val cfg = currentCfg()
+                // 局域网服务器需先取得「本地网络」权限（finally 会复位 busy/progress）
+                if (!localNetworkGate.ensure(WebDavSyncEngine.dictDirUrl(cfg))) return@launch
                 // 手动恢复：force=true 忽略本地快照，始终按云端内容覆盖本地；
                 // 进度逐文件上报（文件名 + 第几个/共几个）
                 val onProgress: suspend (String) -> Unit = { progress = it }
@@ -352,6 +381,12 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                     progress = context.getString(R.string.webdav_reloading_dict)
                     DictReload.applyReloadable(outcome.kinds)
                     syncState = WebDavSyncConfig.load()
+                    // 叠加过的文件本地已比云端多出条目：推回云端，避免并集只留在本机
+                    if (outcome.mergedRels.isNotEmpty()) {
+                        WebDavSyncEngine.uploadDictFiles(cfg).onFailure {
+                            logFailure("push merged dict", it)
+                        }
+                    }
                     if (DictReload.needsRestart(outcome.kinds)) {
                         // custom: table 词库被改动，引擎没有热重载接口；且引擎重启后
                         // IME 与引擎之间的连接状态不会复位（按键可响应但无法上屏），
@@ -359,6 +394,18 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                         context.toast(R.string.webdav_dict_restored)
                         AppUtil.showRestartNotification(context)
                         delay(500)
+                        // 引擎自持词库（user.dict）只能在引擎停机后叠加：
+                        // 否则引擎退出前的保存会用内存内容覆写刚合并的结果。
+                        // 这里先停机、再叠加、再推回云端，最后才退出进程。
+                        if (outcome.deferredRels.isNotEmpty()) {
+                            FcitxDaemon.stopFcitx()
+                            val applied = PendingDictMerge.applyPending(cfg)
+                            if (applied.isNotEmpty()) {
+                                WebDavSyncEngine.uploadDictFiles(cfg).onFailure {
+                                    logFailure("push deferred merged dict", it)
+                                }
+                            }
+                        }
                         AppUtil.exit()
                     } else {
                         context.toast(R.string.webdav_dict_restored)
@@ -414,6 +461,22 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                         }
                     },
                 )
+                SwitchPreference(
+                    title = stringResource(R.string.webdav_auto_prefs_enable),
+                    summary = stringResource(R.string.webdav_auto_prefs_summary),
+                    checked = autoPrefs,
+                    onCheckedChange = { value ->
+                        // 先持久化成功再更新开关状态，失败时保持原状态并提示
+                        val cfg = currentCfg().copy(prefsAutoSync = value)
+                        if (!persistCfg(cfg)) return@SwitchPreference
+                        autoPrefs = value
+                        if (value) {
+                            AutoDictSync.startAutoSync()
+                            AutoDictSync.requestSyncNow()
+                            context.toast(R.string.webdav_auto_prefs_on)
+                        }
+                    },
+                )
                 ArrowPreference(
                     title = stringResource(R.string.webdav_download_prefs),
                     summary = stringResource(R.string.webdav_download_prefs_summary),
@@ -422,7 +485,22 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                         busy = true
                         progress = context.getString(R.string.webdav_loading_list)
                         scope.launch {
-                            val list = WebDavSyncEngine.listRemotePrefs(currentCfg())
+                            // 局域网服务器需先取得「本地网络」权限，否则列表只会静默超时
+                            if (!localNetworkGate.ensure(WebDavSyncEngine.cloudDirUrl(currentCfg()))) {
+                                busy = false
+                                progress = null
+                                return@launch
+                            }
+                            val list = try {
+                                WebDavSyncEngine.listRemotePrefs(currentCfg())
+                            } catch (e: Exception) {
+                                // 权限缺失/网络异常不能显示成“云端没有备份”
+                                logFailure("listRemotePrefs", e)
+                                busy = false
+                                progress = null
+                                context.toast(e.readable())
+                                return@launch
+                            }
                             busy = false
                             progress = null
                             prefsList = list
@@ -454,7 +532,8 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                         if (!persistCfg(cfg)) return@SwitchPreference
                         autoDict = value
                         if (value) {
-                            AutoDictSync.startDownloadLoop()
+                            AutoDictSync.startAutoSync()
+                            AutoDictSync.requestSyncNow()
                             context.toast(R.string.webdav_auto_dict_on)
                         }
                     },
@@ -506,6 +585,7 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                     password = newPass,
                     deviceName = newDevice.ifBlank { WebDavSyncConfig.defaultDeviceName() },
                     dictAutoSync = autoDict,
+                    prefsAutoSync = autoPrefs,
                 )
                 // 持久化成功才更新界面字段，失败则保持原配置
                 if (persistCfg(cfg)) {

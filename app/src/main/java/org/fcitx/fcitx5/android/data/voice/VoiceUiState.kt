@@ -27,7 +27,6 @@ enum class VoiceRecognitionState {
  * IME 语音面板状态。
  *
  * 只保留面板真正消费的字段：识别状态、引擎展示名、部分结果文本。
- * （上一版沿用了 Xime 的 79 字段全局 UI 状态裁剪版，含 sticky/button 等未使用字段。）
  */
 data class VoiceUiState(
     /** 是否处于语音面板（语音模式）。 */

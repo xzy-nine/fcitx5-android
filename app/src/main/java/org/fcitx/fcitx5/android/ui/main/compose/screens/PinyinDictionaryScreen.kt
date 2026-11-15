@@ -35,6 +35,7 @@ import org.fcitx.fcitx5.android.data.pinyin.dict.LibIMEDictionary
 import org.fcitx.fcitx5.android.data.pinyin.dict.PinyinDictionary
 import org.fcitx.fcitx5.android.daemon.FcitxConnection
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleConfirmDialog
 import org.fcitx.fcitx5.android.utils.importErrorDialog
 import top.yukonga.miuix.kmp.basic.Card
@@ -154,6 +155,7 @@ fun PinyinDictionaryScreen(initialUri: String? = null, onBack: () -> Unit) {
             message = stringResource(R.string.pinyin_dict_delete_confirm, target.name),
             onConfirm = {
                 target.file.delete()
+                AutoDictSync.notifyDictChanged()
                 reload()
                 pendingDelete = null
             },

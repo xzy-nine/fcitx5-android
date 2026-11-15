@@ -13,8 +13,9 @@
  * 候选经 [HandwritingCandidateFeed] 推给 `InputView` 的候选栏；手写候选不在 fcitx
  * 引擎候选表里，点选由 [pickCandidate] 直接上屏。
  *
- * 上屏走 [FcitxInputMethodService] 的 `replaceBeforeCursor`：活动区文本（[active]）
- * 覆盖当前识别窗口，窗口里最早的字固化出窗（[onSegmentSettled]）后退出可替换区。
+ * 上屏走 [FcitxInputMethodService] 的 composing 文本：活动区文本（[active]）整体写入
+ * composing（`setHandwritingComposingText`），替换由编辑器自己管理，因此不依赖删除原语与
+ * 光标推算；一段字写完（闲置清窗 / 外部动作 / 点选 / 离开布局）时以 `finishComposing` 固化。
  *
  * ⚠️ 本组件的公开回调约定在主线程调用。
  */
@@ -30,7 +31,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CandidateWord
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingCandidate
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngineKind
@@ -191,6 +191,8 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
 
     /** 离开本布局（切回文本/数字键盘）时调用：交还候选栏。 */
     fun onLeave() {
+        // 手写文本以 composing 写入，离开布局时必须固化，否则会一直带下划线
+        commitActive()
         active = ""
         lastSegText = ""
         candidatesClearJob?.cancel()
@@ -252,11 +254,8 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
         val text = candidates.first().char
         HandwritingCandidateFeed.set(candidates, active = true)
         if (prefs.handwritingAutoCommit.getValue()) {
-            val applied = applyActive(text)
-            if (applied) lastSegText = text
-            _state.value = _state.value.copy(
-                error = if (applied) null else context.getString(R.string.handwriting_commit_failed)
-            )
+            applyActive(text)
+            _state.value = _state.value.copy(error = null)
         } else {
             // 未开启边写边上屏：只在点选候选时上屏
             lastSegText = text
@@ -287,6 +286,8 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
      * 候选栏按自身存活计时清空。需在主线程调用。
      */
     fun finalizeActive() {
+        // 闲置清窗 = 这一段字写完：固化 composing，使其成为普通文本
+        commitActive()
         active = ""
     }
 
@@ -295,6 +296,8 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
      * 清空候选栏，并请布局清窗。需在主线程调用。
      */
     fun finalizeWindow() {
+        // 删除/回车/空格/符号键等外部动作：先固化 composing，再交还后续按键处理
+        commitActive()
         active = ""
         lastSegText = ""
         HandwritingCandidateFeed.set(emptyList(), active = true)
@@ -337,27 +340,29 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
         }
         if (prefs.handwritingAutoCommit.getValue()) {
             when {
-                index <= 0 -> Unit // 首选已自动上屏，点选只固化
+                index <= 0 -> Unit // 首选已在 composing 里，点选只需固化
                 active.isNotEmpty() && lastSegText.isNotEmpty() &&
                         active.length >= lastSegText.length -> {
-                    if (applyActive(active.dropLast(lastSegText.length) + picked)) lastSegText = picked
+                    applyActive(active.dropLast(lastSegText.length) + picked)
                 }
 
                 lastSegText.isNotEmpty() -> {
-                    // 活动区已固化：直接替换屏上最后一个字
+                    // 活动区已固化（闲置清窗，候选栏仍在存活期内）：直接替换屏上最后一个字。
+                    // 此处已无 composing 可用，只能走替换原语；失败则保持原样（不追加错字）。
                     if (service.replaceBeforeCursor(lastSegText, picked)) lastSegText = picked
                 }
 
-                else -> {
-                    if (applyActive(active + picked)) lastSegText = picked
-                }
+                else -> applyActive(active + picked)
             }
+            // 点选即结束这一段：固化 composing
+            commitActive()
         } else {
-            // 未开启边写边上屏：点选即上屏
-            service.replaceBeforeCursor(active, active + picked)
-            lastSegText = picked
+            // 未开启边写边上屏：点选即上屏（活动区通常为空）
+            applyActive(active + picked)
+            commitActive()
         }
         active = ""
+        lastSegText = picked
         requestClear()
     }
 
@@ -366,20 +371,30 @@ class HandwritingInputComponent : UniqueComponent<HandwritingInputComponent>(), 
     // ------------------------------------------------------------------
 
     /**
-     * 替换式上屏：把屏上 [active] 整体换成 [newText]。
+     * 把手写活动区整体写成 [newText]（边写边上屏）。
      *
-     * 校验失败（用户移动过光标/文本被外部改动）时清空活动区并把画布一并清掉——
-     * 否则窗口里的旧笔画会在下一轮识别时把旧字重复上屏。
+     * 走 composing 文本而非「删除 + 提交」：替换由编辑器自己管理，
+     * 因此不依赖 `deleteSurroundingText` 与光标推算 —— 部分应用的删除是延迟生效的，
+     * 删除与提交的落点会与我们的推算错位，使替换校验永远失败。
+     *
+     * 写入成功即视为已上屏（编辑器保证内容就是 [newText]），不会出现「残留 + 无法修正」。
      */
-    private fun applyActive(newText: String): Boolean {
-        if (active == newText) return true
-        val ok = service.replaceBeforeCursor(active, newText)
-        active = if (ok) newText else ""
-        if (!ok) {
-            lastSegText = ""
-            requestClear()
-        }
-        return ok
+    private fun applyActive(newText: String) {
+        if (active == newText) return
+        service.setHandwritingComposingText(newText)
+        active = newText
+        lastSegText = newText
+    }
+
+    /**
+     * 固化当前手写 composing 文本（结束本次书写）。
+     *
+     * 手写文本以 composing 写入，必须显式结束，否则下划线不会消失、
+     * 且后续普通按键会被编辑器当作「替换 composing」处理。
+     * [FcitxInputMethodService.finishComposing] 自身对空 composing 幂等。
+     */
+    private fun commitActive() {
+        service.finishComposing()
     }
 
     private fun requestClear() {

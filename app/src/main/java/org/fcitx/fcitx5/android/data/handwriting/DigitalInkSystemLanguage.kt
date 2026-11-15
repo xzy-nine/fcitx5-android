@@ -22,8 +22,14 @@ object DigitalInkSystemLanguage {
     /** 中文（Han 脚本）模型 tag：ML Kit 用同一个模型覆盖简体/繁体。 */
     const val TAG_ZH_HANI = "zh-Hani"
 
-    /** 基础 tag：中文 → `zh-Hani`；其余 → 语言码小写（`en`/`ja`/`ko`…）。 */
-    fun baseTag(language: String): String {
+    /**
+     * 基础**语言** tag：中文 → [TAG_ZH_HANI]；其余 → 语言码小写（`en`/`ja`/`ko`…）。
+     *
+     * 与 [org.fcitx.fcitx5.android.data.market.MarketModelGrouping.baseTag] 语义不同：后者保留
+     * 书写系统子标签（`zh-Hant-TW` → `zh-Hant`），本方法只取语言码并把中文硬映射到 Han 模型，
+     * 两者不可互相替代，故名字有意区分。
+     */
+    fun baseLanguageTag(language: String): String {
         val lower = language.trim().lowercase(Locale.ROOT)
         return if (lower == "zh") TAG_ZH_HANI else lower
     }
@@ -36,7 +42,7 @@ object DigitalInkSystemLanguage {
      */
     fun candidateTags(language: String, script: String?, country: String?): List<String> {
         if (language.isBlank()) return emptyList()
-        val base = baseTag(language)
+        val base = baseLanguageTag(language)
         val han = base == TAG_ZH_HANI
         val s = script?.trim()?.takeIf { it.isNotEmpty() && !han }
         val c = country?.trim()?.takeIf { it.isNotEmpty() }

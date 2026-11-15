@@ -50,9 +50,9 @@ object GoogleDigitalInkEngine {
     /**
      * 模型对象缓存（按 tag；ML Kit 的模型对象本身无状态，可复用）。
      *
-     * 用 map 而非单槽：文字 tag 与手势 tag（`<tag>-x-gesture`）会被交替查询，单槽会让两者
-     * 每次都判为「换语言」而重建。只放模型对象（轻量）；识别器另有两份独立缓存。
-     * 识别/分类调用与 [close] 的清空可能并发，用并发 map 保证读写安全。
+     * 文字 tag 与手势 tag（`<tag>-x-gesture`）交替使用，故用 map 而非单槽。只放模型对象
+     * （轻量）；识别器另有两份独立缓存。识别/分类调用与 [close] 的清空可能并发，
+     * 用并发 map 保证读写安全。
      */
     private val modelCache = java.util.concurrent.ConcurrentHashMap<String, DigitalInkRecognitionModel>()
 
@@ -69,10 +69,7 @@ object GoogleDigitalInkEngine {
     private var downloadedTags: Set<String> = emptySet()
 
     /**
-     * 手势推理串行化。
-     *
-     * 实时预览与会话结束判定可能同时在跑，而两者共用同一个 native 识别器实例；
-     * 并发调用会让两次推理的结果互相串台（画圈那笔拿到上一笔的标签）。
+     * 手势推理串行化：实时预览与会话结束判定共用同一个 native 识别器实例，两次推理必须串行。
      */
     private val gestureInferenceLock = Mutex()
 
@@ -90,8 +87,7 @@ object GoogleDigitalInkEngine {
         if (configured.isNotBlank()) return configured
         val locale = context.resources.configuration.locales.takeIf { !it.isEmpty() }?.get(0)
             ?: Locale.getDefault()
-        val language = locale.language.lowercase(Locale.ROOT)
-        return if (language == "zh") LANGUAGE_ZH_HANI else language
+        return DigitalInkSystemLanguage.baseLanguageTag(locale.language)
     }
 
     /** 该语言是否有对应的数字墨水模型（tag 能解析成模型标识）。 */
@@ -117,7 +113,7 @@ object GoogleDigitalInkEngine {
      * 整条链都解析不出来 = 该语言 ML Kit 完全不支持，返回 null。
      */
     fun canonicalTagFallback(candidates: List<String>): String? =
-        candidates.firstNotNullOfOrNull { canonicalTag(it) }
+        DigitalInkSystemLanguage.canonicalTag(candidates) { canonicalTag(it) }
 
     /** 单个 tag 的模型（不做回落；解析失败 = 该 tag 不在 ML Kit 表里）。 */
     fun modelForTag(tag: String): DigitalInkRecognitionModel? = modelFor(tag)
@@ -189,7 +185,7 @@ object GoogleDigitalInkEngine {
                 return@withLock HandwritingStrokeKind.Character
             }
             // ML Kit 的候选**已按匹配度升序返回**，`score` 是代价（0 = 最匹配），故取**第一个**
-            // 而非「分数最大者」。（对照 Gboard `jra.java` 的 `candidates.get(0)` 同款。）
+            // 而非「分数最大者」。
             val label = candidates.firstOrNull()?.text
             val kind = GoogleGestureLabels.classify(label)
             val box = HandwritingStrokeFx.boxOf(stroke)
@@ -425,7 +421,7 @@ object GoogleDigitalInkEngine {
         return if (any) ink.build() else null
     }
 
-    /** `Task<T>` → 挂起函数（成功返回值，失败抛异常；不支持取消）。 */
+    /** `Task<T>` → 挂起函数（成功返回值，失败抛异常，取消时取消续体）。 */
     private suspend fun <T> Task<T>.awaitValue(): T = suspendCancellableCoroutine { cont ->
         addOnSuccessListener { value -> cont.resumeWith(Result.success(value)) }
         addOnFailureListener { e -> cont.resumeWith(Result.failure(e)) }
@@ -438,9 +434,6 @@ object GoogleDigitalInkEngine {
         addOnFailureListener { e -> cont.resumeWith(Result.failure(e)) }
         addOnCanceledListener { cont.cancel() }
     }
-
-    /** 中文（Han 脚本）模型 tag。 */
-    private const val LANGUAGE_ZH_HANI = "zh-Hani"
 
     /** 手势分类器的 tag 后缀（官方既定的 BCP-47 扩展位）。 */
     private const val GESTURE_SUFFIX = "-x-gesture"

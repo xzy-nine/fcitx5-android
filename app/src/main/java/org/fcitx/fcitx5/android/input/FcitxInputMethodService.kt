@@ -41,12 +41,13 @@ import androidx.autofill.inline.common.ViewStyle
 import androidx.autofill.inline.v1.InlineSuggestionUi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.key
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CoroutineStart
@@ -120,14 +121,16 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private lateinit var contentView: FrameLayout
     private var candidatesView: CandidatesView? = null
 
-    // Compose host state: drives (re)composition of the InputView embedded via AndroidView.
+    // Compose host state: drives the InputView rebuild observed by the overlay composition.
     // `themeState` mirrors the active theme; `recreateNonce` forces a full View rebuild on
     // pref changes. Both are read inside the Compose tree, so writing them triggers recomposition.
     private val themeState by lazy { mutableStateOf(ThemeManager.activeTheme) }
     private val recreateNonce by lazy { mutableStateOf(0) }
 
-    // `inputView` 作为 Compose 状态：根组合的弹窗层 / 候选操作菜单覆盖层据此读取
-    // 当前 InputView 的组件；InputView 重建（themeState/recreateNonce 变化）时值更新驱动重组。
+    // `inputView` 作为 Compose 状态：覆盖层据此读取当前 InputView 的组件。
+    // InputView 的创建与移除由覆盖层组合内的 DisposableEffect 驱动（键 = 主题/重建计数/触控笔态），
+    // 因此它的存活期与组合一致：组合被销毁（宿主 detach）或键变化时旧实例即被移除，
+    // 不会出现「引用仍指向已 detach 实例」的情况。
     private val inputView = mutableStateOf<InputView?>(null)
 
     private val navbarMgr = NavigationBarManager()
@@ -146,18 +149,15 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
     }
 
-    // custom: 触控笔 UI 模式（**米系架构**）：进入后**撤下键盘**，IME 只剩浮动工具箱。
+    // custom: 触控笔 UI 模式：进入后**撤下键盘**，IME 只剩浮动工具箱。
     //
-    // 米系（搜狗小米版 `b0.java` case 5）在触控笔模式下把 IME 的输入视图整个换成空锚点视图：
-    //   t0().setInputView(stylusImeStub.getStylusAnchorView(), input_view_type);
-    // 并在 `MainImeServiceDel.onComputeInsets` 的 stylusmode 分支里把 IME 可见区压到 0、
-    // 可触摸区只留工具箱卡片矩形：
-    //   insets.touchableInsets = 3; insets.visibleTopInsets = iE(=屏幕高);
-    //   insets.contentTopInsets = iE; insets.touchableRegion.set(stylusImeStub.getTouchRegion());
-    // 讯飞小米版（`w63` 的 `mGestureRegion`）与 Gboard（把触控笔视图挂系统墨迹窗口覆盖全屏）同理。
+    // 触控笔模式下输入视图被整个换成空锚点视图，`onComputeInsets` 把 IME 可见区压到 0、
+    // 可触摸区只留工具箱卡片矩形，其余触摸交给应用：
+    //   insets.touchableInsets = TOUCHABLE_INSETS_REGION; insets.visibleTopInsets = 屏幕高;
+    //   insets.contentTopInsets = 屏幕高; insets.touchableRegion.set(工具箱卡片矩形);
     //
     // 因此「用手写笔点输入法功能按钮时不应仍在手写状态」是靠**键盘根本不在**实现的，
-    // 而不是靠把触控笔事件转发回键盘（那是错误做法，已移除）。
+    // 而不是靠把触控笔事件转发回键盘。
     internal val stylusUiActive = mutableStateOf(false)
 
     /** 进入触控笔 UI：撤下输入视图，只保留浮动工具箱（幂等）。 */
@@ -230,69 +230,100 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     )
 
     /**
-     * Builds the IME input view as a Compose host: a [ComposeView] root whose content embeds the
-     * existing [InputView] (a traditional Android View) via [AndroidView]. The View implementation
-     * is left untouched; wrapping it this way only establishes a Compose root so the IME can be
-     * progressively migrated to Compose later.
+     * Builds the IME input view as a plain [FrameLayout] host: the [InputView] (a traditional
+     * Android View) is a direct child, and the Compose layers (key popups / candidate action menu /
+     * keyboard tune / toolbar drag) live in a sibling [ComposeView] on top.
      *
-     * Theme changes and pref-driven rebuilds are handled by updating [themeState]/[recreateNonce],
-     * which re-runs the [key] block and recreates the [InputView] — equivalent to the old
-     * `replaceInputView` behaviour, but without manually calling the IMS `setInputView`.
+     * Embedding the [InputView] through `AndroidView` instead costs a full extra measure of the
+     * whole keyboard subtree per frame (`AndroidViewHolder.remeasure`), so it is a direct child.
+     *
+     * The child's lifetime is driven by [DisposableEffect] inside the overlay composition, keyed on
+     * the theme / rebuild counter / stylus mode: a key change (or the composition itself being
+     * disposed when this host is replaced) removes the old instance and installs a fresh one.
      */
     private fun createComposeInputView(): View {
-        val composeView = ComposeView(this).apply {
+        val container = FrameLayout(this)
+        val overlayHost = ComposeView(this).apply {
             setContent {
                 MiuixTheme(controller = remember { ThemeController(ColorSchemeMode.System) }) {
-                    Box(Modifier.fillMaxSize()) {
-                        // custom: 触控笔 UI 模式下撤下键盘（米系 setInputView(空锚点) 的等价做法）：
-                        // 此时 IME 只剩浮动工具箱，墨迹由系统墨迹窗口承载；
-                        // 因此用触控笔点「输入法功能按钮」不会再进入手写（键盘压根不在）。
-                        if (!stylusUiActive.value) {
-                            key(themeState.value, recreateNonce.value) {
-                            AndroidView(
-                                factory = { _ ->
-                                    InputView(this@FcitxInputMethodService, fcitx, themeState.value)
-                                        .also {
-                                            inputView.value = it
-                                            inputDeviceMgr.setInputView(it)
-                                            // A recreated InputView is blank: [InputView.startInput]
-                                            // only ever runs from onStartInputView, so replay the
-                                            // ongoing session here to feed EditorInfo/capFlags to the
-                                            // keyboard components and to the return key drawable.
-                                            currentEditorInfo?.let { info ->
-                                                it.startInput(info, capabilityFlags, currentRestarting)
-                                            }
-                                        }
-                                },
-                                modifier = Modifier.fillMaxSize(),
-                                onRelease = { view ->
-                                    if (inputView.value === view) inputView.value = null
-                                    inputDeviceMgr.clearInputView(view)
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .onSizeChanged { ColdStartTrace.markOnce("rootBoxSized") }
+                    ) {
+                        val theme = themeState.value
+                        val nonce = recreateNonce.value
+                        val stylusUi = stylusUiActive.value
+                        // InputView 由组合生命周期驱动：键变化或组合销毁时移除旧实例。
+                        // 触控笔 UI 下不创建（键盘压根不在，触摸交给应用）。
+                        DisposableEffect(container, theme, nonce, stylusUi) {
+                            if (!stylusUi) {
+                                val created = InputView(this@FcitxInputMethodService, fcitx, theme)
+                                inputView.value = created
+                                inputDeviceMgr.setInputView(created)
+                                // A recreated InputView is blank: [InputView.startInput] only ever
+                                // runs from onStartInputView, so replay the ongoing session here to
+                                // feed EditorInfo/capFlags to the keyboard components and to the
+                                // return key drawable.
+                                currentEditorInfo?.let { info ->
+                                    created.startInput(info, capabilityFlags, currentRestarting)
                                 }
-                            )
-                            }
-                        } else {
-                            // 触控笔 UI：键盘撤下后不再持有 InputView（与米系的空锚点视图等价）
-                            if (inputView.value != null) {
-                                inputDeviceMgr.clearInputView(inputView.value!!)
-                                inputView.value = null
+                                // 插到最底层：覆盖层 ComposeView 必须压在 InputView 之上
+                                container.addView(
+                                    created,
+                                    0,
+                                    FrameLayout.LayoutParams(
+                                        FrameLayout.LayoutParams.MATCH_PARENT,
+                                        FrameLayout.LayoutParams.MATCH_PARENT
+                                    )
+                                )
+                                onDispose {
+                                    if (inputView.value === created) inputView.value = null
+                                    inputDeviceMgr.clearInputView(created)
+                                    container.removeView(created)
+                                }
+                            } else {
+                                onDispose { }
                             }
                         }
-                        // 按键弹窗层 / 候选操作菜单覆盖层：与 InputView 同处根单一 Composition。
-                        // 弹窗层 Box 无 pointer handler → 触摸穿透到下方 AndroidView(InputView)；
-                        // InputView 重建时 inputView.value 变化驱动这两层重组。
+                        ColdStartTrace.markOnce("inputViewSynced")
+                        // 按键弹窗层 / 候选操作菜单覆盖层：宿主在 InputView 之上，
+                        // 无 pointer handler 的区域触摸穿透到下层 InputView。
                         val iv = inputView.value
                         if (iv != null) {
                             iv.popup.PopupOverlayContent(Modifier.fillMaxSize())
+                            ColdStartTrace.markOnce("overlay:popup")
                             iv.candidateActionMenu.OverlayContent(Modifier.fillMaxSize())
+                            ColdStartTrace.markOnce("overlay:candidateMenu")
                             // Custom: 键盘调校浮层（Compose IME 覆盖层，已迁出 keyboardView 子 View）
                             iv.keyboardTune.OverlayContent(Modifier.fillMaxSize())
+                            ColdStartTrace.markOnce("overlay:keyboardTune")
+                            // Custom: 工具栏布局拖动浮层（幽灵图标 + 目标槽高亮）。
+                            // 挂在覆盖层组合是为了铺满整个 IME 窗口：被拖按钮与落点分处两个
+                            // ComposeView，只有窗口绝对坐标才能让两者互相命中。
+                            org.fcitx.fcitx5.android.input.bar.ToolbarDragOverlay(
+                                drag = iv.toolbarEdit.drag,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            ColdStartTrace.markOnce("overlay:toolbarDrag")
+                        }
+                        // 冷启动阶段计时：覆盖层组合首次完成
+                        SideEffect {
+                            ColdStartTrace.markOnce("compose")
+                            ColdStartTrace.pass("root")
                         }
                     }
                 }
             }
         }
-        return composeView
+        container.addView(
+            overlayHost,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        return container
     }
 
     private fun replaceCandidateView(theme: Theme): CandidatesView {
@@ -753,7 +784,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         postFcitxJob { reset() }
-        // custom: 触控笔浮窗工具箱随配置变化重算安全区/夹取位置（米系 onNewConfiguration 同款）
+        // custom: 触控笔浮窗工具箱随配置变化重算安全区/夹取位置
         stylusHandwriting.onConfigurationChanged()
         /**
          * skip keyboard|keyboardHidden changes, because we have [inputDeviceMgr]
@@ -787,16 +818,22 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onCreateInputView(): View? {
+        ColdStartTrace.begin()
         navbarMgr.evaluate(window.window!!, inputDeviceMgr.isVirtualKeyboard)
         // `themeState` is lazily initialized, so it may still hold a theme from before the very
         // first composition. Read the active theme once and make both sides (Compose InputView
         // and the View-based CandidatesView) agree on it.
         val theme = ThemeManager.activeTheme
         themeState.value = theme
+        ColdStartTrace.mark("theme")
         replaceCandidateView(theme)
-        // Return a ComposeView root that embeds the existing InputView via AndroidView.
-        // The framework calls `setInputView(composeView)` for us afterwards.
-        return createComposeInputView()
+        ColdStartTrace.mark("candidatesView")
+        // Return the host container (InputView + Compose overlay layers).
+        // The framework calls `setInputView(container)` for us afterwards.
+        return createComposeInputView().also {
+            ColdStartTrace.mark("hostViewCreated")
+            it.traceFirstPreDraw("firstPreDraw")
+        }
     }
 
     override fun setInputView(view: View) {
@@ -824,12 +861,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private var inputViewLocation = intArrayOf(0, 0)
 
     override fun onComputeInsets(outInsets: Insets) {
-        // custom: 触控笔 UI（**米系 `MainImeServiceDel` 的 stylusmode 分支同款**）：
+        // custom: 触控笔 UI：
         // IME 整体不占可见区（contentTopInsets = visibleTopInsets = 屏幕底），
         // 可触摸区只留浮动工具箱卡片矩形（`touchableInsets = TOUCHABLE_INSETS_REGION`），
-        // 其余区域触摸交给应用。米系原文：
-        //   insets.touchableInsets = 3; insets.visibleTopInsets = iE; insets.contentTopInsets = iE;
-        //   insets.touchableRegion.set(stylusImeStub.getTouchRegion());
+        // 其余区域触摸交给应用。
         if (stylusUiActive.value) {
             val bottom = decorView.height
             outInsets.apply {
@@ -934,12 +969,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     override fun onUpdateEditorToolType(toolType: Int) {
         super.onUpdateEditorToolType(toolType)
         inputDeviceMgr.evaluateOnUpdateEditorToolType(toolType, this)
-        // custom: **米系同款的触控笔 UI 进入时机**：检测到触控笔（TOOL_TYPE_STYLUS）就切到
-        // 触控笔界面（撤下键盘、只留浮动工具箱），而不是等系统手写会话开始。
-        // 米系 `StylusImeProxy.B(int)`（onUpdateEditorToolType）里：
-        //   boolean z = (i == 2) && o() && k();  // 2 = TOOL_TYPE_STYLUS
-        //   if (z != this.f) { this.f = z; c(true); }   // → setStylusMode(true) → 撤下 inputView
-        // 之前等 onStartStylusHandwriting 才撤键盘，会出现「键盘还在、触控笔事件却进了键盘」的冲突。
+        // custom: **触控笔 UI 的进入时机**：检测到触控笔（TOOL_TYPE_STYLUS）就切到
+        // 触控笔界面（撤下键盘、只留浮动工具箱），而不是等系统手写会话开始：
+        // 键盘必须在触控笔事件到达前撤下，否则两者会同时生效。
         when (toolType) {
             MotionEvent.TOOL_TYPE_STYLUS -> stylusHandwriting.onToolStylus()
             MotionEvent.TOOL_TYPE_FINGER -> stylusHandwriting.onToolFinger()
@@ -1063,6 +1095,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         Timber.d("onStartInputView: restarting=$restarting")
+        ColdStartTrace.mark("onStartInputView")
         AutoDictSync.setKeyboardVisible(true)
         postFcitxJob {
             focus(true)
@@ -1144,10 +1177,10 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
             )
             stylusHandwriting.onEditorBounds(screen)
         } ?: stylusHandwriting.onEditorBounds(null)
-        // custom: 「可见文本行」交给触控笔控制器 —— 米系用它判定一笔是**手势**还是**书写**：
+        // custom: 「可见文本行」交给触控笔控制器 —— 用它判定一笔是**手势**还是**书写**：
         // 手势（涂改删除/圈选）必须画在编辑器已有文字上，画在空白处就是写字。
         // `CursorAnchorInfo.getVisibleLineBounds()` 是 API 34 新增，且同样是 local coordinates，
-        // 必须经 info.matrix 映射（米系 `com.miui.ime.g.k()` / 讯飞 `w63.H()` 同款）。
+        // 必须经 info.matrix 映射后才能与屏幕坐标比较。
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             val lines = runCatching {
                 info.visibleLineBounds.map { r ->
@@ -1329,6 +1362,25 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
      * 因此语音链路不需要再自己做 deleteSurroundingText 之类的兜底。
      */
     fun setVoiceComposingText(text: String) {
+        setUnderlinedComposingText(text)
+    }
+
+    /**
+     * custom: 手写「边写边上屏」的 composing 写入。
+     *
+     * 手写每落一笔都会重写当前识别文本，交给 composing 让**编辑器自己管理替换**：
+     * 不依赖 `deleteSurroundingText` 与光标推算（部分应用的删除是延迟生效的，
+     * 删除与提交的落点会与我们的推算错位，导致替换校验永远失败）。
+     *
+     * 与语音共用同一套 composing 机制（[setUnderlinedComposingText]）；
+     * 书写结束时由 [finishComposing] 把 composing 提交为普通文本。
+     */
+    fun setHandwritingComposingText(text: String) {
+        setUnderlinedComposingText(text)
+    }
+
+    /** 以带下划线的 composing 文本写入当前输入框（语音/手写共用）。 */
+    private fun setUnderlinedComposingText(text: String) {
         if (text.isEmpty()) {
             finishComposing()
             return
@@ -1410,7 +1462,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         Timber.d("onFinishInputView: finishingInput=$finishingInput")
         // custom: 收起语音面板覆盖层并释放麦克风（IME 隐藏时不能继续录音）
         inputView.value?.voiceInput?.closePanel()
-        // custom: 输入视图结束 → 收起触控笔工具箱（米系在 onFinishInputView 里做同一件事）
+        // custom: 输入视图结束 → 收起触控笔工具箱
         stylusHandwriting.onInputViewFinished()
         // the session is over — a later InputView recreation must not replay it
         currentEditorInfo = null
@@ -1461,8 +1513,11 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         ThemeManager.removeOnChangedListener(onThemeChangeListener)
         // custom: 释放手写识别后端（系统引擎 / 谷歌数字墨水，避免 IME 重建时残留会话）
         inputView.value?.handwritingInput?.release()
-        // custom: 释放触控笔手写会话（协程与状态；不调用系统方法）
+        // custom: 释放触控笔手写会话（结束会话、隐藏工具箱、释放识别后端与协程）
         stylusHandwriting.release()
+        // custom: IME 被回收时可能不经 onFinishInputView，复位键盘可见态，
+        // 否则自动同步会一直以为键盘在用而永久跳过
+        AutoDictSync.setKeyboardVisible(false)
         super.onDestroy()
         // Fcitx might be used in super.onDestroy()
         FcitxDaemon.disconnect(javaClass.name)

@@ -13,8 +13,7 @@
  * - 识别窗口：每落一笔全窗重新识别；停顿只把笔画变淡，
  *   继续闲置 [HW_CLEAR_IDLE_MS] 才清空窗口（墨迹同步消失）并回调 `onFinalize`；
  * - 渲染：停顿提示时整窗变淡；笔画离开识别窗口（清窗）时墨迹同步消失；
- * - ⚠️ `Canvas` 的 `pointerInput` 不挂 `key(...)`：否则每个采样点都会重建手势节点并
- *   CANCEL 当前笔画。
+ * - `Canvas` 的 `pointerInput` 固定用 `Unit` 作 key：保证手势协程跨重组存活。
  */
 package org.fcitx.fcitx5.android.input.handwriting
 

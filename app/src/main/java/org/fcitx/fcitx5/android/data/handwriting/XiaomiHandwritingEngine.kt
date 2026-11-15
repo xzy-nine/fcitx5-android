@@ -4,23 +4,19 @@
  *
  * custom: 小米随手写系统引擎桥（反射）。
  *
- * 小米设备把触控笔手写引擎放在系统 jar 里：
- * `/system_ext/framework/xiaomi-pencilengine-pad.jar`，公开类
- * `com.miui.penengine.impl.*`（小米定制版输入法也是用 `PathClassLoader` 反射加载它，
- * 见搜狗 `com/xiaomi/handwriting/engine/j/c.java`、讯飞 `app/o56.java`）。
- * 这里同样只做**反射调用**，不搬运任何厂商代码，也不在编译期依赖该 jar。
+ * 引擎位于系统 jar：`/system_ext/framework/xiaomi-pencilengine-pad.jar`（公开类
+ * `com.miui.penengine.impl.*`），经 `PathClassLoader` 反射调用，编译期不依赖该 jar。
  *
  * 能力（与 AOSP 协议对接）：
  * - [recognizeGesture] → 标准 `android.view.inputmethod.HandwritingGesture`（手势判定）
  * - [recognizeText] → 整段墨迹的识别文本（单结果，无候选列表）
  *
- * 引擎可用性由系统设置 `support_native_handwriting` 决定（小米定制版输入法也是这么探测的）；
+ * 引擎可用性由系统设置 `support_native_handwriting` 决定；
  * 不可用时所有方法返回 null / false，调用方按引擎链回落到谷歌数字墨水（见 `HandwritingRecognition`）。
  */
 package org.fcitx.fcitx5.android.data.handwriting
 
 import android.content.Context
-import android.os.Build
 import android.provider.Settings
 import android.view.inputmethod.HandwritingGesture
 import dalvik.system.PathClassLoader
@@ -32,10 +28,10 @@ object XiaomiHandwritingEngine {
 
     private const val TAG = "XiaomiHandwritingEngine"
 
-    /** 引擎 jar 路径（小米定制版输入法用的同一份；pad 与手机共用）。 */
+    /** 引擎 jar 路径（pad 与手机共用）。 */
     private const val ENGINE_JAR = "/system_ext/framework/xiaomi-pencilengine-pad.jar"
 
-    /** 系统设置开关：小米定制版输入法用它探测本机是否支持原生手写。 */
+    /** 系统设置开关：探测本机是否支持原生手写。 */
     private const val SETTING_NATIVE_HANDWRITING = "support_native_handwriting"
 
     private const val CLASS_RECOGNIZE = "com.miui.penengine.impl.algorithm.recognizelib.algorithm.RecognizeFacade"
@@ -149,27 +145,13 @@ object XiaomiHandwritingEngine {
     /**
      * 绕过引擎的**包名白名单**。
      *
-     * 引擎在识别/手势入口都有一道闸：
-     * ```java
-     * // RecognizeFacade.recognizeText() / GestureFacade.getGoogleGesture()
-     * if (!PencilEngineManager.getAuthResult() || ...) return null;
+     * 引擎在识别/手势入口都有一道闸：`PencilEngineManager.getAuthResult()` 在
+     * `XMSAuthConnect.getInstance()` 为 null（我们的常态——全 jar 内无人调
+     * `pencilEngineInit()`）时回落到 `whitelistResult`（private static boolean，由
+     * `initWhitelist(context)` 按硬编码包名写入）。
      *
-     * // PencilEngineManager.getAuthResult()
-     * if (XMSAuthConnect.getInstance() == null) return whitelistResult;   // ← 我们走这条
-     * return authResult;
-     * ```
-     * `XMSAuthConnect.sInstance` 只在 `pencilEngineInit()` 里赋值，而**全 jar 内无人调用
-     * `pencilEngineInit()`**（它由 Estimate/Shape 的使用方从外部调），因此本场景下
-     * `getInstance()` 恒为 null、判定完全落在 `whitelistResult` 上。
-     * 该字段是 **private static boolean**，由 `initWhitelist(context)` 按包名写入
-     * （`EnableAuthData.isEnableAuth`，硬编码 12 个包名）。
-     *
-     * 这里把 `whitelistResult` 与 `authResult` **两个 static 标志都置 true**，
-     * 从而**只绕过包名这一道**：
-     * - 不触碰 XMS 在线认证（那条路我们本来就不走；同置 `authResult` 只是防将来有组件
-     *   初始化了 XMS 后 `getAuthResult()` 改读它）；
-     * - 不改 `isEnableProduct()`（走 `HyperOSCustFeatureResolve`，设备侧已开启）；
-     * - 不修改任何引擎文件、不改本应用包名。
+     * 这里把 `whitelistResult` 与 `authResult` 两个 static 标志都置 true，只绕过包名这一道：
+     * 不触碰 XMS 在线认证、不改 `isEnableProduct()`、不改引擎文件/本应用包名。
      *
      * 必须在**每次构造 facade 之后**调用：两个 facade 的构造器都会调 `initWhitelist()`
      * 重新写入 `whitelistResult`，会把我们的值覆盖掉。
@@ -181,9 +163,8 @@ object XiaomiHandwritingEngine {
         val ar = authResultField
         if (wl == null && ar == null) return false
         return runCatching {
-            // 两个 static 标志都置 true：
-            // - getInstance()==null 时读 whitelistResult（我们的常态）
-            // - 万一将来有组件初始化了 XMS，getAuthResult() 会改读 authResult
+            // 两个 static 标志都置 true：getInstance()==null 时读 whitelistResult（我们的常态），
+            // 万一将来有组件初始化了 XMS，getAuthResult() 会改读 authResult
             wl?.setBoolean(null, true)
             ar?.setBoolean(null, true)
             true
@@ -462,16 +443,5 @@ object XiaomiHandwritingEngine {
                 available = false
             }
         }
-    }
-
-    /** 诊断：引擎探测状态（设置页/日志用）。 */
-    fun status(context: Context): String {
-        ensureResolved()
-        val setting = runCatching {
-            Settings.Secure.getInt(context.contentResolver, SETTING_NATIVE_HANDWRITING, -1)
-        }.getOrDefault(-1)
-        return "jar=${if (available) "ok" else "missing"}, " +
-                "setting=$SETTING_NATIVE_HANDWRITING:$setting, " +
-                "sdk=${Build.VERSION.SDK_INT}"
     }
 }

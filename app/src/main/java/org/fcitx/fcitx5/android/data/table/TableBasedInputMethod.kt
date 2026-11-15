@@ -7,6 +7,7 @@ package org.fcitx.fcitx5.android.data.table
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.RawConfig
 import org.fcitx.fcitx5.android.data.table.dict.LibIMEDictionary
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.utils.Ini
 import org.fcitx.fcitx5.android.utils.Locales
 import org.fcitx.fcitx5.android.utils.errorRuntime
@@ -56,6 +57,7 @@ class TableBasedInputMethod(val file: File) {
             if (!file.delete() && file.exists()) {
                 throw Exception("Failed to delete config file: ${file.name}")
             }
+            AutoDictSync.notifyDictChanged()
         }
     }
 

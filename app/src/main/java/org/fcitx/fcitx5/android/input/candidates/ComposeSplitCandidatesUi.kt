@@ -247,7 +247,7 @@ private fun SplitSidebar(
 }
 
 /**
- * 单颗标签键：键面与右栏键盘同款（`ComposeKey` 文本键）。
+ * 单颗标签键：键面与右栏键盘一致（`ComposeKey` 文本键）。
  *
  * `def` 按 `(text, active)` 记忆：`ComposeKey` 用 `def.behaviors` 作手势节点的 key，
  * 每次重组都新建 `KeyDef` 会把进行中的按压手势重启（等于补一次 ACTION_CANCEL）。

@@ -45,7 +45,7 @@ import org.mechdancer.dependency.manager.must
 
 /**
  * Picker 窗口（符号 / Emoji / 颜文字），批次 D-3：由 View 改为 [ComposeWindow]；
- * 后续改造为「展开候选页」同款形态：
+ * 排版形态与「展开候选页」一致：
  *
  * - 排版 = [ComposePickerSplitUi]（左栏分类标签 + 中栏上下滚动网格 + 右栏竖排键盘），
  *   三模块（符号 / 表情 / 颜文字）共用同一份实现，风格与展开候选页统一；

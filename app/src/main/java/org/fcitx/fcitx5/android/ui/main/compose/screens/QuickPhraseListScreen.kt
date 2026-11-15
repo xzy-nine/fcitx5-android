@@ -38,6 +38,7 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.quickphrase.CustomQuickPhrase
 import org.fcitx.fcitx5.android.data.quickphrase.QuickPhrase
 import org.fcitx.fcitx5.android.data.quickphrase.QuickPhraseManager
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleConfirmDialog
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleTextFieldDialog
 import org.fcitx.fcitx5.android.utils.importErrorDialog
@@ -173,6 +174,7 @@ fun QuickPhraseListScreen(
             message = stringResource(R.string.quickphrase_delete_confirm, target.name),
             onConfirm = {
                 target.file.delete()
+                AutoDictSync.notifyDictChanged()
                 reload()
                 pendingDelete = null
             },

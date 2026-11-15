@@ -14,6 +14,7 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.InputFeedbacks.InputFeedbackMode
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngineKind
 import org.fcitx.fcitx5.android.data.voice.VoiceModelCatalog
+import org.fcitx.fcitx5.android.input.bar.ToolbarLayout
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesMode
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesOrientation
 import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateMode
@@ -393,6 +394,31 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             )
         }
 
+        // custom: 工具栏按钮布局（两段式：docked = 工具栏可停靠行，pool = 更多页按钮池）。
+        // 刻意不进任何 SubGroup —— 布局由 IME 内的更多页编辑，不在应用设置里暴露条目；
+        // 键必须以逗号分隔的 ToolbarButton.id 形式存放，解码/自愈见 ToolbarLayout.sanitize。
+        val toolbarDockedButtons: ManagedPreference.PString
+        val toolbarPoolButtons: ManagedPreference.PString
+        val toolbarShowUndoRedo: ManagedPreference.PBool
+
+        init {
+            toolbarDockedButtons = ManagedPreference.PString(
+                sharedPreferences,
+                "toolbar_docked_buttons",
+                ToolbarLayout.encode(ToolbarLayout.DEFAULT_DOCKED)
+            ).apply { register() }
+            toolbarPoolButtons = ManagedPreference.PString(
+                sharedPreferences,
+                "toolbar_pool_buttons",
+                ToolbarLayout.encode(ToolbarLayout.DEFAULT_POOL)
+            ).apply { register() }
+            toolbarShowUndoRedo = ManagedPreference.PBool(
+                sharedPreferences,
+                "toolbar_show_undo_redo",
+                true
+            ).apply { register() }
+        }
+
     }
 
     inner class Candidates :
@@ -509,7 +535,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
      * custom: 语音输入。
      *
      * 离线引擎为官方 sherpa-onnx（Apache-2.0，见仓库根 NOTICE.md），在线平台为内置 provider
-     * （火山引擎 / 小米 MiMo，见 `data/voice/online/`）；页面结构参考 whisperIME。
+     * （火山引擎 / 小米 MiMo，见 `data/voice/online/`）。
      * 这些偏好同时被 IME 内的语音面板与应用内「语音输入」设置页读取。
      *
      * 注意：本地离线推理跑在独立 `:asr` 进程，该进程不初始化 AppPrefs，
@@ -544,7 +570,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
         /**
          * 当前选中的在线识别平台 id（空 = 未选择，走第一个已配置的平台）。
          *
-         * 平台由 app 侧内置实现（火山引擎 / 小米 MiMo），不再是可安装的 Lua 插件，
+         * 平台由 app 侧内置实现（火山引擎 / 小米 MiMo），
          * 因此这里直接存 provider id（见 `data/voice/online/OnlineAsrRegistry`）。
          */
         val voiceOnlineProviderId =
@@ -578,14 +604,10 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                 .apply { register() }
 
 
-        /** 当前选中的本地模型 id（模型市场索引里的 id）。 */
+        /** 当前选中的本地模型 id（内置清单或手动导入模型的 id）。 */
         val voiceAsrModelId = ManagedPreference.PString(
             sharedPreferences, "voice_asr_model_id", VoiceModelCatalog.DEFAULT_ID
         ).apply { register() }
-
-        /** 模型市场索引地址覆盖（空 = 用 xime.yaml 里的 xime_index.base_urls）。 */
-        val voiceIndexUrl = ManagedPreference.PString(sharedPreferences, "voice_index_url", "")
-            .apply { register() }
 
         /** 调试：把语音识别期间的录音落盘。 */
         val voiceDebugRecord = ManagedPreference.PBool(
@@ -602,7 +624,6 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                         voiceSimpleChinese.key,
                         voiceMuteDuringRecording.key,
                         voiceAsrModelId.key,
-                        voiceIndexUrl.key,
                         voiceDebugRecord.key
                     )
                 )
@@ -735,7 +756,7 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
     val broadcast = Broadcast().register()
     val symbols = Symbols().register()
     val advanced = Advanced().register()
-    // custom: 语音输入（Xime 核心移植）
+    // custom: 语音输入
     val voice = Voice().register()
     // custom: 手写输入（独立输入方案，端上引擎：系统内置 / 谷歌数字墨水）
     val handwriting = Handwriting().register()

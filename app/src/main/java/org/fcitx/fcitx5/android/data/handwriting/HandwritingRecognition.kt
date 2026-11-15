@@ -154,7 +154,7 @@ object HandwritingRecognition {
      * ⚠️ 只在**非主线程**调用：facade 构造会加载算法库与模型（`RecognizeFacade` 8.8MB
      * 算法库 + 17MB 模型），主线程调用会卡住 IME。主线程路径请用 [prepare]（挂起）。
      *
-     * 引擎自带包名白名单（只服务搜狗/百度/讯飞小米版等 12 个包名），
+     * 引擎自带包名白名单（仅对内置清单里的应用生效），
      * 由 [XiaomiHandwritingEngine.open] 内部反射放行，这里无需额外判断。
      */
     fun ensureSystemEngine(context: Context): Boolean {

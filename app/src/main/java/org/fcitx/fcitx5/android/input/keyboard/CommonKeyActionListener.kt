@@ -99,8 +99,9 @@ class CommonKeyActionListener :
                 if (action is SpaceLongPressAction &&
                     spaceKeyLongPressBehavior == SpaceLongPressBehavior.VoiceInput
                 ) {
-                    // 空格长按进入语音面板后，手指抬起即停止识别（"按住说话"语义）
-                    voiceInput.stopRecognition()
+                    // 空格长按进入语音面板后，手指抬起即停止识别（"按住说话"语义）；
+                    // 延时收尾由组件侧补 300ms 尾音窗口，避免句尾丢字
+                    voiceInput.stopRecognitionWithTail()
                 }
             }
 

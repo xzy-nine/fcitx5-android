@@ -11,33 +11,21 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
-import com.k2fsa.sherpa.onnx.FeatureConfig
-import com.k2fsa.sherpa.onnx.OnlineModelConfig
-import com.k2fsa.sherpa.onnx.OnlineRecognizer
-import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
-import com.k2fsa.sherpa.onnx.OnlineStream
-import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig
-import java.io.File
 
 class VoiceAsrService : Service() {
 
-    companion object {
-        private const val TAG = "VoiceAsrService"
-
-        /** 会话结束后多久无新会话即释放模型句柄。 */
-        private const val IDLE_RELEASE_DELAY_MS = 60_000L
-
-        /** 采样率固定 16kHz（模型训练口径）。 */
-        const val SAMPLE_RATE = 16000
-    }
-
     private val lock = Any()
-    private var recognizer: OnlineRecognizer? = null
-    private var stream: OnlineStream? = null
+    private var engine: SpeechEngine? = null
     private var callback: IVoiceAsrCallback? = null
 
-    /** 当前 recognizer 对应的模型文件路径（持锁读写），用于检测模型切换。 */
-    private var enginePaths: List<String> = emptyList()
+    /** 当前引擎对应的模型描述（持锁读写），用于检测模型切换。 */
+    private var engineSpec: VoiceModelSpec? = null
+
+    /** 本次会话已送入的采样点数（仅用于排障日志）。 */
+    private var pushedSamples = 0
+
+    /** 上一次已记录的部分结果，避免逐块重复打同一句。 */
+    private var lastPushedText = ""
 
     private val idleHandler = Handler(Looper.getMainLooper())
     private val idleReleaseRunnable = Runnable { releaseEngine() }
@@ -49,51 +37,94 @@ class VoiceAsrService : Service() {
 
     private fun cancelIdleRelease() = idleHandler.removeCallbacks(idleReleaseRunnable)
 
+    /** AIDL 的平行数组 → [VoiceModelSpec]；家族名不认识时返回 null。 */
+    private fun specOf(
+        family: String,
+        roles: Array<out String>?,
+        paths: Array<out String>?,
+        language: String?,
+        inverseTextNormalization: Boolean,
+    ): VoiceModelSpec? {
+        val parsed = VoiceModelFamily.entries.firstOrNull { it.name == family } ?: return null
+        if (roles == null || paths == null || roles.size != paths.size) return null
+        val files = roles.zip(paths).toMap()
+        return VoiceModelSpec(
+            family = parsed,
+            files = files,
+            language = language.orEmpty(),
+            useInverseTextNormalization = inverseTextNormalization,
+        )
+    }
+
+    /** 加载引擎；已加载且 spec 未变则复用。仅在持锁时调用/自持锁。 */
+    private fun ensureEngine(spec: VoiceModelSpec): Boolean {
+        if (engine != null && engineSpec == spec) return true
+        if (engine != null) {
+            Log.i("VoiceAsrService", "model changed, rebuilding engine: ${spec.family}")
+            engine?.release()
+            engine = null
+            engineSpec = null
+        }
+        val created = createSpeechEngine(spec) ?: return false
+        engine = created
+        engineSpec = spec
+        return true
+    }
+
     private val binder = object : IVoiceAsrService.Stub() {
 
         override fun startAsr(
-            encoder: String,
-            decoder: String,
-            joiner: String,
-            tokens: String,
+            family: String,
+            roles: Array<out String>?,
+            paths: Array<out String>?,
+            language: String?,
+            inverseTextNormalization: Boolean,
             cb: IVoiceAsrCallback?,
         ): Boolean {
             cancelIdleRelease()
-            val paths = listOf(encoder, decoder, joiner, tokens)
-            val ok = synchronized(lock) {
-                if (recognizer != null && enginePaths != paths) {
-                    // 模型已切换：释放旧 stream 与 recognizer，再用新路径重建
-                    Log.i(TAG, "model changed, rebuilding engine: $encoder")
-                    releaseEngineLocked()
-                }
-                if (recognizer == null && !createEngine(encoder, decoder, joiner, tokens)) {
-                    return false
-                }
-                callback = cb
-                stream?.release()
-                stream = recognizer?.createStream()
-                stream != null
+            val spec = specOf(family, roles, paths, language, inverseTextNormalization)
+            if (spec == null) {
+                Log.e("VoiceAsrService", "startAsr rejected: bad spec (family=$family)")
+                return false
             }
-            if (!ok) Log.e(TAG, "startAsr failed: $encoder")
+            Log.i(
+                "VoiceAsrService",
+                "startAsr: ${VoiceModelClassifier.describe(spec)}",
+            )
+            val ok = synchronized(lock) {
+                if (!ensureEngine(spec)) return false
+                callback = cb
+                // 新会话：重置本次会话状态（流式建流 / 整段清空音频缓冲）
+                engine?.startSession()
+                true
+            }
+            if (!ok) Log.e("VoiceAsrService", "startAsr failed: ${spec.family}")
             return ok
         }
 
         override fun prepareAsr(
-            encoder: String,
-            decoder: String,
-            joiner: String,
-            tokens: String,
+            family: String,
+            roles: Array<out String>?,
+            paths: Array<out String>?,
+            language: String?,
+            inverseTextNormalization: Boolean,
             cb: IVoiceAsrCallback?,
         ): Boolean {
             cancelIdleRelease()
-            val paths = listOf(encoder, decoder, joiner, tokens)
+            val spec = specOf(family, roles, paths, language, inverseTextNormalization)
+            if (spec == null) {
+                Log.e("VoiceAsrService", "prepareAsr rejected: bad spec (family=$family)")
+                return false
+            }
             val ready = synchronized(lock) {
-                if (recognizer != null && enginePaths != paths) {
-                    // 模型已切换：旧引擎对新路径无效，先释放（后台线程会按新路径重建）
-                    Log.i(TAG, "model changed, releasing stale engine: $encoder")
-                    releaseEngineLocked()
+                // spec 变了就地释放，避免旧的（可能错家族的）句柄留在进程里
+                if (engine != null && engineSpec != spec) {
+                    Log.i("VoiceAsrService", "model changed, releasing stale engine: ${spec.family}")
+                    engine?.release()
+                    engine = null
+                    engineSpec = null
                 }
-                recognizer != null
+                engine != null
             }
             if (ready) {
                 runCatching { cb?.onEngineReady(true, "") }
@@ -102,17 +133,9 @@ class VoiceAsrService : Service() {
             // 后台线程加载：不占 binder 线程，app 侧的 push/finish 不会被加载阻塞
             Thread({
                 val ok = try {
-                    synchronized(lock) {
-                        // 拿到锁后重新校验路径：期间可能又发生了模型切换，
-                        // 旧的 recognizer 对本次请求的路径无效，须先释放再按新路径创建
-                        if (recognizer != null && enginePaths != paths) {
-                            Log.i(TAG, "model changed during prepare, rebuilding: $encoder")
-                            releaseEngineLocked()
-                        }
-                        recognizer != null || createEngine(encoder, decoder, joiner, tokens)
-                    }
+                    synchronized(lock) { ensureEngine(spec) }
                 } catch (e: Throwable) {
-                    Log.e(TAG, "prepareAsr failed", e)
+                    Log.e("VoiceAsrService", "prepareAsr failed", e)
                     false
                 }
                 runCatching { cb?.onEngineReady(ok, if (ok) "" else "模型加载失败") }
@@ -123,42 +146,34 @@ class VoiceAsrService : Service() {
 
         override fun pushAudio(samples: FloatArray?): String {
             if (samples == null || samples.isEmpty()) return ""
-            val text = synchronized(lock) {
-                val r = recognizer ?: return ""
-                val s = stream ?: return ""
-                s.acceptWaveform(samples, SAMPLE_RATE)
-                while (r.isReady(s)) r.decode(s)
-                r.getResult(s).text
+            // 采样计数只用于排障：能看出音频是否真的送到了引擎
+            pushedSamples += samples.size
+            val text = synchronized(lock) { engine?.push(samples) ?: "" }
+            if (text.isNotEmpty() && text != lastPushedText) {
+                lastPushedText = text
+                Log.i("VoiceAsrService", "partial: $text")
             }
             return text
         }
 
         override fun finishAsr(): String {
-            val text = synchronized(lock) {
-                val r = recognizer
-                val s = stream
-                if (r == null || s == null) {
-                    ""
-                } else {
-                    s.inputFinished()
-                    while (r.isReady(s)) r.decode(s)
-                    r.getResult(s).text
-                }
-            }
-            // 本次会话结束：丢弃流，保留模型句柄供热启动，空闲超时再释放
-            synchronized(lock) {
-                stream?.release()
-                stream = null
-                callback = null
-            }
+            val text = synchronized(lock) { engine?.finish() ?: "" }
+            // 本次会话结束：保留模型句柄供热启动，空闲超时再释放
+            synchronized(lock) { callback = null }
+            // 整段（离线）模型只有在结束解码后才有文本，必须在这里记一条
+            Log.i(
+                "VoiceAsrService",
+                "finish: samples=$pushedSamples chars=${text.length}",
+            )
+            pushedSamples = 0
+            lastPushedText = ""
             scheduleIdleRelease()
             return text
         }
 
         override fun cancelAsr() {
             synchronized(lock) {
-                stream?.release()
-                stream = null
+                engine?.cancel()
                 callback = null
             }
             scheduleIdleRelease()
@@ -170,63 +185,14 @@ class VoiceAsrService : Service() {
         }
     }
 
-    /** 创建识别器；模型文件缺失或加载失败返回 false。 */
-    private fun createEngine(
-        encoder: String,
-        decoder: String,
-        joiner: String,
-        tokens: String,
-    ): Boolean {
-        val files = listOf(encoder, decoder, joiner, tokens).map(::File)
-        if (files.any { !it.isFile || it.length() <= 0L }) {
-            Log.e(TAG, "model files incomplete: $encoder")
-            return false
-        }
-        return try {
-            val config = OnlineRecognizerConfig(
-                featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80, dither = 0.0f),
-                modelConfig = OnlineModelConfig(
-                    transducer = OnlineTransducerModelConfig(
-                        encoder = encoder,
-                        decoder = decoder,
-                        joiner = joiner,
-                    ),
-                    tokens = tokens,
-                    // 纯 CPU：int8 + 动态 shape 的流式模型在 NNAPI 上命中率极低，
-                    // 2 线程与共享线程池口径一致，避免模型常驻期间空转发热
-                    numThreads = 2,
-                    provider = "cpu",
-                    debug = false,
-                ),
-                // 按住说话：由 UI 决定起止，不用引擎的静音端点判定
-                enableEndpoint = false,
-                // 与自研实现口径一致（greedy），后续可切换 modified_beam_search 提升准确率
-                decodingMethod = "greedy_search",
-            )
-            recognizer = OnlineRecognizer(config = config)
-            enginePaths = files.map { it.path }
-            true
-        } catch (e: Throwable) {
-            Log.e(TAG, "createEngine failed", e)
-            recognizer = null
-            enginePaths = emptyList()
-            false
-        }
-    }
-
-    /** 释放引擎并清除已记录的路径（外部入口：空闲超时 / releaseAsr / 销毁）。 */
+    /** 释放引擎并清除已记录的描述（外部入口：空闲超时 / releaseAsr / 销毁）。 */
     private fun releaseEngine() {
-        synchronized(lock) { releaseEngineLocked() }
-    }
-
-    /** 须持 [lock] 调用；路径信息一并清掉，避免复用过期状态。 */
-    private fun releaseEngineLocked() {
-        stream?.release()
-        stream = null
-        recognizer?.release()
-        recognizer = null
-        enginePaths = emptyList()
-        callback = null
+        synchronized(lock) {
+            engine?.release()
+            engine = null
+            engineSpec = null
+            callback = null
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder = binder

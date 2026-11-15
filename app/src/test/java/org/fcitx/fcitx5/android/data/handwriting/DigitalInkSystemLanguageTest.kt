@@ -13,8 +13,8 @@ class DigitalInkSystemLanguageTest {
 
     @Test
     fun `chinese maps to the han model regardless of script`() {
-        assertEquals("zh-Hani", DigitalInkSystemLanguage.baseTag("zh"))
-        assertEquals("zh-Hani", DigitalInkSystemLanguage.baseTag("ZH"))
+        assertEquals("zh-Hani", DigitalInkSystemLanguage.baseLanguageTag("zh"))
+        assertEquals("zh-Hani", DigitalInkSystemLanguage.baseLanguageTag("ZH"))
         // 繁体/简体共用 Han 模型：候选不拼脚本子标签，只加地区
         assertEquals(
             listOf("zh-Hani-CN", "zh-Hani"),

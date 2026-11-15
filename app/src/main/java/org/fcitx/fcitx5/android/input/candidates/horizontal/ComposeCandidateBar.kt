@@ -8,8 +8,6 @@ package org.fcitx.fcitx5.android.input.candidates.horizontal
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -39,8 +37,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.res.stringResource
@@ -92,6 +88,20 @@ class CandidateList(private val items: Array<CandidateWord>) {
     /** 追加（懒加载更多候选）；返回新实例，不修改原对象 */
     fun append(more: Array<CandidateWord>): CandidateList = CandidateList(items + more)
 
+    /**
+     * 本列表是否以 [prefix] 为前缀。
+     *
+     * 用于判断「引擎重推的候选」是不是本列表的子集前缀（候选集没变、只是被重推了一遍）。
+     * 逐项比较，不分配数组。
+     */
+    fun startsWith(prefix: Array<CandidateWord>): Boolean {
+        if (prefix.size > items.size) return false
+        for (i in prefix.indices) {
+            if (items[i] != prefix[i]) return false
+        }
+        return true
+    }
+
     fun isEmpty(): Boolean = items.isEmpty()
 
     override fun equals(other: Any?): Boolean =
@@ -139,6 +149,19 @@ enum class CandidateFillMode {
 private const val LOAD_MORE_THRESHOLD = 3
 
 /**
+ * 候选列表的布局快照。
+ *
+ * 作为 [snapshotFlow] 的发射值：字段多于三个，故用数据类而非 [Triple]。
+ */
+private data class LayoutSnapshot(
+    val firstVisibleIndex: Int,
+    val lastVisibleIndex: Int,
+    val totalItems: Int,
+    /** 内容是否超出视口、还可继续滚动。 */
+    val canScroll: Boolean,
+)
+
+/**
  * Compose 候选栏组件
  */
 @Composable
@@ -164,17 +187,27 @@ fun ComposeCandidateBar(
     LaunchedEffect(listState) {
         snapshotFlow {
             val info = listState.layoutInfo
-            Triple(
-                info.visibleItemsInfo.firstOrNull()?.index ?: 0,
-                info.visibleItemsInfo.lastOrNull()?.index ?: 0,
-                info.totalItemsCount
+            // 是否还能继续滚动：内容不足一屏时为 false（首批候选被均分在一屏内）
+            val canScroll = info.totalItemsCount > 0 &&
+                    info.visibleItemsInfo.size < info.totalItemsCount
+            LayoutSnapshot(
+                firstVisibleIndex = info.visibleItemsInfo.firstOrNull()?.index ?: 0,
+                lastVisibleIndex = info.visibleItemsInfo.lastOrNull()?.index ?: 0,
+                totalItems = info.totalItemsCount,
+                canScroll = canScroll
             )
         }
             .distinctUntilChanged()
-            .collect { (firstVisibleIndex, lastVisibleIndex, totalItems) ->
+            .collect { snapshot ->
                 if (currentState is CandidateBarState.Active) {
-                    callbacks.onScrollOffsetChanged?.invoke(firstVisibleIndex)
-                    if (lastVisibleIndex >= totalItems - LOAD_MORE_THRESHOLD) {
+                    callbacks.onScrollOffsetChanged?.invoke(snapshot.firstVisibleIndex)
+                    // 触发条件：已滑到列表末尾附近，**或**内容不足一屏、无法继续滚动。
+                    // 后者不可省：首批候选按 AutoFillWidth 均分在一屏内时列表本就滚不动，
+                    // 只看「末尾附近」会因布局快照的取值顺序而错过首次加载，
+                    // 表现为候选栏永远停在首批、滑动也拉不出更多词。
+                    if (snapshot.lastVisibleIndex >= snapshot.totalItems - LOAD_MORE_THRESHOLD ||
+                        !snapshot.canScroll
+                    ) {
                         callbacks.onLoadMore?.invoke()
                     }
                 }

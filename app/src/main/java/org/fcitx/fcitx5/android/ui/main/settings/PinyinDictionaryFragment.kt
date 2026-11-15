@@ -28,6 +28,7 @@ import org.fcitx.fcitx5.android.data.pinyin.PinyinDictManager
 import org.fcitx.fcitx5.android.data.pinyin.dict.BuiltinDictionary
 import org.fcitx.fcitx5.android.data.pinyin.dict.LibIMEDictionary
 import org.fcitx.fcitx5.android.data.pinyin.dict.PinyinDictionary
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.ui.common.BaseDynamicListUi
 import org.fcitx.fcitx5.android.ui.common.OnItemChangedListener
 import org.fcitx.fcitx5.android.ui.main.EditDeleteMenuProvider
@@ -220,6 +221,7 @@ class PinyinDictionaryFragment : Fragment(), OnItemChangedListener<PinyinDiction
     override fun onItemRemoved(idx: Int, item: PinyinDictionary) {
         item as LibIMEDictionary
         item.file.delete()
+        AutoDictSync.notifyDictChanged()
         dustman.remove(item.name)
     }
 

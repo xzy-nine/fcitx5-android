@@ -5,11 +5,14 @@
  * custom: 模型市场页（**唯一实现**，按 [MarketCategory] 泛化）。
  *
  * 通过 [MarketCategory] 拿到清单与下载状态，因此页面本身不认识任何具体模型：
- * 目前唯一分类是语音「语音模型市场」= `ModelMarketScreen(VoiceMarketCategory)`。
+ * 分类由 [MarketCategories] 注册。
  * 分类差异只体现在索引 category / 内置清单 / 就绪判定（见分类实现）。
  */
 package org.fcitx.fcitx5.android.ui.main.compose.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,8 +42,6 @@ import org.fcitx.fcitx5.android.data.market.MarketDownloadState
 import org.fcitx.fcitx5.android.data.market.MarketModel
 import org.fcitx.fcitx5.android.data.market.MarketModelGroup
 import org.fcitx.fcitx5.android.data.market.MarketModelGrouping
-import org.fcitx.fcitx5.android.data.handwriting.DigitalInkModelCatalog
-import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -50,8 +51,8 @@ import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
@@ -71,12 +72,18 @@ fun ModelMarketScreen(
     // 同步查询（isDownloaded / selectedModelId）不是 Compose State，靠 revision 驱动重组
     val revision by category.revision.collectAsState()
     val models by category.models.collectAsState()
-    val loading by category.loadingIndex.collectAsState()
     val indexError by category.indexError.collectAsState()
     val downloadState by category.downloadState.collectAsState()
     val downloadingId by category.downloadingId.collectAsState()
     val lastError by category.lastError.collectAsState()
+    val importingName by category.importingName.collectAsState()
     val selectedModelId = remember(revision, category) { category.selectedModelId(context) }
+    // 手动导入清单外模型（仅支持导入的分类）。走 SAF GetContent，不需要存储权限。
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) category.importModel(context, uri)
+    }
     // 系统语言（或用户已选语言）对应的基础语言键：该语言及其全部地区变体置顶
     val preferredKeys = remember(revision, category) {
         category.preferredLanguageKeys(context)
@@ -103,7 +110,7 @@ fun ModelMarketScreen(
         else MarketModelGrouping.group(
             models = orderedModels,
             rank = rank,
-            nameOf = { DigitalInkModelCatalog.nameOf(it) },
+            nameOf = { category.displayNameOf(it) ?: it },
         )
     }
     // 展开态：默认收起；首次拿到分组后**只自动展开一次**「正在使用」那一组，
@@ -127,6 +134,14 @@ fun ModelMarketScreen(
         title = stringResource(category.titleRes),
         onBack = onBack,
         actions = {
+            if (category.supportsImport) {
+                IconButton(onClick = { importLauncher.launch("*/*") }) {
+                    Icon(
+                        imageVector = MiuixIcons.Add,
+                        contentDescription = stringResource(R.string.market_model_import),
+                    )
+                }
+            }
             IconButton(onClick = { category.refreshIndex(context) }) {
                 Icon(
                     imageVector = MiuixIcons.Refresh,
@@ -145,7 +160,8 @@ fun ModelMarketScreen(
                 expandedKeys = if (key in expandedKeys) expandedKeys - key
                 else expandedKeys + key
             },
-            loading = loading,
+            importingName = importingName,
+            onImport = { importLauncher.launch("*/*") },
             indexError = indexError,
             downloadState = downloadState,
             downloadingId = downloadingId,
@@ -163,23 +179,45 @@ private fun LazyListScope.ModelMarketList(
     grouped: List<MarketModelGroup>?,
     expandedKeys: Set<String>,
     onToggleGroup: (String) -> Unit,
-    loading: Boolean,
+    importingName: String?,
+    onImport: () -> Unit,
     indexError: String?,
     downloadState: MarketDownloadState,
     downloadingId: String?,
     lastError: String?,
     selectedModelId: String,
 ) {
-    if (loading) {
+    // 手动导入：清单是固定集合，清单外的模型只能由用户自备归档导入
+    if (category.supportsImport) {
+        item { SmallTitle(stringResource(R.string.market_model_import)) }
         item {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(16.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                colors = CardDefaults.defaultColors(
+                    color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                ),
+            ) {
+                Text(
+                    text = stringResource(R.string.market_model_import_hint),
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                )
+                TextButton(
+                    text = if (importingName != null) {
+                        stringResource(R.string.market_model_importing, importingName)
+                    } else {
+                        stringResource(R.string.market_model_import_pick)
+                    },
+                    onClick = onImport,
+                    modifier = Modifier.padding(start = 8.dp, bottom = 8.dp),
+                )
+            }
         }
     }
     if (indexError != null) {
         item {
             Text(
-                text = stringResource(R.string.market_index_failed) +
-                        ": " + stringResource(R.string.market_index_using_builtin),
+                text = stringResource(R.string.market_index_failed) + ": " + indexError,
                 color = MiuixTheme.colorScheme.primary,
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
             )
@@ -194,13 +232,6 @@ private fun LazyListScope.ModelMarketList(
                 modifier = Modifier.fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             )
-        }
-    }
-
-    // 只有拉远程索引的分类才需要索引地址覆盖输入框
-    if (category.usesRemoteIndex) {
-        item {
-            ModelIndexField()
         }
     }
 
@@ -345,7 +376,7 @@ private fun ModelGroupCard(
                 modifier = Modifier.size(20.dp),
             )
         }
-        // 卡内变体行：收起时预览，展开时全列；行间细分隔线（通知分组同款）
+        // 卡内变体行：收起时预览，展开时全列；行间细分隔线（卡内分组分隔）
         preview.forEachIndexed { index, model ->
             if (index > 0) {
                 HorizontalDivider(
@@ -373,23 +404,6 @@ private fun ModelGroupCard(
             )
         }
     }
-}
-
-/** 索引地址覆盖输入框（留空 = 用默认端点 index.ximei.me）。 */
-@Composable
-private fun ModelIndexField() {
-    val prefs = AppPrefs.getInstance()
-    var indexUrl by remember { mutableStateOf(prefs.voice.voiceIndexUrl.getValue()) }
-    TextField(
-        value = indexUrl,
-        onValueChange = {
-            indexUrl = it
-            prefs.voice.voiceIndexUrl.setValue(it.trim())
-        },
-        label = stringResource(R.string.market_index_url),
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-    )
 }
 
 /**

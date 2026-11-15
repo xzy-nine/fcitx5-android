@@ -11,8 +11,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.channels.BufferOverflow
@@ -189,6 +187,8 @@ class ComposeCandidateComponent :
         if (loadingMore || noMoreData) return
         val currentState = _state.value
         if (currentState !is CandidateBarState.Active) return
+        // 手写候选不在引擎候选表里，没有「下一批」可取
+        if (org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed.isActive) return
         if (currentState.total >= 0 && currentState.candidates.size >= currentState.total) return
         loadMore()
     }
@@ -197,6 +197,8 @@ class ComposeCandidateComponent :
         if (loadingMore || noMoreData) return
         val currentState = _state.value
         if (currentState !is CandidateBarState.Active) return
+        // 手写候选不在引擎候选表里，没有「下一批」可取
+        if (org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed.isActive) return
         if (currentState.total >= 0 && currentState.candidates.size >= currentState.total) return
 
         loadingMore = true
@@ -252,7 +254,19 @@ class ComposeCandidateComponent :
         // 旧内容不可见但仍在组合树中（AndroidView 不 detach）。
         // 下次非空候选到达时正常更新。
         if (candidates.isNotEmpty()) {
-            _state.value = CandidateBarState.from(candidates, total)
+            // 引擎每次重推的都是**首批**候选（bulk 模式固定 16 条）。
+            // 若新数据与已加载内容的前缀一致，说明候选集本身没变、只是被重推了一遍
+            // （如 setCandidatePagingMode 触发的 updateCandidatesBulk）：
+            // 此时沿用已懒加载的更长列表，否则用户滑动加载出的词会被这一下清掉。
+            val current = _state.value
+            val merged = if (current is CandidateBarState.Active &&
+                current.candidates.startsWith(candidates)
+            ) {
+                current.copy(total = total)
+            } else {
+                CandidateBarState.from(candidates, total)
+            }
+            _state.value = merged
         }
 
         loadingMore = false

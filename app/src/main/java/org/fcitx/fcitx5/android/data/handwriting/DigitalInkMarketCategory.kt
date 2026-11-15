@@ -7,35 +7,27 @@
  * 与其他分类的差别：
  * - 模型文件由 **ML Kit/GMS 自己托管**（不落在 `filesDir` 里），因此下载 / 删除 / 就绪判定
  *   全部改走 `RemoteModelManager`（见 [GoogleDigitalInkEngine]），不走文件下载器；
- * - 清单来自内置目录 [DigitalInkModelCatalog]（官方语言表），**不拉远程索引**；
+ * - 清单来自内置目录 [DigitalInkModelCatalog]（官方语言表），**不联网拉取**；
  * - 「选中」= 设置识别语言 `AppPrefs.handwriting.handwritingDigitalInkLanguage`
  *   （留空则跟随应用/系统语言，见 `GoogleDigitalInkEngine.languageTag`）。
  */
 package org.fcitx.fcitx5.android.data.handwriting
 
 import android.content.Context
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.market.BaseMarketCategory
+import org.fcitx.fcitx5.android.data.market.MarketCategoryIds
 import org.fcitx.fcitx5.android.data.market.MarketDownloadState
 import org.fcitx.fcitx5.android.data.market.MarketModel
 import org.fcitx.fcitx5.android.data.market.MarketModelGrouping
-import org.fcitx.fcitx5.android.data.market.ModelIndex
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
-import kotlin.coroutines.coroutineContext
 import java.io.File
 import java.util.Locale
 import timber.log.Timber
 
 object DigitalInkMarketCategory :
-    BaseMarketCategory(ModelIndex.CATEGORY_DIGITAL_INK, R.string.digital_ink_models) {
-
-    override val indexCategory: String = ModelIndex.CATEGORY_DIGITAL_INK
-
-    /** 清单是官方语言表（内置），没有远程索引。 */
-    override val usesRemoteIndex: Boolean = false
+    BaseMarketCategory(MarketCategoryIds.DIGITAL_INK, R.string.digital_ink_models) {
 
     /** 331 个基础语言 + 地区变体：按语言变体折叠，避免一次平铺 361 条。 */
     override val groupsByLanguageVariant: Boolean = true
@@ -44,6 +36,9 @@ object DigitalInkMarketCategory :
     override val builtin: List<MarketModel> = DigitalInkModelCatalog.languages.map {
         MarketModel(id = it.tag, name = it.name, description = it.tag)
     }
+
+    /** 分组标题用官方语言名；清单里查不到时回落成 tag。 */
+    override fun displayNameOf(baseTag: String): String = DigitalInkModelCatalog.nameOf(baseTag)
 
     /** ML Kit 自己管理模型文件；这里只是分类语义上要求的目录（不落文件）。 */
     override fun targetDir(context: Context, model: MarketModel): File =
@@ -118,7 +113,7 @@ object DigitalInkMarketCategory :
 
     /**
      * 刷新 = 只用内置清单，外加**先刷新一次「已下载语言」**再上清单
-     * （本类没有远程索引；先刷新再上清单可让首次渲染就是正确状态）。
+     * （先刷新再上清单可让首次渲染就是正确状态）。
      */
     override fun refreshIndex(context: Context) {
         val appContext = context.applicationContext
@@ -133,33 +128,21 @@ object DigitalInkMarketCategory :
      * 下载 = `RemoteModelManager.download()`（ML Kit 不提供进度，只报开始 / 完成 / 失败）。
      */
     override fun downloadModel(context: Context, model: MarketModel) {
-        // 只挡「下载进行中」：失败（Error）后 downloadingId 保留供卡片显示错误，
-        // 此时必须允许重试，否则错误态卡片永远无法再下载
-        if (downloadJob?.isActive == true) return
         val appContext = context.applicationContext
-        setLastError(null)
-        setDownloadingId(model.id)
-        setDownloadState(MarketDownloadState.Downloading(0f, 0L, 0L))
-        // LAZY 启动：先把 Job 赋给 downloadJob 再 start()，协程体里的身份比对不会失真
-        downloadJob = scope.launch(start = CoroutineStart.LAZY) {
-            val job = coroutineContext[Job]
-            // 两条结果分支都要比对**本协程的 Job 身份**：只查 isActive 会让被取消的旧下载
-            // 在新下载已接管后仍改写状态（ML Kit 的下载不抛取消异常，直接返回布尔结果）
+        runTrackedDownload(model) { job ->
             if (GoogleDigitalInkEngine.downloadModel(appContext, model.id)) {
-                if (downloadJob !== job) return@launch
+                if (!isCurrentDownload(job)) return@runTrackedDownload
                 setDownloadingId(null)
                 setDownloadState(MarketDownloadState.Complete)
                 // 让统一识别入口立刻用上（模型状态缓存同步刷新）
                 HandwritingRecognition.refreshGoogleModel(appContext)
             } else {
-                // 失败时保留 downloadingId：卡片继续显示错误与「重试下载」
-                if (downloadJob !== job) return@launch
+                if (!isCurrentDownload(job)) return@runTrackedDownload
                 val reason = appContext.getString(R.string.digital_ink_download_failed)
                 setLastError(reason)
                 setDownloadState(MarketDownloadState.Error(reason))
             }
         }
-        downloadJob?.start()
     }
 
     /** 删除 = `RemoteModelManager.deleteDownloadedModel()`（异步，删完再刷新列表）。 */

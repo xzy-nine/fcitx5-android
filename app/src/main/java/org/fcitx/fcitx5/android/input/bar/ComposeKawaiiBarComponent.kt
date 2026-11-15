@@ -69,6 +69,7 @@ import org.fcitx.fcitx5.android.input.dependency.inputMethodService
 import org.fcitx.fcitx5.android.input.dependency.inputView
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
 import org.fcitx.fcitx5.android.input.popup.PopupComponent
+import org.fcitx.fcitx5.android.input.status.StatusAreaWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.appContext
@@ -108,6 +109,8 @@ class ComposeKawaiiBarComponent :
     private val inputView by manager.inputView()
 
     private val prefs = AppPrefs.getInstance()
+
+    private val toolbarEdit: ToolbarEditComponent by manager.must()
 
     private val clipboardSuggestion = prefs.clipboard.clipboardSuggestion
     private val clipboardItemTimeout = prefs.clipboard.clipboardItemTimeout
@@ -170,6 +173,52 @@ class ComposeKawaiiBarComponent :
     fun notifyToolbarHeightChanged() {
         _toolbarHeightVersion.value++
     }
+
+    /**
+     * custom: 按钮布局（[ToolbarLayoutState]）。
+     *
+     * docked 部分驱动工具栏可停靠行，pool 部分驱动更多页按钮池。编辑中读草稿，
+     * 否则读已保存值 —— 两个渲染区因此始终看到同一份结果（见 [ToolbarEditComponent]）。
+     */
+    val toolbarLayout: kotlinx.coroutines.flow.StateFlow<ToolbarLayoutState>
+        get() = toolbarEdit.draftOrCommitted
+
+    /** custom: 撤销/重做两个固定槽位是否显示。 */
+    val showUndoRedo: kotlinx.coroutines.flow.StateFlow<Boolean>
+        get() = toolbarEdit.showUndoRedo
+
+    /** custom: 更多页是否打开中（顶栏据此换成「返回 + 可停靠行 + 编辑」）。 */
+    private val _morePageVisible = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val morePageVisible: kotlinx.coroutines.flow.StateFlow<Boolean>
+        get() = _morePageVisible
+
+    /**
+     * custom: 语音面板是否打开中。
+     *
+     * 与 [morePageVisible] 同规：面板打开时顶栏保留可停靠行、左侧放返回，
+     * 而不是退化成「返回 + 标题」把整行按钮藏起来。
+     */
+    private val _voicePageVisible = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val voicePageVisible: kotlinx.coroutines.flow.StateFlow<Boolean>
+        get() = _voicePageVisible
+
+    /**
+     * custom: 按钮可用性版本号。
+     *
+     * 可用性依赖键盘几何（分体键盘的宽高比）与三项偏好，几何量本身不是 Compose 状态，
+     * 因此统一用这个计数器驱动重组：任一来源变化即自增，组合期重新算一遍可用性。
+     */
+    private val _buttonUsabilityVersion = kotlinx.coroutines.flow.MutableStateFlow(0)
+    val buttonUsabilityVersion: kotlinx.coroutines.flow.StateFlow<Int>
+        get() = _buttonUsabilityVersion
+
+    private fun notifyButtonUsabilityChanged() {
+        _buttonUsabilityVersion.value++
+    }
+
+    /** custom: 布局是否正在编辑中（顶栏据此把右侧按钮换成「完成」）。 */
+    val editing: kotlinx.coroutines.flow.StateFlow<Boolean>
+        get() = toolbarEdit.editing
 
     private var cachedHeightKey: Pair<Int, Int>? = null
     private var cachedHeightValue = 0
@@ -234,6 +283,24 @@ class ComposeKawaiiBarComponent :
         ManagedPreference.OnChangeListener<Boolean> { _, enabled ->
             _splitKeyboardEnabled.value = enabled
         }
+
+    /**
+     * custom: 按钮可用性来源的偏好监听。
+     *
+     * 语音/手写是否启用、分体键盘阈值都会改变置灰状态；它们与控制显示的偏好是两回事
+     * （例如手写偏好关掉后按钮仍在原位、只是变灰），故单独监听并只自增可用性版本号。
+     * [ManagedPreference] 的监听器带类型参数，故三项各持一个实例。
+     */
+    private val splitThresholdUsabilityListener =
+        ManagedPreference.OnChangeListener<Float> { _, _ -> notifyButtonUsabilityChanged() }
+    private val voiceUsabilityListener =
+        ManagedPreference.OnChangeListener<Boolean> { _, _ -> notifyButtonUsabilityChanged() }
+    private val handwritingUsabilityListener =
+        ManagedPreference.OnChangeListener<Boolean> { _, _ -> notifyButtonUsabilityChanged() }
+
+    private val splitKeyboardThresholdPref = keyboardPrefs.splitKeyboardThreshold
+    private val voiceInputEnabledPref = prefs.voice.voiceInputEnabled
+    private val handwritingEnabledPref = prefs.handwriting.handwritingInputEnabled
 
     private fun launchClipboardTimeoutJob() {
         clipboardTimeoutJob?.cancel()
@@ -326,28 +393,6 @@ class ComposeKawaiiBarComponent :
                     shift = true
                 )
             },
-            onCursorMove = {
-                windowManager.attachWindow(
-                    org.fcitx.fcitx5.android.input.editing.TextEditingWindow()
-                )
-            },
-            onClipboard = {
-                windowManager.attachWindow(
-                    org.fcitx.fcitx5.android.input.clipboard.ClipboardWindow()
-                )
-            },
-            onSplitKeyboardToggle = {
-                splitKeyboardPref.setValue(!splitKeyboardPref.getValue())
-            },
-            onMore = {
-                windowManager.attachWindow(
-                    org.fcitx.fcitx5.android.input.status.StatusAreaWindow()
-                )
-            },
-            onTune = {
-                if (inputView.isKeyboardTuneShown()) inputView.hideKeyboardTune()
-                else inputView.showKeyboardTune()
-            },
             onTitleBack = {
                 // custom: 语音/手写面板是覆盖层，不能只切窗口 —— 不然面板会盖在新键盘上
                 voiceInput.closePanel()
@@ -379,23 +424,74 @@ class ComposeKawaiiBarComponent :
                 numberRowState = NumberRowState.ForceShow
                 evalIdleUiState(fromUser = true)
             },
-            splitKeyboardEnabled = splitKeyboardPref.getValue(),
-            onVoiceInput = if (AppPrefs.getInstance().voice.voiceInputEnabled.getValue()) {
-                // 工具栏麦克风进入：留在语音页，方便连续说话
-                { voiceInput.onVoiceEntryClicked(returnToKeyboardOnCommit = false) }
-            } else null,
-            onHandwritingInput = if (AppPrefs.getInstance().handwriting.handwritingInputEnabled.getValue()) {
-                {
-                    // 手写是第三种键盘布局：先确保键盘窗口在前台，再切布局
-                    windowManager.attachWindow(
-                        org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
-                    )
-                    inputView.keyboardWindow.switchLayout(
-                        org.fcitx.fcitx5.android.input.keyboard.KeyboardLayoutNames.Handwriting
-                    )
-                }
-            } else null,
+            onMore = {
+                windowManager.attachWindow(StatusAreaWindow())
+            },
+            // 可用性在每次取用时读偏好：偏好变化不重建 callbacks，读死值会让置灰状态停留在旧值
+            buttonUsable = ::isButtonUsable,
+            onButtonClick = ::onToolbarButtonClick,
+            onEditToggle = {
+                if (toolbarEdit.editing.value) toolbarEdit.commit() else toolbarEdit.beginEdit()
+            },
+            onBackToKeyboard = {
+                // custom: 语音/手写面板是覆盖层，不能只切窗口 —— 不然面板会盖在新键盘上
+                voiceInput.closePanel()
+                windowManager.attachWindow(
+                    org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
+                )
+            },
         )
+    }
+
+    /**
+     * 可停靠按钮当前是否可用（不可用时置灰但仍占位）。
+     *
+     * 语音/手写看各自的启用偏好；分体键盘还要满足「非数字键盘且宽高比允许」，
+     * 与更多页按钮池共用同一判定，避免两处表现不一致。
+     */
+    /** 可停靠按钮当前是否可用（更多页按钮池与本页共用同一判定，避免两处置灰状态不一致）。 */
+    fun isButtonUsable(button: ToolbarButton): Boolean = when (button) {        ToolbarButton.Voice -> prefs.voice.voiceInputEnabled.getValue()
+        ToolbarButton.Handwriting -> prefs.handwriting.handwritingInputEnabled.getValue()
+        ToolbarButton.SplitKeyboard -> isSplitKeyboardAvailable()
+        else -> true
+    }
+
+    /** 分体键盘入口是否可用：数字键盘下不可用；宽高比不超过阈值时也不可用。 */
+    private fun isSplitKeyboardAvailable(): Boolean {
+        if (isKeyboardLayoutNumber) return false
+        if (keyboardHeight <= 0) return true
+        val ratio = keyboardWidth.toFloat() / keyboardHeight
+        return ratio > keyboardPrefs.splitKeyboardThreshold.getValue()
+    }
+
+    /** 可移动按钮的行为（工具栏行与更多页按钮池共用）。 */
+    fun onToolbarButtonClick(button: ToolbarButton) {
+        when (button) {
+            ToolbarButton.TextEditing -> windowManager.attachWindow(
+                org.fcitx.fcitx5.android.input.editing.TextEditingWindow()
+            )
+            ToolbarButton.Clipboard -> windowManager.attachWindow(
+                org.fcitx.fcitx5.android.input.clipboard.ClipboardWindow()
+            )
+            ToolbarButton.Tune -> {
+                if (inputView.isKeyboardTuneShown()) inputView.hideKeyboardTune()
+                else inputView.showKeyboardTune()
+            }
+            ToolbarButton.Voice ->
+                // 工具栏麦克风进入：留在语音页，方便连续说话
+                voiceInput.onVoiceEntryClicked(returnToKeyboardOnCommit = false)
+            ToolbarButton.Handwriting -> {
+                // 手写是第三种键盘布局：先确保键盘窗口在前台，再切布局
+                windowManager.attachWindow(
+                    org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
+                )
+                inputView.keyboardWindow.switchLayout(
+                    org.fcitx.fcitx5.android.input.keyboard.KeyboardLayoutNames.Handwriting
+                )
+            }
+            ToolbarButton.SplitKeyboard ->
+                splitKeyboardPref.setValue(!splitKeyboardPref.getValue())
+        }
     }
 
     // InputBroadcastReceiver 实现
@@ -410,6 +506,11 @@ class ComposeKawaiiBarComponent :
         }
         ClipboardManager.addOnUpdateListener(onClipboardUpdateListener)
         splitKeyboardPref.registerOnChangeListener(splitKeyboardListener)
+        // custom: 布局偏好被外部改写（恢复备份/同步）时让编辑会话重新读取
+        toolbarEdit.registerPreferenceListeners()
+        splitKeyboardThresholdPref.registerOnChangeListener(splitThresholdUsabilityListener)
+        voiceInputEnabledPref.registerOnChangeListener(voiceUsabilityListener)
+        handwritingEnabledPref.registerOnChangeListener(handwritingUsabilityListener)
         observeVoicePanel()
     }
 
@@ -421,6 +522,7 @@ class ComposeKawaiiBarComponent :
     private fun observeVoicePanel() {
         voicePanelJob = scope.launch {
             voiceInput.panelVisible.collect { visible ->
+                _voicePageVisible.value = visible
                 if (visible) {
                     _titleData.value = TitleData(
                         title = context.getString(R.string.voice_input),
@@ -440,6 +542,10 @@ class ComposeKawaiiBarComponent :
     fun destroy() {
         ClipboardManager.removeOnUpdateListener(onClipboardUpdateListener)
         splitKeyboardPref.unregisterOnChangeListener(splitKeyboardListener)
+        toolbarEdit.unregisterPreferenceListeners()
+        splitKeyboardThresholdPref.unregisterOnChangeListener(splitThresholdUsabilityListener)
+        voiceInputEnabledPref.unregisterOnChangeListener(voiceUsabilityListener)
+        handwritingEnabledPref.unregisterOnChangeListener(handwritingUsabilityListener)
         clipboardTimeoutJob?.cancel()
         voicePanelJob?.cancel()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -479,6 +585,7 @@ class ComposeKawaiiBarComponent :
                     showTitle = window.showTitle
                 )
                 _titleExtensionView.value = window.onCreateBarExtension()
+                _morePageVisible.value = window is StatusAreaWindow
                 barStateMachine.push(ExtendedWindowAttached)
             }
             else -> {}
@@ -486,6 +593,11 @@ class ComposeKawaiiBarComponent :
     }
 
     override fun onWindowDetached(window: InputWindow) {
+        // 离开更多页即结束编辑会话：草稿丢弃，避免「没点完成就离开」留下半成品布局
+        if (_morePageVisible.value) {
+            _morePageVisible.value = false
+            toolbarEdit.cancel()
+        }
         barStateMachine.push(WindowDetached)
         if (_titleData.value != null) {
             _titleData.value = null
@@ -495,12 +607,16 @@ class ComposeKawaiiBarComponent :
 
     fun onKeyboardLayoutSwitched(isNumber: Boolean) {
         isKeyboardLayoutNumber = isNumber
+        notifyButtonUsabilityChanged()
         evalIdleUiState()
     }
 
     fun onKeyboardSizeChanged(width: Int, height: Int) {
+        // 键盘尺寸决定分体键盘入口是否可用（宽高比阈值），可用性要跟着重新计算
+        val changed = keyboardWidth != width || keyboardHeight != height
         keyboardWidth = width
         keyboardHeight = height
+        if (changed) notifyButtonUsabilityChanged()
     }
 
     @RequiresApi(android.os.Build.VERSION_CODES.R)
@@ -567,11 +683,15 @@ class ComposeKawaiiBarComponent :
      */
     @Composable
     fun ToolbarContent(modifier: Modifier = Modifier) {
+        // 冷启动阶段计时：工具栏/候选栏内容完成首次组合
+        androidx.compose.runtime.SideEffect {
+            org.fcitx.fcitx5.android.input.ColdStartTrace.markOnce("toolbarComposed")
+            org.fcitx.fcitx5.android.input.ColdStartTrace.pass("toolbar")
+        }
         val barState by _barState.collectAsState()
         val idleSubState by _idleSubState.collectAsState()
         val titleData by _titleData.collectAsState()
         val titleExtensionView by _titleExtensionView.collectAsState()
-        val expandButtonState by _expandButtonState.collectAsState()
         val clipboardText by _clipboardText.collectAsState()
         val splitKeyboardEnabled by _splitKeyboardEnabled.collectAsState()
         val menuRotation by _menuRotation.collectAsState()
@@ -588,7 +708,24 @@ class ComposeKawaiiBarComponent :
         // 候选栏仅当「内容就绪且处于候选态」时可见（Title 态不显示，避免透出候选词与标题重叠）
         val candidateVisible = effectiveBarState == KawaiiBarStateMachine.State.Candidate
 
-        val callbacks = remember { createCallbacks() }
+        val layout by toolbarLayout.collectAsState()
+        val showUndoRedo by showUndoRedo.collectAsState()
+        val morePage by morePageVisible.collectAsState()
+        val voicePage by voicePageVisible.collectAsState()
+        val isEditing by editing.collectAsState()
+        // 可用性依赖非 Compose 的键盘几何，靠版本号驱动重算（见 notifyButtonUsabilityChanged）
+        buttonUsabilityVersion.collectAsState()
+
+        // callbacks 依赖上面的状态（更多页/语音页/编辑中会改变顶栏行为），故以它们为 key 重建；
+        // 这些状态变化极低频（进出覆盖层页面、切换编辑模式），重建开销可忽略。
+        val callbacks = remember(morePage, voicePage, isEditing, showUndoRedo) {
+            createCallbacks().copy(
+                morePageVisible = morePage,
+                voicePageVisible = voicePage,
+                editing = isEditing,
+                showUndoRedo = showUndoRedo,
+            )
+        }
         val visuals = getVisuals()
 
         // 稳定化 slot lambda：remember 后 ComposeToolbar 的对应参数实例不变，
@@ -668,11 +805,15 @@ class ComposeKawaiiBarComponent :
             titleData = titleData,
             callbacks = callbacks,
             visuals = visuals,
-            expandButtonState = expandButtonState,
             splitKeyboardEnabled = splitKeyboardEnabled,
             menuRotation = menuRotation,
             modifier = modifier,
             toolbarHeight = toolbarHeight.dp,
+            dockedButtons = layout.docked,
+            poolButtons = layout.pool,
+            // 非编辑态不注入拖动状态：避免普通点击/长按误触改动布局
+            drag = if (isEditing) toolbarEdit.drag else null,
+            onDropButton = { button, target -> toolbarEdit.applyDrop(button, target) },
             candidateVisible = candidateVisible,
             candidateContent = candidateContent,
             numberRowContent = numberRowContent,

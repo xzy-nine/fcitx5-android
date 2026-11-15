@@ -24,6 +24,8 @@ class MarketModelGroupingTest {
         // 书写系统（4 字母）保留，避免 bn 与 bn-Latn 混成一组
         assertEquals("zh-Hani", MarketModelGrouping.baseTag("zh-Hani-CN"))
         assertEquals("zh-Hani", MarketModelGrouping.baseTag("zh-Hani"))
+        // zh-Hant-TW → zh-Hant（保留书写系统子标签；与 DigitalInkSystemLanguage.baseLanguageTag 语义不同）
+        assertEquals("zh-Hant", MarketModelGrouping.baseTag("zh-Hant-TW"))
         assertEquals("ber-Latn", MarketModelGrouping.baseTag("ber-Latn"))
         // 异常输入不崩
         assertEquals("", MarketModelGrouping.baseTag(""))

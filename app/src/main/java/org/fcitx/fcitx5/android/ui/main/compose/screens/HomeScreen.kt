@@ -26,6 +26,7 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.AppRecording
 import top.yukonga.miuix.kmp.icon.extended.Copy
+import top.yukonga.miuix.kmp.icon.extended.Edit
 import top.yukonga.miuix.kmp.icon.extended.GridView
 import top.yukonga.miuix.kmp.icon.extended.Help
 import top.yukonga.miuix.kmp.icon.extended.Info
@@ -163,7 +164,7 @@ private val homeAndroidItems = listOf(
 /** custom: 分支特有功能（上游没有的能力集中在这里，避免混进上游分组） */
 private val homeCustomItems = listOf(
     HomeDestination(R.string.voice_input, MiuixIcons.AppRecording, AppRoute.VoiceInputSettings),
-    HomeDestination(R.string.handwriting_input, MiuixIcons.ListView, AppRoute.HandwritingSettings),
+    HomeDestination(R.string.handwriting_input, MiuixIcons.Edit, AppRoute.HandwritingSettings),
     // 模型市场父页（各分类入口）；各设置页仍直达自己的分类子页
     HomeDestination(
         R.string.voice_model_market,

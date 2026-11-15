@@ -7,13 +7,19 @@ package org.fcitx.fcitx5.android.input.status
 import android.os.Build
 import android.view.View
 import android.widget.Toast
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.Action
@@ -22,65 +28,52 @@ import org.fcitx.fcitx5.android.daemon.FcitxConnection
 import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.FcitxInputMethodService
-import org.fcitx.fcitx5.android.input.bar.ui.ToolButton
+import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
+import org.fcitx.fcitx5.android.input.bar.ToolbarEditComponent
+import org.fcitx.fcitx5.android.input.bar.ToolbarLayout
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
 import org.fcitx.fcitx5.android.input.dependency.fcitx
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
-import org.fcitx.fcitx5.android.input.dependency.theme
 import org.fcitx.fcitx5.android.input.editorinfo.EditorInfoWindow
-import org.fcitx.fcitx5.android.input.status.StatusAreaEntry.Android.Type.InputMethod
-import org.fcitx.fcitx5.android.input.status.StatusAreaEntry.Android.Type.Keyboard
-import org.fcitx.fcitx5.android.input.status.StatusAreaEntry.Android.Type.ReloadConfig
-import org.fcitx.fcitx5.android.input.status.StatusAreaEntry.Android.Type.ThemeList
+import org.fcitx.fcitx5.android.input.keyboard.preferenceState
 import org.fcitx.fcitx5.android.input.wm.ComposeWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.input.wm.createComposeWindowView
 import org.fcitx.fcitx5.android.utils.AppUtil
 import org.mechdancer.dependency.manager.must
-import splitties.dimensions.dp
-import splitties.views.dsl.core.add
-import splitties.views.dsl.core.horizontalLayout
-import splitties.views.dsl.core.lParams
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
 
+/**
+ * 更多页（状态区）。
+ *
+ * 兼作工具栏布局的编辑页：上半是按钮池（未停靠的可移动按钮），下半是固定功能项
+ * （撤销/重做显隐开关、重置布局、重载配置、输入法设置、编辑器信息、fcitx 引擎状态项）。
+ *
+ * 本页的入口全部落在网格格子里，因此不实现 `onCreateBarExtension()`：
+ * 顶栏右侧固定位留给工具栏布局的「编辑 / 完成」。
+ */
 class StatusAreaWindow : InputWindow.ExtendedInputWindow<StatusAreaWindow>(),
     InputBroadcastReceiver, ComposeWindow {
 
     private val service: FcitxInputMethodService by manager.inputMethodService()
     private val fcitx: FcitxConnection by manager.fcitx()
-    private val theme by manager.theme()
     private val windowManager: InputWindowManager by manager.must()
+    private val bar: org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent by manager.must()
+    private val toolbarEdit: ToolbarEditComponent by manager.must()
 
-    private val editorInfoInspector by AppPrefs.getInstance().internal.editorInfoInspector
+    private val prefs = AppPrefs.getInstance()
 
-    private val staticEntries by lazy {
-        arrayOf(
-            StatusAreaEntry.Android(
-                context.getString(R.string.theme),
-                R.drawable.ic_baseline_palette_24,
-                ThemeList
-            ),
-            StatusAreaEntry.Android(
-                context.getString(R.string.input_method_options),
-                R.drawable.ic_baseline_language_24,
-                InputMethod
-            ),
-            StatusAreaEntry.Android(
-                context.getString(R.string.reload_config),
-                R.drawable.ic_baseline_sync_24,
-                ReloadConfig
-            ),
-            StatusAreaEntry.Android(
-                context.getString(R.string.virtual_keyboard),
-                R.drawable.ic_baseline_keyboard_24,
-                Keyboard
-            )
-        )
-    }
+    private val editorInfoInspector = prefs.internal.editorInfoInspector
 
-    // Compose 侧数据源：条目由 StateFlow 驱动，Compose 网格 collectAsState 渲染
-    private val _entries = MutableStateFlow<List<StatusAreaEntry>>(emptyList())
-    val entries: StateFlow<List<StatusAreaEntry>> = _entries.asStateFlow()
+    /** fcitx 引擎状态项：由广播更新，只驱动固定段末尾那部分。 */
+    private val _actions = MutableStateFlow<List<Action>>(emptyList())
+
+    /** 打开「重置布局」确认弹层（IME 内只用 Overlay 系列，系统 Dialog 必崩）。 */
+    private val _showResetConfirm = MutableStateFlow(false)
 
     private fun activateAction(action: Action) {
         fcitx.launchOnReady {
@@ -88,79 +81,119 @@ class StatusAreaWindow : InputWindow.ExtendedInputWindow<StatusAreaWindow>(),
         }
     }
 
-    private fun onItemClick(entry: StatusAreaEntry) {
-        when (entry) {
-            is StatusAreaEntry.Fcitx -> {
-                // 有子菜单的 fcitx 项由 Compose 弹层展开（见 StatusAreaGrid），
-                // 无子菜单时直接激活动作
-                if (entry.action.menu.isNullOrEmpty()) {
-                    activateAction(entry.action)
-                }
+    private fun onReloadConfig() {
+        fcitx.launchOnReady { f ->
+            f.reloadConfig()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                SubtypeManager.syncWith(f.enabledIme())
             }
-            is StatusAreaEntry.Android -> when (entry.type) {
-                InputMethod -> fcitx.peek { inputMethodEntryCached }.let {
-                    AppUtil.launchMainToInputMethodConfig(
-                        context, it.uniqueName, it.displayName
-                    )
-                }
-                ReloadConfig -> fcitx.launchOnReady { f ->
-                    f.reloadConfig()
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                        SubtypeManager.syncWith(f.enabledIme())
-                    }
-                    service.lifecycleScope.launch {
-                        Toast.makeText(service, R.string.done, Toast.LENGTH_SHORT).show()
-                    }
-                }
-                Keyboard -> AppUtil.launchMainToKeyboard(context)
-                ThemeList -> AppUtil.launchMainToThemeList(context)
+            service.lifecycleScope.launch {
+                Toast.makeText(service, R.string.done, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    override fun onCreateView(): View = createComposeWindowView(context) { Content() }
+
+    /**
+     * 窗口根包一层 miuix [Scaffold]：`OverlayDialog` 本身不依赖系统 Dialog，但其宿主
+     * `MiuixPopupHost` 必须由根 Scaffold 提供（Popup slot 最后 place，z 序最高）。
+     * 背景透明以沿用键盘主题底图；IME 的 insets 由 InputView 自行处理，故清零。
+     */
+    @Composable
+    override fun Content() {
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0),
+        ) {
+            MorePageContent()
+        }
+    }
+
+    @Composable
+    private fun MorePageContent() {
+        val layout by bar.toolbarLayout.collectAsState()
+        val editing by toolbarEdit.editing.collectAsState()
+        val showUndoRedo by toolbarEdit.showUndoRedo.collectAsState()
+        val actions by _actions.collectAsState()
+        val splitKeyboardEnabled = prefs.keyboard.splitKeyboard.preferenceState()
+        val showResetConfirm by _showResetConfirm.collectAsState()
+
+        val pool = MorePageModel.poolCells(layout.pool) { bar.isButtonUsable(it) }
+        val fixed = MorePageModel.fixedCells(
+            editing = editing,
+            showEditorInfo = editorInfoInspector.getValue(),
+            actions = actions,
+            iconOf = { drawableFromActionIcon(it) },
+        )
+
+        MorePageGrid(
+            poolCells = pool,
+            fixedCells = fixed,
+            splitKeyboardEnabled = splitKeyboardEnabled,
+            editing = editing,
+            showUndoRedo = showUndoRedo,
+            // 非编辑态不注入拖动状态：避免普通浏览时误触改动布局
+            drag = if (editing) toolbarEdit.drag else null,
+            onDropButton = { button, target -> toolbarEdit.applyDrop(button, target) },
+            onMoveableClick = { bar.onToolbarButtonClick(it) },
+            onFcitxClick = ::activateAction,
+            onFcitxMenuAction = ::activateAction,
+            onToggleUndoRedo = { toolbarEdit.toggleUndoRedo() },
+            onReloadConfig = ::onReloadConfig,
+            onSettings = { AppUtil.launchMain(context) },
+            onEditorInfo = { windowManager.attachWindow(EditorInfoWindow()) },
+            onResetLayout = { _showResetConfirm.value = true },
+        )
+
+        if (showResetConfirm) {
+            ResetLayoutConfirmDialog(
+                onConfirm = {
+                    toolbarEdit.resetDraft()
+                    _showResetConfirm.value = false
+                },
+                onDismiss = { _showResetConfirm.value = false },
+            )
+        }
+    }
+
+    /** 引擎项的图标映射沿用 [StatusAreaEntry.fromAction] 的口径，避免两处图标不一致。 */
+    private fun drawableFromActionIcon(action: Action): Int =
+        StatusAreaEntry.fromAction(action).icon
+
+    @Composable
+    private fun ResetLayoutConfirmDialog(
+        onConfirm: () -> Unit,
+        onDismiss: () -> Unit,
+    ) {
+        OverlayDialog(
+            show = true,
+            title = stringResource(R.string.more_page_reset_confirm_title),
+            summary = stringResource(R.string.more_page_reset_confirm_msg),
+            onDismissRequest = onDismiss,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                TextButton(
+                    text = stringResource(R.string.cancel),
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = stringResource(R.string.ok),
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
             }
         }
     }
 
     override fun onStatusAreaUpdate(actions: Array<Action>) {
-        _entries.value = arrayOf(
-            *staticEntries,
-            *Array(actions.size) { StatusAreaEntry.fromAction(actions[it]) }
-        ).toList()
+        _actions.value = actions.toList()
     }
-
-    override fun onCreateView(): View = createComposeWindowView(context) { Content() }
-
-    @Composable
-    override fun Content() {
-        val entries by _entries.collectAsState()
-        StatusAreaGrid(
-            entries = entries,
-            onItemClick = ::onItemClick,
-            onMenuActionClick = ::activateAction,
-        )
-    }
-
-    private val editorInfoButton by lazy {
-        ToolButton(context, R.drawable.ic_baseline_info_24, theme).apply {
-            contentDescription = context.getString(R.string.editor_info_inspector)
-            setOnClickListener { windowManager.attachWindow(EditorInfoWindow()) }
-        }
-    }
-
-    private val settingsButton by lazy {
-        ToolButton(context, R.drawable.ic_baseline_settings_24, theme).apply {
-            contentDescription = context.getString(R.string.open_input_method_settings)
-            setOnClickListener { AppUtil.launchMain(context) }
-        }
-    }
-
-    private val barExtension by lazy {
-        context.horizontalLayout {
-            if (editorInfoInspector) {
-                add(editorInfoButton, lParams(dp(40), dp(40)))
-            }
-            add(settingsButton, lParams(dp(40), dp(40)))
-        }
-    }
-
-    override fun onCreateBarExtension() = barExtension
 
     override fun onAttached() {
         fcitx.launchOnReady {

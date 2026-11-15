@@ -3,4 +3,6 @@
     <color name="highlight_background">#E3F2FD</color>
     <!-- Custom: keyboard visual tuning overlay -->
     <color name="tune_accent">#3A7BFF</color>
+    <!-- Custom: whole-utterance preprocessing debug overlay (fast-forwarded pause) -->
+    <color name="voice_preprocess_compressed">#FF9800</color>
 </resources>

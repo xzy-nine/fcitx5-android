@@ -10,7 +10,7 @@
  *
  * 本地路径：`:asr` 进程内的官方 sherpa-onnx 引擎（见 [VoiceAsrService] / [VoiceAsrClient]）；
  * 在线路径：平台 provider（WebSocket / REST，按各平台官方文档实现）——
- *   迁移期暂时桥接旧的 Xime handler，provider 落地后删除（见 [legacyHandler]）。
+ *   迁移期暂时桥接旧 handler，provider 落地后删除（见 [legacyHandler]）。
  */
 package org.fcitx.fcitx5.android.data.voice
 
@@ -25,11 +25,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.voice.online.OnlineAsrCallback
 import org.fcitx.fcitx5.android.data.voice.online.OnlineAsrProvider
 import org.fcitx.fcitx5.android.data.voice.online.OnlineAsrRegistry
 import org.fcitx.fcitx5.android.data.voice.online.OnlineAsrSession
+import org.fcitx.fcitx5.android.data.voice.preprocess.VoiceUtteranceBuffer
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -87,6 +89,14 @@ class VoiceSession(
     /** 在线平台会话（provider）。 */
     private var providerSession: OnlineAsrSession? = null
 
+    /**
+     * 非流式会话的整段音频缓冲。
+     *
+     * 非 null 表示本次会话的目标是整段提交：采集期间只累积音频，松手后统一预处理再送入引擎
+     * （离线整段模型与批次上传的在线平台）。流式目标为 null，音频边采边送。
+     */
+    private var utterance: VoiceUtteranceBuffer? = null
+
     /** 会话代次：迟到结果（停止/取消之后到达）一律丢弃。 */
     private val sessionSeq = AtomicInteger(0)
 
@@ -121,8 +131,9 @@ class VoiceSession(
     fun warmUp() {
         if (!isUsingLocalEngine) return
         if (enginePrepared) return
-        val files = VoiceModelStore.resolve(context, prefs.voiceAsrModelId.getValue())
-        if (files == null) return   // 模型缺失由 startRecognition 报错引导
+        // 先做便宜的「文件是否齐全」判断，避免为缺文件的模型白起一次协程
+        val modelId = prefs.voiceAsrModelId.getValue()
+        if (!VoiceModelStore.isReady(context, modelId)) return
         updateState {
             it.copy(
                 engineName = LOCAL_ENGINE_NAME,
@@ -131,9 +142,10 @@ class VoiceSession(
             )
         }
         scope.launch {
+            val spec = resolveSpec(modelId) ?: return@launch
             val bound = runCatching { client().ensureBound() }.getOrDefault(false)
             if (!bound) return@launch
-            val ok = runCatching { client().prepare(files) }.getOrDefault(false)
+            val ok = runCatching { client().prepare(spec) }.getOrDefault(false)
             enginePrepared = ok
             mainHandler.post {
                 if (!running && _state.value.recognitionState == VoiceRecognitionState.PREPARING) {
@@ -155,12 +167,6 @@ class VoiceSession(
         if (!isUsingLocalEngine) return startOnlineSession()
 
         val modelId = prefs.voiceAsrModelId.getValue()
-        val files = VoiceModelStore.resolve(context, modelId)
-        if (files == null) {
-            publishError("离线语音模型未下载，请先到模型市场下载")
-            return false
-        }
-
         val seq = sessionSeq.incrementAndGet()
         lastPartial = ""
         sessionFinished = false
@@ -178,6 +184,26 @@ class VoiceSession(
         }
 
         scope.launch {
+            // 家族判定要扫 onnx 头部区域，必须在 IO 线程上做
+            val spec = resolveSpec(modelId)
+            if (spec == null) {
+                if (seq == sessionSeq.get()) {
+                    val reason = withContext(Dispatchers.IO) {
+                        VoiceModelStore.resolveDetailed(context, modelId)
+                    }
+                    running = false
+                    publishError(
+                        when (reason) {
+                            // 文件在，但架构无法从模型自身还原（sherpa 侧需用户显式指定配置）
+                            is VoiceModelClassifier.Result.Unknown ->
+                                "该模型的架构无法自动识别，暂不支持"
+
+                            else -> "离线语音模型不可用，请先到模型市场下载或导入"
+                        }
+                    )
+                }
+                return@launch
+            }
             val bound = client().ensureBound()
             if (!bound) {
                 if (seq == sessionSeq.get()) {
@@ -186,7 +212,7 @@ class VoiceSession(
                 }
                 return@launch
             }
-            val started = client().start(files, object : VoiceAsrClient.Callback {
+            val started = client().start(spec, object : VoiceAsrClient.Callback {
                 override fun onPartial(text: String) {
                     if (seq != sessionSeq.get() || text.isEmpty() || text == lastPartial) return
                     lastPartial = text
@@ -209,6 +235,8 @@ class VoiceSession(
                 }
                 return@launch
             }
+            // 整段模型（离线家族）先缓冲、松手后统一预处理；流式家族仍边采边送
+            utterance = if (spec.family.streaming) null else VoiceUtteranceBuffer()
             mainHandler.post {
                 // 启动过程中用户已松手（stopRecognition 置 running=false）→ 不要再开采集
                 if (seq != sessionSeq.get() || !running) return@post
@@ -218,6 +246,15 @@ class VoiceSession(
         }
         return true
     }
+
+    /**
+     * 按 [VoiceModelSpec] 解析并构造引擎规格。
+     *
+     * 家族判定要顺序跳过整个 onnx 才能读到元数据（protobuf 的 metadata_props 排在 graph
+     * 之后），因此**只能在 IO 线程调用**——面板打开的预热路径与开始识别路径都已经是协程。
+     */
+    private suspend fun resolveSpec(modelId: String): VoiceModelSpec? =
+        withContext(Dispatchers.IO) { VoiceModelStore.resolve(context, modelId) }
 
     /**
      * 松手/再次点击：停止采集并提交最终结果。
@@ -232,6 +269,9 @@ class VoiceSession(
         capture?.stop()
         capture?.release()
         capture = null
+        // 取走整段缓冲：流式会话恒为 null，此时下面的 flush 是空操作
+        val pending = utterance
+        utterance = null
         if (!wasRunning && !isSessionActive()) {
             finishSession()
             return
@@ -239,6 +279,12 @@ class VoiceSession(
         updateState { it.copy(recognitionState = VoiceRecognitionState.PROCESSING) }
         if (isUsingLocalEngine) {
             scope.launch {
+                flushUtterance(pending) { samples ->
+                    runCatching { client().push(samples) }
+                }
+                if (seq != sessionSeq.get()) return@launch
+                // 送入完成后再计时：预处理与逐块送入的耗时不计入「等待最终结果」
+                armProcessingTimeout(seq)
                 val final = runCatching { client().finish() }.getOrDefault("")
                 if (seq != sessionSeq.get()) return@launch
                 val text = VoiceTextRules.addPunctuation(final.ifBlank { lastPartial })
@@ -251,18 +297,22 @@ class VoiceSession(
                     if (seq == sessionSeq.get()) finishSession()
                 }
             }
-            mainHandler.postDelayed({
-                if (seq == sessionSeq.get() && _state.value.recognitionState ==
-                    VoiceRecognitionState.PROCESSING
-                ) {
-                    Timber.w("$TAG: final result timeout, forcing idle")
-                    finishSession()
-                }
-            }, PROCESSING_TIMEOUT_MS)
         } else {
-            // 在线：流式平台在此发尾包，批次平台（MiMo）在此整段上传；结果由 provider 回调
-            runCatching { providerSession?.finish() }
-                .onFailure { publishError(it.message ?: "在线识别失败") }
+            if (pending == null) {
+                // 流式平台：在此发尾包；结果由 provider 回调
+                runCatching { providerSession?.finish() }
+                    .onFailure { publishError(it.message ?: "在线识别失败") }
+            } else {
+                // 批次平台：先送入预处理后的整段音频，再上传
+                scope.launch {
+                    flushUtterance(pending) { samples ->
+                        runCatching { providerSession?.pushAudio(samples) }
+                    }
+                    if (seq != sessionSeq.get()) return@launch
+                    runCatching { providerSession?.finish() }
+                        .onFailure { publishError(it.message ?: "在线识别失败") }
+                }
+            }
             // 兜底超时：provider 既没成功也没失败时给用户明确结果
             mainHandler.postDelayed({
                 if (seq == sessionSeq.get() && !sessionFinished) {
@@ -270,6 +320,39 @@ class VoiceSession(
                 }
             }, ONLINE_RESULT_TIMEOUT_MS)
         }
+    }
+
+    /** 已停止采集后等待最终结果的上限；超时即视为异常并回到可再次识别的状态。 */
+    private fun armProcessingTimeout(seq: Int) {
+        mainHandler.postDelayed({
+            if (seq == sessionSeq.get() && _state.value.recognitionState ==
+                VoiceRecognitionState.PROCESSING
+            ) {
+                Timber.w("$TAG: final result timeout, forcing idle")
+                finishSession()
+            }
+        }, PROCESSING_TIMEOUT_MS)
+    }
+
+    /**
+     * 取出整段缓冲、预处理后按块送入引擎；[pending] 为 null（流式会话）时不做任何事。
+     *
+     * 预处理是纯计算，放 Default 线程；块大小与采集链路一致，跨进程单次传参不会过大。
+     */
+    private suspend fun flushUtterance(
+        pending: VoiceUtteranceBuffer?,
+        push: (FloatArray) -> Unit,
+    ) {
+        if (pending == null) return
+        val result = withContext(Dispatchers.Default) { runCatching { pending.drain() } }
+            .getOrNull() ?: return
+        val stats = result.stats
+        Timber.i(
+            "$TAG: preprocess ${stats.originalMs}ms -> ${stats.processedMs}ms " +
+                    "(dropped=${stats.droppedMs}ms, sped=${stats.speedSavedMs}ms, " +
+                    "fallback=${stats.fallback})"
+        )
+        result.processed.forEachPushChunk(push)
     }
 
     /** 是否有正在进行的会话（采集/加载/等待结果）；点按切换、停止都用它判断，避免只看 running。 */
@@ -295,6 +378,7 @@ class VoiceSession(
         running = false
         sessionFinished = true
         lastPartial = ""
+        utterance = null
         capture?.release()
         capture = null
         if (isUsingLocalEngine) {
@@ -391,6 +475,8 @@ class VoiceSession(
             val s = provider.newSession(context, callback)
             providerSession = s
             s.start()
+            // 批次平台（松手后整段上传）先缓冲、松手后统一预处理；流式平台仍边说边发
+            utterance = if (provider.streamsAudio) null else VoiceUtteranceBuffer()
             mainHandler.post {
                 if (seq == sessionSeq.get()) startCapture(seq, provider)
             }
@@ -405,14 +491,20 @@ class VoiceSession(
     // ---- 内部 ----
 
     private fun startCapture(seq: Int, provider: OnlineAsrProvider? = null) {
+        // 整段目标在本会话内先缓冲，故采集侧不做逐块增益：响度统一由预处理决定
+        val buffered = utterance
         val capture = VoiceAudioCapture(
             onSpeechChunk = { samples ->
                 if (seq != sessionSeq.get()) return@VoiceAudioCapture
-                if (provider != null) {
-                    // 在线平台：流式平台边说边发；批次平台（MiMo）内部累积，松手时整段上传
+                val buffer = buffered
+                if (buffer != null) {
+                    // 整段目标：只累积，停止后统一预处理再送入引擎
+                    buffer.append(samples)
+                } else if (provider != null) {
+                    // 在线平台：流式平台边说边发
                     runCatching { providerSession?.pushAudio(samples) }
                 } else {
-                    // 本地引擎：push 是同步 IPC，文本以返回值给出（采集线程）
+                    // 本地流式引擎：push 是同步 IPC，文本以返回值给出（采集线程）
                     val text = VoiceTextRules.cleanPartial(
                         runCatching { client().push(samples) }.getOrDefault("")
                     )
@@ -433,6 +525,7 @@ class VoiceSession(
                 mainHandler.post { callbacks.onSpectrum(spectrum) }
             },
             onError = { message -> if (seq == sessionSeq.get()) publishError(message) },
+            applyInputGain = buffered == null,
         )
         if (!capture.start()) {
             running = false
@@ -446,6 +539,7 @@ class VoiceSession(
         sessionFinished = true
         lastPartial = ""
         providerSession = null
+        utterance = null
         _spectrum.value = FloatArray(SPECTRUM_BARS)
         _state.value = _state.value.copy(
             recognitionState = VoiceRecognitionState.IDLE,
@@ -459,6 +553,7 @@ class VoiceSession(
         running = false
         sessionFinished = true
         providerSession = null
+        utterance = null
         _state.value = _state.value.copy(
             recognitionState = VoiceRecognitionState.ERROR,
             error = message,

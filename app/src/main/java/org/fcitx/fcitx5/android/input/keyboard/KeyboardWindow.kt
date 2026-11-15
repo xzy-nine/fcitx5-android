@@ -138,6 +138,11 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
 
     @Composable
     override fun Content() {
+        // 冷启动阶段计时：键盘内容完成首次组合
+        androidx.compose.runtime.SideEffect {
+            org.fcitx.fcitx5.android.input.ColdStartTrace.markOnce("keyboardComposed")
+            org.fcitx.fcitx5.android.input.ColdStartTrace.pass("keyboard")
+        }
         val layout by currentLayout
         // 分体键盘相关偏好做成响应式（View 侧注册了 OnChangeListener 即时重建）
         val splitRequested = prefs.splitKeyboard.preferenceState()
@@ -154,7 +159,11 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .onSizeChanged { bar.onKeyboardSizeChanged(it.width, it.height) },
+                .onSizeChanged {
+                    bar.onKeyboardSizeChanged(it.width, it.height)
+                    // 冷启动阶段计时：键盘内容完成首次测量与布局
+                    org.fcitx.fcitx5.android.input.ColdStartTrace.markOnce("keyboardLaidOut")
+                },
         ) {
             // 分体是否允许由「真实宽高比 > 阈值」决定，与 View 侧 isSplitAllowed 同口径
             val widthPx = with(density) { maxWidth.toPx() }.toInt()
