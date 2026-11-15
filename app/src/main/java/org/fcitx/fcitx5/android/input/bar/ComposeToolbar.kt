@@ -5,6 +5,7 @@
 package org.fcitx.fcitx5.android.input.bar
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -12,9 +13,10 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -22,30 +24,38 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.input.keyboard.rememberActiveTheme
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Edit
 
 /**
  * 工具栏高度。
@@ -57,9 +67,50 @@ import top.yukonga.miuix.kmp.icon.extended.Edit
 val LocalToolbarHeight = staticCompositionLocalOf { ComposeKawaiiBarComponent.HEIGHT.dp }
 
 /**
+ * 工具栏视觉配置（背景薄层 + 前景色）。
+ *
+ * **背景是刻意的「反差薄层」**：工具栏与键盘背景要分开，做法是在键盘底色上叠一层
+ * **反色**的极低透明度 scrim（键盘深 → 叠白、键盘浅 → 叠黑，`alpha < 10%`），
+ * 再配圆角把它和键盘区在视觉上切开 —— 起分隔作用的是**下**两角
+ * （工具栏与键盘区的分界；IME 的下缘由屏幕自身圆角代劳，不在此列）。
+ *
+ * 深浅判断用**键盘背景色本身的明度**（`theme.keyboardColor`），而不是主题自报的
+ * `isDark` —— 用户名下的自定义主题常常与 `isDark` 不一致。背景图主题下该色不代表实际
+ * 画面明度，此时仍以此色为准（后续若要更准，可对背景图取平均亮度）。
+ *
+ * 图标/文字色同样随键盘明度取黑/白（工具栏是纯 Compose 区，不参与 fcitx 主题的键面配色；
+ * 不恒用 miuix onSurface —— miuix 主题明度与键盘主题可能不一致，会造成前景与底色反差不足）。
+ *
+ * 是独立函数而非工具栏私有，因为**拖动浮层挂在 IME 根组合**、与工具栏不在同一棵子树，
+ * 两处必须共用同一套配色，否则幽灵图标会与被拖按钮不同色。
+ */
+@Composable
+fun rememberToolbarVisuals(): ToolbarVisuals {
+    val theme = rememberActiveTheme()
+    val keyboardIsLight = Color(theme.keyboardColor).luminance() > 0.5f
+    val scrim = if (keyboardIsLight) Color.Black else Color.White
+    // 前景色随键盘明度取黑/白，确保与「键盘底色 + scrim」叠加后的工具栏底色对比足够
+    val foreground = if (keyboardIsLight) Color.Black else Color.White
+    return remember(keyboardIsLight) {
+        ToolbarVisuals(
+            // < 10%：只做「与键盘区分」的暗示，不遮挡背后的主题/背景图
+            barColor = scrim.copy(alpha = 0.08f),
+            iconColor = foreground,
+            textColor = foreground,
+        )
+    }
+}
+
+/**
  * Compose 工具栏
  *
  * 三态切换：Idle / Candidate / Title
+ *
+ * **顶栏的两段式结构**（custom）：左侧引导元素（键盘页=收起/展开菜单，更多页=返回）、
+ * 中间**可停靠按钮行**（横向滚动，内容与顺序由 [ToolbarLayout] 布局决定）、
+ * 右侧两个固定元素（更多按钮 + 尾随按钮：键盘页=收起键盘，更多页=编辑/完成）。
+ * 右侧固定元素画在行内**之后**，因此「更多」永远贴着可停靠区的最右端。
+ * 更多页打开时收起键盘不显示（顶栏改由返回+编辑承担离开/编辑语义）。
  */
 @Composable
 fun ComposeToolbar(
@@ -68,12 +119,18 @@ fun ComposeToolbar(
     titleData: TitleData?,
     callbacks: ToolbarCallbacks,
     visuals: ToolbarVisuals,
-    expandButtonState: ExpandButtonStateMachine.State,
     splitKeyboardEnabled: Boolean = false,
     menuRotation: Float = 0f,
     modifier: Modifier = Modifier,
     // 工具栏高度：宿主注入缓存值（见 [LocalToolbarHeight]）
     toolbarHeight: Dp = LocalToolbarHeight.current,
+    // 可停靠行的按钮（顺序即显示顺序），由宿主从布局偏好解出
+    dockedButtons: List<ToolbarButton> = emptyList(),
+    // 更多页按钮池的按钮：拖动落点判定要同时知道两区的顺序
+    poolButtons: List<ToolbarButton> = emptyList(),
+    // 布局编辑：拖动状态与草稿落点提交
+    drag: ToolbarDragState? = null,
+    onDropButton: (ToolbarButton, ToolbarLayout.Drop?) -> Unit = { _, _ -> },
     // 候选栏可见性：由调用方按「候选内容就绪」驱动（默认按 barState，调用方覆盖以消除闪烁）
     candidateVisible: Boolean = barState == KawaiiBarStateMachine.State.Candidate,
     // 候选栏内容由外部传入
@@ -88,6 +145,16 @@ fun ComposeToolbar(
     titleExtensionContent: @Composable (() -> Unit)? = null,
 ) {
     CompositionLocalProvider(LocalToolbarHeight provides toolbarHeight) {
+        // 「更多」只在可停靠按钮行真的可见时出现：收起态（Empty）与候选/剪贴板/数字行等
+        // 子态里中间区不是按钮行，放一个更多按钮既无处安放也会与这些子态抢视觉重心。
+        // 语音页虽然也保留可停靠行，但不给更多入口 —— 语音面板是覆盖层，
+        // 切到更多页后窗口会被面板盖住，进去也看不见。
+        val showMore = callbacks.morePageVisible ||
+            (barState == KawaiiBarStateMachine.State.Idle && idleSubState == IdleSubState.Toolbar)
+        // 右侧固定槽位数：更多页为「更多 + 编辑/完成」，其余为「更多? + 收起键盘」
+        val trailingSlots = if (callbacks.morePageVisible) 2 else if (showMore) 2 else 1
+        val isIdle = barState == KawaiiBarStateMachine.State.Idle
+        val hostView = androidx.compose.ui.platform.LocalView.current
         Box(
             modifier = modifier
                 .fillMaxWidth()
@@ -106,59 +173,114 @@ fun ComposeToolbar(
             )
             // Idle 态用滑入/滑出 + 淡入/淡出（与 IdleContent 内部子态展开收起动画一致），
             // 候选栏消失时工具栏从左滑入，候选栏出现时工具栏向左滑出。
-            androidx.compose.animation.AnimatedVisibility(
-                visible = barState == KawaiiBarStateMachine.State.Idle,
+            AnimatedVisibility(
+                visible = isIdle,
                 enter = slideInHorizontally(animationSpec = androidx.compose.animation.core.tween(200)) { -it } +
                     fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
                 exit = slideOutHorizontally(animationSpec = androidx.compose.animation.core.tween(150)) { -it } +
                     fadeOut(animationSpec = androidx.compose.animation.core.tween(150)),
+                // 退出动画期间（旧段仍在树上）不得再接收触摸，否则与新生效的段争命中
+                modifier = Modifier.activeZIndex(isIdle),
             ) {
+                // 滑动收尾兜底：位移在动画期间作用于布局，命中区域随之同步；但收官那一帧若先于
+                // 终值布局落地，屏幕会停在动画中途 —— 整行残留一个位移量、行首按钮被推出可视区，
+                // 而命中已按终值布局判定，于是「看着的位置」与「点到的位置」错开，且不会自愈。
+                // 补画只在**滑动由运行转为停止**的那一个沿触发，且要等终值帧先自行提交一帧；
+                // 动画进行中与首次进入组合都不插手，以免干扰滑动本身的节奏。
+                LaunchedEffect(Unit) {
+                    var wasRunning = false
+                    snapshotFlow { transition.isRunning }.collect { running ->
+                        if (wasRunning && !running) {
+                            withFrameNanos { }
+                            hostView.invalidate()
+                        }
+                        wasRunning = running
+                    }
+                }
                 IdleContent(
                     subState = idleSubState,
                     callbacks = callbacks,
                     visuals = visuals,
                     splitKeyboardEnabled = splitKeyboardEnabled,
                     menuRotation = menuRotation,
+                    dockedButtons = dockedButtons,
+                    trailingSlots = trailingSlots,
+                    drag = drag,
+                    onDropButton = onDropButton,
                     numberRowContent = numberRowContent,
                     inlineSuggestionContent = inlineSuggestionContent,
                     clipboardContent = clipboardContent,
                 )
             }
-            // 收起键盘按钮不跟随滑入/滑出，仅淡入/淡出，始终固定在右侧
-            androidx.compose.animation.AnimatedVisibility(
-                visible = barState == KawaiiBarStateMachine.State.Idle,
-                enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
-                exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(150)),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(LocalToolbarHeight.current),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    HideKeyboardButton(
-                        onClick = callbacks.onHideKeyboard,
-                        onSwipeLeft = callbacks.onNumberRowShow,
-                        iconColor = visuals.iconColor,
-                    )
-                }
-            }
-            androidx.compose.animation.AnimatedVisibility(
+            AnimatedVisibility(
                 visible = barState == KawaiiBarStateMachine.State.Title,
                 enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
                 exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(150)),
+                // 同上：退出动画期间不得接收触摸
+                modifier = Modifier.activeZIndex(barState == KawaiiBarStateMachine.State.Title),
             ) {
-                TitleContent(
-                    titleData = titleData,
+                if (callbacks.morePageVisible || callbacks.voicePageVisible) {
+                    // 更多页 / 语音页：顶栏与键盘页同形 —— 「返回 + 可停靠行」。
+                    // 语音面板是覆盖层（不切窗口）却把顶栏切进了 Title 态，若不这样处理，
+                    // 左侧菜单键会被返回键取代、整行按钮消失，而返回键与菜单键位置重合，
+                    // 表现为「按钮没了、点下去触发了别的」。
+                    MorePageBar(
+                        callbacks = callbacks,
+                        visuals = visuals,
+                        splitKeyboardEnabled = splitKeyboardEnabled,
+                        dockedButtons = dockedButtons,
+                        trailingSlots = trailingSlots,
+                        drag = drag,
+                        onDropButton = onDropButton,
+                    )
+                } else {
+                    TitleContent(
+                        titleData = titleData,
+                        callbacks = callbacks,
+                        visuals = visuals,
+                        extensionContent = titleExtensionContent,
+                    )
+                }
+            }
+            // 右侧固定元素：键盘页（Idle）、更多页与语音页（Title + 覆盖层页面）都要显示。
+            // 不跟随可停靠行滚动 —— 「更多」因此恒在最右；也不跟随 Idle 的滑入/滑出，仅淡入/淡出。
+            // zIndex 抬到内容段之上：它与可停靠行在右侧是重叠的（行靠 padding 避让），
+            // 必须由固定元素赢得命中，否则「更多 / 收起键盘」会点不动。
+            AnimatedVisibility(
+                visible = barState == KawaiiBarStateMachine.State.Idle ||
+                    (barState == KawaiiBarStateMachine.State.Title &&
+                        (callbacks.morePageVisible || callbacks.voicePageVisible)),
+                enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
+                exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(150)),
+                modifier = Modifier.zIndex(2f),
+            ) {
+                FixedTrailingRow(
                     callbacks = callbacks,
                     visuals = visuals,
-                    extensionContent = titleExtensionContent,
+                    showMore = showMore,
                 )
             }
         }
     }
 }
+
+/** 右侧固定元素占用的最小宽度：按实际槽位数预留，中间内容据此避让。 */
+@Composable
+private fun trailingInset(slots: Int): Dp = LocalToolbarHeight.current * slots
+
+/**
+ * 让**当前生效**的内容段在命中测试中胜出。
+ *
+ * 顶栏的三段内容是并排的 `AnimatedVisibility`：切换时旧段要播 150ms 淡出，这期间两段
+ * 同时存在于组合树中、**同时可被命中**。而 Idle 的菜单键与覆盖层页/标题页的返回键占据
+ * 完全相同的矩形，声明在后的 Title 段又画在上层 —— 于是退出动画期间「看着是菜单键、
+ * 点下去命中返回键」。
+ *
+ * 修法是把生效段的 `zIndex` 抬到淡出段之上：Compose 的 z 序同时决定绘制与命中顺序，
+ * 因此按下的那一刻命中的就是**看得见的那一个**。不用消费事件，避免连带吞掉新段的点击。
+ */
+private fun Modifier.activeZIndex(active: Boolean): Modifier =
+    this.zIndex(if (active) 1f else 0f)
 
 @Composable
 private fun IdleContent(
@@ -167,6 +289,10 @@ private fun IdleContent(
     visuals: ToolbarVisuals,
     splitKeyboardEnabled: Boolean,
     menuRotation: Float,
+    dockedButtons: List<ToolbarButton>,
+    trailingSlots: Int,
+    drag: ToolbarDragState?,
+    onDropButton: (ToolbarButton, ToolbarLayout.Drop?) -> Unit,
     numberRowContent: @Composable () -> Unit,
     inlineSuggestionContent: @Composable () -> Unit,
     clipboardContent: @Composable () -> Unit,
@@ -174,10 +300,12 @@ private fun IdleContent(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(LocalToolbarHeight.current),
+            .height(LocalToolbarHeight.current)
+            // 右侧固定元素由 FixedTrailingRow 绘制，中间内容在此避让
+            .padding(end = trailingInset(trailingSlots)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 左侧：菜单按钮
+        // 左侧：菜单按钮（键盘页展开/收起工具栏）
         MenuButton(
             onClick = callbacks.onMenuClick,
             iconColor = visuals.iconColor,
@@ -211,10 +339,13 @@ private fun IdleContent(
                 when (state) {
                     IdleSubState.Empty -> { /* 空白 */ }
                     IdleSubState.Toolbar -> {
-                        ToolbarButtonsRow(
+                        DockedButtonsRow(
                             callbacks = callbacks,
                             visuals = visuals,
                             splitKeyboardEnabled = splitKeyboardEnabled,
+                            dockedButtons = dockedButtons,
+                            drag = drag,
+                            onDropButton = onDropButton,
                         )
                     }
                     IdleSubState.Clipboard -> {
@@ -229,11 +360,225 @@ private fun IdleContent(
                 }
             }
         }
+    }
+}
 
-        // 右侧占位：收起键盘按钮已移至 ComposeToolbar 层（不跟随滑入/滑出）
-        androidx.compose.foundation.layout.Spacer(
-            modifier = Modifier.size(LocalToolbarHeight.current),
+/**
+ * 「覆盖层页面」的顶栏：左侧返回（编辑模式下隐藏），中间与键盘页共用同一条可停靠行。
+ *
+ * 服务于两类页面 —— 更多页（真实窗口）与语音页（覆盖层）。两者都必须保留可停靠行：
+ * 若退化成「返回 + 标题」，整行按钮会消失，而返回键恰好占着菜单键的位置，
+ * 表现为「按钮看着没了、点下去却触发了别的」。
+ *
+ * 编辑模式下左侧留空 —— 编辑期间不允许离开该页，必须先点「完成」或让页面被顶掉。
+ */
+@Composable
+private fun MorePageBar(
+    callbacks: ToolbarCallbacks,
+    visuals: ToolbarVisuals,
+    splitKeyboardEnabled: Boolean,
+    dockedButtons: List<ToolbarButton>,
+    trailingSlots: Int,
+    drag: ToolbarDragState?,
+    onDropButton: (ToolbarButton, ToolbarLayout.Drop?) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(LocalToolbarHeight.current)
+            .padding(end = trailingInset(trailingSlots)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (!callbacks.editing) {
+            ToolbarIconButton(
+                onClick = callbacks.onBackToKeyboard,
+                iconRes = R.drawable.ic_baseline_arrow_back_24,
+                iconColor = visuals.iconColor,
+                contentDescription = stringResource(R.string.toolbar_back_to_keyboard),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(LocalToolbarHeight.current),
+            contentAlignment = Alignment.Center,
+        ) {
+            DockedButtonsRow(
+                callbacks = callbacks,
+                visuals = visuals,
+                splitKeyboardEnabled = splitKeyboardEnabled,
+                dockedButtons = dockedButtons,
+                drag = drag,
+                onDropButton = onDropButton,
+            )
+        }
+    }
+}
+
+/**
+ * 右侧固定元素：可选的更多按钮 + 尾随按钮。
+ *
+ * - 更多按钮：[showMore] 为 false 时不渲染（收起态与候选/剪贴板/数字行子态）；
+ *   更多页上渲染但置灰不可点（已在目标页，无重复入口）。
+ * - 尾随按钮：键盘页为收起键盘，更多页为「编辑 / 完成」。
+ */
+@Composable
+private fun FixedTrailingRow(
+    callbacks: ToolbarCallbacks,
+    visuals: ToolbarVisuals,
+    showMore: Boolean,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(LocalToolbarHeight.current),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (showMore) {
+            IconButton(
+                onClick = callbacks.onMore,
+                // 更多页上该按钮只标示位置：已在目标页，不重复提供入口
+                enabled = !callbacks.morePageVisible,
+                modifier = Modifier
+                    .size(LocalToolbarHeight.current)
+                    .inputFeedback(),
+                cornerRadius = LocalToolbarHeight.current / 2,
+                minWidth = LocalToolbarHeight.current,
+                minHeight = LocalToolbarHeight.current,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_baseline_more_horiz_24),
+                    contentDescription = stringResource(R.string.status_area),
+                    tint = if (callbacks.morePageVisible) {
+                        visuals.iconColor.copy(alpha = 0.35f)
+                    } else {
+                        visuals.iconColor
+                    },
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+        if (callbacks.morePageVisible) {
+            ToolbarIconButton(
+                onClick = callbacks.onEditToggle,
+                iconRes = if (callbacks.editing) R.drawable.ic_baseline_check_24
+                else R.drawable.ic_baseline_drag_handle_24,
+                iconColor = visuals.iconColor,
+                contentDescription = stringResource(
+                    if (callbacks.editing) R.string.toolbar_edit_done
+                    else R.string.toolbar_edit_layout
+                ),
+            )
+        } else {
+            HideKeyboardButton(
+                onClick = callbacks.onHideKeyboard,
+                onSwipeLeft = callbacks.onNumberRowShow,
+                iconColor = visuals.iconColor,
+            )
+        }
+    }
+}
+
+/**
+ * 可停靠按钮行：撤销/重做两个固定槽位（受偏好控制显隐，**不参与拖动**）之后，
+ * 依次渲染布局里的可移动按钮。
+ *
+ * 横向滚动承载「按钮放不下」的情形 —— 图标不缩小、右侧固定元素不被挤压；
+ * 「更多」不在本行内，故永远贴着可停靠区最右端。
+ *
+ * 编辑模式下每个可移动按钮可长按拖动（[ToolbarDragState]），并注册窗口矩形供跨区命中；
+ * 拖动到行的左右边缘时自动横向滚动，否则远端槽位够不到。
+ */
+@Composable
+private fun DockedButtonsRow(
+    callbacks: ToolbarCallbacks,
+    visuals: ToolbarVisuals,
+    splitKeyboardEnabled: Boolean,
+    dockedButtons: List<ToolbarButton>,
+    drag: ToolbarDragState?,
+    onDropButton: (ToolbarButton, ToolbarLayout.Drop?) -> Unit,
+) {
+    val scrollState = rememberScrollState()
+    val density = LocalDensity.current
+
+    if (drag != null && callbacks.editing) {
+        toolbarEdgeAutoScroll(
+            drag = drag,
+            inPool = false,
+            horizontal = true,
+            edgePx = with(density) { 56.dp.toPx() },
+            maxStepPx = with(density) { 24.dp.toPx() },
+            scrollBy = { scrollState.scrollBy(it) },
         )
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(LocalToolbarHeight.current)
+            // 视口登记在滚动容器上：命中判定要的是「行当前可见的范围」
+            .then(
+                if (drag != null) Modifier.toolbarDropViewport(drag, inPool = false)
+                else Modifier
+            )
+            // 横向插入方向只由本行决定（池子窗口被强制 LTR），故由本行上报
+            .then(
+                if (drag != null) {
+                    Modifier.toolbarDockedDirection(
+                        drag,
+                        LocalLayoutDirection.current == LayoutDirection.Rtl,
+                    )
+                } else Modifier
+            )
+            .horizontalScroll(scrollState),
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (callbacks.showUndoRedo) {
+            ToolbarIconButton(
+                onClick = callbacks.onUndo,
+                iconRes = R.drawable.ic_baseline_undo_24,
+                iconColor = visuals.iconColor,
+                contentDescription = stringResource(R.string.undo),
+            )
+            ToolbarIconButton(
+                onClick = callbacks.onRedo,
+                iconRes = R.drawable.ic_baseline_redo_24,
+                iconColor = visuals.iconColor,
+                contentDescription = stringResource(R.string.redo),
+            )
+        }
+        dockedButtons.forEach { button ->
+            val usable = callbacks.buttonUsable(button)
+            val isDragging = drag?.dragging == button
+            ToolbarMovableButton(
+                button = button,
+                // 不可用时置灰但仍占位：位置本身是布局信息，直接消失会让用户以为按钮丢失
+                contentColor = if (usable) visuals.iconColor else visuals.iconColor.copy(alpha = 0.35f),
+                // 编辑模式下按钮不可点，只能长按拖（与原功能区分，避免误触）
+                enabled = usable && !callbacks.editing,
+                splitKeyboardEnabled = splitKeyboardEnabled,
+                // 被拖走的按钮在源位置暂时留白，视觉上「跟手」而不是复制一份
+                dimmed = isDragging,
+                modifier = Modifier
+                    .then(
+                        if (drag != null) Modifier.toolbarDockSlot(drag, button, inPool = false)
+                        else Modifier
+                    )
+                    .then(
+                        if (drag != null) {
+                            Modifier.toolbarDragSource(
+                                drag = drag,
+                                button = button,
+                                enabled = callbacks.editing,
+                                onDrop = { target -> onDropButton(button, target) },
+                            )
+                        } else Modifier
+                    ),
+                onClick = { callbacks.onButtonClick(button) },
+            )
+        }
     }
 }
 
@@ -300,83 +645,6 @@ private fun TitleContent(
 }
 
 @Composable
-private fun ToolbarButtonsRow(
-    callbacks: ToolbarCallbacks,
-    visuals: ToolbarVisuals,
-    splitKeyboardEnabled: Boolean,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(LocalToolbarHeight.current)
-            .padding(horizontal = 4.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ToolbarIconButton(
-            onClick = callbacks.onUndo,
-            iconRes = R.drawable.ic_baseline_undo_24,
-            iconColor = visuals.iconColor,
-            contentDescription = "Undo",
-        )
-        ToolbarIconButton(
-            onClick = callbacks.onRedo,
-            iconRes = R.drawable.ic_baseline_redo_24,
-            iconColor = visuals.iconColor,
-            contentDescription = "Redo",
-        )
-        ToolbarIconButton(
-            onClick = callbacks.onCursorMove,
-            iconRes = R.drawable.ic_cursor_move,
-            iconColor = visuals.iconColor,
-            contentDescription = "Cursor Move",
-        )
-        ToolbarIconButton(
-            onClick = callbacks.onClipboard,
-            iconRes = R.drawable.ic_clipboard,
-            iconColor = visuals.iconColor,
-            contentDescription = "Clipboard",
-        )
-        ToolbarIconButton(
-            onClick = callbacks.onSplitKeyboardToggle,
-            iconRes = if (splitKeyboardEnabled) R.drawable.ic_baseline_keyboard_24 else R.drawable.ic_split_keyboard,
-            iconColor = visuals.iconColor,
-            contentDescription = "Split Keyboard",
-        )
-        ToolbarIconButton(
-            onClick = callbacks.onMore,
-            iconRes = R.drawable.ic_baseline_more_horiz_24,
-            iconColor = visuals.iconColor,
-            contentDescription = "More",
-        )
-        ToolbarIconButton(
-            onClick = callbacks.onTune,
-            iconRes = R.drawable.ic_baseline_tune_24,
-            iconColor = visuals.iconColor,
-            contentDescription = "Tune",
-        )
-        // custom: 内置语音输入（未启用时 onVoiceInput 为 null，不显示）
-        callbacks.onVoiceInput?.let { onVoiceInput ->
-            ToolbarIconButton(
-                onClick = onVoiceInput,
-                iconRes = R.drawable.ic_baseline_keyboard_voice_24,
-                iconColor = visuals.iconColor,
-                contentDescription = "Voice input",
-            )
-        }
-        // custom: 手写输入（未启用或模型缺失时 onHandwritingInput 为 null，不显示）
-        callbacks.onHandwritingInput?.let { onHandwritingInput ->
-            ToolbarVectorIconButton(
-                onClick = onHandwritingInput,
-                imageVector = MiuixIcons.Edit,
-                iconColor = visuals.iconColor,
-                contentDescription = "Handwriting input",
-            )
-        }
-    }
-}
-
-@Composable
 private fun MenuButton(
     onClick: () -> Unit,
     iconColor: Color,
@@ -385,7 +653,7 @@ private fun MenuButton(
 ) {
     var iconRotation by remember { mutableFloatStateOf(rotation) }
     val animatedRotation by animateFloatAsState(targetValue = iconRotation, label = "menuRotation")
-    androidx.compose.runtime.LaunchedEffect(rotation) { iconRotation = rotation }
+    LaunchedEffect(rotation) { iconRotation = rotation }
 
     IconButton(
         onClick = onClick,
@@ -398,7 +666,7 @@ private fun MenuButton(
     ) {
         Icon(
             painter = painterResource(R.drawable.ic_baseline_expand_more_24),
-            contentDescription = "Menu",
+            contentDescription = stringResource(R.string.expand_toolbar),
             tint = iconColor,
             modifier = Modifier
                 .size(24.dp)
@@ -460,7 +728,7 @@ private fun HideKeyboardButton(
     ) {
         Icon(
             painter = painterResource(R.drawable.ic_baseline_arrow_drop_down_24),
-            contentDescription = "Hide Keyboard",
+            contentDescription = stringResource(R.string.hide_keyboard),
             tint = iconColor,
             modifier = Modifier
                 .size(24.dp)
@@ -484,31 +752,6 @@ private fun ToolbarIconButton(
     ) { tint ->
         Icon(
             painter = painterResource(iconRes),
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(24.dp),
-        )
-    }
-}
-
-/**
- * 与 [ToolbarIconButton] 同形，图标来源为矢量图（如 miuix 图标集）。
- */
-@Composable
-private fun ToolbarVectorIconButton(
-    onClick: () -> Unit,
-    imageVector: ImageVector,
-    iconColor: Color,
-    modifier: Modifier = Modifier,
-    contentDescription: String? = null,
-) {
-    ToolbarIconButtonImpl(
-        onClick = onClick,
-        iconColor = iconColor,
-        modifier = modifier,
-    ) { tint ->
-        Icon(
-            imageVector = imageVector,
             contentDescription = contentDescription,
             tint = tint,
             modifier = Modifier.size(24.dp),

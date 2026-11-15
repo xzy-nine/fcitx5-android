@@ -41,12 +41,13 @@ import androidx.autofill.inline.common.ViewStyle
 import androidx.autofill.inline.v1.InlineSuggestionUi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.key
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CoroutineStart
@@ -120,14 +121,16 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private lateinit var contentView: FrameLayout
     private var candidatesView: CandidatesView? = null
 
-    // Compose host state: drives (re)composition of the InputView embedded via AndroidView.
+    // Compose host state: drives the InputView rebuild observed by the overlay composition.
     // `themeState` mirrors the active theme; `recreateNonce` forces a full View rebuild on
     // pref changes. Both are read inside the Compose tree, so writing them triggers recomposition.
     private val themeState by lazy { mutableStateOf(ThemeManager.activeTheme) }
     private val recreateNonce by lazy { mutableStateOf(0) }
 
-    // `inputView` 作为 Compose 状态：根组合的弹窗层 / 候选操作菜单覆盖层据此读取
-    // 当前 InputView 的组件；InputView 重建（themeState/recreateNonce 变化）时值更新驱动重组。
+    // `inputView` 作为 Compose 状态：覆盖层据此读取当前 InputView 的组件。
+    // InputView 的创建与移除由覆盖层组合内的 DisposableEffect 驱动（键 = 主题/重建计数/触控笔态），
+    // 因此它的存活期与组合一致：组合被销毁（宿主 detach）或键变化时旧实例即被移除，
+    // 不会出现「引用仍指向已 detach 实例」的情况。
     private val inputView = mutableStateOf<InputView?>(null)
 
     private val navbarMgr = NavigationBarManager()
@@ -227,69 +230,100 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     )
 
     /**
-     * Builds the IME input view as a Compose host: a [ComposeView] root whose content embeds the
-     * existing [InputView] (a traditional Android View) via [AndroidView]. The View implementation
-     * is left untouched; wrapping it this way only establishes a Compose root so the IME can be
-     * progressively migrated to Compose later.
+     * Builds the IME input view as a plain [FrameLayout] host: the [InputView] (a traditional
+     * Android View) is a direct child, and the Compose layers (key popups / candidate action menu /
+     * keyboard tune / toolbar drag) live in a sibling [ComposeView] on top.
      *
-     * Theme changes and pref-driven rebuilds are handled by updating [themeState]/[recreateNonce],
-     * which re-runs the [key] block and recreates the [InputView] — equivalent to the old
-     * `replaceInputView` behaviour, but without manually calling the IMS `setInputView`.
+     * Embedding the [InputView] through `AndroidView` instead costs a full extra measure of the
+     * whole keyboard subtree per frame (`AndroidViewHolder.remeasure`), so it is a direct child.
+     *
+     * The child's lifetime is driven by [DisposableEffect] inside the overlay composition, keyed on
+     * the theme / rebuild counter / stylus mode: a key change (or the composition itself being
+     * disposed when this host is replaced) removes the old instance and installs a fresh one.
      */
     private fun createComposeInputView(): View {
-        val composeView = ComposeView(this).apply {
+        val container = FrameLayout(this)
+        val overlayHost = ComposeView(this).apply {
             setContent {
                 MiuixTheme(controller = remember { ThemeController(ColorSchemeMode.System) }) {
-                    Box(Modifier.fillMaxSize()) {
-                        // custom: 触控笔 UI 模式下撤下键盘：
-                        // 此时 IME 只剩浮动工具箱，墨迹由系统墨迹窗口承载；
-                        // 因此用触控笔点「输入法功能按钮」不会再进入手写（键盘压根不在）。
-                        if (!stylusUiActive.value) {
-                            key(themeState.value, recreateNonce.value) {
-                            AndroidView(
-                                factory = { _ ->
-                                    InputView(this@FcitxInputMethodService, fcitx, themeState.value)
-                                        .also {
-                                            inputView.value = it
-                                            inputDeviceMgr.setInputView(it)
-                                            // A recreated InputView is blank: [InputView.startInput]
-                                            // only ever runs from onStartInputView, so replay the
-                                            // ongoing session here to feed EditorInfo/capFlags to the
-                                            // keyboard components and to the return key drawable.
-                                            currentEditorInfo?.let { info ->
-                                                it.startInput(info, capabilityFlags, currentRestarting)
-                                            }
-                                        }
-                                },
-                                modifier = Modifier.fillMaxSize(),
-                                onRelease = { view ->
-                                    if (inputView.value === view) inputView.value = null
-                                    inputDeviceMgr.clearInputView(view)
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .onSizeChanged { ColdStartTrace.markOnce("rootBoxSized") }
+                    ) {
+                        val theme = themeState.value
+                        val nonce = recreateNonce.value
+                        val stylusUi = stylusUiActive.value
+                        // InputView 由组合生命周期驱动：键变化或组合销毁时移除旧实例。
+                        // 触控笔 UI 下不创建（键盘压根不在，触摸交给应用）。
+                        DisposableEffect(container, theme, nonce, stylusUi) {
+                            if (!stylusUi) {
+                                val created = InputView(this@FcitxInputMethodService, fcitx, theme)
+                                inputView.value = created
+                                inputDeviceMgr.setInputView(created)
+                                // A recreated InputView is blank: [InputView.startInput] only ever
+                                // runs from onStartInputView, so replay the ongoing session here to
+                                // feed EditorInfo/capFlags to the keyboard components and to the
+                                // return key drawable.
+                                currentEditorInfo?.let { info ->
+                                    created.startInput(info, capabilityFlags, currentRestarting)
                                 }
-                            )
-                            }
-                        } else {
-                            // 触控笔 UI：键盘撤下后不再持有 InputView
-                            if (inputView.value != null) {
-                                inputDeviceMgr.clearInputView(inputView.value!!)
-                                inputView.value = null
+                                // 插到最底层：覆盖层 ComposeView 必须压在 InputView 之上
+                                container.addView(
+                                    created,
+                                    0,
+                                    FrameLayout.LayoutParams(
+                                        FrameLayout.LayoutParams.MATCH_PARENT,
+                                        FrameLayout.LayoutParams.MATCH_PARENT
+                                    )
+                                )
+                                onDispose {
+                                    if (inputView.value === created) inputView.value = null
+                                    inputDeviceMgr.clearInputView(created)
+                                    container.removeView(created)
+                                }
+                            } else {
+                                onDispose { }
                             }
                         }
-                        // 按键弹窗层 / 候选操作菜单覆盖层：与 InputView 同处根单一 Composition。
-                        // 弹窗层 Box 无 pointer handler → 触摸穿透到下方 AndroidView(InputView)；
-                        // InputView 重建时 inputView.value 变化驱动这两层重组。
+                        ColdStartTrace.markOnce("inputViewSynced")
+                        // 按键弹窗层 / 候选操作菜单覆盖层：宿主在 InputView 之上，
+                        // 无 pointer handler 的区域触摸穿透到下层 InputView。
                         val iv = inputView.value
                         if (iv != null) {
                             iv.popup.PopupOverlayContent(Modifier.fillMaxSize())
+                            ColdStartTrace.markOnce("overlay:popup")
                             iv.candidateActionMenu.OverlayContent(Modifier.fillMaxSize())
+                            ColdStartTrace.markOnce("overlay:candidateMenu")
                             // Custom: 键盘调校浮层（Compose IME 覆盖层，已迁出 keyboardView 子 View）
                             iv.keyboardTune.OverlayContent(Modifier.fillMaxSize())
+                            ColdStartTrace.markOnce("overlay:keyboardTune")
+                            // Custom: 工具栏布局拖动浮层（幽灵图标 + 目标槽高亮）。
+                            // 挂在覆盖层组合是为了铺满整个 IME 窗口：被拖按钮与落点分处两个
+                            // ComposeView，只有窗口绝对坐标才能让两者互相命中。
+                            org.fcitx.fcitx5.android.input.bar.ToolbarDragOverlay(
+                                drag = iv.toolbarEdit.drag,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            ColdStartTrace.markOnce("overlay:toolbarDrag")
+                        }
+                        // 冷启动阶段计时：覆盖层组合首次完成
+                        SideEffect {
+                            ColdStartTrace.markOnce("compose")
+                            ColdStartTrace.pass("root")
                         }
                     }
                 }
             }
         }
-        return composeView
+        container.addView(
+            overlayHost,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        return container
     }
 
     private fun replaceCandidateView(theme: Theme): CandidatesView {
@@ -784,16 +818,22 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onCreateInputView(): View? {
+        ColdStartTrace.begin()
         navbarMgr.evaluate(window.window!!, inputDeviceMgr.isVirtualKeyboard)
         // `themeState` is lazily initialized, so it may still hold a theme from before the very
         // first composition. Read the active theme once and make both sides (Compose InputView
         // and the View-based CandidatesView) agree on it.
         val theme = ThemeManager.activeTheme
         themeState.value = theme
+        ColdStartTrace.mark("theme")
         replaceCandidateView(theme)
-        // Return a ComposeView root that embeds the existing InputView via AndroidView.
-        // The framework calls `setInputView(composeView)` for us afterwards.
-        return createComposeInputView()
+        ColdStartTrace.mark("candidatesView")
+        // Return the host container (InputView + Compose overlay layers).
+        // The framework calls `setInputView(container)` for us afterwards.
+        return createComposeInputView().also {
+            ColdStartTrace.mark("hostViewCreated")
+            it.traceFirstPreDraw("firstPreDraw")
+        }
     }
 
     override fun setInputView(view: View) {
@@ -1055,6 +1095,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         Timber.d("onStartInputView: restarting=$restarting")
+        ColdStartTrace.mark("onStartInputView")
         AutoDictSync.setKeyboardVisible(true)
         postFcitxJob {
             focus(true)

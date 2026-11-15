@@ -4,7 +4,7 @@
  *
  * custom: 模型根目录与模型 id 的合法性校验（各分类共用）。
  *
- * 模型 id 来自远程索引或内置清单，拼路径前必须校验，否则可能逃出模型根目录。
+ * 模型 id 来自内置清单或手动导入，拼路径前必须校验，否则可能逃出模型根目录。
  */
 package org.fcitx.fcitx5.android.data.market
 
@@ -14,7 +14,7 @@ import java.io.File
 /** 模型落盘位置的单一真源。 */
 object MarketPaths {
 
-    /** 模型根目录：语音模型与旧手写 ONNX 引擎共用。 */
+    /** 模型根目录（语音模型落盘处）。 */
     fun modelsRoot(context: Context): File = File(context.filesDir, MODELS_DIR)
 
     private const val MODELS_DIR = "models"

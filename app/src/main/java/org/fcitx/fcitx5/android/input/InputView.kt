@@ -135,6 +135,8 @@ class InputView(
     private val commonKeyActionListener = CommonKeyActionListener()
     private val windowManager = InputWindowManager()
     private val composeKawaiiBar = ComposeKawaiiBarComponent()
+    // custom: 工具栏布局编辑会话（跨工具栏/更多页的布局草稿与落盘语义）
+    internal val toolbarEdit = org.fcitx.fcitx5.android.input.bar.ToolbarEditComponent()
     // Compose 实现的候选栏组件
     // 旧 View 实现：HorizontalCandidateComponent（已断开接线，保留供对比）
     private val composeCandidate = ComposeCandidateComponent()
@@ -144,7 +146,7 @@ class InputView(
     // 键盘调音覆盖层（custom 特色：拖拽调键盘高度/边距/间隙，模糊键盘背景）：
     // 根组合（createComposeInputView）经 OverlayContent 渲染，故需对外可见
     internal val keyboardTune = KeyboardTuneCompose({ keyboardTuneMetrics() }) { setKeyboardTuneBlur(false) }
-    // custom: 供工具栏把布局切到手写（见 ComposeKawaiiBarComponent.onHandwritingInput）
+    // custom: 供工具栏把布局切到手写（见 ComposeKawaiiBarComponent.onToolbarButtonClick）
     internal val keyboardWindow = KeyboardWindow()
     private val symbolPicker = symbolPicker()
     private val emojiPicker = emojiPicker()
@@ -162,6 +164,8 @@ class InputView(
      */
     private val voicePanelView: View by lazy {
         createComposeWindowView(themedContext) {
+            // 冷启动阶段计时：语音面板（默认不可见）是否参与了首次组合
+            ColdStartTrace.markOnce("voicePanelComposed")
             // 删除键等按键动作复用主键盘的监听器，保证与键盘语义完全一致
             VoicePanelHost(voiceInput, commonKeyActionListener.listener)
         }.apply {
@@ -276,6 +280,8 @@ class InputView(
         scope += windowManager
         // 旧 View 实现：scope += kawaiiBar（已断开接线，保留供对比）
         scope += composeKawaiiBar
+        // custom: 工具栏布局编辑会话（ComposeKawaiiBarComponent 与更多页共用）
+        scope += toolbarEdit
         // 旧 View 实现：scope += horizontalCandidate（已断开接线）
         scope += composeCandidate
         scope += candidateActionMenu
@@ -296,7 +302,9 @@ class InputView(
                 handwritingInput.pickCandidate(index)
             }
         }
+        ColdStartTrace.markOnce("scope:register")
         broadcaster.onScopeSetupFinished(scope)
+        ColdStartTrace.markOnce("scope:broadcast")
     }
 
     private val keyboardPrefs = AppPrefs.getInstance().keyboard
@@ -406,6 +414,8 @@ class InputView(
     val keyboardView: View
 
     init {
+        // 冷启动阶段计时：本行之前是各组件与视图的属性初始化
+        ColdStartTrace.mark("inputView:props")
         // MUST call before any operation
         setupScope()
 
@@ -416,15 +426,19 @@ class InputView(
 
         // make sure KeyboardWindow's view has been created before it receives any broadcast
         windowManager.addEssentialWindow(keyboardWindow, createView = true)
+        ColdStartTrace.markOnce("init:keyboardWindow")
         windowManager.addEssentialWindow(symbolPicker)
         windowManager.addEssentialWindow(emojiPicker)
         windowManager.addEssentialWindow(emoticonPicker)
+        ColdStartTrace.markOnce("init:pickers")
         // show KeyboardWindow by default
         windowManager.attachWindow(KeyboardWindow)
+        ColdStartTrace.markOnce("init:attachKeyboard")
 
         broadcaster.onImeUpdate(fcitx.peek { inputMethodEntryCached })
 
         customBackground.imageDrawable = theme.backgroundDrawable(keyBorder)
+        ColdStartTrace.markOnce("init:imeUpdateBackground")
         // 键盘背景裁剪（跳过预编辑栏、圆角落在工具栏顶部）在 composeTopView 组合内
         // 经 LaunchedEffect 跟随预编辑栏实际高度动态更新（见 composeTopView setContent）
 
@@ -475,6 +489,7 @@ class InputView(
                 bottomOfParent()
             })
         }
+        ColdStartTrace.markOnce("init:keyboardView")
 
         // 顶部圆角由 customBackground 实现：裁剪时跳过预编辑高度，圆角便落在「顶部延伸带」顶部
         // （composeTopView Column 里的恒高 Box），因此键盘体上缘比工具栏顶高出一截
@@ -485,6 +500,7 @@ class InputView(
         // 不再作为 keyboardView 的子 View 挂载，坐标系改用窗口绝对坐标。
 
         updateKeyboardSize()
+        ColdStartTrace.markOnce("init:size")
 
         add(keyboardView, lParams(matchParent, wrapContent) {
             centerHorizontally()
@@ -495,9 +511,13 @@ class InputView(
 
         keyboardPrefs.registerOnChangeListener(onKeyboardSizeChangeListener)
         advancedPrefs.registerOnChangeListener(onKeyboardSizeChangeListener)
+        // 冷启动阶段计时：输入视图构造完成
+        ColdStartTrace.mark("inputView")
     }
 
     private fun updateKeyboardSize() {
+        // 布局阶段内改动 LayoutParams 会让 AOSP 在同一遍历里补跑第二遍 measure/layout，记录以便定位
+        if (isInLayout) Timber.w("updateKeyboardSize runs during layout")
         // 工具栏高度不再由 View 的 LayoutParams 决定，改为通知 Compose 侧重组
         composeKawaiiBar.notifyToolbarHeightChanged()
         windowManager.view.updateLayoutParams {
@@ -603,9 +623,58 @@ class InputView(
         candidateActionMenu.show(idx, text, anchor)
     }
 
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        // 0×0 精确约束下测量结果必然为 0：Compose 互操作宿主在首帧会先按 0 约束量一遍整棵树，
+        // 直接返回可省掉这一遍无效的键盘/工具栏 Compose 布局（实测约 190ms）
+        if (isZeroExactly(widthMeasureSpec) && isZeroExactly(heightMeasureSpec)) {
+            setMeasuredDimension(0, 0)
+            ColdStartTrace.pass("inputViewMeasureZeroSkipped")
+            return
+        }
+        // 计时区间外不构造参数：本方法位于测量热路径
+        if (!ColdStartTrace.isActive) {
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+            return
+        }
+        val started = android.os.SystemClock.uptimeMillis()
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        // 冷启动阶段计时：整树测量次数、单次代价与约束
+        ColdStartTrace.duration(
+            "inputViewMeasure[" +
+                    MeasureSpec.getSize(widthMeasureSpec) + "x" +
+                    MeasureSpec.getSize(heightMeasureSpec) + "]",
+            android.os.SystemClock.uptimeMillis() - started
+        )
+    }
+
+    /** 精确且为 0 的测量约束。 */
+    private fun isZeroExactly(spec: Int) =
+        MeasureSpec.getMode(spec) == MeasureSpec.EXACTLY && MeasureSpec.getSize(spec) == 0
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        ColdStartTrace.markOnce("inputViewAttached")
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        // 冷启动阶段计时：View 层完成本视图的布局
+        ColdStartTrace.markOnce("inputViewLaidOut")
+        ColdStartTrace.pass("inputViewLayout")
+    }
+
     override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
-        bottomPaddingSpace.updateLayoutParams<LayoutParams> {
-            bottomMargin = getNavBarBottomInset(insets)
+        val bottomMargin = getNavBarBottomInset(insets)
+        // 同 updateKeyboardSize：布局阶段内改 bottomMargin 会触发第二遍 layout，
+        // 且 updateLayoutParams 无条件 requestLayout，故仅在数值变化时才下发
+        if (bottomPaddingSpace.isInLayout) {
+            Timber.w("bottom padding insets applied during layout")
+        }
+        val currentMargin = (bottomPaddingSpace.layoutParams as? LayoutParams)?.bottomMargin
+        if (currentMargin != bottomMargin) {
+            bottomPaddingSpace.updateLayoutParams<LayoutParams> {
+                this.bottomMargin = bottomMargin
+            }
         }
         return insets
     }

@@ -115,6 +115,10 @@ sealed interface AppRoute : NavKey {
     /** custom: 触控笔手势动作演示 + 试用页（设置页内直接演示） */
     @Serializable
     data object HandwritingGestureDemo : AppRoute
+
+    /** custom: 整段语音预处理测试页（仅 debug 构建注册路由） */
+    @Serializable
+    data object VoicePreprocessDebug : AppRoute
 }
 
 @Serializable

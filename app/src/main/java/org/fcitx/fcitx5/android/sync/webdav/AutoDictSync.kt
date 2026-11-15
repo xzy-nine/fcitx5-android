@@ -13,8 +13,15 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.fcitx.fcitx5.android.FcitxApplication
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync.applyPendingMergesAndPush
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync.notifyDictChanged
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync.stoppingForRestart
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync.syncOnce
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync.tickRunning
+import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync.uploadJob
 import org.fcitx.fcitx5.android.utils.AppUtil
 import timber.log.Timber
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * WebDAV 自动同步（事件 + 常驻驱动，不引入 WorkManager）。
@@ -81,10 +88,10 @@ object AutoDictSync {
         scope.launch {
             // 先补做上次遗留的延后叠加：必须在引擎启动前，故不放在首个 tick 之后
             recoverPendingMerges()
-            delay(FIRST_CHECK_DELAY_MS)
+            delay(FIRST_CHECK_DELAY_MS.milliseconds)
             while (isActive) {
                 syncOnce()
-                delay(CHECK_INTERVAL_MS)
+                delay(CHECK_INTERVAL_MS.milliseconds)
             }
         }
     }
@@ -139,7 +146,11 @@ object AutoDictSync {
         tickRunning = true
         try {
             if (stoppingForRestart) return
-            val cfg = runCatching { WebDavSyncConfig.load() }.getOrNull() ?: return
+            // 读配置文件是文件 IO + ContentProvider 查询，放 IO 线程：
+            // 本对象跑在主线程作用域上，直接读会占用 UI 线程。
+            val cfg = withContext(Dispatchers.IO) {
+                runCatching { WebDavSyncConfig.load() }.getOrNull()
+            } ?: return
             if (cfg.serverUrl.isBlank()) return
             if (cfg.dictAutoSync && !keyboardVisible) {
                 // 返回 false 表示已排空上传并结束进程，不再继续后续步骤
@@ -173,7 +184,10 @@ object AutoDictSync {
             Timber.i("$TAG auto dict sync skipped: local network permission not granted")
             return true
         }
-        val stored = runCatching { WebDavSyncConfig.load() }.getOrNull() ?: cfg
+        // 读配置文件是文件 IO + ContentProvider 查询，放 IO 线程
+        val stored = withContext(Dispatchers.IO) {
+            runCatching { WebDavSyncConfig.load() }.getOrNull()
+        } ?: cfg
         val allowUpload = shouldUploadDict(stored)
         if (!allowUpload) {
             // 首次同步且云端已有备份：只下载叠加，绝不上传本地内容
@@ -258,13 +272,22 @@ object AutoDictSync {
     /** 词库变更通知：重新安排去抖后的自动上传。可在任意线程调用。 */
     fun notifyDictChanged() {        // 正在为重建进程退出而排空上传：不再接受新的排期
         if (stoppingForRestart) return
-        val cfg = runCatching { WebDavSyncConfig.load() }.getOrNull() ?: return
-        if (!cfg.dictAutoSync || cfg.serverUrl.isBlank()) return
-        // 后台自动同步无法弹出权限框：目标为局域网且未授权时静默跳过，留给手动入口处理
-        if (LocalNetworkGuard.isDenied(WebDavSyncEngine.cloudDirUrl(cfg))) {
-            Timber.i("$TAG auto upload skipped: local network permission not granted")
-            return
+        // 读配置文件是文件 IO + ContentProvider 查询，本函数可能被主线程调用，
+        // 故整个检查放到 IO 线程，不占用 UI 线程。
+        scope.launch(Dispatchers.IO) {
+            val cfg = runCatching { WebDavSyncConfig.load() }.getOrNull() ?: return@launch
+            if (!cfg.dictAutoSync || cfg.serverUrl.isBlank()) return@launch
+            // 后台自动同步无法弹出权限框：目标为局域网且未授权时静默跳过，留给手动入口处理
+            if (LocalNetworkGuard.isDenied(WebDavSyncEngine.cloudDirUrl(cfg))) {
+                Timber.i("$TAG auto upload skipped: local network permission not granted")
+                return@launch
+            }
+            scheduleAutoUpload(cfg)
         }
+    }
+
+    /** 排期一次去抖后的自动上传。调用方需已确认同步开关开启。 */
+    private fun scheduleAutoUpload(cfg: WebDavSyncConfig) {
         runCatching {
             synchronized(uploadLock) {
                 // 锁内二次确认，防止与“排空退出”并发时排入退出后才会执行的上传
@@ -274,8 +297,11 @@ object AutoDictSync {
                 // 仍在去抖：尚未发生任何网络写，安全取消并重新排期
                 uploadJob?.cancel()
                 uploadJob = scope.launch {
-                    delay(UPLOAD_DEBOUNCE_MS)
-                    val current = runCatching { WebDavSyncConfig.load() }.getOrNull() ?: return@launch
+                    delay(UPLOAD_DEBOUNCE_MS.milliseconds)
+                    // 读配置文件是文件 IO + ContentProvider 查询，放 IO 线程
+                    val current = withContext(Dispatchers.IO) {
+                        runCatching { WebDavSyncConfig.load() }.getOrNull()
+                    } ?: return@launch
                     if (!current.dictAutoSync || current.serverUrl.isBlank()) return@launch
                     if (stoppingForRestart) return@launch
                     // 转移阶段以独立任务运行（不是 uploadJob 的子协程）：
@@ -310,7 +336,7 @@ object AutoDictSync {
             Timber.i("$TAG dict restored but keyboard visible, skip restarting process")
             return
         }
-        delay(RESTART_RECHECK_DELAY_MS)
+        delay(RESTART_RECHECK_DELAY_MS.milliseconds)
         if (keyboardVisible) {
             Timber.i("$TAG keyboard showed up during recheck, skip restarting process")
             return
@@ -338,7 +364,7 @@ object AutoDictSync {
         // 已在传输的任务：只等待其自然完成（带超时，超时仅告警后照常退出），绝不取消
         if (transfer != null && transfer.isActive) {
             Timber.i("$TAG auto upload in flight, wait up to ${WAIT_UPLOAD_TIMEOUT_MS}ms")
-            val joined = withTimeoutOrNull(WAIT_UPLOAD_TIMEOUT_MS) { transfer.join() }
+            val joined = withTimeoutOrNull(WAIT_UPLOAD_TIMEOUT_MS.milliseconds) { transfer.join() }
             if (joined == null) {
                 Timber.w("$TAG timed out waiting for auto upload, exiting anyway")
             }
@@ -356,11 +382,16 @@ object AutoDictSync {
      * 失败不阻塞退出：登记的待叠加项与暂存副本都留在磁盘上，下次进程重建后仍会重试。
      */
     private suspend fun applyPendingMergesAndPush() {
-        val cfg = runCatching { WebDavSyncConfig.load() }.getOrNull() ?: return
+        // 读配置与叠加词库都是文件 IO，放 IO 线程
+        val cfg = withContext(Dispatchers.IO) {
+            runCatching { WebDavSyncConfig.load() }.getOrNull()
+        } ?: return
         if (cfg.pendingDictMerges.isEmpty()) return
-        val applied = runCatching { PendingDictMerge.applyPending(cfg) }
-            .onFailure { Timber.w(it, "$TAG apply pending merges failed") }
-            .getOrDefault(emptySet())
+        val applied = withContext(Dispatchers.IO) {
+            runCatching { PendingDictMerge.applyPending(cfg) }
+                .onFailure { Timber.w(it, "$TAG apply pending merges failed") }
+                .getOrDefault(emptySet())
+        }
         if (applied.isEmpty()) return
         runCatching { WebDavSyncEngine.uploadDictFiles(cfg) }
             .onFailure { Timber.e(it, "$TAG push merged dict failed: ${it.javaClass.simpleName}") }

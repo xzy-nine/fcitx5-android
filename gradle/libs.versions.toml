@@ -16,7 +16,6 @@ aboutlibraries = "14.2.1"
 arrow = "2.2.3"
 miuix = "0.9.4-rc01"
 compose = "1.12.0"
-kaml = "0.104.0"
 commonsCompress = "1.28.0"
 onnxruntimeAndroid = "1.28.0"
 mlkitDigitalInk = "19.0.0"
@@ -92,7 +91,6 @@ androidx-compose-runtime = { module = "androidx.compose.runtime:runtime", versio
 androidx-compose-foundation = { module = "androidx.compose.foundation:foundation", version.ref = "compose" }
 androidx-compose-ui = { module = "androidx.compose.ui:ui", version.ref = "compose" }
 jieba-analysis = { module = "com.huaban:jieba-analysis", version = "1.0.2" }
-kaml = { module = "com.charleskorn.kaml:kaml", version.ref = "kaml" }
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commonsCompress" }
 okhttp-sse = { module = "com.squareup.okhttp3:okhttp-sse", version.ref = "okhttp" }
 # custom: ONNX Runtime（语音 sherpa-onnx 的 AAR 副本摘掉了自带 runtime，由本依赖提供）

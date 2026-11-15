@@ -14,6 +14,7 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.InputFeedbacks.InputFeedbackMode
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingEngineKind
 import org.fcitx.fcitx5.android.data.voice.VoiceModelCatalog
+import org.fcitx.fcitx5.android.input.bar.ToolbarLayout
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesMode
 import org.fcitx.fcitx5.android.input.candidates.floating.FloatingCandidatesOrientation
 import org.fcitx.fcitx5.android.input.candidates.horizontal.HorizontalCandidateMode
@@ -393,6 +394,31 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
             )
         }
 
+        // custom: 工具栏按钮布局（两段式：docked = 工具栏可停靠行，pool = 更多页按钮池）。
+        // 刻意不进任何 SubGroup —— 布局由 IME 内的更多页编辑，不在应用设置里暴露条目；
+        // 键必须以逗号分隔的 ToolbarButton.id 形式存放，解码/自愈见 ToolbarLayout.sanitize。
+        val toolbarDockedButtons: ManagedPreference.PString
+        val toolbarPoolButtons: ManagedPreference.PString
+        val toolbarShowUndoRedo: ManagedPreference.PBool
+
+        init {
+            toolbarDockedButtons = ManagedPreference.PString(
+                sharedPreferences,
+                "toolbar_docked_buttons",
+                ToolbarLayout.encode(ToolbarLayout.DEFAULT_DOCKED)
+            ).apply { register() }
+            toolbarPoolButtons = ManagedPreference.PString(
+                sharedPreferences,
+                "toolbar_pool_buttons",
+                ToolbarLayout.encode(ToolbarLayout.DEFAULT_POOL)
+            ).apply { register() }
+            toolbarShowUndoRedo = ManagedPreference.PBool(
+                sharedPreferences,
+                "toolbar_show_undo_redo",
+                true
+            ).apply { register() }
+        }
+
     }
 
     inner class Candidates :
@@ -578,14 +604,10 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                 .apply { register() }
 
 
-        /** 当前选中的本地模型 id（模型市场索引里的 id）。 */
+        /** 当前选中的本地模型 id（内置清单或手动导入模型的 id）。 */
         val voiceAsrModelId = ManagedPreference.PString(
             sharedPreferences, "voice_asr_model_id", VoiceModelCatalog.DEFAULT_ID
         ).apply { register() }
-
-        /** 模型市场索引地址覆盖（空 = 用内置默认端点）。 */
-        val voiceIndexUrl = ManagedPreference.PString(sharedPreferences, "voice_index_url", "")
-            .apply { register() }
 
         /** 调试：把语音识别期间的录音落盘。 */
         val voiceDebugRecord = ManagedPreference.PBool(
@@ -602,7 +624,6 @@ class AppPrefs(private val sharedPreferences: SharedPreferences) {
                         voiceSimpleChinese.key,
                         voiceMuteDuringRecording.key,
                         voiceAsrModelId.key,
-                        voiceIndexUrl.key,
                         voiceDebugRecord.key
                     )
                 )

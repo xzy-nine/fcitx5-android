@@ -4,6 +4,17 @@
     <!-- Custom: toolbar height -->
     <string name="toolbar_height">Toolbar height</string>
 
+    <!-- Custom: toolbar button layout (edited inside the IME more page) -->
+    <string name="toolbar_edit_layout">Edit toolbar layout</string>
+    <string name="toolbar_edit_done">Done</string>
+    <string name="toolbar_back_to_keyboard">Back to keyboard</string>
+    <string name="more_page_reset_layout">Reset layout</string>
+    <string name="more_page_reset_confirm_title">Reset toolbar layout</string>
+    <string name="more_page_reset_confirm_msg">Restore the default toolbar and more page button layout?</string>
+    <string name="more_page_settings">Input method settings</string>
+    <string name="more_page_editor_info">Editor info</string>
+    <string name="more_page_undo_redo_toggle">Undo/redo buttons</string>
+
     <!-- Custom: split keyboard -->
     <string name="split_keyboard">Split keyboard</string>
     <string name="split_keyboard_blank_ratio">Split keyboard blank ratio</string>
@@ -223,7 +234,6 @@
     <string name="voice_download_ok">Model ready</string>
     <string name="voice_index_refresh">Refresh model list</string>
     <string name="voice_index_failed">Failed to load model list</string>
-    <string name="voice_index_using_builtin">Using the built-in model list</string>
     <string name="voice_record_permission">Microphone permission</string>
     <string name="voice_record_permission_missing">Microphone permission is required for voice input</string>
     <string name="voice_grant_permission">Grant permission</string>
@@ -245,7 +255,6 @@
     <string name="market_group_collapse">Collapse</string>
     <string name="market_category_progress">%1$d / %2$d downloaded</string>
     <string name="market_category_selected">In use: %1$s</string>
-    <string name="market_index_url">Index source URL</string>
     <string name="digital_ink_models">Digital ink models</string>
     <string name="digital_ink_recognition_language">Recognition language</string>
     <string name="digital_ink_recognition_language_summary">%1$s · %2$s</string>
@@ -272,7 +281,6 @@
     <string name="handwriting_state_loading">Loading model…</string>
     <string name="handwriting_state_recognizing">Recognizing…</string>
     <string name="market_index_failed">Failed to load model list</string>
-    <string name="market_index_using_builtin">Using the built-in model list</string>
     <string name="market_download_failed">Download failed</string>
     <string name="market_downloading">Downloading…</string>
 
@@ -285,6 +293,14 @@
     <string name="market_model_cancel_download">Cancel download</string>
     <string name="market_model_retry_download">Retry download</string>
     <string name="market_model_download_ok">Model ready</string>
+    <string name="market_model_import">Import model</string>
+    <string name="market_model_import_pick">Choose an archive to import</string>
+    <string name="market_model_import_hint">Import a sherpa-onnx streaming transducer package (.tar.bz2/.tar.gz/.zip) from a file. It is extracted into the app\'s private storage; nothing outside the app is touched and no storage permission is required.</string>
+    <string name="market_model_importing">Importing %1$s…</string>
+    <string name="market_model_imported">Imported</string>
+    <string name="market_model_import_unsupported">Unsupported archive: %1$s</string>
+    <string name="market_model_import_unreadable">Could not read the selected file</string>
+    <string name="market_model_import_invalid">The archive has no tokens.txt or no model files</string>
     <string name="market_index_refresh">Refresh model list</string>
     <!-- 触控笔手写：动作演示与试用（对齐 Gboard 设置页内演示，米系把试用放在系统设置里） -->
     <string name="handwriting_stylus_gestures">Stylus gestures</string>
@@ -323,4 +339,62 @@
     <string name="handwriting_system_engine_available">Status: available on this device</string>
     <string name="handwriting_system_engine_unavailable">Status: unavailable — using the built-in model</string>
     <string name="handwriting_system_engine_capabilities">Text %1$s · Gestures %2$s</string>
+    <string name="voice_preprocess_debug">Speech preprocessing test</string>
+    <string name="voice_preprocess_debug_summary">Compare whole-utterance VAD, silence trimming and loudness leveling (debug builds only)</string>
+    <string name="voice_preprocess_record">Recording</string>
+    <string name="voice_preprocess_start">Start recording</string>
+    <string name="voice_preprocess_stop">Stop recording</string>
+    <string name="voice_preprocess_record_hint">Recording applies no threshold and no gain, so all silence is kept — that is what makes the before/after comparison meaningful.</string>
+    <string name="voice_preprocess_engine">Recognition engine (this page only)</string>
+    <string name="voice_preprocess_engine_target">Recognition target</string>
+    <string name="voice_preprocess_engine_summary">Affects only the recognition buttons on this page; the voice input settings are left untouched</string>
+    <string name="voice_preprocess_engine_local">Local offline · %1$s</string>
+    <string name="voice_preprocess_engine_local_missing">Local offline · %1$s (model unavailable)</string>
+    <string name="voice_preprocess_engine_online_unconfigured">%1$s (not configured)</string>
+    <string name="voice_preprocess_recognize_original">Recognize original</string>
+    <string name="voice_preprocess_recognize_processed">Recognize processed</string>
+    <string name="voice_preprocess_recognizing">Recognizing…</string>
+    <string name="voice_preprocess_recognize_result">Result: %1$s</string>
+    <string name="voice_preprocess_recognize_blank">(no text)</string>
+    <string name="voice_preprocess_recognize_failed">Recognition failed: %1$s</string>
+    <string name="voice_preprocess_recorded">Recorded %1$s</string>
+    <string name="voice_preprocess_no_audio">No recording yet</string>
+    <string name="voice_preprocess_limit_reached">Reached the %1$d s recording limit, stopped automatically</string>
+    <string name="voice_preprocess_params">Preprocessing parameters</string>
+    <string name="voice_preprocess_margin">Threshold margin (dB)</string>
+    <string name="voice_preprocess_min_speech">Minimum speech (ms)</string>
+    <string name="voice_preprocess_merge_gap">Pause merge threshold (ms)</string>
+    <string name="voice_preprocess_kept_silence">Long pause kept after compression (ms, 0 = remove; must stay under the merge threshold)</string>
+    <string name="voice_preprocess_lead_pad">Leading padding (ms)</string>
+    <string name="voice_preprocess_tail_pad">Trailing padding (ms)</string>
+    <string name="voice_preprocess_speed">Whole-utterance fast-forward</string>
+    <string name="voice_preprocess_speed_rate">Fast-forward rate (×, max 2)</string>
+    <string name="voice_preprocess_loudness">Loudness leveling</string>
+    <string name="voice_preprocess_normalize">Level loudness</string>
+    <string name="voice_preprocess_normalize_summary">Pull the whole utterance to a fixed loudness from its speech RMS, so volume differences matter less to recognition</string>
+    <string name="voice_preprocess_target_rms">Target loudness (dB)</string>
+    <string name="voice_preprocess_peak_ceiling">Peak ceiling (dB)</string>
+    <string name="voice_preprocess_reset">Restore defaults</string>
+    <string name="voice_preprocess_waveform">Waveform</string>
+    <string name="voice_preprocess_original">Original %1$d ms</string>
+    <string name="voice_preprocess_processed">Processed %1$d ms</string>
+    <string name="voice_preprocess_play_original">Play original</string>
+    <string name="voice_preprocess_play_processed">Play processed</string>
+    <string name="voice_preprocess_stop_play">Stop</string>
+    <string name="voice_preprocess_preparing_audio">Preparing audio…</string>
+    <string name="voice_preprocess_stats">Statistics</string>
+    <string name="voice_preprocess_saved">Saved %1$d%% (%2$d ms)</string>
+    <string name="voice_preprocess_saved_source">Cut %1$d ms · pauses compressed from %2$d ms</string>
+    <string name="voice_preprocess_speed_saved">Whole utterance fast-forwarded %1$s× · saved %2$d ms</string>
+    <string name="voice_preprocess_segments">Speech segments: %1$d</string>
+    <string name="voice_preprocess_level">Noise floor %1$s dB · peak %2$s dB · threshold %3$s dB</string>
+    <string name="voice_preprocess_gain">Gain %1$s dB (speech RMS %2$s → %3$s dB)</string>
+    <string name="voice_preprocess_output_peak">Output peak %1$s dB</string>
+    <string name="voice_preprocess_gain_limited">Limited by the gain range or peak ceiling; target loudness not reached</string>
+    <string name="voice_preprocess_waveform_hint">Highlighted = speech · dimmed = cut · orange = fast-forwarded</string>
+    <string name="voice_preprocess_fallback_too_short">Audio too short, left untouched</string>
+    <string name="voice_preprocess_fallback_no_speech">No speech detected, original audio kept</string>
+    <string name="voice_preprocess_fallback_no_speech_dropped">No speech detected, audio dropped</string>
+    <string name="voice_preprocess_low_level">Input level is low; the threshold is derived relatively</string>
+    <string name="voice_preprocess_truncated">Truncated to the output limit</string>
 </resources>
