@@ -212,6 +212,8 @@ class DirectRimeBackend(context: Context) : InputEngine {
                 startupStage("native") { Native.start(shared.absolutePath, config.user.absolutePath, BuildConfig.VERSION_NAME,
                     fullCheck = engineOperations.newActivation || WanxiangAdvancedFiles.needsDeploymentRepair(config.user)) }
                 started = true
+                // 引擎已就绪，旧格式词库转成 TSV 后经 import_user_dict 写进 userdb。
+                startupStage("legacy-dict") { migrateLegacyUserDict() }
                 startupError = ""
                 refreshSchemas()
                 engineOperations.startupSucceeded()
@@ -417,6 +419,22 @@ class DirectRimeBackend(context: Context) : InputEngine {
 
     override suspend fun statusHintPresented(hintId: Long, frameUptimeMillis: Long) {
         onOwner { statusHints.presented(hintId, frameUptimeMillis) }
+    }
+    /**
+     * 把旧版 libime 二进制用户词库导入引擎。
+     *
+     * 词条经 import_user_dict 写入 userdb，随后删除中间 TSV 与旧词库。
+     * 在引擎启动流程内执行：引擎启动时会读取 userdb 并建立候选缓存，
+     * 因此本轮启动即可用上迁移的词条，无需额外部署。
+     * 迁移单向且幂等：旧词库删除后不再有可迁移内容。
+     */
+    private fun migrateLegacyUserDict() {
+        runCatching {
+            org.fcitx.fcitx5.android.data.pinyin.migrate.UserDictMigration.migrateAll(
+                org.fcitx.fcitx5.android.sync.webdav.DictCollector.dataRoot(),
+                config.user,
+            ) { dict, tsv -> Native.importUserDict(dict, tsv.absolutePath) }
+        }.onFailure { Timber.w(it, "旧用户词库迁移失败") }
     }
     private fun entry(value: Snapshot?): InputMethodEntry {
         val ascii = value?.ascii == true || forwardsKeysDirectly()

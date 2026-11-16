@@ -116,5 +116,7 @@ internal object Native {
     external fun schemaSelection(): String
     external fun selectSchemas(ids: Array<String>): Boolean
     external fun sync(): Boolean
+    // 把 TSV 词条（phrase<TAB>code[<TAB>weight]）导入指定词库的 userdb；返回导入条数，失败为负。
+    external fun importUserDict(dict: String, textFile: String): Int
     external fun candidates(generation: Long, offset: Int, limit: Int): Array<String>
 }

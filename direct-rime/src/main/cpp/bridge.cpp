@@ -303,6 +303,10 @@ extern "C" JNIEXPORT jobject JNICALL JNI_METHOD(rawInput)(JNIEnv* env, jobject, 
         return env->NewObject(rawInputClass, rawInputConstructor, text.get(), static_cast<jint>(value->caret));
     } catch (const std::exception& e) { error(env, e); return nullptr; }
 }
+extern "C" JNIEXPORT jint JNICALL JNI_METHOD(importUserDict)(JNIEnv* env, jobject, jstring dict, jstring text) {
+    try { return instance().importUserDict(string(env, dict), string(env, text)); }
+    catch (const std::exception& e) { error(env, e); return -1; }
+}
 extern "C" JNIEXPORT jobjectArray JNICALL JNI_METHOD(schemas)(JNIEnv* env, jobject) {
     try { return strings(env, instance().schemas()); } catch (const std::exception& e) { error(env, e); return nullptr; }
 }

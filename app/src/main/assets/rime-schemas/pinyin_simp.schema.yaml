@@ -59,8 +59,9 @@ speller:
 
 translator:
   dictionary: pinyin_simp
-  packs:
-    - user_simp
+  # 用户词库：自学习词条与迁移词条写入 pinyin_simp.userdb，
+  # 关闭时这些词条不会出现在候选中。
+  enable_user_dict: true
   preedit_format:
     - xform/([nl])v/$1ü/
     - xform/([nl])ue/$1üe/

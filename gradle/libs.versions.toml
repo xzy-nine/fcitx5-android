@@ -22,6 +22,7 @@ mlkitDigitalInk = "19.0.0"
 zxing = "3.5.3"
 zxingEmbedded = "4.3.0"
 xz = "1.10"
+unzstd = "0.1.0"
 androidsvg = "1.4"
 quickjs-kt = "1.0.15"
 
@@ -107,6 +108,7 @@ mlkit-digital-ink = { module = "com.google.mlkit:digital-ink-recognition", versi
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 zxing-embedded = { module = "com.journeyapps:zxing-android-embedded", version.ref = "zxingEmbedded" }
 xz = { module = "org.tukaani:xz", version.ref = "xz" }
+unzstd = { module = "com.qyntrax:unzstd", version.ref = "unzstd" }
 androidsvg = { module = "com.caverock:androidsvg", version.ref = "androidsvg" }
 quickjs-kt = { module = "io.github.dokar3:quickjs-kt", version.ref = "quickjs-kt" }
 

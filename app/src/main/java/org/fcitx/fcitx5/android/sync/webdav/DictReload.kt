@@ -36,6 +36,8 @@ object DictReload {
      *   与 `pinyin` 目录下可热重载的词库一样，无需重建进程。
      */
     fun kindOf(relativeUnderData: String): Kind = when {
+        // Rime 用户词库文本由引擎在部署时编译，与 libime 词库同样需要重建进程才生效
+        relativeUnderData.endsWith("/user.txt") -> Kind.USER_DICT
         relativeUnderData == "pinyin/user.dict" -> Kind.USER_DICT
         relativeUnderData == "pinyin/customphrase" -> Kind.CUSTOM_PHRASE
         relativeUnderData.substringBefore('/') == "pinyin" -> Kind.PINYIN

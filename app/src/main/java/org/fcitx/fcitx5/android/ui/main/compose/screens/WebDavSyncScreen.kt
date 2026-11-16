@@ -44,6 +44,7 @@ import org.fcitx.fcitx5.android.sync.webdav.LocalNetworkPermissionRequiredExcept
 import org.fcitx.fcitx5.android.sync.webdav.PendingDictMerge
 import org.fcitx.fcitx5.android.sync.webdav.SyncRestorer
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncConfig
+import org.fcitx.fcitx5.android.sync.webdav.DictCollector
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncEngine
 import org.fcitx.fcitx5.android.sync.webdav.WebDavSyncEngine.RemoteEntry
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleConfirmDialog
@@ -259,6 +260,7 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
     var pickPrefs by remember { mutableStateOf(false) }
     var prefsList by remember { mutableStateOf<List<RemoteEntry>?>(null) }
     var confirmDict by remember { mutableStateOf(false) }
+    var confirmCleanupLegacy by remember { mutableStateOf(false) }
     var confirmPrefsEntry by remember { mutableStateOf<RemoteEntry?>(null) }
 
     /** 以 [syncState] 为基础，只覆盖界面编辑的连接字段与自动同步开关。 */
@@ -555,6 +557,14 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                         confirmDict = true
                     },
                 )
+                ArrowPreference(
+                    title = stringResource(R.string.webdav_cleanup_legacy),
+                    summary = stringResource(R.string.webdav_cleanup_legacy_summary),
+                    onClick = {
+                        if (busy) return@ArrowPreference
+                        confirmCleanupLegacy = true
+                    },
+                )
             }
         }
         if (lastSync.isNotBlank()) {
@@ -647,6 +657,22 @@ fun WebDavSyncScreen(onBack: () -> Unit) {
                 restoreDict()
             },
             onDismiss = { confirmDict = false },
+        )
+    }
+
+    if (confirmCleanupLegacy) {
+        SimpleConfirmDialog(
+            title = stringResource(R.string.webdav_cleanup_legacy),
+            message = stringResource(R.string.webdav_cleanup_legacy_confirm),
+            onConfirm = {
+                confirmCleanupLegacy = false
+                val removed = DictCollector.removeLegacyDicts()
+                context.toast(
+                    if (removed > 0) context.getString(R.string.webdav_cleanup_legacy_done, removed)
+                    else context.getString(R.string.webdav_cleanup_legacy_none)
+                )
+            },
+            onDismiss = { confirmCleanupLegacy = false },
         )
     }
 }

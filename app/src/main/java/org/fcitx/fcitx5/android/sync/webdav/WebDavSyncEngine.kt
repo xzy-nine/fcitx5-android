@@ -62,6 +62,19 @@ object WebDavSyncEngine {
 
     private val tempDir: File by lazy { File(appContext.cacheDir, "webdav").apply { mkdirs() } }
 
+    // 让引擎导出或合并用户数据同步快照（sync/<installation_id>/*.userdb.txt）。
+    private suspend fun exportUserDataSnapshots() {
+        val connection = org.fcitx.fcitx5.android.daemon.FcitxDaemon.getFirstConnectionOrNull() ?: return
+        try {
+            // 引擎把用户数据同步命令挂在 addon 子配置的 sync 入口上。
+            connection.runOnReady<Unit> {
+                setAddonSubConfig("rime", "sync", org.fcitx.fcitx5.android.core.RawConfig())
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "$TAG 用户数据同步失败")
+        }
+    }
+
     private fun auth(cfg: WebDavSyncConfig) = Authorization(cfg.username, cfg.password)
 
     private fun normalizeBase(url: String): String {
@@ -297,6 +310,8 @@ object WebDavSyncEngine {
             try {
                 val dirUrl = dictDirUrl(cfg)
                 ensureDirChain(cfg, dirUrl)
+                // 让引擎把本机用户词库导出为同步快照，使本轮上传包含最新词条
+                exportUserDataSnapshots()
                 val stored = persistedConfig(cfg)
                 val digests = stored.dictFileDigests.toMutableMap()
                 val snapshot = stored.dictRemoteSnapshot.toMutableMap()
@@ -557,6 +572,8 @@ object WebDavSyncEngine {
                         }
                     )
                 }
+                // 云端快照已落盘，让引擎把它合并回本机词库
+                exportUserDataSnapshots()
                 Timber.i(
                     "$TAG downloadDictFiles: downloaded=$downloaded skipped=$skipped " +
                         "kinds=$kinds merged=$mergedRels deferred=$deferredRels"

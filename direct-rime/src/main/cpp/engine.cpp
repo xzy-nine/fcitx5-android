@@ -669,6 +669,18 @@ bool Engine::selectSchemas(const std::vector<std::string>& ids) {
     const bool ok = api->select_schemas(settings, values.data(), values.size()) && api->save_settings(custom);
     return ok;
 }
+int Engine::importUserDict(const std::string& dictName, const std::string& textFile) {
+    owner();
+    if (!started_ || dictName.empty() || textFile.empty()) return -1;
+    if (!RIME_API_AVAILABLE(api_, find_module)) return -1;
+    auto* module = api_->find_module("levers");
+    auto* api = module && module->get_api ? reinterpret_cast<RimeLeversApi*>(module->get_api()) : nullptr;
+    // 导入只在 levers 提供该入口时可用；缺失时返回 -1，调用方保留中间文件待下次重试。
+    if (!api || !RIME_STRUCT_HAS_MEMBER(*api, api->import_user_dict) || !api->import_user_dict) return -1;
+    if (api_->is_maintenance_mode()) return -1;
+    Trace trace("rime.direct.import_user_dict");
+    return api->import_user_dict(dictName.c_str(), textFile.c_str());
+}
 bool Engine::sync() {
     owner();
     if (!started_ || api_->is_maintenance_mode()) return false;

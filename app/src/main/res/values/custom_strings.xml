@@ -116,6 +116,11 @@
     <string name="webdav_upload_dict_summary">Per-file sync, skipped when unchanged</string>
     <string name="webdav_download_dict">Download and restore dictionary</string>
     <string name="webdav_download_dict_summary">Merges the cloud copy into local dictionaries, keeping local-only entries</string>
+    <string name="webdav_cleanup_legacy">Clean up legacy dictionary files</string>
+    <string name="webdav_cleanup_legacy_summary">Deletes local libime dictionary copies. Entries already migrated into the Rime user dictionary are kept; remove these files only when no older device still syncs with this account.</string>
+    <string name="webdav_cleanup_legacy_confirm">Delete the legacy dictionary files on this device?</string>
+    <string name="webdav_cleanup_legacy_done">Removed %1$d legacy file(s)</string>
+    <string name="webdav_cleanup_legacy_none">No legacy dictionary files found</string>
     <string name="webdav_last_sync">Last sync</string>
     <string name="webdav_busy">Working…</string>
     <string name="webdav_need_server">Please fill in the server URL and username first</string>

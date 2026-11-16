@@ -113,6 +113,11 @@
     <string name="webdav_upload_dict_summary">逐文件同步，内容未变化时自动跳过</string>
     <string name="webdav_download_dict">下载并恢复词库</string>
     <string name="webdav_download_dict_summary">把云端词库叠加到本地词库，本地独有的条目会保留</string>
+    <string name="webdav_cleanup_legacy">清理旧版词库文件</string>
+    <string name="webdav_cleanup_legacy_summary">删除本机的 libime 词库副本。已迁移进 Rime 用户词库的词条不受影响；仅在不再有旧设备同步此账号时才需要清理。</string>
+    <string name="webdav_cleanup_legacy_confirm">删除本机的旧版词库文件？</string>
+    <string name="webdav_cleanup_legacy_done">已删除 %1$d 个旧版文件</string>
+    <string name="webdav_cleanup_legacy_none">没有找到旧版词库文件</string>
     <string name="webdav_last_sync">上次同步</string>
     <string name="webdav_busy">正在处理…</string>
     <string name="webdav_need_server">请先填写服务器地址与用户名</string>

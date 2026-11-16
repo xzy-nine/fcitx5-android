@@ -6,6 +6,7 @@ package org.fcitx.fcitx5.android.utils
 
 import android.system.Os
 import android.system.OsConstants
+import timber.log.Timber
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
@@ -77,7 +78,10 @@ object FileUtil {
                 write(out)
                 out.flush()
                 // 元数据 rename 是原子的，但内容必须先落盘，否则崩溃后可能 rename 出空文件。
-                out.fd.sync()
+                // 外置存储（FUSE）不支持 fsync，此时仍以 rename 保证「旧内容或新内容」二者之一，
+                // 故只记录而不中断写入。
+                runCatching { out.fd.sync() }
+                    .onFailure { Timber.w(it, "fsync 不可用，改由 rename 保证原子性") }
             }
             replaceAtomically(tmp, file)
         } catch (e: Throwable) {

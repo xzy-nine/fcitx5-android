@@ -8,6 +8,7 @@ import org.fcitx.fcitx5.android.data.RimeProfileRestorePlan
 import org.fcitx.fcitx5.android.data.WanxiangUpdateTransaction
 import org.fcitx.fcitx5.android.utils.FileUtil
 import org.fcitx.fcitx5.android.utils.Ini
+import timber.log.Timber
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -58,6 +59,7 @@ internal class DirectRimeConfig(private val context: Context) {
             ?.takeIf { it in listOf("No", "ComposingText", "CommitPreview") } ?: "No"
         migratePrototype()
     }
+
 
     private fun migratePrototype() {
         val old = File(context.filesDir, "rime/user")

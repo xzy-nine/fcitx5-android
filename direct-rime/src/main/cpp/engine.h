@@ -51,6 +51,8 @@ public:
     std::string schemaSelection();
     bool selectSchemas(const std::vector<std::string>& ids);
     bool sync();
+    // 把 TSV 词条（phrase<TAB>code[<TAB>weight]）导入指定词库的 userdb。
+    int importUserDict(const std::string& dictName, const std::string& textFile);
     std::vector<std::string> candidates(int64_t generation, int offset, int limit);
     std::vector<int64_t> sessionStats() const;
     // ns: core/session, read_commit/context/status, input_tabs, core thread CPU.

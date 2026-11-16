@@ -281,6 +281,8 @@ dependencies {
     implementation(libs.zxing.core)
     implementation(libs.zxing.embedded)
     implementation(libs.xz)
+    // custom: 纯 Java zstd 解码器，用于读取旧版 libime 二进制词库
+    implementation(libs.unzstd)
     implementation("org.yaml:snakeyaml:2.7")
     implementation(libs.androidsvg)
     implementation(libs.quickjs.kt)
