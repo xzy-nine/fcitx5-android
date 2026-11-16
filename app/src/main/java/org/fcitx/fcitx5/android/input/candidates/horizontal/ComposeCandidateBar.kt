@@ -104,6 +104,9 @@ class CandidateList(private val items: Array<CandidateWord>) {
 
     fun isEmpty(): Boolean = items.isEmpty()
 
+    /** 导出为列表，供展开面板等复用同一份候选。 */
+    fun toList(): List<CandidateWord> = items.toList()
+
     override fun equals(other: Any?): Boolean =
         this === other || (other is CandidateList && items.contentEquals(other.items))
 
@@ -135,6 +138,8 @@ data class CandidateBarCallbacks(
     val onExpandClick: (() -> Unit)? = null,
     val onLoadMore: (() -> Unit)? = null,
     val onScrollOffsetChanged: ((Int) -> Unit)? = null,
+    /** 上报当前一屏可见的候选数量，供加载逻辑按容量补齐。 */
+    val onVisibleCountChanged: ((Int) -> Unit)? = null,
 )
 
 /**
@@ -154,6 +159,8 @@ private const val LOAD_MORE_THRESHOLD = 3
  * 作为 [snapshotFlow] 的发射值：字段多于三个，故用数据类而非 [Triple]。
  */
 private data class LayoutSnapshot(
+    /** 当前一屏实际可见的候选数量，用于判定是否需要继续加载。 */
+    val visibleCount: Int,
     val firstVisibleIndex: Int,
     val lastVisibleIndex: Int,
     val totalItems: Int,
@@ -191,6 +198,7 @@ fun ComposeCandidateBar(
             val canScroll = info.totalItemsCount > 0 &&
                     info.visibleItemsInfo.size < info.totalItemsCount
             LayoutSnapshot(
+                visibleCount = info.visibleItemsInfo.size,
                 firstVisibleIndex = info.visibleItemsInfo.firstOrNull()?.index ?: 0,
                 lastVisibleIndex = info.visibleItemsInfo.lastOrNull()?.index ?: 0,
                 totalItems = info.totalItemsCount,
@@ -201,6 +209,7 @@ fun ComposeCandidateBar(
             .collect { snapshot ->
                 if (currentState is CandidateBarState.Active) {
                     callbacks.onScrollOffsetChanged?.invoke(snapshot.firstVisibleIndex)
+                    callbacks.onVisibleCountChanged?.invoke(snapshot.visibleCount)
                     // 触发条件：已滑到列表末尾附近，**或**内容不足一屏、无法继续滚动。
                     // 后者不可省：首批候选按 AutoFillWidth 均分在一屏内时列表本就滚不动，
                     // 只看「末尾附近」会因布局快照的取值顺序而错过首次加载，

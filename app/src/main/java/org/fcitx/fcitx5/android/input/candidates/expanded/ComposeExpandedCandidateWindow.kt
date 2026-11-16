@@ -144,7 +144,14 @@ class ComposeExpandedCandidateWindow :
     private val pager by lazy {
         Pager(
             config = PagingConfig(pageSize = PageSize, enablePlaceholders = false),
-            pagingSourceFactory = { CandidatesPagingSource(fcitx, composeCandidate.total) }
+            pagingSourceFactory = {
+                // 与横向候选栏共用同一份候选：按需补足后直接切片，不再单独向引擎取第一页。
+                CandidatesPagingSource(
+                    total = composeCandidate.total,
+                    snapshot = { composeCandidate.candidateSnapshot() },
+                    requestMore = { offset, limit -> composeCandidate.ensureCandidates(offset + limit) },
+                )
+            }
         )
     }
 
@@ -214,7 +221,16 @@ class ComposeExpandedCandidateWindow :
             keyActionListener = keyActionListener,
             popupActionListener = popupActionListener,
             onTabSelected = ::onTabSelected,
-            onCandidateSelect = { index -> fcitx.launchOnReady { it.select(index) } },
+            onCandidateSelect = { index ->
+                // 候选自带发布时的动作上下文，按它选择可避免快照推进后被判为过期；
+                // 展开面板的索引是全局偏移，故用 global 目标。
+                val target = items[index]?.selectionTarget
+                if (target != null) {
+                    service.postCandidateSelection(target)
+                } else {
+                    fcitx.launchOnReady { it.select(index) }
+                }
+            },
             onCandidateLongClick = { index, text, anchor ->
                 // 与横向候选栏同一条路径：锚点用窗口绝对坐标，菜单由 InputView 的 Compose 覆盖层承载
                 inputView.showCandidateActionMenu(index, text, anchor)

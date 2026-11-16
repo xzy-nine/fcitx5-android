@@ -29,6 +29,7 @@ import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.BooleanKey.Ex
 import org.fcitx.fcitx5.android.input.bar.ExpandButtonStateMachine.TransitionEvent.ExpandedCandidatesUpdated
 import org.fcitx.fcitx5.android.input.bar.LocalToolbarHeight
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcastReceiver
+import org.fcitx.fcitx5.android.input.broadcast.PagedCandidateReceiver
 import org.fcitx.fcitx5.android.input.candidates.expanded.ComposeExpandedCandidateWindow
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.fcitx
@@ -53,7 +54,8 @@ class ComposeCandidateComponent :
     UniqueComponent<ComposeCandidateComponent>(),
     Dependent,
     ManagedHandler by managedHandler(),
-    InputBroadcastReceiver {
+    InputBroadcastReceiver,
+    PagedCandidateReceiver {
 
     private val context by manager.context()
     private val fcitx by manager.fcitx()
@@ -183,6 +185,7 @@ class ComposeCandidateComponent :
         refreshExpanded()
     }
 
+
     private fun loadMoreIfNeeded() {
         if (loadingMore || noMoreData) return
         val currentState = _state.value
@@ -193,43 +196,96 @@ class ComposeCandidateComponent :
         loadMore()
     }
 
+    /**
+     * 加载候选，直到已加载数量足以填满候选栏一屏（允许溢出，不足时才停）。
+     *
+     * 不区分首次与后续：每次调用都按「当前可见容量」补齐，
+     * 因此初始加载与滑动续载走同一条路径。取不到更多即视为加载完成。
+     */
     private fun loadMore() {
         if (loadingMore || noMoreData) return
         val currentState = _state.value
         if (currentState !is CandidateBarState.Active) return
         // 手写候选不在引擎候选表里，没有「下一批」可取
         if (org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed.isActive) return
-        if (currentState.total >= 0 && currentState.candidates.size >= currentState.total) return
 
         loadingMore = true
         val generation = _candidateGeneration
-        val currentOffset = currentState.candidates.size
 
         fcitx.launchOnReady {
             try {
-                val more = it.getCandidates(currentOffset, loadMoreBatch)
-                if (generation == _candidateGeneration) {
-                    if (more.isNotEmpty()) {
-                        _state.update { state ->
-                            when (state) {
-                                is CandidateBarState.Active -> {
-                                    state.copy(
-                                        candidates = state.candidates.append(more),
-                                    )
-                                }
-                                else -> state
-                            }
-                        }
-                    } else {
+                while (generation == _candidateGeneration) {
+                    val state = _state.value as? CandidateBarState.Active ?: break
+                    if (state.total >= 0 && state.candidates.size >= state.total) {
                         noMoreData = true
+                        break
                     }
+                    val offset = state.candidates.size
+                    val more = it.getCandidates(offset, loadMoreBatch)
+                    if (more.isEmpty()) {
+                        noMoreData = true
+                        break
+                    }
+                    _state.update { current ->
+                        when (current) {
+                            is CandidateBarState.Active -> current.copy(
+                                candidates = current.candidates.append(more),
+                            )
+                            else -> current
+                        }
+                    }
+                    // 一屏可容纳的数量已满足即停止；多取的一批允许溢出。
+                    if (visibleCapacity() <= 0 || _state.value.let { s ->
+                            (s as? CandidateBarState.Active)?.candidates?.size ?: 0
+                        } >= visibleCapacity()) break
                 }
             } finally {
-                if (generation == _candidateGeneration) {
-                    loadingMore = false
+                if (generation == _candidateGeneration) loadingMore = false
+            }
+        }
+    }
+
+    /** 候选栏一屏实际可见的候选数量，由渲染侧上报；0 表示尚未测量。 */
+    @Volatile
+    private var visibleCount = 0
+
+    /** 一屏可容纳的候选数量；未测量时按 0 处理（不限制）。 */
+    private fun visibleCapacity(): Int = visibleCount
+
+    /** 当前已加载的候选列表快照，供展开面板复用同一份数据。 */
+    fun candidateSnapshot(): List<org.fcitx.fcitx5.android.core.CandidateWord> =
+        (_state.value as? CandidateBarState.Active)?.candidates?.toList().orEmpty()
+
+    /**
+     * 补足候选到至少 [target] 条，返回补足后的总数。
+     *
+     * 展开面板按需调用：与横向候选栏共用同一份列表，
+     * 因此这里只追加数据，不重新向引擎取第一页。
+     */
+    suspend fun ensureCandidates(target: Int): Int {
+        if (org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed.isActive) {
+            return candidateSnapshot().size
+        }
+        while (candidateSnapshot().size < target && !noMoreData) {
+            val state = _state.value as? CandidateBarState.Active ?: break
+            if (state.total >= 0 && state.candidates.size >= state.total) break
+            val generation = _candidateGeneration
+            val more = fcitx.runOnReady { getCandidates(state.candidates.size, loadMoreBatch) }
+            if (generation != _candidateGeneration) break
+            if (more.isEmpty()) {
+                noMoreData = true
+                break
+            }
+            _state.update { current ->
+                when (current) {
+                    is CandidateBarState.Active -> current.copy(
+                        candidates = current.candidates.append(more),
+                    )
+                    else -> current
                 }
             }
         }
+        return candidateSnapshot().size
     }
 
     private fun applyCandidates(
@@ -275,6 +331,9 @@ class ComposeCandidateComponent :
         lastExpandedOffset = -1
 
         refreshExpanded()
+        // 滑动模式下候选栏需要足够多的候选才能横向铺开，
+        // 引擎每次只给当前页，这里补足到一批，后续滑动继续加载。
+        if (swipeEnabledPref.getValue() && candidates.isNotEmpty()) loadMoreIfNeeded()
     }
 
     /**
@@ -296,6 +355,25 @@ class ComposeCandidateComponent :
         val prevData = lastCandidateData
         lastCandidateData = data
         applyCandidates(data, prevData)
+    }
+
+    /**
+     * 分页候选：引擎每次给出当前页，是否还有后续由 hasNext 表示。
+     *
+     * 列表形态用 total 判断是否已加载完；分页形态没有总数，
+     * 因此有后续时记为 -1（未知），末页时记为已加载数量。
+     */
+    override fun onPagedCandidateUpdate(data: FcitxEvent.PagedCandidateEvent.Data) {
+        // 分页形态没有确切总数：有后续时给出「已加载 + 1」表示至少还有更多，
+        // 使消费方（展开面板等）据此判定非空并继续取数；末页时给出真实数量。
+        val total = if (data.hasNext) data.candidates.size + 1 else data.candidates.size
+        val list = FcitxEvent.CandidateListEvent.Data(total = total, candidates = data.candidates)
+        if (list == lastCandidateData) {
+            return
+        }
+        val prevData = lastCandidateData
+        lastCandidateData = list
+        applyCandidates(list, prevData)
     }
 
     override fun onWindowDetached(window: InputWindow) {
@@ -347,10 +425,19 @@ class ComposeCandidateComponent :
                 onCandidateSelect = { index ->
                     // custom: 手写布局期间候选来自手写（HandwritingCandidateFeed）。
                     // 手写候选是识别结果本地构造的，**不在 fcitx 引擎候选表里**，
-                    // `select(index)` 会选到引擎的（无关/过期）候选，必须由手写侧替换式上屏。
+                    // 选择引擎候选会命中无关词条，必须由手写侧替换式上屏。
                     onCandidatePicked?.invoke(index)
                     if (!org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed.isActive) {
-                        fcitx.launchOnReady { it.select(index) }
+                        // 候选自带发布时的动作上下文，按它选择可避免快照推进后被判为过期。
+                        val active = _state.value as? CandidateBarState.Active
+                        val target = active?.candidates
+                            ?.takeIf { index in 0 until it.size }
+                            ?.get(index)?.selectionTarget
+                        if (target != null) {
+                            service.postCandidateSelection(target)
+                        } else {
+                            fcitx.launchOnReady { it.select(index) }
+                        }
                     }
                 },
                 onCandidateLongClick = { index, candidate, windowOffset ->
@@ -380,6 +467,9 @@ class ComposeCandidateComponent :
                 },
                 onLoadMore = {
                     loadMoreIfNeeded()
+                },
+                onVisibleCountChanged = { count ->
+                    visibleCount = count
                 },
                 onScrollOffsetChanged = { offset ->
                     onScrollOffsetChanged(offset)

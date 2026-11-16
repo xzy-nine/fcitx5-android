@@ -55,6 +55,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CapabilityFlags
@@ -273,7 +274,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     internal fun updateCandidatesViewPagingAndBounds() {
         val floatingMode = AppPrefs.getInstance().candidates.mode.getValue()
         if (floatingMode != FloatingCandidatesMode.Always) return
-        postFcitxJob { setCandidatePagingMode(1) }
+        requestCandidatePagingMode(1)
         currentInputConnection?.monitorCursorAnchor(true)
     }
 
@@ -285,10 +286,29 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         return inputView.value?.isOneHanded == true
     }
 
+    /**
+     * 向引擎发送一次独立的 Shift 敲击，用于切换中英文。
+     *
+     * 两个要点：
+     * - 按键必须送到引擎（postFcitxJob），只发给编辑器时引擎收不到；
+     * - 按下与抬起之间保持 [STANDALONE_MODIFIER_HOLD_MS]，
+     *   引擎才会把它当作独立修饰键敲击而不是组合键的一部分。
+     */
     fun sendStandaloneShiftTap() {
-        sendSimulatedKeyEventOrFallback(KeyEvent.KEYCODE_SHIFT_LEFT, true)
-        sendSimulatedKeyEventOrFallback(KeyEvent.KEYCODE_SHIFT_LEFT, false)
+        val previous = standaloneShiftTapJob
+        standaloneShiftTapJob = lifecycleScope.launch {
+            previous?.join()
+            postFcitxKeyJob {
+                sendKey(KeySym(FcitxKeyMapping.FcitxKey_Shift_L), KeyStates.Virtual, 0, false)
+            }.join()
+            delay(STANDALONE_MODIFIER_HOLD_MS)
+            postFcitxKeyJob {
+                sendKey(KeySym(FcitxKeyMapping.FcitxKey_Shift_L), KeyStates.Virtual, 0, true)
+            }.join()
+        }
     }
+
+    private var standaloneShiftTapJob: Job? = null
 
     /**
      * Deliver a synthesized key event to the editor, falling back to the plain connection path
@@ -348,9 +368,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private val navbarMgr = NavigationBarManager()
     private val inputDeviceMgr = InputDeviceManager(
         onChange = { isVirtualKeyboard ->
-            postFcitxJob {
-                setCandidatePagingMode(if (isVirtualKeyboard) 0 else 1)
-            }
+            // 候选始终按分页模式提供：候选栏与展开面板共用同一份分页数据。
+            requestCandidatePagingMode(1)
             currentInputConnection?.monitorCursorAnchor(!isVirtualKeyboard)
             if (isVirtualKeyboard) {
                 hideStatusIcon()
@@ -1887,6 +1906,8 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     @Suppress("ConstPropertyName")
     companion object {
         private const val VOICE_INPUT_COMMIT_EXTRA = "text"
+        /** 独立修饰键敲击的按住时长，需明显短于引擎的独立敲击判定上限。 */
+        private const val STANDALONE_MODIFIER_HOLD_MS = 50L
         const val DefaultHighlightColor = 0x008577  // material_deep_teal_500
         const val DeleteSurroundingFlag = "org.fcitx.fcitx5.android.DELETE_SURROUNDING"
     }

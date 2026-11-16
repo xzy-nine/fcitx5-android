@@ -112,9 +112,9 @@ class CommonKeyActionListener :
                 }
                 // custom: QuickPhrase / Unicode 是 fcitx addon，本构建只带 Rime 引擎，不提供这些动作。
                 is LangSwitchAction -> {
-                    // 本构建只带 Rime 引擎：语言键发一次独立 Shift 敲击，
-                    // 由引擎的 ascii_composer（ascii_mode）切换中英文。
-                    service.sendStandaloneShiftTap()
+                    // 本构建只带 Rime 引擎：语言键切换引擎的 ascii_mode，
+                    // 对应「中文 / 英文」两种输入状态。
+                    service.postFcitxJob { toggleIme() }
                 }
                 is ShowInputMethodPickerAction -> InputMethodUtil.showPicker()
                 is MoveSelectionAction -> {

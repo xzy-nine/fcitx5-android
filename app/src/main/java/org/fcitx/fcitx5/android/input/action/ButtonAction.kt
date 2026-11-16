@@ -419,10 +419,8 @@ data object LanguageSwitchAction : ButtonAction() {
         view: View?,
         onActionComplete: (() -> Unit)?
     ) {
-        // Same behavior as the keyboard's globe key (see CommonKeyActionListener): send one
-        // standalone Shift tap and let the engine decide. For Rime that is ascii_composer's
-        // ascii_mode (Chinese/Latin) toggle.
-        service.sendStandaloneShiftTap()
+        // 与键盘地球键一致：切换引擎的 ascii_mode（中文 / 英文）。
+        service.postFcitxJob { toggleIme() }
     }
 
     override fun onLongPress(
