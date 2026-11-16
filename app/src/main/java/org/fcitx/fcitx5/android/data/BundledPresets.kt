@@ -1,0 +1,235 @@
+/*
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
+ */
+package org.fcitx.fcitx5.android.data
+
+import android.content.Context
+import android.content.SharedPreferences
+import androidx.core.content.edit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.input.config.UserConfigFiles
+import org.fcitx.fcitx5.android.utils.appContext
+import timber.log.Timber
+import java.io.File
+
+/**
+ * 内置资源（键盘布局 / 主题 / 图标主题 / 弹出定义）安装器。
+ *
+ * 这些资源随 APK 打包在 `assets/bundled/` 下，首次启动时解包到应用外部
+ * 文件目录的对应位置，实现"开箱即用"：
+ *
+ * - `bundled/keyboard_layouts/TextKeyboardLayout.<名称>.json` → `config/`，并注册对应 profile
+ * - `bundled/keyboard_layouts/PopupPreset.json`               → 不落盘，作为运行时默认弹出定义
+ * - `bundled/themes/<主题名>.json`                            → `theme/`（自定义主题目录）
+ * - `bundled/icon_themes/<主题名>.json`                       → `icon_themes/`
+ *
+ * 安装幂等且不覆盖：每个资源以"asset 路径 + 字节数"为版本标记记录在
+ * SharedPreferences 中；默认不覆盖已存在的文件，显式登记更新的资源只在
+ * 文件大小仍等于上一版内置内容时替换，保留用户自行修改的版本。
+ * 登记更新还记录旧字节数，允许修正旧登记后重试仍存在的原版文件。
+ * 用户删除已处理版本的文件后不会被再次塞回；更新资源须同步登记旧字节数。
+ */
+object BundledPresets {
+
+    private const val PREF_NAME = "bundled_presets"
+    private const val KEY_INSTALLED = "installed"
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val prefs: SharedPreferences by lazy {
+        appContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+    }
+
+    /** 已处理版本及更新来源标记；旧版本标记继续保护已删除的文件。 */
+    private val handled: MutableSet<String> by lazy {
+        prefs.getStringSet(KEY_INSTALLED, emptySet())?.toMutableSet() ?: mutableSetOf()
+    }
+
+    private fun mark(vararg tags: String) {
+        handled.addAll(tags)
+        prefs.edit { putStringSet(KEY_INSTALLED, handled) }
+    }
+
+    /** Android assets 无法可靠列举中文文件名，直接维护清单最可靠。 */
+    private val layoutAssets = listOf(
+        "TextKeyboardLayout.大同-9+18+26keys.json",
+        "TextKeyboardLayout.九键布局.json",
+        "TextKeyboardLayout.行之-26键.json",
+        "TextKeyboardLayout.行之-万象九键v2.json",
+        "TextKeyboardLayout.QM-朝花.json",
+        "TextKeyboardLayout.Sandy-数字行26+万象九键.json"
+    )
+
+    /**
+     * 「上一版内置内容」的字节大小，用于区分用户是否改过本地文件：
+     * [installAsset] 只在 `dest.length()` 等于这里的登记值时才原位替换，
+     * 长度不同即视为用户自己编辑过、保留用户版本。
+     *
+     * 因此每次更新某个资源后，要把这里的值改成**更新前那一版的字节数**
+     * （不是新版本的字节数），否则新内容对存量用户永不生效；未登记的
+     * 资源则只在目标文件不存在时才写出。
+     */
+    private val assetSizes = mapOf(
+        "bundled/keyboard_layouts/TextKeyboardLayout.大同-9+18+26keys.json" to 13777,
+        "bundled/keyboard_layouts/TextKeyboardLayout.Sandy-数字行26+万象九键.json" to 36265,
+        "bundled/icon_themes/谷歌.json" to 56425
+    )
+
+    private val themeAssets = listOf(
+        "森林集·write.json",
+        "长日将烬.json",
+        "braun-minimal-dark.json",
+        "braun-minimal-light.json",
+        "Caramel Dawn.json",
+        "Caramel Ember.json",
+        "github-dark-dim.json",
+        "industrial-orange-light.json",
+        "isGboard.json",
+        "sage-journey.json",
+        "WeChat Dark.json",
+        "wechat-light.json"
+    )
+
+    private val iconThemeAssets = listOf(
+        "谷歌.json",
+        "无题.json",
+        "长日将烬.json"
+    )
+
+    const val POPUP_PRESET_ASSET = "bundled/keyboard_layouts/PopupPreset.json"
+
+    /** 布局文件名 → profile 名（去掉 TextKeyboardLayout. 前缀与 .json 后缀）。 */
+    fun layoutProfileOf(fileName: String): String? {
+        if (!fileName.startsWith("TextKeyboardLayout.") || !fileName.endsWith(".json")) return null
+        return fileName.removePrefix("TextKeyboardLayout.").removeSuffix(".json")
+    }
+
+    /**
+     * 在后台安装内置资源。重复调用是安全的；安装失败只记录日志，不影响启动。
+     * [onComplete] 在本次安装尝试结束后于后台线程调用。
+     */
+    fun installAsync(onComplete: () -> Unit = {}) {
+        scope.launch {
+            runCatching { install() }.onFailure {
+                Timber.w(it, "Failed to install bundled presets")
+            }
+            onComplete()
+        }
+    }
+
+    private fun install() {
+        val extDir = appContext.getExternalFilesDir(null) ?: return
+        var installedCount = 0
+
+        // 键盘布局：安装到 config/
+        val configDir = UserConfigFiles.configDir() ?: File(extDir, "config").apply { mkdirs() }
+        layoutAssets.forEach { name ->
+            installAsset("bundled/keyboard_layouts/$name", File(configDir, name)).let { installedCount += it }
+        }
+        if (installedCount > 0) {
+            ensureLayoutProfile()
+        }
+
+        // 主题：安装到 theme/（与用户自定义主题同目录）
+        val themeDir = File(extDir, "theme").apply { mkdirs() }
+        themeAssets.forEach { name ->
+            installAsset("bundled/themes/$name", File(themeDir, name)).let { installedCount += it }
+        }
+
+        // 图标主题：安装到 icon_themes/
+        val iconThemeDir = File(extDir, "icon_themes").apply { mkdirs() }
+        iconThemeAssets.forEach { name ->
+            installAsset("bundled/icon_themes/$name", File(iconThemeDir, name)).let { installedCount += it }
+        }
+
+        if (installedCount > 0) {
+            Timber.i("Bundled presets installed %d file(s)", installedCount)
+        }
+    }
+
+    /**
+     * 安装单个 asset。返回 1 表示本次实际写出了文件，0 表示跳过（已处理/已存在/读取失败）。
+     */
+    private fun installAsset(assetPath: String, dest: File, assetBytes: ByteArray? = readAsset(assetPath)): Int {
+        val bytes = assetBytes ?: return 0
+        val tag = "$assetPath#${bytes.size}"
+        val previousSize = assetSizes[assetPath]
+        val updateTag = previousSize?.let { "$tag#from=$it" } ?: tag
+        // A corrected previous-size registration must retry a previously skipped old file.
+        // Existing legacy tags still protect files the user has deleted or edited.
+        if (tag in handled && (updateTag in handled || previousSize == null ||
+                    !dest.isFile || dest.length() != previousSize.toLong())) return 0
+        // 内容有更新的内置资源（assetSizes 中登记了上一版字节数）：只有用户从未改过
+        // 本地文件（大小仍等于上一版内置内容）时才原位替换；否则保留用户版本。
+        if (previousSize != null && dest.exists() && dest.length() != previousSize.toLong()) {
+            mark(tag, updateTag)
+            return 1
+        }
+        if (!dest.exists() || previousSize != null) {
+            runCatching {
+                dest.parentFile?.mkdirs()
+                val tmp = File(dest.absolutePath + ".tmp")
+                tmp.writeBytes(bytes)
+                if (!tmp.renameTo(dest)) {
+                    dest.writeBytes(bytes)
+                    tmp.delete()
+                }
+            }.onFailure {
+                Timber.w(it, "Failed to install bundled asset %s", assetPath)
+                return 0
+            }
+            Timber.d("Installed bundled asset %s", assetPath)
+        }
+        mark(tag, updateTag)
+        return 1
+    }
+
+    private fun readAsset(assetPath: String): ByteArray? {
+        return runCatching {
+            appContext.assets.open(assetPath).use { it.readBytes() }
+        }.onFailure {
+            Timber.w(it, "Failed to read bundled asset %s", assetPath)
+        }.getOrNull()
+    }
+
+    /**
+     * 首次安装布局后，把"布局文件"选择指向第一份内置布局，让用户开机即得完整布局；
+     * 用户已选择过其它 profile 时保持其选择不动。
+     */
+    private fun ensureLayoutProfile() {
+        val keyboardPrefs = AppPrefs.getInstance().keyboard
+        val current = keyboardPrefs.textKeyboardLayoutProfile.getValue()
+        if (current != UserConfigFiles.DEFAULT_TEXT_KEYBOARD_LAYOUT_PROFILE) {
+            // 用户已选择过：仅当指向的文件确实不存在时才回退
+            val file = UserConfigFiles.textKeyboardLayoutJson(current)
+            if (file?.exists() == true) return
+        }
+        val defaultProfile = layoutProfileOf(layoutAssets.first()) ?: return
+        if (UserConfigFiles.textKeyboardLayoutJson(defaultProfile)?.exists() == true) {
+            keyboardPrefs.textKeyboardLayoutProfile.setValue(defaultProfile)
+        }
+    }
+
+    /**
+     * 读取内置的 PopupPreset.json（默认弹出定义）。
+     * 该文件不安装到用户目录：`config/PopupPreset.json` 一旦存在就会整体覆盖
+     * 默认定义，因此内置定义只作为运行时 fallback 从 assets 直接读取。
+     */
+    fun readBundledPopupPreset(): Map<String, List<String>>? {
+        val bytes = readAsset(POPUP_PRESET_ASSET) ?: return null
+        return runCatching {
+            val text = bytes.decodeToString()
+            val stripped = org.fcitx.fcitx5.android.input.config.UserJsonConfigStore
+                .stripLineComments(text)
+            org.fcitx.fcitx5.android.input.config.UserJsonConfigStore.parser
+                .decodeFromString<Map<String, List<String>>>(stripped)
+        }.onFailure {
+            Timber.w(it, "Failed to parse bundled popup preset")
+        }.getOrNull()
+    }
+}

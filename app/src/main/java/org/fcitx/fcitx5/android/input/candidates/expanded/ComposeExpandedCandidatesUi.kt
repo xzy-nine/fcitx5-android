@@ -62,7 +62,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * 本文件只负责候选特有的部分：
  *
  * - 列数不取用户偏好，而由 [computeGridSpanCount] 按**前段候选实测宽度（em）**与列数上限反推：
- *   与 View 侧 `SpanHelper` 同口径，避免短词把列数顶满、一行词数比 View 实现多一倍（滚动掉帧）；
+ *   与 View 侧 View 侧 SpanSizeLookup 同口径，避免短词把列数顶满、一行词数比 View 实现多一倍（滚动掉帧）；
  * - 翻页按钮（内嵌键盘的上/下）的可用态由网格滚动位置推导（到顶/到底置灰）——在共用组件里；
  * - 长按候选弹菜单的锚点用「窗口坐标 + 按下偏移」换算成 `Rect`，与横向候选栏同口径。
  */
@@ -83,7 +83,7 @@ fun ComposeExpandedCandidatesUi(
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
     val candidateStyle = TextStyle(fontSize = CandidateFontSize, fontWeight = FontWeight.Normal)
-    // 1em 的像素宽度：把实测宽度换算成 em，与 View 侧 SpanHelper 的 1.5em 口径对齐。
+    // 1em 的像素宽度：把实测宽度换算成 em，与 View 侧 View 侧 SpanSizeLookup 的 1.5em 口径对齐。
     val emWidthPx = with(density) { CandidateFontSize.toPx() }
 
     // 前段候选实测文本宽度（单位 em）：只取首屏前 K 条，避免滚动时抖动（与 computeGridSpanCount 采样约定一致）。

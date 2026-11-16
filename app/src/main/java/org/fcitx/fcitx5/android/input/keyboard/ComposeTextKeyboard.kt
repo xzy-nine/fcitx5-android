@@ -288,7 +288,6 @@ class TextKeyboardState(initialReturnDrawable: Int) {
                         border = appearance.border,
                         margin = appearance.margin,
                         viewId = appearance.viewId,
-                        soundEffect = appearance.soundEffect,
                     )
                 )
             } else {
@@ -303,7 +302,6 @@ class TextKeyboardState(initialReturnDrawable: Int) {
                         border = appearance.border,
                         margin = appearance.margin,
                         viewId = appearance.viewId,
-                        soundEffect = appearance.soundEffect,
                     )
                 )
             }
@@ -330,6 +328,7 @@ class TextKeyboardState(initialReturnDrawable: Int) {
                     border = appearance.border,
                     margin = appearance.margin,
                     viewId = appearance.viewId,
+                    character = appearance.displayText,
                 )
             )
 
@@ -345,7 +344,6 @@ class TextKeyboardState(initialReturnDrawable: Int) {
                     border = appearance.border,
                     margin = appearance.margin,
                     viewId = appearance.viewId,
-                    soundEffect = appearance.soundEffect,
                 )
             )
 
@@ -359,11 +357,14 @@ class TextKeyboardState(initialReturnDrawable: Int) {
                     border = appearance.border,
                     margin = appearance.margin,
                     viewId = appearance.viewId,
-                    soundEffect = appearance.soundEffect,
                 )
             )
 
             // Image（caps/回车/退格/语言）在各自分支处理或原样保留
+            is KeyDef.Appearance.ImageAltText -> def
+
+            is KeyDef.Appearance.ToolbarText -> def
+
             is KeyDef.Appearance.Image -> def
         }
     }

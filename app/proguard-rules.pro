@@ -8,12 +8,6 @@
 # disable obfuscation
 -dontobfuscate
 
-# Keep JNI interface
--keep class org.fcitx.fcitx5.android.core.* { *; }
--keep class org.fcitx.fcitx5.android.data.pinyin.customphrase.PinyinCustomPhrase {
-    public <init>(...);
-}
-
 # Keep dependency magic
 -keep class ** extends org.mechdancer.dependency.Component {
     int hashCode();
@@ -30,3 +24,8 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Batched direct librime JNI result and entry points.
+-keep class org.fcitx.directrime.Snapshot { *; }
+-keep class org.fcitx.directrime.RawInputState { *; }
+-keep class org.fcitx.directrime.Native { *; }

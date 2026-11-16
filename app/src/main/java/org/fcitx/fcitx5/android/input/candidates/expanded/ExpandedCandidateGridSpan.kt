@@ -10,14 +10,14 @@ import kotlin.math.ceil
 /**
  * 「展开候选」表格形态的列数计算（纯函数，可单测）。
  *
- * **为什么要对齐 View 侧 [SpanHelper]**：Compose 的 `LazyVerticalGrid` 只有**整表统一的列数**
+ * **为什么要对齐 View 侧 View 侧 SpanSizeLookup**：Compose 的 `LazyVerticalGrid` 只有**整表统一的列数**
  * （`GridCells.Fixed`），没有逐项 `spanSize`，无法像 `GridLayoutManager.SpanSizeLookup` 那样
  * 「按文字宽度逐项跨列 + 末项拉伸填满整行」。若简单按「可用宽度里能摆下几条」取整表列数，
  * 短词（1–2 个汉字）会把列数顶满到偏好上限（默认 6）：一行词数是 View 实现的两倍，
  * 每帧要合成/测量的格子随之翻倍，滚动就会掉帧。
  *
- * **本函数的取法**：照搬 [SpanHelper] 的「单条候选占几个列单位」口径，再反推整表列数：
- * - 单条候选占用 `s = ceil(宽度em / 1.5)` 个列单位（与 [SpanHelper] 同口径：1 个汉字 ≈ 1em 占 1 列，
+ * **本函数的取法**：照搬 View 侧 SpanSizeLookup 的「单条候选占几个列单位」口径，再反推整表列数：
+ * - 单条候选占用 `s = ceil(宽度em / 1.5)` 个列单位（与 View 侧 SpanSizeLookup 同口径：1 个汉字 ≈ 1em 占 1 列，
  *   3 个西文字符 ≈ 1.5em 占 1 列）；
  * - 整表列数 = `列数上限 / 最宽候选的 s`。
  *
@@ -35,7 +35,7 @@ import kotlin.math.ceil
 const val ExpandedCandidateLeadingSampleCount = 10
 
 /**
- * 一个「列单位」对应的候选文本宽度（单位 em），与 [SpanHelper] 的 1.5 对齐。
+ * 一个「列单位」对应的候选文本宽度（单位 em），与 View 侧 SpanSizeLookup 的 1.5 对齐。
  */
 private const val ExpandedCandidateSpanUnitEm = 1.5f
 

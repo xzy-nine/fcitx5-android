@@ -61,7 +61,7 @@ import android.content.res.Configuration
  * 旧 View 实现（`BaseKeyboard` / `TextKeyboard` / `NumberKeyboard` / `KeyView` /
  * `CustomGestureView`）按 `AGENTS.md` 惯例保留但已断开接线，供对比与回退。
  */
-class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), EssentialWindow,
+class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(KeyboardWindow::class), EssentialWindow,
     ComposeWindow, InputBroadcastReceiver {
 
     private val service by manager.inputMethodService()
@@ -248,7 +248,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
         }
     }
 
-    override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {
+    override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags, restarting: Boolean) {
         val targetLayout = when (info.inputType and InputType.TYPE_MASK_CLASS) {
             InputType.TYPE_CLASS_NUMBER -> KeyboardLayoutNames.Number
             InputType.TYPE_CLASS_PHONE -> KeyboardLayoutNames.Number
@@ -266,10 +266,6 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(), Essentia
 
     override fun onImeUpdate(ime: InputMethodEntry) {
         textKeyboardState.onInputMethodUpdate(ime)
-    }
-
-    override fun onPunctuationUpdate(mapping: Map<String, String>) {
-        textKeyboardState.onPunctuationUpdate(mapping)
     }
 
     override fun onReturnKeyDrawableUpdate(resourceId: Int) {

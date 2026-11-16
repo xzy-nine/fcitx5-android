@@ -30,17 +30,19 @@ fun insetRadiusDrawable(
     hInset, vInset, hInset, vInset
 )
 
-fun insetOvalDrawable(
+fun pillDrawable(
+    @ColorInt color: Int = Color.WHITE
+): Drawable = GradientDrawable().apply {
+    shape = GradientDrawable.RECTANGLE
+    setColor(color)
+    cornerRadius = Float.MAX_VALUE
+}
+
+fun insetPillDrawable(
     hInset: Int,
     vInset: Int,
     @ColorInt color: Int = Color.WHITE
-): Drawable = InsetDrawable(
-    GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(color)
-    },
-    hInset, vInset, hInset, vInset
-)
+): Drawable = InsetDrawable(pillDrawable(color), hInset, vInset, hInset, vInset)
 
 fun shadowedKeyBackgroundDrawable(
     @ColorInt bkgColor: Int,
@@ -71,6 +73,41 @@ fun borderedKeyBackgroundDrawable(
         GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = radius
+            setColor(bkgColor)
+            setStroke(strokeWidth, shadowColor)
+        }
+    )
+).apply {
+    setLayerInset(0, hMargin, vMargin, hMargin, vMargin)
+}
+
+fun shadowedPillKeyBackgroundDrawable(
+    @ColorInt bkgColor: Int,
+    @ColorInt shadowColor: Int,
+    shadowWidth: Int,
+    hMargin: Int,
+    vMargin: Int
+): Drawable = LayerDrawable(
+    arrayOf(
+        pillDrawable(shadowColor),
+        pillDrawable(bkgColor),
+    )
+).apply {
+    setLayerInset(0, hMargin, vMargin, hMargin, vMargin - shadowWidth)
+    setLayerInset(1, hMargin, vMargin, hMargin, vMargin)
+}
+
+fun borderedPillKeyBackgroundDrawable(
+    @ColorInt bkgColor: Int,
+    @ColorInt shadowColor: Int,
+    strokeWidth: Int,
+    hMargin: Int,
+    vMargin: Int
+): Drawable = LayerDrawable(
+    arrayOf(
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = Float.MAX_VALUE
             setColor(bkgColor)
             setStroke(strokeWidth, shadowColor)
         }

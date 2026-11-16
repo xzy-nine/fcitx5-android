@@ -1,0 +1,19 @@
+{
+  "id": "youdao-free-translate",
+  "name": "有道翻译",
+  "version": "1.0.0",
+  "hosts": ["aidemo.youdao.com"],
+  "features": [],
+  "apps": [
+    {
+      "id": "youdao_translate",
+      "label": "有道翻译",
+      "permissions": [
+        "editor.read_selection",
+        "editor.composition",
+        "editor.commit",
+        "network.request"
+      ]
+    }
+  ]
+}

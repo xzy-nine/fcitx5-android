@@ -56,7 +56,7 @@ import top.yukonga.miuix.kmp.overlay.OverlayDialog
  * 本页的入口全部落在网格格子里，因此不实现 `onCreateBarExtension()`：
  * 顶栏右侧固定位留给工具栏布局的「编辑 / 完成」。
  */
-class StatusAreaWindow : InputWindow.ExtendedInputWindow<StatusAreaWindow>(),
+class StatusAreaWindow : InputWindow.ExtendedInputWindow<StatusAreaWindow>(StatusAreaWindow::class),
     InputBroadcastReceiver, ComposeWindow {
 
     private val service: FcitxInputMethodService by manager.inputMethodService()

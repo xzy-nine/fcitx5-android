@@ -57,7 +57,7 @@ import org.mechdancer.dependency.manager.must
  *
  * **形态只有一种**：表格（网格）。原「流式（Flexbox）」形态与 `expandedCandidateStyle` 偏好已移除；
  * 列数由 [computeGridSpanCount] 按列表**前段候选的实测宽度**（em）与列数上限反推
- * （与 View 侧 `SpanHelper` 同口径，避免一行词数过多导致滚动掉帧），
+ * （与 View 侧 View 侧 SpanSizeLookup 同口径，避免一行词数过多导致滚动掉帧），
  * `expandedCandidateGridSpanCount` 偏好降级为列数上限。
  *
  * 职责分配（对标 View 侧 `BaseExpandedCandidateWindow`）：
@@ -68,7 +68,7 @@ import org.mechdancer.dependency.manager.must
  *   `expandedCandidateOffset`（不直接订阅 `CandidateListEvent`）。
  */
 class ComposeExpandedCandidateWindow :
-    InputWindow.SimpleInputWindow<ComposeExpandedCandidateWindow>(),
+    InputWindow.SimpleInputWindow<ComposeExpandedCandidateWindow>(ComposeExpandedCandidateWindow::class),
     ComposeWindow,
     InputBroadcastReceiver {
 

@@ -5,8 +5,11 @@
 package org.fcitx.fcitx5.android.data.clipboard
 
 import android.content.ClipboardManager
+import android.content.ClipData
 import android.content.Context
+import android.net.Uri
 import android.os.Build
+import android.provider.DocumentsContract
 import androidx.annotation.Keep
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
@@ -15,22 +18,35 @@ import androidx.paging.PagingSource
 import androidx.paging.cachedIn
 import androidx.room.Room
 import androidx.room.withTransaction
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.Flow
+    import kotlinx.coroutines.flow.Flow
+    import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.fcitx.fcitx5.android.data.broadcast.BroadcastSecurityManager
-import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager.entriesPager
-import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager.invalidatePagingSource
+    import org.fcitx.fcitx5.android.common.ClipboardMetadata
+    import org.fcitx.fcitx5.android.data.broadcast.BroadcastSecurityManager
+    import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager.entriesPager
+    import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager.invalidatePagingSource
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardDao
+import org.fcitx.fcitx5.android.data.clipboard.db.CLIPBOARD_DATABASE_NAME
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardDatabase
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
+import org.fcitx.fcitx5.android.utils.ClipboardSourceDeletionTarget
+import org.fcitx.fcitx5.android.utils.ClipboardUriStore
+import org.fcitx.fcitx5.android.utils.ClipboardUriFingerprint
+import org.fcitx.fcitx5.android.utils.ClipboardUriMetadata
+import org.fcitx.fcitx5.android.utils.ClipboardUriStore.deleteClipboardSourceFile
+import org.fcitx.fcitx5.android.utils.ClipboardUriStore.normalizeClipboardText
+import org.fcitx.fcitx5.android.utils.ClipboardUriStore.originalClipboardTextOrEmpty
+import org.fcitx.fcitx5.android.utils.ClipboardUriStore.toClipboardUriOrNull
 import org.fcitx.fcitx5.android.utils.WeakHashSet
 import org.fcitx.fcitx5.android.utils.appContext
 import org.fcitx.fcitx5.android.utils.clipboardManager
@@ -40,6 +56,9 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
     CoroutineScope by CoroutineScope(SupervisorJob() + Dispatchers.Default) {
     private lateinit var clbDb: ClipboardDatabase
     private lateinit var clbDao: ClipboardDao
+
+    private const val MEDIA_DEDUP_CANDIDATE_LIMIT = 32
+    private const val URI_ALIAS_CANDIDATE_LIMIT = 8
 
     fun interface OnClipboardUpdateListener {
         fun onUpdate(entry: ClipboardEntry)
@@ -79,7 +98,9 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
         }
     }
 
-    private val limitPref = AppPrefs.getInstance().clipboard.clipboardHistoryLimit
+    private val localLimitPref = AppPrefs.getInstance().clipboard.clipboardHistoryLimitLocal
+    private val remoteLimitPref = AppPrefs.getInstance().clipboard.clipboardHistoryLimitRemote
+    private val mediaLimitPref = AppPrefs.getInstance().clipboard.clipboardHistoryLimitMedia
 
     @Keep
     private val limitListener = ManagedPreference.OnChangeListener<Int> { _, _ ->
@@ -93,23 +114,290 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
         onUpdateListeners.forEach { it.onUpdate(entry) }
     }
 
+    private fun clearLastEntry() {
+        lastEntry = null
+        onUpdateListeners.forEach {
+            it.onUpdate(
+                ClipboardEntry(
+                    text = "",
+                    timestamp = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    private suspend fun normalizeEntry(entry: ClipboardEntry): ClipboardEntry {
+        if (entry.text.startsWith("content://") || entry.text.startsWith("file://")) {
+            // For URI entries (like clipboard images), try to stage the content
+            // so we have a local copy with proper permissions. Staging copies the whole
+            // file, so run it on IO rather than the caller's dispatcher.
+            val staged = withContext(Dispatchers.IO) { normalizeClipboardText(appContext, entry.text) }
+            return if (staged == entry.text) {
+                // Staging failed - check if this is an ExternalStorageProvider tree URI
+                // that we can handle by extracting the file path directly
+                val treeUri = entry.text.toClipboardUriOrNull()
+                if (treeUri != null && isExternalStorageProviderTreeUri(treeUri)) {
+                    val filePath = extractFilePathFromTreeUri(treeUri)
+                    if (filePath != null) {
+                        val stagedFromPath = withContext(Dispatchers.IO) {
+                            normalizeClipboardText(appContext, "file://$filePath")
+                        }
+                        if (stagedFromPath != entry.text && !stagedFromPath.startsWith("content://com.android.externalstorage")) {
+                            return entry.copy(
+                                text = stagedFromPath,
+                                originalText = entry.originalText.ifEmpty { entry.text }
+                            )
+                        }
+                    }
+                }
+                // Staging failed or returned same URI, keep original
+                entry
+            } else {
+                // Staging succeeded, use FileProvider URI
+                entry.copy(text = staged, originalText = entry.originalText.ifEmpty { entry.text })
+            }
+        }
+        val normalizedText = withContext(Dispatchers.IO) { normalizeClipboardText(appContext, entry.text) }
+        val normalizedOriginalText = when {
+            entry.originalText.isNotEmpty() -> entry.originalText
+            normalizedText == entry.text -> ""
+            else -> originalClipboardTextOrEmpty(entry.text, normalizedText)
+        }
+        return if (normalizedText == entry.text && normalizedOriginalText == entry.originalText) {
+            entry
+        } else {
+            entry.copy(text = normalizedText, originalText = normalizedOriginalText)
+        }
+    }
+
+    private fun isExternalStorageProviderTreeUri(uri: Uri): Boolean {
+        return uri.authority == "com.android.externalstorage.documents" &&
+                uri.path?.startsWith("/tree/") == true
+    }
+
+    private fun extractFilePathFromTreeUri(treeUri: Uri): String? {
+        // Tree URI format: content://com.android.externalstorage.documents/tree/primary%3ADownload%2FFcitx5-clipboard/document/primary%3ADownload%2FFcitx5-clipboard%2FImage.png
+        // Document ID format: primary:Download/Fcitx5-clipboard/Image.png
+        val documentId = try {
+            DocumentsContract.getTreeDocumentId(treeUri)
+        } catch (e: Exception) {
+            Timber.w("Failed to get document ID from tree URI: $treeUri")
+            return null
+        }
+        val parts = documentId.split(":", limit = 2)
+        if (parts.size != 2) return null
+        val (volume, relativePath) = parts[0] to parts[1]
+        return when {
+            volume.equals("primary", ignoreCase = true) -> {
+                if (relativePath.isBlank()) {
+                    "/storage/emulated/0"
+                } else {
+                    "/storage/emulated/0/$relativePath"
+                }
+            }
+            else -> "/storage/$volume/$relativePath"
+        }
+    }
+
+    private suspend fun insertOrUpdateEntry(
+        entry: ClipboardEntry,
+        notifyListeners: Boolean
+    ): ClipboardEntry {
+        val equivalentEntry = try {
+            findEquivalentRecentMediaEntry(entry)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Timber.w("Failed to compare clipboard image with recent entries")
+            null
+        }
+        equivalentEntry?.let { existing ->
+            val sourceUri = entry.originalText.toClipboardUriOrNull()?.toString()
+                ?: entry.text.toClipboardUriOrNull()?.toString().orEmpty()
+            val updated = existing.copy(
+                timestamp = entry.timestamp,
+                originalText = existing.originalText.ifEmpty { sourceUri }
+            )
+            try {
+                clbDao.updateTime(existing.id, entry.timestamp)
+                if (updated.originalText != existing.originalText) {
+                    clbDao.updateOriginalTextIfEmpty(existing.id, sourceUri)
+                }
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                Timber.w("Failed to update matching clipboard image")
+            }
+            if (notifyListeners) updateLastEntry(updated)
+            return updated
+        }
+        val normalizedEntry = normalizeEntry(entry)
+        if (normalizedEntry.text.isBlank()) return normalizedEntry
+        return try {
+            clbDao.find(normalizedEntry.text, normalizedEntry.sensitive, normalizedEntry.source)?.let {
+                val updated = it.copy(
+                    timestamp = normalizedEntry.timestamp,
+                    originalText = normalizedEntry.originalText,
+                    originalRootUri = normalizedEntry.originalRootUri,
+                    type = normalizedEntry.type
+                )
+                if (notifyListeners) {
+                    updateLastEntry(updated)
+                }
+                clbDao.updateTime(it.id, normalizedEntry.timestamp)
+                updated
+            } ?: run {
+                val insertedEntry = clbDb.withTransaction {
+                    val rowId = clbDao.insert(normalizedEntry)
+                    removeOutdated()
+                    // new entry can be deleted immediately if clipboard limit == 0
+                    clbDao.get(rowId) ?: normalizedEntry
+                }
+                if (notifyListeners) {
+                    updateLastEntry(insertedEntry)
+                }
+                updateItemCount()
+                if (BroadcastSecurityManager.isEnabled()) {
+                    BroadcastSecurityManager.broadcastClipboardEntry(insertedEntry.text)
+                }
+                insertedEntry
+            }
+        } catch (exception: Exception) {
+            Timber.w("Failed to update clipboard database: $exception")
+            if (notifyListeners) {
+                updateLastEntry(normalizedEntry)
+            }
+            normalizedEntry
+        }
+    }
+
+    /**
+     * Find a recent image whose original URI or content identifies the same file. URI and path
+     * checks cover aliases exposed by one provider; a bounded hash covers copied/staged URIs.
+     */
+    private suspend fun findEquivalentRecentMediaEntry(entry: ClipboardEntry): ClipboardEntry? {
+        if (!entry.type.startsWith("image/") || !entry.isUriEntry()) return null
+        val incomingIdentityText = entry.originalText.toClipboardUriOrNull()?.toString() ?: entry.text
+        val incomingIdentityUri = incomingIdentityText.toClipboardUriOrNull() ?: return null
+        val recentEntries = try {
+            clbDao.recentMediaEntries(entry.source, entry.sensitive, MEDIA_DEDUP_CANDIDATE_LIMIT)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (_: Exception) {
+            return null
+        }
+        if (recentEntries.isEmpty()) return null
+
+        return withContext(Dispatchers.IO) {
+            for (existing in recentEntries) {
+                val existingIdentityUri = existing.originalText.toClipboardUriOrNull()
+                    ?: existing.text.toClipboardUriOrNull()
+                    ?: continue
+                if (incomingIdentityUri.normalizeScheme() == existingIdentityUri.normalizeScheme()) {
+                    return@withContext existing
+                }
+            }
+
+            // Provider canonicalization and path resolution can query the content provider.
+            // Check only the most recent rows directly; older staged copies are covered by the
+            // cheap metadata plus fingerprint fallback below.
+            for (existing in recentEntries.take(URI_ALIAS_CANDIDATE_LIMIT)) {
+                val existingIdentityUri = existing.originalText.toClipboardUriOrNull()
+                    ?: existing.text.toClipboardUriOrNull()
+                    ?: continue
+                val existingContentUri = existing.text.toClipboardUriOrNull() ?: existingIdentityUri
+                if (
+                    ClipboardUriStore.refersToSameFile(appContext, incomingIdentityUri, existingIdentityUri) ||
+                    ClipboardUriStore.refersToSameFile(appContext, incomingIdentityUri, existingContentUri)
+                ) {
+                    return@withContext existing
+                }
+            }
+
+            val incomingMetadata = ClipboardUriStore.queryMetadata(appContext, incomingIdentityUri)
+                ?: return@withContext null
+            var incomingFingerprint: ClipboardUriFingerprint? = null
+            var incomingFingerprintChecked = false
+            for (existing in recentEntries) {
+                val existingIdentityUri = existing.originalText.toClipboardUriOrNull()
+                    ?: existing.text.toClipboardUriOrNull()
+                    ?: continue
+                val existingContentUri = existing.text.toClipboardUriOrNull() ?: existingIdentityUri
+                val existingMetadata = ClipboardUriStore.queryMetadata(appContext, existingContentUri) ?: continue
+                if (
+                    ClipboardUriStore.normalizedDisplayName(incomingMetadata.displayName) !=
+                    ClipboardUriStore.normalizedDisplayName(existingMetadata.displayName)
+                ) continue
+                if (
+                    incomingMetadata.sizeBytes != null && existingMetadata.sizeBytes != null &&
+                    incomingMetadata.sizeBytes != existingMetadata.sizeBytes
+                ) continue
+
+                if (!incomingFingerprintChecked) {
+                    incomingFingerprint = ClipboardUriStore.fingerprint(appContext, incomingIdentityUri)
+                    incomingFingerprintChecked = true
+                }
+                val candidateFingerprint = incomingFingerprint ?: continue
+                val existingFingerprint = ClipboardUriStore.fingerprint(appContext, existingContentUri) ?: continue
+                if (candidateFingerprint == existingFingerprint) return@withContext existing
+            }
+            null
+        }
+    }
+
     fun init(context: Context) {
         clbDb = Room
-            .databaseBuilder(context, ClipboardDatabase::class.java, "clbdb")
-            // allow wipe the database instead of crashing when downgrade
-            .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
+            .databaseBuilder(context, ClipboardDatabase::class.java, CLIPBOARD_DATABASE_NAME)
+            // No fallbackToDestructiveMigrationOnDowngrade: wiping the tables silently
+            // discarded the user's pinned and favorite entries when a database written by a
+            // newer variant was opened here. Opening it now fails loudly instead, and the
+            // backup importer refuses a database with a higher user_version up front.
             .build()
         clbDao = clbDb.clipboardDao()
+        // Staged clipboard files are pruned by ClipboardUriStore; drop the history entries
+        // that pointed at the files it evicted, otherwise they linger with a dead
+        // FileProvider URI (blank thumbnail, paste does nothing).
+        ClipboardUriStore.onStagedFilesEvicted = { evicted ->
+            launch { removeEntriesForEvictedFiles(evicted) }
+        }
         enabledListener.onChange(enabledPref.key, enabledPref.getValue())
         enabledPref.registerOnChangeListener(enabledListener)
-        limitListener.onChange(limitPref.key, limitPref.getValue())
-        limitPref.registerOnChangeListener(limitListener)
+        limitListener.onChange(localLimitPref.key, localLimitPref.getValue())
+        localLimitPref.registerOnChangeListener(limitListener)
+        remoteLimitPref.registerOnChangeListener(limitListener)
+        mediaLimitPref.registerOnChangeListener(limitListener)
         launch { updateItemCount() }
+    }
+
+    /**
+     * Close the Room database before its files are overwritten (backup import).
+     *
+     * Without this, Room keeps the old database's file descriptors and page cache while the
+     * importer replaces clbdb (and its -wal/-shm) underneath it, which can leave the
+     * imported database inconsistent with the leftover WAL.
+     */
+    fun closeDatabase() {
+        if (!::clbDb.isInitialized) return
+        runCatching { clbDb.close() }
+            .onFailure { Timber.w(it, "Failed to close clipboard database") }
+    }
+
+    /** Read one transactional state into a separate file; never copy the live main/WAL files. */
+    fun writeDatabaseSnapshot(destination: java.io.File): Boolean {
+        if (!::clbDb.isInitialized) return false
+        org.fcitx.fcitx5.android.data.SqliteSnapshots.write(clbDb.openHelper.writableDatabase, destination)
+        return true
     }
 
     suspend fun get(id: Int) = clbDao.get(id)
 
-    suspend fun haveUnpinned() = clbDao.haveUnpinned()
+    suspend fun haveUnpinned(category: ClipboardCategory) = when (category) {
+        ClipboardCategory.All -> clbDao.findUnpinnedIds().isNotEmpty()
+        ClipboardCategory.Favorites -> false
+        ClipboardCategory.Local -> clbDao.haveUnpinnedTextEntriesBySource(ClipboardEntry.SOURCE_LOCAL)
+        ClipboardCategory.Remote -> clbDao.haveUnpinnedEntriesBySource(ClipboardEntry.SOURCE_REMOTE)
+        ClipboardCategory.Media -> clbDao.haveUnpinnedMediaEntries()
+    }
 
     fun allEntries() = clbDao.allEntries()
 
@@ -159,31 +447,226 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
         currentPagingSource?.invalidate()
     }
 
+    /**
+     * Empty queries browse the whole selected group; nonempty queries page every match.
+     * SQLite LIKE folds ASCII case and matches both current and original text.
+     */
+    fun entries(category: ClipboardCategory, query: String = "") = if (query.isNotEmpty()) {
+        clbDao.searchEntriesPaged(escapeLikePattern(query), category.name)
+    } else when (category) {
+        ClipboardCategory.All -> allEntries()
+        ClipboardCategory.Favorites -> favoriteEntries()
+        ClipboardCategory.Local -> localTextEntries()
+        ClipboardCategory.Media -> mediaEntries()
+        ClipboardCategory.Remote -> remoteEntries()
+    }
+
+    /**
+     * Escape LIKE metacharacters in a user-typed query.
+     *
+     * `%`, `_` and the escape character itself are pattern syntax; without escaping, typing `%`
+     * would match every entry and `_` would match any single character. The DAO passes
+     * `ESCAPE '\'`, so a literal backslash must be doubled.
+     */
+    private fun escapeLikePattern(query: String): String = query
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+
+    fun favoriteEntries() = clbDao.favoriteEntries()
+
+    fun localTextEntries() = clbDao.textEntriesBySource(ClipboardEntry.SOURCE_LOCAL)
+
+    fun remoteTextEntries() = clbDao.textEntriesBySource(ClipboardEntry.SOURCE_REMOTE)
+
+    fun remoteEntries() = clbDao.entriesBySource(ClipboardEntry.SOURCE_REMOTE)
+
+    fun mediaEntries() = clbDao.mediaEntries()
+
     suspend fun pin(id: Int) = clbDao.updatePinStatus(id, true)
 
     suspend fun unpin(id: Int) = clbDao.updatePinStatus(id, false)
 
-    suspend fun updateText(id: Int, text: String) {
-        lastEntry?.let {
-            if (id == it.id) updateLastEntry(it.copy(text = text))
-        }
-        clbDao.updateText(id, text)
+    suspend fun markUsed(id: Int, timestamp: Long = System.currentTimeMillis()) {
+        clbDao.updateTime(id, timestamp)
     }
+
+    suspend fun updateText(id: Int, text: String) {
+        mutex.withLock {
+            check(clbDao.updateText(id, text) == 1) { "Clipboard entry is no longer available" }
+            // Notify only after the write succeeds, using the entry current at completion.
+            lastEntry?.takeIf { it.id == id }?.let { updateLastEntry(it.copy(text = text)) }
+        }
+    }
+
+    /** A confirmed edit belongs to the application, even if its floating editor closes. */
+    fun saveEditedText(id: Int, text: String, copy: Boolean): Deferred<Unit> =
+        async(Dispatchers.Main.immediate) {
+            try {
+                updateText(id, text)
+                if (copy) clipboardManager.setPrimaryClip(ClipData.newPlainText("", text))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // This task can outlive the Activity; retain a diagnostic without logging text.
+                Timber.w("Unable to save clipboard entry id=%d (%s)", id, e.javaClass.simpleName)
+                throw e
+            }
+        }
 
     suspend fun delete(id: Int) {
+        val shouldClearSuggestion = lastEntry?.id == id
         clbDao.markAsDeleted(id)
+        if (shouldClearSuggestion) {
+            clearLastEntry()
+        }
         updateItemCount()
     }
 
-    suspend fun deleteAll(skipPinned: Boolean = true): IntArray {
-        val ids = if (skipPinned) {
-            clbDao.findUnpinnedIds()
-        } else {
-            clbDao.findAllIds()
-        }
-        clbDao.markAsDeleted(*ids)
+    /**
+     * Drop media entries whose staged cache file was just evicted. Their FileProvider URI is
+     * dead, so keeping them only produces broken thumbnails and failed pastes.
+     */
+    private suspend fun removeEntriesForEvictedFiles(evicted: List<java.io.File>) {
+        if (evicted.isEmpty()) return
+        val names = evicted.map { it.name }.toSet()
+        val stale = runCatching { clbDao.getAllMediaEntries() }.getOrNull() ?: return
+        val ids = stale.filter { entry ->
+            val last = entry.text.substringAfterLast('/').substringBefore('?')
+            last in names
+        }.map { it.id }
+        if (ids.isEmpty()) return
+        clbDao.markAsDeleted(*ids.toIntArray())
+        clbDao.realDelete()
+        if (lastEntry?.id in ids) clearLastEntry()
         updateItemCount()
+        Timber.d("Dropped ${ids.size} clipboard entries whose staged file was evicted")
+    }
+
+    suspend fun deleteAll(category: ClipboardCategory, skipPinned: Boolean = true): IntArray {
+        val ids = when (category) {
+            ClipboardCategory.All -> {
+                if (skipPinned) {
+                    clbDao.findUnpinnedIds()
+                } else {
+                    clbDao.findAllIds()
+                }
+            }
+
+            ClipboardCategory.Favorites -> {
+                if (skipPinned) {
+                    intArrayOf()
+                } else {
+                    clbDao.findPinnedIds()
+                }
+            }
+
+            ClipboardCategory.Local -> {
+                if (skipPinned) {
+                    clbDao.findUnpinnedTextEntryIdsBySource(ClipboardEntry.SOURCE_LOCAL)
+                } else {
+                    clbDao.findAllTextEntryIdsBySource(ClipboardEntry.SOURCE_LOCAL)
+                }
+            }
+
+            ClipboardCategory.Remote -> {
+                if (skipPinned) {
+                    clbDao.findUnpinnedEntryIdsBySource(ClipboardEntry.SOURCE_REMOTE)
+                } else {
+                    clbDao.findAllEntryIdsBySource(ClipboardEntry.SOURCE_REMOTE)
+                }
+            }
+
+            ClipboardCategory.Media -> {
+                if (skipPinned) {
+                    clbDao.findUnpinnedMediaEntryIds()
+                } else {
+                    clbDao.findAllMediaEntryIds()
+                }
+            }
+        }
+        if (ids.isNotEmpty()) {
+            val shouldClearSuggestion = lastEntry?.id?.let { lastId -> ids.contains(lastId) } == true
+            clbDao.markAsDeleted(*ids)
+            if (shouldClearSuggestion) {
+                clearLastEntry()
+            }
+            updateItemCount()
+        }
         return ids
+    }
+
+    suspend fun mediaDeletionTargets(skipPinned: Boolean): Map<Int, ClipboardSourceDeletionTarget> {
+        val entries = if (skipPinned) {
+            clbDao.getAllUnpinnedMediaEntries()
+        } else {
+            clbDao.getAllMediaEntries()
+        }
+        return entries.mapNotNull { entry ->
+            entry.remoteMediaDeletionSource()?.let { entry.id to it }
+        }.toMap()
+    }
+
+    suspend fun mediaDeletionTarget(id: Int): ClipboardSourceDeletionTarget? {
+        return clbDao.get(id)?.remoteMediaDeletionSource()
+    }
+
+    suspend fun mediaDeletionTargetsBySource(
+        source: String,
+        skipPinned: Boolean
+    ): Map<Int, ClipboardSourceDeletionTarget> {
+        val entries = if (skipPinned) {
+            clbDao.getAllUnpinnedMediaEntries()
+        } else {
+            clbDao.getAllMediaEntries()
+        }
+        return entries
+            .asSequence()
+            .filter { it.source == source }
+            .mapNotNull { entry -> entry.remoteMediaDeletionSource()?.let { entry.id to it } }
+            .toMap()
+    }
+
+    suspend fun remoteSuppressionContent(id: Int): String? {
+        return clbDao.get(id)?.remoteSuppressionContent()
+    }
+
+    suspend fun remoteSuppressionContents(
+        category: ClipboardCategory,
+        skipPinned: Boolean
+    ): List<String> {
+        val entries = when (category) {
+            ClipboardCategory.All -> if (skipPinned) {
+                clbDao.getAllUnpinnedEntriesBySource(ClipboardEntry.SOURCE_REMOTE)
+            } else {
+                clbDao.getAllEntriesBySource(ClipboardEntry.SOURCE_REMOTE)
+            }
+
+            ClipboardCategory.Favorites -> if (skipPinned) {
+                emptyList()
+            } else {
+                clbDao.getAllEntriesBySource(ClipboardEntry.SOURCE_REMOTE)
+                    .filter { it.pinned }
+            }
+
+            ClipboardCategory.Local -> emptyList()
+
+            ClipboardCategory.Remote -> if (skipPinned) {
+                clbDao.getAllUnpinnedEntriesBySource(ClipboardEntry.SOURCE_REMOTE)
+            } else {
+                clbDao.getAllEntriesBySource(ClipboardEntry.SOURCE_REMOTE)
+            }
+
+            ClipboardCategory.Media -> {
+                val mediaEntries = if (skipPinned) {
+                    clbDao.getAllUnpinnedMediaEntries()
+                } else {
+                    clbDao.getAllMediaEntries()
+                }
+                mediaEntries.filter { it.source == ClipboardEntry.SOURCE_REMOTE }
+            }
+        }
+        return entries.mapNotNull { it.remoteSuppressionContent() }.distinct()
     }
 
     suspend fun undoDelete(vararg ids: Int) {
@@ -198,7 +681,56 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
     suspend fun nukeTable() {
         withContext(coroutineContext) {
             clbDb.clearAllTables()
+            clearLastEntry()
             updateItemCount()
+        }
+    }
+
+    suspend fun importRemoteEntry(
+        text: String,
+        originalText: String = "",
+        originalRootUri: String = "",
+        type: String = android.content.ClipDescription.MIMETYPE_TEXT_PLAIN,
+        timestamp: Long = System.currentTimeMillis(),
+        sensitive: Boolean = false,
+        notifyListeners: Boolean = false
+    ): ClipboardEntry? {
+        if (text.isBlank()) return null
+        return mutex.withLock {
+            insertOrUpdateEntry(
+                ClipboardEntry(
+                    text = text,
+                    originalText = originalText,
+                    originalRootUri = originalRootUri,
+                    timestamp = timestamp,
+                    type = type,
+                    source = ClipboardEntry.SOURCE_REMOTE,
+                    sensitive = sensitive
+                ),
+                notifyListeners = notifyListeners
+            )
+        }
+    }
+
+    suspend fun importLocalEntry(
+        text: String,
+        type: String = android.content.ClipDescription.MIMETYPE_TEXT_PLAIN,
+        timestamp: Long = System.currentTimeMillis(),
+        sensitive: Boolean = false,
+        notifyListeners: Boolean = true
+    ): ClipboardEntry? {
+        if (text.isBlank()) return null
+        return mutex.withLock {
+            insertOrUpdateEntry(
+                ClipboardEntry(
+                    text = text,
+                    timestamp = timestamp,
+                    type = type,
+                    source = ClipboardEntry.SOURCE_LOCAL,
+                    sensitive = sensitive
+                ),
+                notifyListeners = notifyListeners
+            )
         }
     }
 
@@ -207,6 +739,17 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
 
     override fun onPrimaryClipChanged() {
         val clip = clipboardManager.primaryClip ?: return
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
+            (
+                clip.description.extras?.getBoolean(ClipboardMetadata.EXTRA_ENTRY_ALREADY_IMPORTED) == true ||
+                    clip.description.extras?.getBoolean(ClipboardMetadata.EXTRA_SCREENSHOT_WATCHER) == true
+                )
+        ) {
+            // The producer already inserted this media URI into history. Ignore its system-
+            // clipboard notification so it is not staged into a second cache file.
+            return
+        }
         /**
          * skip duplicate ClipData
          * https://developer.android.com/reference/android/content/ClipboardManager.OnPrimaryClipChangedListener#onPrimaryClipChanged()
@@ -223,44 +766,93 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
         }
         launch {
             mutex.withLock {
-                val entry = ClipboardEntry.fromClipData(clip, transformer) ?: return@withLock
-                if (entry.text.isBlank() || entry.sensitive) return@withLock
-                try {
-                    clbDao.find(entry.text, entry.sensitive)?.let {
-                        updateLastEntry(it.copy(timestamp = entry.timestamp))
-                        clbDao.updateTime(it.id, entry.timestamp)
-                        return@withLock
-                    }
-                    val insertedEntry = clbDb.withTransaction {
-                        val rowId = clbDao.insert(entry)
-                        removeOutdated()
-                        // new entry can be deleted immediately if clipboard limit == 0
-                        clbDao.get(rowId) ?: entry
-                    }
-                    updateLastEntry(insertedEntry)
-                    updateItemCount()
-                    if (BroadcastSecurityManager.isEnabled()) {
-                        BroadcastSecurityManager.broadcastClipboardEntry(insertedEntry.text)
-                    }
-                } catch (exception: Exception) {
-                    Timber.w("Failed to update clipboard database: $exception")
-                    updateLastEntry(entry)
-                }
+                // Built-in filtering belongs to this worker, including the very first clip
+                // before a remote/plugin service has connected. Plugin filters run afterwards.
+                val entry = ClipboardEntry.fromClipData(clip) { raw ->
+                    val filtered = HostClipboardFilter.transform(raw)
+                    transformer?.invoke(filtered) ?: filtered
+                } ?: return@withLock
+                insertOrUpdateEntry(entry, notifyListeners = true)
             }
         }
     }
 
     private suspend fun removeOutdated() {
-        val limit = limitPref.getValue()
-        val unpinned = clbDao.getAllUnpinned()
-        if (unpinned.size > limit) {
-            // the last one we will keep
-            val last = unpinned
-                .sortedBy { it.id }
-                .getOrNull(unpinned.size - limit)
-            // delete all unpinned before that, or delete all when limit <= 0
-            clbDao.markUnpinnedAsDeletedEarlierThan(last?.timestamp ?: System.currentTimeMillis())
+        var deletedAny = false
+        // 只取 id：旧实现把三类条目的完整 ClipboardEntry 全读出来再排序求保留集，
+        // 每次插入的成本都随历史规模线性增长（含长文本载荷的整对象物化）。
+        // 保留规则完全不变——仍是"按 id 保留最大的 limit 条"，见 trimOutdatedEntries。
+        deletedAny = trimOutdatedEntries(
+            clbDao.findUnpinnedTextEntryIdsBySource(ClipboardEntry.SOURCE_LOCAL),
+            localLimitPref.getValue()
+        ) || deletedAny
+        deletedAny = trimOutdatedEntries(
+            clbDao.findUnpinnedTextEntryIdsBySource(ClipboardEntry.SOURCE_REMOTE),
+            remoteLimitPref.getValue()
+        ) || deletedAny
+        deletedAny = trimOutdatedEntries(
+            clbDao.findUnpinnedMediaEntryIds(),
+            mediaLimitPref.getValue()
+        ) || deletedAny
+        if (deletedAny) {
+            updateItemCount()
         }
+    }
+
+    /**
+     * 按 id 裁剪一类条目，保留 id 最大的 [limit] 条。
+     *
+     * 与旧实现 `entries.sortedBy { it.id }.takeLast(limit)` 等价：DAO 的 id 查询不保证顺序，
+     * 所以这里自己排序——排 IntArray 比排一堆实体对象便宜得多，也不物化任何文本载荷。
+     * 数量未超限时**不做任何写操作**（与旧实现一致，避免每次插入都触发一次无害但多余的写）。
+     */
+    private suspend fun trimOutdatedEntries(entryIds: IntArray, limit: Int): Boolean {
+        val keep = limit.coerceAtLeast(0)
+        if (entryIds.size <= keep) {
+            return false
+        }
+        val ascending = entryIds.sortedArray()
+        // 升序后取前 (size - keep) 个即为待删的"较旧"部分
+        val toDelete = IntArray(ascending.size - keep) { ascending[it] }
+        if (toDelete.isEmpty()) {
+            return false
+        }
+        clbDao.markAsDeleted(*toDelete)
+        return true
+    }
+
+    suspend fun deleteClipboardSourceFiles(targets: Collection<ClipboardSourceDeletionTarget>) {
+        withContext(Dispatchers.IO) {
+            targets.forEach { target ->
+                runCatching { deleteClipboardSourceFile(appContext, target) }
+                    .onFailure { Timber.w(it, "Failed to delete clipboard source file: %s", target.rawUri) }
+            }
+        }
+    }
+
+    private fun ClipboardEntry.remoteMediaDeletionSource(): ClipboardSourceDeletionTarget? {
+        if (!isUriEntry()) return null
+        val rawUri = if (source == ClipboardEntry.SOURCE_REMOTE && originalText.isNotEmpty()) {
+            originalText.takeIf { it.startsWith("content://") || it.startsWith("file://") }
+        } else {
+            text.takeIf { it.startsWith("content://") || it.startsWith("file://") }
+        } ?: return null
+        val rootUri = if (source == ClipboardEntry.SOURCE_REMOTE && originalRootUri.isNotEmpty()) {
+            originalRootUri.takeIf { it.startsWith("content://") || it.startsWith("file://") }
+        } else {
+            rawUri
+        } ?: return null
+        return ClipboardSourceDeletionTarget(rawUri = rawUri, rootUri = rootUri)
+    }
+
+    private fun ClipboardEntry.remoteSuppressionContent(): String? {
+        if (source != ClipboardEntry.SOURCE_REMOTE) return null
+        if (isUriEntry()) {
+            return originalText
+                .takeIf { it.startsWith("content://") || it.startsWith("file://") }
+                ?: text.takeIf { it.startsWith("content://") || it.startsWith("file://") }
+        }
+        return text.takeIf { it.isNotBlank() }
     }
 
     /** 剪贴板列表分页大小，沿用旧 View 实现的取值 */

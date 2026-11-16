@@ -4,7 +4,6 @@
  */
 package org.fcitx.fcitx5.android.sync.webdav
 
-import org.fcitx.fcitx5.android.data.pinyin.PinyinDictManager
 import timber.log.Timber
 import java.io.File
 import java.nio.file.Files
@@ -64,29 +63,12 @@ object DictMerger {
     /** 默认转换器：复用 JNI `pinyinDictConv`（二进制与文本互转，成本值随文本保留）。 */
     private val nativePinyinConverter = object : PinyinTextConverter {
         override fun toText(binary: File, text: File) {
-            ensureNativeLib()
-            PinyinDictManager.pinyinDictConv(
-                binary.absolutePath, text.absolutePath, PinyinDictManager.MODE_BIN_TO_TXT
-            )
+            throw UnsupportedOperationException("libime binary dictionaries are not supported")
         }
 
         override fun toBinary(text: File, binary: File) {
-            ensureNativeLib()
-            PinyinDictManager.pinyinDictConv(
-                text.absolutePath, binary.absolutePath, PinyinDictManager.MODE_TXT_TO_BIN
-            )
+            throw UnsupportedOperationException("libime binary dictionaries are not supported")
         }
-    }
-
-    /**
-     * 转换走 JNI，必须先加载 `native-lib`。
-     *
-     * 引擎启动时也会加载同一份库（`System.loadLibrary` 对同一库重复调用是无操作），
-     * 但延后叠加可能在引擎尚未启动的窗口执行（见 [PendingDictMerge]），
-     * 因此这里自行保证加载，避免 `UnsatisfiedLinkError`。
-     */
-    private fun ensureNativeLib() {
-        System.loadLibrary("native-lib")
     }
 
     /**

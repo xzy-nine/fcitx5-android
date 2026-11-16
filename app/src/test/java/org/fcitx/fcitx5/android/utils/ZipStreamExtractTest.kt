@@ -104,12 +104,15 @@ class ZipStreamExtractTest {
     }
 
     @Test
-    fun keepsAbsoluteEntryInsideDestination() {
+    fun rejectsAbsoluteEntryBeforeWriting() {
         val dest = newDest("extract-abs")
         try {
-            // File(parent, name) 在 UNIX 语义下把以 / 开头的条目并入解压目录，而非当作根路径
-            ZipInputStream(ByteArrayInputStream(zipOf("/absolute-evil.txt"))).use { it.extract(dest) }
+            // 绝对路径条目一律拒绝，既不写到根路径也不并入解压目录
+            assertThrowsSecurity {
+                ZipInputStream(ByteArrayInputStream(zipOf("/absolute-evil.txt"))).use { it.extract(dest) }
+            }
             assertFalse("绝对路径条目不得写到文件系统根路径", File("/absolute-evil.txt").exists())
+            assertFalse("绝对路径条目不得写入解压目录", File(dest, "absolute-evil.txt").exists())
         } finally {
             dest.parentFile!!.deleteRecursively()
         }

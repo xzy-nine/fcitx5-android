@@ -141,11 +141,7 @@ data class RawConfig(
 }
 
 enum class AddonCategory {
-    InputMethod, Frontend, Loader, Module, UI;
-
-    companion object {
-        fun fromInt(i: Int) = entries[i]
-    }
+    InputMethod, Frontend, Loader, Module, UI
 }
 
 data class AddonInfo(
@@ -160,31 +156,6 @@ data class AddonInfo(
     val dependencies: Array<String> = arrayOf(),
     val optionalDependencies: Array<String> = arrayOf(),
 ) {
-    @Suppress("UNUSED") // used in JNI
-    constructor(
-        uniqueName: String,
-        name: String,
-        comment: String,
-        category: Int,
-        isConfigurable: Boolean,
-        enabled: Boolean,
-        defaultEnabled: Boolean,
-        onDemand: Boolean,
-        dependencies: Array<String>,
-        optionalDependencies: Array<String>,
-    ) : this(
-        uniqueName,
-        name,
-        comment,
-        AddonCategory.fromInt(category),
-        isConfigurable,
-        enabled,
-        defaultEnabled,
-        onDemand,
-        dependencies,
-        optionalDependencies
-    )
-
     val displayName: String
         get() = name.ifEmpty { uniqueName }
 
@@ -270,5 +241,13 @@ data class CandidateAction(
     val isSeparator: Boolean,
     val icon: String,
     val isCheckable: Boolean,
-    val isChecked: Boolean
+    val isChecked: Boolean,
+    val tabTarget: CandidateTabActionTarget? = null
+)
+
+data class AuxBarAction(
+    val id: Int,
+    val text: String,
+    val isSeparator: Boolean = false,
+    val tabTarget: CandidateTabActionTarget? = null
 )

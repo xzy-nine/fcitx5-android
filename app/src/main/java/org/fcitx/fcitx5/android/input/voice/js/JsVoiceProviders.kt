@@ -1,0 +1,281 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
+package org.fcitx.fcitx5.android.input.voice.js
+
+import okhttp3.OkHttpClient
+import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.input.voice.VoiceInputProviderRegistry
+import org.fcitx.fcitx5.android.utils.appContext
+import java.io.File
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+
+/**
+ * JS 语音插件清单：内置插件 + 用户导入的若干条。
+ *
+ * 这里是「插件是什么」的唯一权威：注册到 [VoiceInputProviderRegistry] 的 provider、设置页渲染的
+ * 字段、会话下发的设置、设置页列表的条目，全都从同一份 [Spec] 派生，避免各处各读一套数据。
+ *
+ * 列表会缓存，因为 [org.fcitx.fcitx5.android.input.voice.VoiceInputProviderManager] 在按键热路径上
+ * 反复查 id；导入/删除插件后必须调 [reload] 让缓存与注册表一起重建。
+ *
+ * 脚本在**会话启动时**才读（asset 或文件），不进输入法启动热路径。
+ */
+internal object JsVoiceProviders {
+
+    const val QWEN_ASR_ID = "js:qwen-asr"
+    const val DOUBAO_ASR_ID = "js:doubao-asr"
+    const val TENCENT_ASR_ID = "js:tencent-asr"
+    const val TENCENT_TRANSLATE_ID = "js:tencent-translate"
+
+    /** 脚本正文的来源。内置读 asset，用户导入的读私有目录文件。 */
+    internal sealed interface Source {
+        class Asset(val path: String) : Source
+        class Imported(val file: File) : Source
+    }
+
+    internal data class Spec(
+        val id: String,
+        val label: String,
+        val version: String,
+        val hosts: Set<String>,
+        val sampleRate: Int,
+        val source: Source,
+        val builtIn: Boolean,
+        /** 界面展示的来源：内置是 asset 名，导入是用户选中的文件名。 */
+        val originName: String,
+        val hasVoice: Boolean = true,
+        val apps: List<JsPluginApp> = emptyList(),
+        val overridesBuiltIn: Boolean = false,
+    )
+
+    private val lock = Any()
+    private var cached: List<Spec>? = null
+    private var cachedById: Map<String, Spec> = emptyMap()
+    private var installedRevision = -1L
+
+    /** 本对象注册进注册表的 id。删除插件时只回收自己注册的那些，不动别的进程内 provider。 */
+    private val registeredIds = LinkedHashSet<String>()
+
+    private val http: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .followRedirects(false)
+            .followSslRedirects(false)
+            // flash 模式把整段音频 POST 上去等文本，默认 10s 读超时会在云端慢的时候先失败，
+            // 而 Foxy 给 stop 回调的预算是 35s。
+            .readTimeout(40, TimeUnit.SECONDS)
+            .writeTimeout(20, TimeUnit.SECONDS)
+            .build()
+    }
+
+    private data class BundledAppAsset(
+        val baseName: String,
+        val labelRes: Int? = null,
+        val appLabelRes: Int? = null,
+    )
+
+    /** Explicit order keeps the default assistant stable and makes every shipped script auditable. */
+    private val bundledAppAssets = listOf(
+        BundledAppAsset("llm-assistant", R.string.ai_assistant, R.string.ai_assistant),
+        BundledAppAsset(
+            "youdao-free-translate",
+            R.string.youdao_free_translate,
+            R.string.youdao_free_translate,
+        ),
+        BundledAppAsset(
+            "bilibili-translate",
+            R.string.bilibili_translate,
+            R.string.bilibili_translate,
+        ),
+    )
+
+    private fun builtInSpecs(): List<Spec> = listOf(
+        Spec(
+            id = QWEN_ASR_ID,
+            label = appContext.getString(R.string.js_voice_provider_qwen_asr),
+            version = "1.6.3",
+            hosts = setOf(
+                "dashscope.aliyuncs.com",
+                "maas.qianwenaiapi.com",
+                "cn-beijing.maas.qianwenaiapi.com",
+            ),
+            sampleRate = 16000,
+            source = Source.Asset("bundled/js-voice/qwen-asr.js"),
+            builtIn = true,
+            originName = "qwen-asr.js",
+        ),
+        Spec(
+            id = DOUBAO_ASR_ID,
+            label = appContext.getString(R.string.js_voice_provider_doubao_asr),
+            version = "1.2.0",
+            // 火山引擎语音识别只开这两个口子：bigmodel_async（流式）与 bigmodel_nostream（单次）。
+            hosts = setOf("openspeech.bytedance.com"),
+            sampleRate = 16000,
+            source = Source.Asset("bundled/js-voice/doubao-asr.js"),
+            builtIn = true,
+            originName = "doubao-asr.js",
+        ),
+        Spec(
+            id = TENCENT_ASR_ID,
+            label = appContext.getString(R.string.js_voice_provider_tencent_asr),
+            version = "1.0.7",
+            hosts = setOf("asr.cloud.tencent.com"),
+            sampleRate = 16000,
+            source = Source.Asset("bundled/js-voice/tencent-asr.js"),
+            builtIn = true,
+            originName = "tencent-asr.js",
+        ),
+        Spec(
+            id = TENCENT_TRANSLATE_ID,
+            label = appContext.getString(R.string.js_voice_provider_tencent_translate),
+            version = "1.0.0",
+            hosts = setOf("asr.cloud.tencent.com"),
+            sampleRate = 16000,
+            source = Source.Asset("bundled/js-voice/tencent-translate.js"),
+            builtIn = true,
+            originName = "tencent-translate.js",
+        ),
+    )
+
+    private fun importedSpecs(): List<Spec> = JsVoicePluginStore.list().map { record ->
+        Spec(
+            id = record.meta.providerId,
+            label = record.meta.displayName,
+            version = record.meta.version,
+            hosts = record.meta.hosts.toSet(),
+            sampleRate = record.meta.sampleRate,
+            source = Source.Imported(JsVoicePluginStore.scriptFile(record.meta.id)),
+            builtIn = false,
+            originName = record.sourceName,
+            hasVoice = record.meta.voiceAsr != null,
+            apps = record.meta.apps,
+            overridesBuiltIn = record.overridesBuiltIn,
+        )
+    }
+
+    // A previously imported plugin can become bundled. Its old file stays inactive unless the
+    // user explicitly replaces the bundled source from that plugin's settings.
+    private fun builtInAppSpecs(): List<Spec> = bundledAppAssets.map { asset ->
+        val manifestPath = "bundled/js-apps/${asset.baseName}.json"
+        val meta = appContext.assets.open(manifestPath).bufferedReader().use {
+            requireNotNull(JsVoicePluginMeta.parse(it.readText())) {
+                "Invalid bundled JS App manifest: $manifestPath"
+            }
+        }
+        require(meta.id == asset.baseName) {
+            "Bundled JS App ID ${meta.id} does not match asset ${asset.baseName}"
+        }
+        require(meta.apps.isNotEmpty()) { "Bundled JS App ${meta.id} has no apps" }
+        val scriptName = "${asset.baseName}.js"
+        Spec(
+            id = meta.providerId,
+            label = asset.labelRes?.let { appContext.getString(it) } ?: meta.displayName,
+            version = meta.version,
+            hosts = meta.hosts.toSet(),
+            sampleRate = meta.sampleRate,
+            source = Source.Asset("bundled/js-apps/$scriptName"),
+            builtIn = true,
+            originName = scriptName,
+            hasVoice = meta.voiceAsr != null,
+            apps = meta.apps.map { app ->
+                asset.appLabelRes?.let { app.copy(label = appContext.getString(it)) } ?: app
+            },
+        )
+    }
+
+    private fun buildSpecs(): List<Spec> {
+        val bundled = builtInSpecs() + builtInAppSpecs()
+        val imported = importedSpecs()
+        val replacements = imported.filter { it.overridesBuiltIn }.associateBy(Spec::id)
+        val bundledIds = bundled.map(Spec::id).toSet()
+        return bundled.map { replacements[it.id] ?: it } + imported.filter { it.id !in bundledIds }
+    }
+
+    fun all(): List<Spec> = synchronized(lock) { cached ?: buildSpecs().also { cached = it; cachedById = it.associateBy(Spec::id) } }
+
+    fun builtInIds(): Set<String> = (builtInSpecs() + builtInAppSpecs()).map { it.id }.toSet()
+
+    fun builtInSpecOf(pluginId: String): Spec? =
+        (builtInSpecs() + builtInAppSpecs()).firstOrNull { it.id == pluginId }
+
+    fun isBuiltInId(pluginId: String): Boolean = builtInSpecOf(pluginId) != null
+
+    fun specOf(pluginId: String): Spec? = synchronized(lock) {
+        all()
+        cachedById[pluginId]
+    }
+
+    fun readScript(spec: Spec): String = when (val source = spec.source) {
+        is Source.Asset -> appContext.assets.open(source.path).bufferedReader().use { it.readText() }
+        is Source.Imported -> if (source.file.isFile) source.file.readText() else ""
+    }
+
+    /** 读取插件声明的设置项；设置页与会话共用这一份声明。 */
+    suspend fun describe(pluginId: String, locale: String = Locale.getDefault().toLanguageTag()): List<JsVoiceField> {
+        val spec = specOf(pluginId) ?: return emptyList()
+        return JsVoiceScript.describe(readScript(spec), locale)
+    }
+
+    /**
+     * 把当前清单同步进注册表：缺的注册、多的回收。
+     *
+     * 幂等且便宜（[all] 走缓存），所以 [VoiceInputProviderManager] 可以在热路径上直接调。
+     */
+    @Synchronized
+    fun install() {
+        if (installedRevision == VoiceInputProviderRegistry.revision) return
+        val specs = all()
+        val ids = specs.filter { it.hasVoice }.map { it.id }.toSet()
+        if (registeredIds.any { it !in ids }) {
+            (registeredIds - ids).forEach { VoiceInputProviderRegistry.unregister(it) }
+            registeredIds.retainAll(ids)
+        }
+        specs.filter { it.hasVoice }.forEach { spec ->
+            if (VoiceInputProviderRegistry.get(spec.id) != null) {
+                registeredIds += spec.id
+                return@forEach
+            }
+            val provider = JsVoiceInputProvider(
+                pluginId = spec.id,
+                scriptSource = { readScript(spec) },
+                declaredHosts = spec.hosts,
+                declaredSampleRate = spec.sampleRate,
+                locale = Locale.getDefault().toLanguageTag(),
+                http = http,
+            )
+            VoiceInputProviderRegistry.register(
+                VoiceInputProviderRegistry.Entry(spec.id, spec.label, appContext.packageName, provider)
+            )
+            registeredIds += spec.id
+        }
+        installedRevision = VoiceInputProviderRegistry.revision
+    }
+
+    /**
+     * 导入/删除插件后重建：清缓存、回收旧 provider、按新清单重新注册。
+     *
+     * 必须重建而不是只注册新的：同名插件升级时 hosts 可能变了，而 provider 把 hosts 与脚本来源
+     * 都握在构造参数里，复用旧实例会让「新脚本 + 旧白名单」这种错配一直活到进程重启。
+     */
+    @Synchronized
+    fun reload() {
+        registeredIds.forEach { VoiceInputProviderRegistry.unregister(it) }
+        registeredIds.clear()
+        installedRevision = -1L
+        synchronized(lock) { cached = null }
+        install()
+        reconcilePreferredVoiceInput()
+        JsApps.onPluginsChanged()
+    }
+
+    /** A source change may turn a custom JS voice override back into an app-only asset. */
+    private fun reconcilePreferredVoiceInput() {
+        val preference = AppPrefs.getInstance().keyboard.preferredVoiceInput
+        val selected = preference.getValue()
+        if (!selected.startsWith("js:") || VoiceInputProviderRegistry.get(selected) != null) return
+        if (!preference.sharedPreferences.edit().putString(preference.key, "").commit()) {
+            // SharedPreferences changes its in-memory value before reporting a failed commit.
+            preference.sharedPreferences.edit().putString(preference.key, selected).commit()
+        }
+    }
+}

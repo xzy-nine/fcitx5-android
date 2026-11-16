@@ -44,7 +44,6 @@ import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
 import org.fcitx.fcitx5.android.input.broadcast.InputBroadcaster
 import org.fcitx.fcitx5.android.input.broadcast.PreeditEmptyStateComponent
-import org.fcitx.fcitx5.android.input.broadcast.PunctuationComponent
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
 import org.fcitx.fcitx5.android.input.candidates.ComposeCandidateActionMenu
 import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComponent
@@ -94,6 +93,9 @@ import timber.log.Timber
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
+import org.fcitx.fcitx5.android.data.clipboard.ClipboardCategory
+import org.fcitx.fcitx5.android.input.clipboard.ClipboardSearchController
+import org.fcitx.fcitx5.android.input.clipboard.TokenizedClipboardWindow
 
 @SuppressLint("ViewConstructor")
 class InputView(
@@ -126,9 +128,7 @@ class InputView(
     private val scope = DynamicScope()
     private val broadcaster = InputBroadcaster()
     // 按键弹窗层：根组合（createComposeInputView）经 PopupOverlayContent 渲染，故需对外可见
-    internal val popup = PopupComponent()
-    private val punctuation = PunctuationComponent()
-    private val returnKeyDrawable = ReturnKeyDrawableComponent()
+    internal val popup = PopupComponent()    private val returnKeyDrawable = ReturnKeyDrawableComponent()
     private val preeditEmptyState = PreeditEmptyStateComponent()
     // 预编辑栏：根组合/Service 经 heightPx 读取当前高度做 insets 补偿，故需对外可见
     internal val composePreedit = ComposePreeditComponent()
@@ -271,9 +271,7 @@ class InputView(
         scope += theme.wrapToUniqueComponent()
         scope += themedContext.wrapToUniqueComponent()
         scope += broadcaster
-        scope += popup
-        scope += punctuation
-        scope += returnKeyDrawable
+        scope += popup        scope += returnKeyDrawable
         scope += preeditEmptyState
         scope += composePreedit
         scope += commonKeyActionListener
@@ -417,12 +415,7 @@ class InputView(
         // 冷启动阶段计时：本行之前是各组件与视图的属性初始化
         ColdStartTrace.mark("inputView:props")
         // MUST call before any operation
-        setupScope()
-
-        // restore punctuation mapping in case of InputView recreation
-        fcitx.launchOnReady {
-            punctuation.updatePunctuationMapping(it.statusAreaActionsCached)
-        }
+        setupScope()        fcitx.launchOnReady {        }
 
         // make sure KeyboardWindow's view has been created before it receives any broadcast
         windowManager.addEssentialWindow(keyboardWindow, createView = true)
@@ -683,7 +676,7 @@ class InputView(
      * called when [InputView] is about to show, or restart
      */
     fun startInput(info: EditorInfo, capFlags: CapabilityFlags, restarting: Boolean = false) {
-        broadcaster.onStartInput(info, capFlags)
+        broadcaster.onStartInput(info, capFlags, restarting)
         returnKeyDrawable.updateDrawableOnEditorInfo(info)
         // `restarting = false`（新一次输入会话）照旧重置回主键盘；
         // `restarting = true` 只有在**换了输入框**时才按 `focusChangeResetKeyboard` 重置——
@@ -744,9 +737,7 @@ class InputView(
             is FcitxEvent.IMChangeEvent -> {
                 broadcaster.onImeUpdate(it.data)
             }
-            is FcitxEvent.StatusAreaEvent -> {
-                punctuation.updatePunctuationMapping(it.data.actions)
-                broadcaster.onStatusAreaUpdate(it.data.actions)
+            is FcitxEvent.StatusAreaEvent -> {                broadcaster.onStatusAreaUpdate(it.data.actions)
             }
             else -> {}
         }
@@ -777,5 +768,38 @@ class InputView(
         scope.clear()
         super.onDetachedFromWindow()
     }
+
+    // ===== 剪贴板搜索 / 单手模式（与单引擎服务层对接的最小实现）=====
+
+    /**
+     * 打开剪贴板搜索界面。
+     *
+     * 走 custom 的 Compose 剪贴板窗口；[category] 为初始分类，null 表示全部。
+     */
+    internal fun startClipboardSearch(category: ClipboardCategory?) {
+        windowManager.attachWindow(KeyboardWindow)
+        ClipboardSearchController.open(
+            service = service,
+            category = category,
+            returnToKeyboard = { windowManager.attachWindow(KeyboardWindow) },
+            splitText = { windowManager.attachWindow(TokenizedClipboardWindow(it)) }
+        )
+    }
+
+    /**
+     * 单手键盘模式开关。
+     *
+     * custom 的单手几何由 Compose 键盘按偏好即时计算，此处仅翻转偏好。
+     */
+    fun toggleOneHandMode() {
+        val pref = AppPrefs.getInstance().internal.oneHandModeEnabled
+        pref.setValue(!pref.getValue())
+    }
+
+    /** 当前是否处于单手模式。 */
+    var isOneHanded: Boolean
+        get() = AppPrefs.getInstance().internal.oneHandModeEnabled.getValue()
+        private set(value) { AppPrefs.getInstance().internal.oneHandModeEnabled.setValue(value) }
+
 
 }

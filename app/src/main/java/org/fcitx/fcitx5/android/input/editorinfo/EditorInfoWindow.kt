@@ -24,7 +24,7 @@ import splitties.views.dsl.core.add
 import splitties.views.dsl.core.horizontalLayout
 import splitties.views.dsl.core.lParams
 
-class EditorInfoWindow : InputWindow.ExtendedInputWindow<EditorInfoWindow>(), ComposeWindow {
+class EditorInfoWindow : InputWindow.ExtendedInputWindow<EditorInfoWindow>(EditorInfoWindow::class), ComposeWindow {
 
     private val service: FcitxInputMethodService by manager.inputMethodService()
     private val theme by manager.theme()

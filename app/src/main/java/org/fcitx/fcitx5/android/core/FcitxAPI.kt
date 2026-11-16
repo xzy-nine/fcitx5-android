@@ -24,6 +24,14 @@ interface FcitxAPI {
      */
     val eventFlow: SharedFlow<FcitxEvent<*>>
 
+    /** Synchronous invalidation prevents queued results reaching a different editor. */
+    fun invalidateInputSession(): Long = 0
+    val inputSession: Long get() = 0
+    val candidateActionContext: CandidateActionContext get() = CandidateActionContext(inputSession, 0)
+    val candidateTabActionContext: CandidateTabActionContext get() = CandidateTabActionContext(inputSession, 0)
+    val acceptsInput: Boolean get() = true
+    suspend fun startInputSession(generation: Long, program: String) {}
+
     val isReady: Boolean
 
     val inputMethodEntryCached: InputMethodEntry
@@ -34,6 +42,9 @@ interface FcitxAPI {
 
     val inputPanelCached: FcitxEvent.InputPanelEvent.Data
 
+    /** A visible preedit frame has presented this transient hint; stale IDs are ignored. */
+    suspend fun statusHintPresented(hintId: Long, frameUptimeMillis: Long) {}
+
     fun setLogRule(verbose: Boolean)
 
     fun getAddonReverseDependencies(addon: String): List<Pair<String, AddonDep>>
@@ -41,6 +52,15 @@ interface FcitxAPI {
     fun translate(str: String, domain: String = "fcitx5"): String
 
     suspend fun save()
+
+    /**
+     * Save the input method profile and non-Rime addon state.
+     *
+     * Settings activity uses this so leaving settings does not trigger Rime's
+     * user-data synchronization. Full [save] remains available for backup and
+     * export paths that explicitly request Rime user-data synchronization.
+     */
+    suspend fun saveNonRimeState()
 
     suspend fun reloadConfig()
 
@@ -53,9 +73,21 @@ interface FcitxAPI {
     suspend fun sendKey(sym: KeySym, states: KeyStates, code: Int = 0, up: Boolean = false, timestamp: Int = -1)
 
     suspend fun select(idx: Int): Boolean
+    suspend fun selectGlobal(idx: Int): Boolean = select(idx)
+    suspend fun selectCandidateIfCurrent(idx: Int, global: Boolean, expected: CandidateActionContext): Boolean {
+        if (idx < 0 || candidateActionContext != expected) return false
+        return if (global) selectGlobal(idx) else select(idx)
+    }
+    suspend fun triggerGlobalCandidateAction(idx: Int, actionIdx: Int) = triggerCandidateAction(idx, actionIdx)
     suspend fun isEmpty(): Boolean
     suspend fun reset()
+    /** [position] counts Unicode code points in the displayed client preedit. */
     suspend fun moveCursor(position: Int)
+    suspend fun moveCursorIfCurrent(position: Int, expectedSession: Long, expectedPreedit: String): Boolean {
+        if (inputSession != expectedSession || clientPreeditCached.toString() != expectedPreedit) return false
+        moveCursor(position)
+        return true
+    }
 
     suspend fun availableIme(): Array<InputMethodEntry>
     suspend fun enabledIme(): Array<InputMethodEntry>
@@ -86,11 +118,7 @@ interface FcitxAPI {
 
     suspend fun addons(): Array<AddonInfo>
     suspend fun setAddonState(name: Array<String>, state: BooleanArray)
-
-    suspend fun triggerQuickPhrase()
     
-    suspend fun triggerQuickPhraseWithBuffer(text: String)
-    suspend fun triggerUnicode()
 
     suspend fun focus(focus: Boolean = true)
     suspend fun focusOutIn()
@@ -107,9 +135,29 @@ interface FcitxAPI {
     suspend fun getCandidateActions(idx: Int): Array<CandidateAction>
     suspend fun triggerCandidateAction(idx: Int, actionIdx: Int)
 
+    suspend fun triggerCandidateActionIfCurrent(
+        idx: Int, actionIdx: Int, global: Boolean, expected: CandidateActionContext
+    ): Boolean {
+        if (idx < 0 || candidateActionContext != expected) return false
+        if (global) triggerGlobalCandidateAction(idx, actionIdx) else triggerCandidateAction(idx, actionIdx)
+        return true
+    }
+
+    suspend fun activateSchemaActionIfCurrent(id: Int, expectedInputSession: Long): Boolean {
+        if (inputSession != expectedInputSession) return false
+        activateAction(id)
+        return true
+    }
+
     suspend fun setCandidatePagingMode(mode: Int)
     suspend fun offsetCandidatePage(delta: Int)
 
     suspend fun triggerCandidateListTabAction(id: Int)
+
+    suspend fun triggerCandidateListTabActionIfCurrent(target: CandidateTabActionTarget): Boolean {
+        if (candidateTabActionContext != target.context) return false
+        triggerCandidateListTabAction(target.id)
+        return true
+    }
 
 }

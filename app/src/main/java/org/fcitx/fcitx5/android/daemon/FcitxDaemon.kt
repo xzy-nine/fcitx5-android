@@ -9,11 +9,15 @@ import android.app.NotificationManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import org.fcitx.fcitx5.android.FcitxApplication
+import org.fcitx.fcitx5.android.core.InputEngine
+import org.fcitx.fcitx5.android.core.InputEngineApi
+import org.fcitx.fcitx5.android.core.CapabilityFlags
+import org.fcitx.fcitx5.android.core.InputKeyGate
+import org.fcitx.fcitx5.android.core.DirectRimeBackend
 import org.fcitx.fcitx5.android.R
-import org.fcitx.fcitx5.android.core.Fcitx
 import org.fcitx.fcitx5.android.core.FcitxAPI
 import org.fcitx.fcitx5.android.core.FcitxLifecycle
 import org.fcitx.fcitx5.android.core.lifeCycleScope
@@ -27,34 +31,69 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 /**
- * Manage the singleton instance of [Fcitx]
+ * Thrown when an operation is attempted on a connection that has already been disconnected.
  *
- * To use fcitx, client should call [connect] to obtain a [FcitxConnection],
- * and call [disconnect] on client destroyed. Client should not leak the instance of [FcitxAPI],
- * and must use [FcitxConnection] to access fcitx functionalities.
- *
- * The instance of [Fcitx] always exists,but whether the dispatcher runs and callback works depend on clients, i.e.
- * if no clients are connected, [Fcitx.stop] will be called.
+ * An ordinary exception on purpose: this used to be a `CancellationException`, which coroutine
+ * machinery treats as normal cancellation and swallows, so callers never saw the failure
+ * (see C31).
+ */
+class FcitxDisconnectedException(connectionName: String) :
+    IllegalStateException("$connectionName is disconnected")
+
+/**
+ * Own the Direct Rime backend and share its lifecycle through named connections.
+ * Clients access the retained frontend API through [FcitxConnection]; they must
+ * disconnect when destroyed and must not retain the underlying [FcitxAPI].
  *
  * Functions are thread-safe in this class.
  */
 object FcitxDaemon {
 
-    private val realFcitx by lazy { Fcitx(appContext) }
+    private val engineDelegate = lazy<InputEngine> { DirectRimeBackend(appContext) }
+    private val engine: InputEngine by engineDelegate
 
     // don't leak fcitx instance
-    private val fcitxImpl by lazy { object : FcitxAPI by realFcitx {} }
+    private val fcitxImpl by lazy { InputEngineApi(engine) }
+
+    val currentInputSession get() = engine.inputSession
+    fun prepareInputSession(generation: Long, program: String, flags: CapabilityFlags, needsRime: Boolean) =
+        engine.prepareInputSession(generation, program, flags, needsRime)
+    fun requireInputSession(): Boolean = engine.requireInputSession(engine.inputSession)
+    fun captureInputKey() = engine.captureInputKey()
+    fun canDeliverInputKey(ticket: InputKeyGate.Ticket) = engine.canDeliverInputKey(ticket)
+    fun releaseInputKey(ticket: InputKeyGate.Ticket) = engine.releaseInputKey(ticket)
+
+    fun invalidateInputSession(): Long = engine.invalidateInputSession()
+
+    fun isCurrentInputSession(generation: Long): Boolean = generation == 0L || generation == engine.inputSession
 
     private fun mkConnection(name: String) = object : FcitxConnection {
 
-        private inline fun <T> ensureConnected(block: () -> T) =
+        /**
+         * Throws [FcitxDisconnectedException], not `CancellationException`.
+         *
+         * In coroutine semantics a CancellationException means "this work was cancelled
+         * normally", so structured concurrency swallowed it: callers could not tell a real
+         * failure from a cancellation and no catch/onFailure branch ever ran (see C31).
+         */
+        private inline fun <T> ensureConnected(block: () -> T): T =
             if (name in clients)
                 block()
-            else throw IllegalStateException("$name is disconnected")
+            else throw FcitxDisconnectedException(name)
 
-        override fun <T> runImmediately(block: suspend FcitxAPI.() -> T): T = ensureConnected {
-            runBlocking(realFcitx.lifeCycleScope.coroutineContext) {
-                block(fcitxImpl)
+        override fun <T> runImmediately(block: suspend FcitxAPI.() -> T): T {
+            return try {
+                ensureConnected {
+                    // runImmediately's contract is a non-blocking read on the caller.
+                    // Passing Dispatchers.Default here blocked the UI behind a worker
+                    // even for volatile caches. Native APIs still dispatch to rime-main.
+                    runImmediatelyInContext(engine.lifeCycleScope.coroutineContext) {
+                        block(fcitxImpl)
+                    }
+                }
+            } catch (e: FcitxDisconnectedException) {
+                Timber.d("Connection $name disconnected, cancelling operation")
+                throw e
             }
         }
 
@@ -62,37 +101,56 @@ object FcitxDaemon {
             block(fcitxImpl)
         }
 
-        override suspend fun <T> runOnReady(block: suspend FcitxAPI.() -> T): T = ensureConnected {
-            // 快路径：引擎已处于 READY 时直接执行，跳过 `whenReady` 的
-            // `stateFlow.first { it == READY }` 订阅/取消开销。
-            // 语义与 `whenReady` 等价——`whenReady` 在已 READY 时也是「立即执行」，
-            // 只是多走一轮必定立刻完成的流收集；而按键是 IME 最热的路径，
-            // 稳态下每一次击键都要付这份开销。
-            // 未 READY 时行为完全不变（挂起等待，直到引擎就绪后再执行）。
-            if (realFcitx.isReady) {
-                block(fcitxImpl)
-            } else {
-                realFcitx.lifecycle.whenReady { block(fcitxImpl) }
+        override suspend fun <T> runOnReady(block: suspend FcitxAPI.() -> T): T {
+            return try {
+                ensureConnected {
+                    // 快路径：引擎已处于 READY 时直接执行，跳过 `whenReady` 的
+                    // `stateFlow.first { it == READY }` 订阅/取消开销。
+                    if (engine.isReady) {
+                        block(fcitxImpl)
+                    } else {
+                        engine.lifecycle.whenReady { block(fcitxImpl) }
+                    }
+                }
+            } catch (e: FcitxDisconnectedException) {
+                Timber.d("Connection $name disconnected while waiting for ready")
+                throw e
             }
         }
 
         override fun runIfReady(block: suspend FcitxAPI.() -> Unit) {
-            ensureConnected {
-                if (realFcitx.isReady)
-                    realFcitx.lifeCycleScope.launch {
-                        block(fcitxImpl)
-                    }
+            try {
+                ensureConnected {
+                    if (engine.isReady)
+                        engine.lifeCycleScope.launch {
+                            block(fcitxImpl)
+                        }
+                }
+            } catch (e: FcitxDisconnectedException) {
+                // runIfReady is best-effort by contract, so this stays swallowed — but now it
+                // only swallows this one specific condition.
+                Timber.d("Connection $name disconnected, skipping operation")
             }
         }
 
         override val lifecycleScope: CoroutineScope
-            get() = realFcitx.lifecycle.lifecycleScope
+            get() = engine.lifecycle.lifecycleScope
 
     }
 
     private val lock = ReentrantLock()
 
     private val clients = mutableMapOf<String, FcitxConnection>()
+    private var userDataIoInProgress = false
+    private var shutdownRequested = false
+
+    /** Call only while holding [lock]. */
+    private fun engineMayRun() = !userDataIoInProgress && !shutdownRequested
+
+    /** Check on the engine owner before updating resources; backup waits for that owner to stop. */
+    internal fun requireUserDataAvailable() = lock.withLock {
+        check(!userDataIoInProgress) { "用户数据正在备份或恢复，请完成后重试万象更新" }
+    }
 
     /**
      * Create a connection
@@ -100,9 +158,9 @@ object FcitxDaemon {
     fun connect(name: String): FcitxConnection = lock.withLock {
         if (name in clients)
             return@withLock clients.getValue(name)
-        if (realFcitx.lifecycle.currentState == FcitxLifecycle.State.STOPPED) {
+        if (engineMayRun()) {
             Timber.d("FcitxDaemon start fcitx")
-            realFcitx.start()
+            engine.start()
         }
         val new = mkConnection(name)
         clients[name] = new
@@ -116,9 +174,9 @@ object FcitxDaemon {
         if (name !in clients)
             return
         clients -= name
-        if (clients.isEmpty()) {
+        if (clients.isEmpty() && engineMayRun()) {
             Timber.d("FcitxDaemon stop fcitx")
-            realFcitx.stop()
+            engine.requestStop()
         }
     }
 
@@ -126,20 +184,24 @@ object FcitxDaemon {
      * Restart fcitx instance while keep the clients connected
      */
     fun restartFcitx() = lock.withLock {
+        if (!engineMayRun()) {
+            Timber.d("Skip restarting fcitx while user data is unavailable or the process is shutting down")
+            return@withLock
+        }
         val id = RESTART_ID++
         NotificationCompat.Builder(appContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_baseline_sync_24)
-            .setContentTitle(appContext.getString(R.string.fcitx_daemon))
-            .setContentText(appContext.getString(R.string.restarting_fcitx))
+            .setContentTitle(appContext.getString(R.string.direct_rime_engine_service))
+            .setContentText(appContext.getString(R.string.direct_rime_engine_restarting))
             .setOngoing(true)
             .setProgress(100, 0, true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build().let { appContext.notificationManager.notify(id, it) }
-        realFcitx.stop()
-        realFcitx.start()
+        engine.requestStop()
+        engine.start()
         FcitxApplication.getInstance().coroutineScope.launch {
             // cancel notification on ready
-            realFcitx.lifecycle.whenReady {
+            engine.lifecycle.whenReady {
                 appContext.notificationManager.cancel(id)
             }
         }
@@ -153,7 +215,26 @@ object FcitxDaemon {
      * This method blocks until fully stopped.
      */
     fun stopFcitx() {
-        realFcitx.stop()
+        engine.stop()
+    }
+
+    /**
+     * Permanently stop the engine before this process is terminated.
+     *
+     * Unlike [FcitxAPI.save], this only finalizes the live engine and does not
+     * start Rime's user-data synchronization or create a restore scratch DB.
+     * Once requested, late clients and restore callbacks cannot restart it.
+     *
+     * Wait for an initialized engine's pending asynchronous stop: the final
+     * client may have disconnected just before the shutdown broadcast without
+     * native cleanup having completed yet. Do not initialize an unused engine.
+     */
+    fun shutdownFcitx() {
+        val initializedEngine = lock.withLock {
+            shutdownRequested = true
+            if (engineDelegate.isInitialized()) engineDelegate.value else null
+        }
+        initializedEngine?.stop()
     }
 
     /**
@@ -161,8 +242,42 @@ object FcitxDaemon {
      * Should only be used when it has been stopped **AND** user data importing failed.
      */
     fun startFcitx() {
-        realFcitx.start()
+        lock.withLock { if (engineMayRun()) engine.start() }
     }
+
+    /** Caller holds a ready connection. Keep new clients from starting during replacement. */
+    fun beginUserDataRestore() = beginUserDataIo()
+
+    fun beginUserDataBackup() = beginUserDataIo()
+
+    private fun beginUserDataIo() {
+        lock.withLock {
+            check(!userDataIoInProgress) { "A user data backup or restore is already in progress." }
+            check(!shutdownRequested) { "The input engine is shutting down." }
+            userDataIoInProgress = true
+        }
+        try {
+            engine.stop()
+            check(engine.lifecycle.currentState == FcitxLifecycle.State.STOPPED) {
+                "The input engine could not be stopped for user data backup or restore."
+            }
+        } catch (e: Exception) {
+            finishFailedUserDataRestore()
+            throw e
+        }
+    }
+
+    /** On success the process exits with the guard held; on failure resume connected clients. */
+    fun finishFailedUserDataRestore() = lock.withLock {
+        userDataIoInProgress = false
+        if (clients.isNotEmpty() && engineMayRun() &&
+            engine.lifecycle.currentState == FcitxLifecycle.State.STOPPED) {
+            engine.start()
+        }
+    }
+
+    /** Backup resumes the engine on both success and failure, before opening the save picker. */
+    fun finishUserDataBackup() = finishFailedUserDataRestore()
 
     init {
         createNotificationChannel()
@@ -172,7 +287,7 @@ object FcitxDaemon {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                appContext.getText(R.string.fcitx_daemon),
+                appContext.getText(R.string.direct_rime_engine_service),
                 NotificationManager.IMPORTANCE_HIGH
             ).apply { description = CHANNEL_ID }
             appContext.notificationManager.createNotificationChannel(channel)

@@ -49,6 +49,7 @@ import org.fcitx.fcitx5.android.utils.EventStateMachine
 import org.mechdancer.dependency.manager.must
 import top.yukonga.miuix.kmp.basic.Scaffold
 import kotlin.time.Duration.Companion.milliseconds
+import org.fcitx.fcitx5.android.data.clipboard.ClipboardCategory
 
 /**
  * 剪贴板主页窗口（Compose 化）。
@@ -64,7 +65,7 @@ import kotlin.time.Duration.Companion.milliseconds
  * 交互：点击条目上屏、长按出操作菜单（置顶/取消置顶/编辑/分享/删除）、
  * 条目内实体气泡点击上屏片段、工具栏“删除全部”按钮经 Compose 确认层二次确认。
  */
-class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), ComposeWindow {
+class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(ClipboardWindow::class), ComposeWindow {
 
     private val service: FcitxInputMethodService by manager.inputMethodService()
     private val windowManager: InputWindowManager by manager.must()
@@ -180,7 +181,7 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
             deleteAllLabel = deleteAllLabel,
             onConfirmDeleteAll = {
                 service.lifecycleScope.launch {
-                    val ids = ClipboardManager.deleteAll(deleteAllSkipPinned)
+                    val ids = ClipboardManager.deleteAll(ClipboardCategory.All, deleteAllSkipPinned)
                     onDeleted(ids.toList())
                 }
                 _showDeleteAllDialog.value = false
@@ -263,7 +264,7 @@ class ClipboardWindow : InputWindow.ExtendedInputWindow<ClipboardWindow>(), Comp
             contentDescription = context.getString(R.string.delete_all)
             setOnClickListener {
                 service.lifecycleScope.launch {
-                    val skipPinned = ClipboardManager.haveUnpinned()
+                    val skipPinned = ClipboardManager.haveUnpinned(ClipboardCategory.All)
                     deleteAllSkipPinned = skipPinned
                     _deleteAllLabel.value = context.getString(
                         if (skipPinned) R.string.delete_all_except_pinned

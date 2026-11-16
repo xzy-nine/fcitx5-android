@@ -18,8 +18,6 @@
     <!-- Custom: split keyboard -->
     <string name="split_keyboard">分离式键盘</string>
     <string name="split_keyboard_blank_ratio">分离式键盘空白比例</string>
-    <string name="split_keyboard_threshold">分离式键盘阈值 (宽/高)</string>
-    <string name="space_behavior_voice_input">切换到语音输入</string>
     <string name="group_split_keyboard">分离式键盘</string>
     <string name="group_key_gestures">按键手势</string>
     <string name="group_candidate_style">候选词样式</string>
@@ -63,7 +61,6 @@
     <string name="pinyin_dict_delete_confirm">确定删除词典“%1$s”？</string>
     
     <!-- Custom: settings search -->
-    <string name="search">搜索</string>
     <string name="search_settings">搜索设置</string>
     <string name="search_no_results">没有找到“%1$s”相关设置</string>
     <string name="search_hint">按名称搜索设置</string>
@@ -171,12 +168,9 @@
     <string name="hotkey">快捷键</string>
 
     <!-- Custom: 文本编辑/剪贴板 Compose UI -->
-    <string name="cancel">取消</string>
-    <string name="ok">确定</string>
     <string name="select_all">全选</string>
     <string name="invert_selection">反选</string>
     <string name="cut">剪切</string>
-    <string name="copy">复制</string>
     <string name="paste">粘贴</string>
     <string name="selection">选区</string>
     <string name="text_mode">文本模式</string>

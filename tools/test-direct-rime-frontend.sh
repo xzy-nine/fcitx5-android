@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Run on a disposable emulator; preserve diagnostics before the runner shuts it down.
+set -uo pipefail
+
+adb shell setprop debug.hwui.drawing_enabled true
+# The cold-start performance probe needs its own pinned full fixture and is run
+# by tools/input-perf/probe-cold-io.sh, not by this ordinary regression suite.
+frontend_test_classes=(
+  org.fcitx.fcitx5.android.core.DirectRimeFrontendTest
+  org.fcitx.fcitx5.android.ui.main.log.LogExportTest
+  org.fcitx.fcitx5.android.ui.main.settings.behavior.adapter.KeyboardLayoutAdapterViewTest
+  org.fcitx.fcitx5.android.ui.main.MaterialSettingsPagesTest
+  org.fcitx.fcitx5.android.input.candidates.CandidateTypefaceTest
+  org.fcitx.fcitx5.android.input.candidates.CandidateRenderingTest
+  org.fcitx.fcitx5.android.input.candidates.CandidateIndexBadgeTest
+  org.fcitx.fcitx5.android.input.candidates.CandidateOverflowTest
+)
+printf -v frontend_test_filter '%s,' "${frontend_test_classes[@]}"
+frontend_test_filter=${frontend_test_filter%,}
+./gradlew -PbuildABI=x86_64 \
+  "-Pandroid.testInstrumentationRunnerArguments.class=$frontend_test_filter" \
+  '-Pandroid.testInstrumentationRunnerArguments.notClass=org.fcitx.fcitx5.android.core.DirectRimeFrontendTest#diagnoseColdCandidateCore' \
+  :app:connectedFxDebugAndroidTest
+test_result=$?
+
+if [ "$test_result" -eq 0 ]; then
+  python3 tools/check-junit-results.py app/build/outputs/androidTest-results/connected || test_result=$?
+fi
+
+if [ "$test_result" -eq 0 ]; then
+  for apk in app/build/outputs/apk/fx/debug/*.apk; do
+    python3 tools/verify-direct-rime-apk.py "$apk" || test_result=$?
+  done
+fi
+
+report_dir=app/build/reports/androidTests/frontend-diagnostics
+mkdir -p "$report_dir"
+adb logcat -d -v threadtime > "$report_dir/logcat.txt" 2>&1
+adb shell run-as org.fcitx.fcitx5.android.fx.rime.debug cat files/direct-rime-replay.json > "$report_dir/replay.json" 2>/dev/null || true
+adb shell run-as org.fcitx.fcitx5.android.fx.rime.debug cat files/direct-rime-rebind.json > "$report_dir/rebind.json" 2>/dev/null || true
+for name in settings rime-settings themes keyboard-settings layout-editor keyboard commit failure; do
+  adb pull "/data/local/tmp/direct-frontend-$name.png" "$report_dir/$name.png" 2>/dev/null || true
+done
+for page in UpdateCheckActivity UpdateHostsSettingsActivity UpdateMirrorEditActivity UpdateMirrorListActivity LogActivity RimeImportActivity RimeEngineManagerActivity CropImageActivity ClipboardSyncSettingsActivity ClipboardEditActivity TextKeyboardLayoutProfilePickerActivity UpdateMirrorListActivity-controls; do
+  for mode in light dark; do
+    adb pull "/data/local/tmp/direct-frontend-md3-$page-$mode.png" "$report_dir/md3-$page-$mode.png" 2>/dev/null || true
+  done
+done
+exit "$test_result"

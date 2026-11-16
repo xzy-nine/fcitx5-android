@@ -114,7 +114,7 @@ abstract class FcitxPreferenceFragment : PaddingPreferenceFragment() {
 
     override fun onStart() {
         super.onStart()
-        viewModel.setToolbarTitle(getPageTitle())
+        (activity as? MainActivity)?.supportActionBar?.title = getPageTitle()
         (activity as? MainActivity)?.getPendingHighlightKey()?.let { highlightKey ->
             lifecycleScope.launch {
                 PreferenceHighlightHelper.highlightPreference(this@FcitxPreferenceFragment, highlightKey)

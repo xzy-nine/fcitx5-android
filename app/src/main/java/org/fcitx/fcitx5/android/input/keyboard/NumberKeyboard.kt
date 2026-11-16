@@ -14,7 +14,7 @@ import org.fcitx.fcitx5.android.data.RecentlyUsed
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.input.keyboard.KeyDef.Appearance.Variant
-import org.fcitx.fcitx5.android.input.picker.PickerPageUi
+import org.fcitx.fcitx5.android.input.picker.PickerDensity
 import org.fcitx.fcitx5.android.input.picker.PickerWindow
 import org.fcitx.fcitx5.android.ui.main.SymbolSliderEditActivity
 import splitties.views.dsl.constraintlayout.below
@@ -57,7 +57,7 @@ class NumberKeyboard(
     // 历史符号数据源：与符号选择器（PickerWindow.Key.Symbol + Density.High）共用同一份数据，
     // 通过 getter 即时读取（rebuild 可能在 super 构造期间被调用，避免属性初始化顺序问题）。
     private val recentlyUsed: RecentlyUsed
-        get() = RecentlyUsed(PickerWindow.Key.Symbol.name, PickerPageUi.Density.High.pageSize)
+        get() = RecentlyUsed(PickerWindow.Key.Symbol.name, PickerDensity.High.pageSize)
 
     // 行数据见 NumberKeyboardRows（纯 KeyDef，Compose 侧共用同一份；行数据是单一实例）
     private fun buildRow1() = createKeyRow(NumberKeyboardRows.row1)

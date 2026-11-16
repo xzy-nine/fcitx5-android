@@ -7,7 +7,6 @@ package org.fcitx.fcitx5.android.input
 
 import android.os.SystemClock
 import org.fcitx.fcitx5.android.input.broadcast.PreeditEmptyStateComponent
-import org.fcitx.fcitx5.android.input.broadcast.PunctuationComponent
 import org.fcitx.fcitx5.android.input.broadcast.ReturnKeyDrawableComponent
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener
 import org.fcitx.fcitx5.android.input.keyboard.KeyboardWindow
@@ -34,9 +33,7 @@ object ReflectionPrewarm {
 
     /** 预热用到的组件类：覆盖装配时最先进入作用域的几个。 */
     private val WARMUP_CLASSES = listOf(
-        PopupComponent::class,
-        PunctuationComponent::class,
-        ReturnKeyDrawableComponent::class,
+        PopupComponent::class,        ReturnKeyDrawableComponent::class,
         PreeditEmptyStateComponent::class,
         ComposePreeditComponent::class,
         CommonKeyActionListener::class,

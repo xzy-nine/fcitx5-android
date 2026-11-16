@@ -53,8 +53,12 @@ import kotlin.math.roundToInt
 abstract class BaseKeyboard(
     context: Context,
     protected val theme: Theme,
-    private val keyLayout: List<List<KeyDef>>
+    private val keyLayoutProvider: List<List<KeyDef>>
 ) : ConstraintLayout(context) {
+
+    /** 当前生效的键位布局；预览场景由子类覆盖。 */
+    protected open val keyLayout: List<List<KeyDef>>
+        get() = keyLayoutProvider
 
     var keyActionListener: KeyActionListener? = null
 
@@ -129,6 +133,8 @@ abstract class BaseKeyboard(
         lastSplitRequested = split
         lastGapRatio = gapRatio
         spaceKeys.clear()
+        editorSourceRowSizes = emptyList()
+        editorDisplayIndices = emptyList()
         removeAllViews()
         val rowGroupPercents = if (effectiveSplit) {
             computeRowGroupPercents(keyLayout, gapRatio)
@@ -147,6 +153,8 @@ abstract class BaseKeyboard(
                 createKeyRow(row)
             }
         }
+        editorSourceRowSizes = keyLayout.map { it.size }
+        editorDisplayIndices = keyLayout.map { row -> row.indices.toList() }
         keyRows.forEachIndexed { index, row ->
             if (effectiveSplit) {
                 add(row, lParams(matchConstraints, matchConstraints) {
@@ -305,6 +313,87 @@ abstract class BaseKeyboard(
         }
     }
 
+    // ===== 布局编辑器预览支持 =====
+
+    /** 供布局编辑器定位到具体键：行号、源布局索引、对应视图。 */
+    data class EditorKeyView(val row: Int, val key: Int, val view: View)
+
+    /** 渲染时记录的行签名与每行「显示位 → 源索引」映射。 */
+    private var editorSourceRowSizes: List<Int> = emptyList()
+    private var editorDisplayIndices: List<List<Int>> = emptyList()
+
+    /**
+     * 取出当前渲染出的键视图，按 [expectedRowSizes] 校验行结构未变。
+     *
+     * 行结构不一致时返回空表，调用方应放弃本次定位（布局已重建）。
+     */
+    fun keyViewsForEditor(expectedRowSizes: List<Int>): List<EditorKeyView> {
+        if (editorSourceRowSizes != expectedRowSizes) return emptyList()
+        return keyRows.flatMapIndexed { rowIndex, row ->
+            val indices = editorDisplayIndices.getOrNull(rowIndex).orEmpty()
+            row.children.filterIsInstance<KeyView>().mapIndexedNotNull { index, view ->
+                indices.getOrNull(index)?.takeIf { it >= 0 }?.let { EditorKeyView(rowIndex, it, view) }
+            }.toList()
+        }
+    }
+
+    /** 布局编辑器要求按变体重排；custom 的键盘按分裂状态重建，此处忽略变体。 */
+    fun setLayoutVariantOverride(@Suppress("UNUSED_PARAMETER") variant: Any?) = Unit
+
+    /** 组合态变化。custom 的键面由 Compose 渲染，View 层无需响应。 */
+    open fun onCompositionStateChanged(@Suppress("UNUSED_PARAMETER") composing: Boolean) = Unit
+
+    private var currentTextScale = 1.0f
+    private var horizontalGapScale = 1.0f
+
+    /** 按缩放值刷新所有键面文字字号（布局编辑器预览用）。 */
+    fun setTextScale(scale: Float) {
+        val changed = currentTextScale != scale
+        currentTextScale = scale
+        keyRows.forEach { row ->
+            row.children.forEach { child ->
+                (child as? KeyView)?.let { keyView ->
+                    keyView.setTextScale(scale)
+                    if (!changed) {
+                        keyView.requestLayout()
+                        keyView.invalidate()
+                    }
+                }
+            }
+        }
+    }
+
+    /** 按缩放值调整分行间隙（布局编辑器预览用），有变化时重建布局。 */
+    fun setHorizontalGapScale(scale: Float) {
+        val target = scale.coerceIn(0.5f, 1f)
+        if (kotlin.math.abs(horizontalGapScale - target) < 0.01f) return
+        horizontalGapScale = target
+        refreshStyle()
+    }
+
+    /** 按当前偏好重建布局并重新应用文字缩放。 */
+    fun refreshStyle() {
+        rebuildKeyboardRows(splitKeyboard.getValue())
+        setTextScale(currentTextScale)
+        onStyleRefreshFinished()
+        requestLayout()
+    }
+
+    /** 样式刷新完成回调，子类可覆盖。 */
+    protected open fun onStyleRefreshFinished() = Unit
+
+    /**
+     * 当前布局签名，供预览/编辑器判断是否需要重建。
+     *
+     * custom 的键盘按分裂状态与间隙比例重建，签名即三者的组合。
+     */
+    protected open val currentLayoutSignature: String
+        get() = "split=$isSplitLayout;gap=$lastGapRatio;rows=${keyLayout.size}"
+
+    /** 辅助栏动作。custom 的工具栏由 Compose 渲染，此入口不产生 View 变更。 */
+    open fun updateAuxBarActions(@Suppress("UNUSED_PARAMETER") actions: List<Any>) = Unit
+
+
     protected open fun createKeyRow(
         row: List<KeyDef>,
         chainBias: Float? = null,
@@ -361,11 +450,14 @@ abstract class BaseKeyboard(
     protected open fun createKeyView(def: KeyDef): KeyView {
         return when (def) {
             is SymbolSliderKey -> SymbolSliderKeyView(context, theme, def)
-            else -> when (def.appearance) {
-                is KeyDef.Appearance.AltText -> AltTextKeyView(context, theme, def.appearance)
-                is KeyDef.Appearance.ImageText -> ImageTextKeyView(context, theme, def.appearance)
-                is KeyDef.Appearance.Text -> TextKeyView(context, theme, def.appearance)
-                is KeyDef.Appearance.Image -> ImageKeyView(context, theme, def.appearance)
+            else -> when (val appearance = def.appearance) {
+                is KeyDef.Appearance.AltText -> AltTextKeyView(context, theme, appearance)
+                is KeyDef.Appearance.ImageAltText -> ImageKeyView(context, theme, appearance.toImage())
+                is KeyDef.Appearance.ImageText -> ImageTextKeyView(context, theme, appearance)
+                // ToolbarText 继承自 Text，需先于 Text 判定
+                is KeyDef.Appearance.ToolbarText -> TextKeyView(context, theme, appearance)
+                is KeyDef.Appearance.Text -> TextKeyView(context, theme, appearance)
+                is KeyDef.Appearance.Image -> ImageKeyView(context, theme, appearance)
             }
         }.apply {
             soundEffect = when (def) {
@@ -451,7 +543,7 @@ abstract class BaseKeyboard(
                             when (event.type) {
                                 GestureType.Up -> {
                                     if (!event.consumed && swipeSymbolDirection.checkY(event.totalY)) {
-                                        onAction(it.action)
+                                        it.action?.let { action -> onAction(action) }
                                         true
                                     } else {
                                         false
@@ -471,6 +563,13 @@ abstract class BaseKeyboard(
             }
             def.popup?.forEach {
                 when (it) {
+                    is KeyDef.Popup.LongPressKeyboard -> {
+                        setOnLongClickListener { view ->
+                            view as KeyView
+                            onAction(it.action)
+                            true
+                        }
+                    }
                     // TODO: gesture processing middleware
                     is KeyDef.Popup.Menu -> {
                         setOnLongClickListener { view ->

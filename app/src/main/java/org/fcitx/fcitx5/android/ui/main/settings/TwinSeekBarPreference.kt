@@ -4,12 +4,13 @@
  */
 package org.fcitx.fcitx5.android.ui.main.settings
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+
 import android.content.Context
 import android.util.AttributeSet
 import android.view.View
-import android.widget.SeekBar
+import org.fcitx.fcitx5.android.ui.common.SettingsSlider as SeekBar
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.edit
 import androidx.preference.DialogPreference
@@ -27,7 +28,7 @@ import splitties.views.dsl.constraintlayout.startOfParent
 import splitties.views.dsl.constraintlayout.topOfParent
 import splitties.views.dsl.core.add
 import splitties.views.dsl.core.horizontalMargin
-import splitties.views.dsl.core.seekBar
+import org.fcitx.fcitx5.android.ui.common.settingsSlider as seekBar
 import splitties.views.dsl.core.textView
 import splitties.views.dsl.core.verticalMargin
 import splitties.views.dsl.core.wrapContent
@@ -148,7 +149,7 @@ class TwinSeekBarPreference @JvmOverloads constructor(
             primarySeekBar = addSeekBar(label, value, default, messageText)
             secondarySeekBar = addSeekBar(secondaryLabel, secondaryValue, secondaryDefault, primarySeekBar)
         }
-        AlertDialog.Builder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle(this@TwinSeekBarPreference.dialogTitle)
             .setView(dialogContent)
             .setPositiveButton(android.R.string.ok) { _, _ ->

@@ -6,32 +6,49 @@
 package org.fcitx.fcitx5.android.utils
 
 import java.io.File
+import java.io.IOException
 import java.util.zip.ZipInputStream
 
 /**
- * @return top-level files in zip file
- *
- * 安全约定：每个条目（含目录条目）经 [File] 合并并规范化后都必须位于 [destDir] 内部，
- * 拒绝 `..` 及任何可逃逸出解压目录的条目名（zip slip）；以 `/` 开头的条目在 UNIX 语义下
- * 会被 [File] 并入解压目录内，同样无法逃逸。越界条目直接抛 [SecurityException]。
- * 文件条目写入前会先创建父目录，不依赖 zip 中目录条目的顺序。
+ * @return all extracted files in zip file (including subdirectories)
  */
-fun ZipInputStream.extract(destDir: File): List<File> {
-    val canonicalDest = destDir.canonicalPath
-    val destPrefix = "$canonicalDest${File.separator}"
+fun ZipInputStream.extract(destDir: File, maxEntries: Int = 100_000,
+                           maxBytes: Long = 2L * 1024 * 1024 * 1024): List<File> {
     var entry = nextEntry
+    val canonicalDest = destDir.canonicalFile
+    val seen = mutableSetOf<String>()
+    var entries = 0
+    var totalBytes = 0L
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    val drivePrefix = Regex("^[A-Za-z]:")
     while (entry != null) {
-        val target = File(destDir, entry.name).canonicalFile
-        if (target.path != canonicalDest && !target.path.startsWith(destPrefix)) {
-            throw SecurityException("zip entry escapes destination directory: ${entry.name}")
+        if (++entries > maxEntries) throw IOException("Too many files in backup.")
+        val path = entry.name.replace('\\', '/')
+        if (path.startsWith('/') || drivePrefix.containsMatchIn(path)) {
+            throw SecurityException("Absolute path in backup.")
         }
-        if (entry.isDirectory) {
-            target.mkdirs()
+        val file = File(destDir, path).canonicalFile
+        if (!file.path.startsWith(canonicalDest.path + File.separator)) {
+            throw SecurityException("Backup entry is outside the destination directory.")
+        }
+        if (!seen.add(file.path)) throw IOException("Duplicate path in backup.")
+        if (!entry.isDirectory) {
+            val parent = file.parentFile!!
+            if (!parent.isDirectory && !parent.mkdirs()) throw IOException("Unable to extract backup.")
+            file.outputStream().use { output ->
+                while (true) {
+                    val count = read(buffer)
+                    if (count < 0) break
+                    totalBytes += count
+                    if (totalBytes > maxBytes) throw IOException("Backup exceeds the extraction size limit.")
+                    output.write(buffer, 0, count)
+                }
+            }
         } else {
-            target.parentFile?.mkdirs()
-            target.outputStream().use { copyTo(it) }
+            if (!file.isDirectory && !file.mkdirs()) throw IOException("Unable to extract backup.")
         }
         entry = nextEntry
     }
-    return destDir.listFiles()?.toList() ?: emptyList()
+    // Return all files recursively (not just top-level)
+    return destDir.walkTopDown().filter { it.isFile }.toList()
 }

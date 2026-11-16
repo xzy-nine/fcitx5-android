@@ -17,8 +17,11 @@ import org.mechdancer.dependency.DynamicScope
 import org.mechdancer.dependency.ScopeEvent
 import org.mechdancer.dependency.UniqueComponent
 import java.util.concurrent.CopyOnWriteArrayList
+import org.fcitx.fcitx5.android.core.FcitxEvent.PagedCandidateEvent
+import org.fcitx.fcitx5.android.input.broadcast.PagedCandidateReceiver
 
-class InputBroadcaster : UniqueComponent<InputBroadcaster>(), Dependent, InputBroadcastReceiver {
+class InputBroadcaster : UniqueComponent<InputBroadcaster>(), Dependent, InputBroadcastReceiver,
+    PagedCandidateReceiver {
 
     // CopyOnWriteArrayList：接收者仅在 scope 装配/拆卸时增删（极低频），
     // 而每次输入事件都要遍历全表（高频）。COW 的 forEach 直接遍历内部快照数组、
@@ -49,8 +52,8 @@ class InputBroadcaster : UniqueComponent<InputBroadcaster>(), Dependent, InputBr
         receivers.forEach { it.onInputPanelUpdate(data) }
     }
 
-    override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {
-        receivers.forEach { it.onStartInput(info, capFlags) }
+    override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags, restarting: Boolean) {
+        receivers.forEach { it.onStartInput(info, capFlags, restarting) }
     }
 
     override fun onImeUpdate(ime: InputMethodEntry) {
@@ -59,6 +62,16 @@ class InputBroadcaster : UniqueComponent<InputBroadcaster>(), Dependent, InputBr
 
     override fun onCandidateUpdate(data: CandidateListEvent.Data) {
         receivers.forEach { it.onCandidateUpdate(data) }
+    }
+
+    override fun onPagedCandidateUpdate(data: PagedCandidateEvent.Data) {
+        // 每个接收者只收到一次；仅支持列表形态的组件收到共享的兼容视图，
+        // 避免分页接收者先渲染一帧合成首页。
+        val list = CandidateListEvent.Data(total = -1, candidates = data.candidates)
+        receivers.forEach {
+            if (it is PagedCandidateReceiver) it.onPagedCandidateUpdate(data)
+            else it.onCandidateUpdate(list)
+        }
     }
 
     override fun onStatusAreaUpdate(actions: Array<Action>) {
@@ -79,10 +92,6 @@ class InputBroadcaster : UniqueComponent<InputBroadcaster>(), Dependent, InputBr
 
     override fun onScopeSetupFinished(scope: DynamicScope) {
         receivers.forEach { it.onScopeSetupFinished(scope) }
-    }
-
-    override fun onPunctuationUpdate(mapping: Map<String, String>) {
-        receivers.forEach { it.onPunctuationUpdate(mapping) }
     }
 
     override fun onPreeditEmptyStateUpdate(empty: Boolean) {

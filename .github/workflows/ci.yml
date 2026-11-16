@@ -1,0 +1,252 @@
+name: Commit CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fx-rime-only
+      - feat/direct-rime-prototype
+    tags-ignore:
+      - '[0-9]*'
+      - 'v[0-9]*'
+    paths:
+      - '**/**'
+      - '!*.md'
+      - '!.gitignore'
+      - '!docs/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commit-ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build_commit:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - ubuntu-22.04
+        abi:
+          - arm64-v8a
+    env:
+      BUILD_ABI: ${{ matrix.abi }}
+      SIGN_KEY_BASE64: ${{ secrets.SIGNING_KEY }}
+      SIGN_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      SIGN_KEY_PWD: ${{ secrets.KEY_PASSWORD }}
+    steps:
+      - name: Fetch source code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Remove non-semver local tags to avoid confusion
+        shell: bash
+        run: |
+          # keep tags like 0.1.2 or v0.1.2 but delete others (nightly/latest/short-sha)
+          git for-each-ref --format='%(refname:strip=2)' refs/tags | while read tag; do
+              # allow v1.2 or v1.2.3.4 etc: one or more dot-separated numeric segments
+              # use POSIX-compatible groups for bash (no (?: ) non-capturing groups)
+              if [[ ! "$tag" =~ ^v?[0-9]+(\.[0-9]+)+(-.*)?$ ]]; then
+              git tag -d "$tag" || true
+            fi
+          done
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Android environment
+        # 2026-09-15 起 Google 不再提供 `tools` 包，setup-android 默认安装
+        # `tools platform-tools` 会以 exit 1 失败（android-actions/setup-android#537）；
+        # SDK/NDK 与 CMake 由 Gradle 按固定版本安装。
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Prepare pinned NDK before configuring the app
+        run: python3 tools/prepare-ci-ndk.py
+
+      - name: Prepare personal build sources
+        run: |
+          ./prepare_personal_build.sh
+
+      - name: Build signed ARM64 Release and verify native dependencies and ART profile
+        env:
+          REQUIRE_RELEASE_SIGNING: 'true'
+        run: |
+          set -o pipefail
+          bash tools/foxy-perf/build-release.sh "$RUNNER_TEMP/release-product" 2>&1 | tee build-output.log
+
+      - name: Emit compile errors as annotations
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f build-output.log ]; then
+            grep -aE '^e: |error: |FAILURE: Build failed|> Task .*FAILED' build-output.log | head -10 | while IFS= read -r line; do
+              echo "::error::${line:0:500}"
+            done
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: direct-rime-frontend-arm64-release
+          path: ${{ runner.temp }}/release-product/
+
+  # JVM 单测单独成一个 job。
+  # 背景：此前 CI 只构建 Release APK，从不编译 app/src/test/**，于是单测源集即使编译不过
+  # 也没人知道（9be829bb 引入的 NumberRowTest 编译错误就是这样潜伏了一整天，详见
+  # rime-docs 分支 docs/HANDOVER-rime-only.md 第 0 节）。
+  # Nightly 同时等待构建和单测，避免发布已知失败的版本。
+  unit_test:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Fetch source code
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Android environment
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Check bundled clipboard rules and license packaging guards
+        run: python3 -m unittest discover -s tools -p test_verify_clearurls_assets.py -v
+
+      - name: Test SDK integrity, offline cache and incremental recovery
+        run: >-
+          ./gradlew --no-daemon -p build-logic
+          '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8'
+          -Pkotlin.compiler.execution.strategy=in-process --max-workers=2
+          :convention:test --tests RimeSdkArchiveTest
+
+      - name: Prepare pinned NDK before configuring the app
+        run: |
+          python3 -m unittest discover -s tools -p test_prepare_ci_ndk.py -v
+          python3 tools/prepare-ci-ndk.py
+
+      - name: Run JVM unit tests
+        run: |
+          set -o pipefail
+          ./gradlew :app:testFxDebugUnitTest 2>&1 | tee unit-test-output.log
+          python3 tools/check-junit-results.py
+
+      - name: Emit test failures as annotations
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f unit-test-output.log ]; then
+            grep -aE '^e: |^.*FAILED$|There were failing tests|> Task .*FAILED' unit-test-output.log | head -10 | while IFS= read -r line; do
+              echo "::error::${line:0:500}"
+            done
+          fi
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-reports
+          path: |
+            app/build/reports/tests/testFxDebugUnitTest/
+            app/build/test-results/testFxDebugUnitTest/
+            build-logic/convention/build/test-results/test/
+
+  nightly_release:
+    needs: [build_commit, unit_test]
+    if: github.ref == 'refs/heads/fx-rime-only'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Fetch source code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Save previous release tag
+        id: prev_tag
+        shell: bash
+        run: |
+          tag=$(git describe --tags --abbrev=0 --exclude='v0-archive-*' 2>/dev/null || echo '')
+          sha=''
+          if [ -n "$tag" ]; then
+            sha=$(git rev-parse "${tag}^{commit}" 2>/dev/null || echo '')
+          fi
+          echo "value=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Remove non-semver local tags
+        shell: bash
+        run: |
+          git for-each-ref --format='%(refname:strip=2)' refs/tags | while read tag; do
+            if [[ ! "$tag" =~ ^v?[0-9]+(\.[0-9]+)+(-.*)?$ ]]; then
+              git tag -d "$tag" || true
+            fi
+          done
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: release-artifacts
+
+      - name: Collect APKs
+        run: |
+          mkdir -p final-release
+          find release-artifacts -name "*.apk" -exec cp {} final-release/ \;
+          test -n "$(find final-release -maxdepth 1 -name '*.apk' -print -quit)"
+
+      - name: Generate nightly tag
+        id: tag
+        run: echo "value=nightly-$(git describe --tags --long)-$(date -u +'%Y%m%d-%H%M%S')" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        shell: bash
+        run: |
+          last_tag="${{ steps.prev_tag.outputs.value }}"
+          {
+            echo "中州鹅（org.fcitx.fcitx5.android.fx.rime），完整键盘签名 Release。"
+            echo "首次使用需导入并部署 Rime 方案；各输入法请使用独立工作目录。"
+            echo "[用户手册](https://github.com/${{ github.repository }}/blob/docs/docs/manual/DIRECT_RIME_USER_GUIDE_zh-CN.md)"
+            echo ""
+            echo "Commit: $(git rev-parse --short HEAD)"
+            echo "Built at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            echo ""
+            echo "### Changes"
+            echo ""
+            if [ -n "$last_tag" ]; then
+              range="${last_tag}..HEAD"
+            else
+              range="-30"
+            fi
+            git log "$range" --no-merges --pretty=format:'- %s (%h)' | head -n 50 || true
+          } > release_notes.md
+          cat release_notes.md
+
+      - name: Create Nightly release
+        uses: softprops/action-gh-release@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ steps.tag.outputs.value }}
+          name: "中州鹅 ${{ steps.tag.outputs.value }}"
+          body_path: release_notes.md
+          prerelease: true
+          files: final-release/*.apk
+

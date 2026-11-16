@@ -1,0 +1,197 @@
+/*
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-FileCopyrightText: 2021-2023 Fcitx5 for Android Contributors
+ */
+package org.fcitx.fcitx5.android.input.config
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import org.fcitx.fcitx5.android.input.keyboard.MacroStep
+
+/**
+ * Represents a configurable button on Kawaii Bar or Status Area.
+ */
+@Serializable
+data class ConfigurableButton(
+    /**
+     * Unique identifier for the button action.
+     * Examples: "undo", "redo", "cursor_move", "floating_toggle", "clipboard", "voice_input", "theme_toggle",
+     *           "language_switch", "theme", "input_method_options", "reload_config", "virtual_keyboard", "one_handed_keyboard"
+     */
+    @SerialName("id")
+    val id: String,
+    
+    /**
+     * Optional: Icon resource name (without extension) to use for this button.
+     * Prefix with "file:" to load from file path.
+     * If null, uses default icon for the action.
+     * Examples: "ic_baseline_undo_24", "ic_clipboard", "file:my_icon.png"
+     */
+    @SerialName("icon")
+    val icon: String? = null,
+    
+    /**
+     * Optional: Custom label for accessibility/content description.
+     * If null, uses default label for the action.
+     */
+    @SerialName("label")
+    val label: String? = null,
+
+    /**
+     * Optional: Custom text/emoji to display on the button instead of icon.
+     * When non-null, takes priority over icon drawable.
+     * Examples: "✂️", "Aa", "剪"
+     */
+    @SerialName("text")
+    val text: String? = null,
+    
+    /**
+     * Optional: Long press action, if different from short press.
+     * For buttons that support different long-press behavior.
+     * Examples: "floating_menu" (for floating_toggle long press)
+     */
+    @SerialName("longPressAction")
+    val longPressAction: String? = null,
+
+    /**
+     * Optional: Macro steps for user-defined buttons.
+     * When non-null and non-empty, executes these steps instead of looking up [ButtonAction.fromId].
+     */
+    @SerialName("macroSteps")
+    val macroSteps: List<MacroStep>? = null
+)
+
+/**
+ * Unified configuration for both Kawaii Bar and Status Area buttons layout.
+ * Stored in a single JSON file for easier management.
+ */
+@Serializable
+data class ButtonsLayoutConfig(
+    /**
+     * List of buttons to display on Kawaii Bar, in order.
+     * Maximum 6 buttons recommended for visual balance.
+     * The Status Area is opened by the fixed left-side button and should not be added here.
+     */
+    @SerialName("kawaiiBarButtons")
+    val kawaiiBarButtons: List<ConfigurableButton>,
+
+    /**
+     * List of buttons to display in Status Area, in order.
+     * Displayed in a 4-column grid layout.
+     * Note: 'input_method_options' button is always added automatically at the end and should not be in this list.
+     */
+    @SerialName("statusAreaButtons")
+    val statusAreaButtons: List<ConfigurableButton>,
+
+    /**
+     * Configuration for the Status Area button.
+     * Always present on the left side of the idle bar and opens additional settings.
+     * Supports custom icon, text, and label.
+     */
+    @SerialName("toolbarToggleButton")
+    val toolbarToggleButton: ConfigurableButton = ConfigurableButton("toolbar_toggle"),
+
+    /**
+     * Configuration for the hide keyboard button.
+     * Always present on the right side of the idle bar.
+     * Supports custom icon, text, and label.
+     */
+    @SerialName("hideKeyboardButton")
+    val hideKeyboardButton: ConfigurableButton = ConfigurableButton("hide_keyboard")
+) {
+    companion object {
+        /**
+         * Default unified button configuration.
+         */
+        fun default(): ButtonsLayoutConfig = ButtonsLayoutConfig(
+            kawaiiBarButtons = listOf(
+                ConfigurableButton("undo"),
+                ConfigurableButton("redo"),
+                ConfigurableButton("cursor_move"),
+                ConfigurableButton("floating_toggle"),
+                ConfigurableButton("clipboard"),
+                ConfigurableButton("theme_toggle")
+            ),
+            // Note: input_method_options is always added automatically at the end of Status Area
+            statusAreaButtons = listOf(
+                ConfigurableButton("theme"),
+                ConfigurableButton("icon_theme"),
+                ConfigurableButton("reload_config"),
+                ConfigurableButton("virtual_keyboard"),
+                ConfigurableButton("one_handed_keyboard")
+            )
+        )
+    }
+}
+
+/**
+ * The status area has a fixed opener, so obsolete "more" buttons are not displayed.
+ * Respect the saved list: removing a default button must not add it back on the next load.
+ */
+fun ButtonsLayoutConfig.displayedKawaiiBarButtons(): List<ConfigurableButton> =
+    kawaiiBarButtons.filter { it.id != "more" }
+
+/**
+ * Configuration for Kawaii Bar buttons layout.
+ * @deprecated Use [ButtonsLayoutConfig] instead
+ */
+@Deprecated("Use ButtonsLayoutConfig instead", ReplaceWith("ButtonsLayoutConfig"))
+@Serializable
+data class KawaiiBarButtonsConfig(
+    /**
+     * List of buttons to display on Kawaii Bar, in order.
+     * Maximum 6 buttons recommended for visual balance.
+     */
+    @SerialName("buttons")
+    val buttons: List<ConfigurableButton>
+) {
+    companion object {
+        /**
+         * Default Kawaii Bar button configuration.
+         * The Status Area is opened by the fixed left-side button and is not part of this default config.
+         */
+        @Deprecated("Use ButtonsLayoutConfig.default() instead")
+        @Suppress("DEPRECATION")
+        fun default(): KawaiiBarButtonsConfig = KawaiiBarButtonsConfig(
+            buttons = listOf(
+                ConfigurableButton("undo"),
+                ConfigurableButton("redo"),
+                ConfigurableButton("cursor_move"),
+                ConfigurableButton("floating_toggle"),
+                ConfigurableButton("clipboard")
+            )
+        )
+    }
+}
+
+/**
+ * Configuration for Status Area buttons layout.
+ * @deprecated Use [ButtonsLayoutConfig] instead
+ */
+@Deprecated("Use ButtonsLayoutConfig instead", ReplaceWith("ButtonsLayoutConfig"))
+@Serializable
+data class StatusAreaButtonsConfig(
+    /**
+     * List of buttons to display in Status Area, in order.
+     * Displayed in a 4-column grid layout.
+     */
+    @SerialName("buttons")
+    val buttons: List<ConfigurableButton>
+) {
+    companion object {
+        /**
+         * Default Status Area button configuration.
+         */
+        @Deprecated("Use ButtonsLayoutConfig.default() instead")
+        @Suppress("DEPRECATION")
+        fun default(): StatusAreaButtonsConfig = StatusAreaButtonsConfig(
+            // Note: input_method_options is always added automatically at the end of Status Area
+            buttons = listOf(
+                ConfigurableButton("theme"),
+                ConfigurableButton("reload_config"),
+                ConfigurableButton("virtual_keyboard"),
+                ConfigurableButton("one_handed_keyboard")
+            )
+        )
+    }
+}

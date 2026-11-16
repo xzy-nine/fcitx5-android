@@ -189,6 +189,7 @@ object RawConfigRows {
                 RawConfigExternalAction.Unresolved(descriptor.uri)
             }
         }
+        else -> RawConfigExternalAction.Unresolved(descriptor.uri)
     }
 }
 

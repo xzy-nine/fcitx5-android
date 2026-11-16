@@ -251,6 +251,37 @@ class KeyboardPreviewUi(override val ctx: Context, val theme: Theme) : Ui {
         refreshSplitLayout()
     }
 
+    /**
+     * 按缩放值调整预览尺寸。
+     *
+     * 缩放只影响预览视图的外框，不改变内部键位比例。
+     */
+    fun setSizeScale(scale: Float) {
+        val s = scale.coerceIn(0.2f, 1f)
+        root.scaleX = s
+        root.scaleY = s
+        root.pivotX = 0f
+        root.pivotY = 0f
+    }
+
+    /** 设置预览背景。模糊半径由调用方烘焙进位图，此处只接收最终结果。 */
+    fun setBackgroundWithBlur(
+        drawable: Drawable,
+        @Suppress("UNUSED_PARAMETER") source: android.graphics.Bitmap?,
+        @Suppress("UNUSED_PARAMETER") blurRadius: Float,
+        @Suppress("UNUSED_PARAMETER") darkenProgress: Int,
+    ) {
+        setBackground(drawable)
+    }
+
+    /** 释放预览持有的键盘视图与监听。 */
+    fun dispose() {
+        if (this::fakeKeyboardWindow.isInitialized) {
+            fakeKeyboardWindow.onDetach()
+        }
+        onSizeMeasured = null
+    }
+
     private fun refreshSplitLayout() {
         if (this::fakeKeyboardWindow.isInitialized) {
             fakeKeyboardWindow.post {

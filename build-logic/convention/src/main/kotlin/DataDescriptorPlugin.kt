@@ -23,10 +23,32 @@ import org.gradle.kotlin.dsl.register
 import org.gradle.work.ChangeType
 import org.gradle.work.Incremental
 import org.gradle.work.InputChanges
-import org.jetbrains.kotlin.com.google.common.hash.Hashing
-import org.jetbrains.kotlin.com.google.common.io.ByteSource
 import java.io.File
 import java.nio.charset.Charset
+import java.security.MessageDigest
+
+/**
+ * Descriptor keys are paths relative to the asset directory, always written with
+ * forward slashes: the runtime rejects anything else (see AssetMigration.relative),
+ * and a backslash key makes the engine fail its very first data sync on the device.
+ * `File.path` yields backslashes on Windows, so never use it for a descriptor key.
+ *
+ * A [file] that is already relative (the parent chain of a [File.relativeTo] result)
+ * is its own key.
+ */
+internal fun descriptorKey(file: File, root: File): String =
+    (if (file.isAbsolute) file.relativeTo(root) else file).invariantSeparatorsPath
+
+/** Same contract as the runtime side, enforced when the descriptor is written. */
+internal fun requireDescriptorPaths(paths: Collection<String>) {
+    val invalid = paths.filterNot { path ->
+        path.isNotEmpty() && !File(path).isAbsolute && '\\' !in path &&
+            path.split('/').all { it.isNotEmpty() && it != "." && it != ".." }
+    }
+    if (invalid.isNotEmpty()) throw IllegalStateException(
+        "Data descriptor paths must be relative POSIX paths, got: ${invalid.take(5)}"
+    )
+}
 
 interface DataDescriptorPluginExtension {
     /**
@@ -78,7 +100,7 @@ class DataDescriptorPlugin : Plugin<Project> {
         )
 
         @get:Incremental
-        @get:PathSensitive(PathSensitivity.NAME_ONLY)
+        @get:PathSensitive(PathSensitivity.RELATIVE)
         @get:InputDirectory
         abstract val inputDir: DirectoryProperty
 
@@ -96,12 +118,12 @@ class DataDescriptorPlugin : Plugin<Project> {
         private fun serialize(files: Map<String, String>, symlinks: Map<String, String>) {
             if (symlinks.keys.intersect(files.keys).isNotEmpty())
                 throw IllegalArgumentException("Symlink target cannot be path in files")
+            requireDescriptorPaths(files.keys + symlinks.keys)
             val descriptor = DataDescriptor(
-                Hashing.sha256()
-                    .hashString(
-                        (files + symlinks).entries.joinToString { it.key + it.value },
-                        Charset.defaultCharset()
-                    ).toString(),
+                MessageDigest.getInstance("SHA-256").digest(
+                    (files + symlinks).entries.joinToString { it.key + it.value }
+                        .toByteArray(Charset.defaultCharset())
+                ).hex(),
                 files,
                 symlinks
             )
@@ -112,36 +134,50 @@ class DataDescriptorPlugin : Plugin<Project> {
             json.decodeFromString<DataDescriptor>(file.readText()).files
 
         companion object {
-            fun sha256(file: File): String =
-                ByteSource.wrap(file.readBytes()).hash(Hashing.sha256()).toString()
+            private fun ByteArray.hex() = joinToString("") { "%02x".format(it) }
+
+            fun sha256(file: File): String {
+                val digest = MessageDigest.getInstance("SHA-256")
+                file.inputStream().use { input ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        digest.update(buffer, 0, count)
+                    }
+                }
+                return digest.digest().hex()
+            }
         }
 
         @TaskAction
         fun execute(inputChanges: InputChanges) {
+            val excluded = excludes.get().map { it.trimEnd('/') }.toSet()
+            fun isExcluded(path: String) = excluded.any { path == it || path.startsWith("$it/") }
             val map =
-                file.exists()
+                (inputChanges.isIncremental && file.exists())
                     .takeIf { it }
                     ?.runCatching {
                         deserialize()
                             // remove all old dirs
                             .filterValues { it.isNotBlank() }
+                            .filterKeys { !isExcluded(it) }
                             .toMutableMap()
                     }
                     ?.getOrNull()
                     ?: mutableMapOf()
 
             fun File.allParents(): List<File> =
-                if (parentFile == null || parentFile.path in map)
+                if (parentFile == null || descriptorKey(parentFile, file.parentFile) in map)
                     listOf()
                 else
                     listOf(parentFile) + parentFile.allParents()
             inputChanges.getFileChanges(inputDir).forEach { change ->
-                if (change.file.name == file.name)
+                if (change.file.name == file.name || change.file.isDirectory)
                     return@forEach
                 logger.log(LogLevel.DEBUG, "${change.changeType}: ${change.normalizedPath}")
-                val relativeFile = change.file.relativeTo(file.parentFile)
-                val key = relativeFile.path.replace(File.separatorChar, '/')
-                if (change.changeType == ChangeType.REMOVED || key in excludes.get()) {
+                val key = descriptorKey(change.file, file.parentFile)
+                if (change.changeType == ChangeType.REMOVED || isExcluded(key)) {
                     map.remove(key)
                 } else {
                     map[key] = sha256(change.file)
@@ -149,8 +185,9 @@ class DataDescriptorPlugin : Plugin<Project> {
             }
             // calculate dirs
             inputDir.asFileTree.forEach {
+                if (it.name == file.name || isExcluded(descriptorKey(it, file.parentFile))) return@forEach
                 it.relativeTo(file.parentFile).allParents().forEach { p ->
-                    map[p.path] = ""
+                    map[descriptorKey(p, file.parentFile)] = ""
                 }
             }
             serialize(map.toSortedMap(), symlinks.get())

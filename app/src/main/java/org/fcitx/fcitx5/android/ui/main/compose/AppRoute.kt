@@ -68,28 +68,6 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data class AddonConfig(val name: String, val uniqueName: String) : AppRoute
 
-    @Serializable
-    data object PluginList : AppRoute
-
-    @Serializable
-    data object QuickPhraseList : AppRoute
-
-    @Serializable
-    data class QuickPhraseEdit(val fileName: String) : AppRoute
-
-    @Serializable
-    data object TableInputMethods : AppRoute
-
-    @Serializable
-    data object PinyinCustomPhrase : AppRoute
-
-    @Serializable
-    data class PinyinDictionary(val uri: String? = null) : AppRoute
-
-    @Serializable
-    data class Punctuation(val title: String, val lang: String?) : AppRoute
-
-    @Serializable
     data object Theme : AppRoute
 
     /** custom: 语音输入设置页（内置离线/在线引擎的平台与模型配置） */
@@ -162,14 +140,10 @@ enum class LegacyTarget {
     Clipboard,
     Broadcast,
     Symbol,
-    Plugin,
     Advanced,
     Developer,
     License,
-    About,
-    QuickPhraseList,
-    TableInputMethods,
-    PinyinCustomPhrase;
+    About;
 }
 
 object LegacyTargets {
@@ -185,13 +159,9 @@ object LegacyTargets {
         LegacyTarget.Clipboard -> SettingsRoute.Clipboard
         LegacyTarget.Broadcast -> SettingsRoute.Broadcast
         LegacyTarget.Symbol -> SettingsRoute.Symbol
-        LegacyTarget.Plugin -> SettingsRoute.Plugin
         LegacyTarget.Advanced -> SettingsRoute.Advanced
         LegacyTarget.Developer -> SettingsRoute.Developer
         LegacyTarget.License -> SettingsRoute.License
         LegacyTarget.About -> SettingsRoute.About
-        LegacyTarget.QuickPhraseList -> SettingsRoute.QuickPhraseList
-        LegacyTarget.TableInputMethods -> SettingsRoute.TableInputMethods
-        LegacyTarget.PinyinCustomPhrase -> SettingsRoute.PinyinCustomPhrase
     }
 }

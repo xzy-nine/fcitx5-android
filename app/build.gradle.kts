@@ -1,9 +1,10 @@
+import org.gradle.api.tasks.testing.Test
+
 plugins {
     id("org.fcitx.fcitx5.android.app-convention")
     id("org.fcitx.fcitx5.android.native-app-convention")
     id("org.fcitx.fcitx5.android.build-metadata")
     id("org.fcitx.fcitx5.android.data-descriptor")
-    id("org.fcitx.fcitx5.android.fcitx-component")
     // custom: 构建期对齐 sherpa AAR 的 ONNX Runtime 符号版本（见文件头说明）
     id("org.fcitx.fcitx5.android.sherpa-ort-align")
     // custom: 构建期拉取谷歌数字墨水模型（内置进包，见 DigitalInkModelPlugin）
@@ -19,31 +20,39 @@ val sherpaAlignedDir = layout.buildDirectory.dir("generated/sherpa-ort-align")
 // custom: fetchDigitalInkModel 的产物（内置数字墨水模型的 assets 源集根）
 val digitalInkModelAssetsDir = layout.buildDirectory.dir("generated/digitalink-model/assets")
 
+val packageBase = "org.fcitx.fcitx5.android"
+val flavorFx = "fx"
+val imeSettingsActivity = "$packageBase.ui.main.MainActivity"
+val inputDiagnostics = providers.gradleProperty("inputDiagnostics").orNull == "true"
+
 android {
-    namespace = "org.fcitx.fcitx5.android"
+    namespace = packageBase
 
     defaultConfig {
-        applicationId = "org.fcitx.fcitx5.android"
+        applicationId = "org.fcitx.fcitx5.android.fx.rime"
+        buildConfigField("boolean", "INPUT_DIAGNOSTICS", inputDiagnostics.toString())
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // custom: 应用名与图标不再随构建类型变化，debug/release 统一使用 release 版本
         resValue("mipmap", "app_icon", "@mipmap/ic_launcher")
         resValue("mipmap", "app_icon_round", "@mipmap/ic_launcher_round")
         resValue("string", "app_name", "@string/app_name_release")
+        manifestPlaceholders["appLabel"] = "@string/direct_rime_app_name"
+        resValue("string", "ime_settings_activity", imeSettingsActivity)
 
         @Suppress("UnstableApiUsage")
         externalNativeBuild {
             cmake {
-                targets(
-                    // jni
-                    "native-lib",
-                    // copy fcitx5 built-in addon libraries
-                    "copy-fcitx5-modules",
-                    // android specific modules
-                    "androidfrontend",
-                    "androidkeyboard",
-                    "androidnotification"
-                )
+                arguments("-DINPUT_DIAGNOSTICS=${if (inputDiagnostics) "ON" else "OFF"}")
+                targets("direct-rime")
             }
+        }
+    }
+
+    flavorDimensions += "brand"
+    productFlavors {
+        create(flavorFx) {
+            dimension = "brand"
+            buildConfigField("boolean", "IS_FX_BUILD", "true")
         }
     }
 
@@ -53,13 +62,19 @@ android {
         compose = true
         // custom: 离线语音识别服务 AIDL（:asr 进程）
         aidl = true
+        prefab = false
     }
+    externalNativeBuild.cmake.path = file("../direct-rime/src/main/cpp/CMakeLists.txt")
 
     buildTypes {
         release {
             proguardFile("proguard-rules.pro")
         }
     }
+
+
+    sourceSets.getByName("main").kotlin.srcDir("../direct-rime/src/engine/java")
+    sourceSets.getByName("androidTest").assets.srcDir("../direct-rime/src/main/assets")
 
     androidResources {
         @Suppress("UnstableApiUsage")
@@ -82,6 +97,16 @@ android {
         jniLibs {
             // 仅剩 ai.onnxruntime 自带的那一份 runtime（sherpa 副本里已摘除）
             pickFirsts += "**/libonnxruntime.so"
+        }
+    }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            // Let JVM unit tests exercise code that logs via android.util.Log: the stubbed
+            // android.jar otherwise throws "Stub!" on every call. Framework layout
+            // regressions use Robolectric; parser and validator tests use the stubs.
+            isReturnDefaultValues = true
         }
     }
 }
@@ -111,18 +136,58 @@ afterEvaluate {
         .configureEach { dependsOn("fetchDigitalInkModel") }
 }
 
-fcitxComponent {
-    includeLibs = listOf(
-        "fcitx5",
-        "fcitx5-lua",
-        "libime",
-        "fcitx5-chinese-addons"
-    )
-    // exclude (delete immediately after install) tables that nobody would use
-    excludeFiles = listOf("cangjie", "erbi", "qxm", "wanfeng").map {
-        "usr/share/fcitx5/inputmethod/$it.conf"
+tasks.withType<Test>().configureEach {
+    // Robolectric retains framework resource tables for each SDK sandbox.
+    // Give the serial worker enough heap to load another Android resource
+    // archive near the end of the full suite.
+    maxHeapSize = "1536m"
+    maxParallelForks = 1
+    // custom: Robolectric 自带依赖解析器默认直连 Maven Central，其 android-all
+    // 运行时按 SDK 逐个下载（每个上百 MB），国内网络经常超时。改走国内镜像。
+    systemProperty("robolectric.dependency.repo.url", "https://maven.aliyun.com/repository/central")
+    systemProperty("robolectric.dependency.repo.id", "aliyun-central")
+}
+
+run {
+    val directAssets = layout.buildDirectory.dir("generated/direct-assets")
+    val prepareDirectRimeAssets = tasks.register<Sync>("prepareDirectRimeAssets") {
+        dependsOn(rootProject.tasks.named("prepareRimeSdk"))
+        into(directAssets)
+        from("src/main/assets") { exclude("usr/**", "descriptor.json") }
+        into("usr/share/rime-data") {
+            from(rootProject.file("native/rime-data"))
+            from(rootProject.file("native/rime-prelude")) { include("key_bindings.yaml", "punctuation.yaml", "symbols.yaml") }
+        }
+        into("usr/share/opencc") { from(rootProject.file("native/rime-sdk/opencc/data")) }
     }
-    installPrebuiltAssets = true
+    android.sourceSets.getByName("main").assets.setSrcDirs(listOf(directAssets))
+    tasks.named<DataDescriptorPlugin.DataDescriptorTask>("generateDataDescriptor") {
+        dependsOn(prepareDirectRimeAssets)
+        inputDir.set(directAssets)
+        outputFile.set(directAssets.map { it.file("descriptor.json") })
+    }
+}
+
+generateDataDescriptor {
+    // rime-data ships its own copy of opencc data; link it to the shared one
+    symlinks.put("usr/share/rime-data/opencc", "usr/share/opencc")
+    // 内置布局/主题/图标主题/符号面板数据只随 APK 分发、由 BundledPresets 在运行时解包到
+    // 外部存储，不参与 dataDir 资源同步（避免占用 data 目录且保持清单驱动）。
+    // 符号 catalog 由 SymbolCatalogs 直接从 assets 读取，不落盘到 data 目录。
+    excludes.addAll(
+        listOf(
+            "clearurls", // Host-only catalog/licenses; read from APK, never copied to Rime data.
+            "bundled",
+            "bundled/keyboard_layouts",
+            "bundled/keyboard_layouts/PopupPreset.json",
+            "bundled/themes",
+            "bundled/icon_themes",
+            "bundled/symbols",
+            "bundled/symbols/symbols.json",
+            "bundled/symbols/emoji.json",
+            "bundled/symbols/kaomoji.json"
+        )
+    )
 }
 
 ksp {
@@ -137,10 +202,6 @@ dependencies {
         files(sherpaAlignedDir.map { it.file("sherpa-onnx-1.13.8-stripped.aar") })
     )
     ksp(project(":codegen"))
-    implementation(project(":lib:fcitx5"))
-    implementation(project(":lib:fcitx5-lua"))
-    implementation(project(":lib:libime"))
-    implementation(project(":lib:fcitx5-chinese-addons"))
     implementation(project(":lib:common"))
     implementation(project(":webdav"))
     implementation(libs.kotlinx.coroutines)
@@ -154,21 +215,29 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel)
     implementation(libs.androidx.lifecycle.livedata)
     implementation(libs.androidx.lifecycle.runtime)
-    implementation(libs.androidx.lifecycle.common)
     implementation(libs.androidx.lifecycle.service)
     implementation(libs.androidx.navigation.fragment)
     implementation(libs.androidx.navigation.ui)
     implementation(libs.androidx.paging)
     implementation(libs.androidx.paging.compose)
     implementation(libs.androidx.preference)
+    implementation("androidx.documentfile:documentfile:1.0.1")
     implementation(libs.androidx.recyclerview)
+    // 2.12 requires API 24; keep this app's API 23 support.
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.paging)
     implementation(libs.androidx.startup)
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+    implementation(libs.androidx.tracing.ktx)
+    // 1.6.0+ snapshots child transitions before resuming them, avoiding mutation crashes.
+    implementation(libs.androidx.transition)
     implementation(libs.androidx.viewpager2)
     implementation(libs.material)
+    // Fragment 1.7+ is required for seekable predictive-back fragment animators.
+    implementation(libs.androidx.fragment)
     implementation(libs.arrow.core)
     implementation(libs.arrow.functions)
     implementation(libs.imagecropper)
@@ -204,7 +273,21 @@ dependencies {
     implementation(libs.onnxruntime.android)
     // custom: 手写识别 —— Google ML Kit 数字墨水（推理在端上；语言模型由用户手动下载）
     implementation(libs.mlkit.digital.ink)
+    implementation(libs.zxing.core)
+    implementation(libs.zxing.embedded)
+    implementation(libs.xz)
+    implementation("org.yaml:snakeyaml:2.7")
+    implementation(libs.androidsvg)
+    implementation(libs.quickjs.kt)
     testImplementation(libs.junit)
+    testImplementation("org.robolectric:robolectric:4.17")
+    // 跟随主 okhttp 版本，避免 mockwebserver 把 okhttp 拉回 4.x
+    testImplementation("com.squareup.okhttp3:mockwebserver:${libs.versions.okhttp.get()}")
+    testImplementation("com.squareup.okhttp3:okhttp-tls:${libs.versions.okhttp.get()}")
+    // Robolectric 的 JVM 沙箱只加载 jar，okhttp 在 Android 变体里是 AAR（classes.jar 不被扫描），
+    // 因此测试classpath 需要显式补 okhttp-jvm 才能拿到 okhttp3.internal.* 等实现类。
+    testImplementation("com.squareup.okhttp3:okhttp-jvm:${libs.versions.okhttp.get()}")
+    testImplementation("androidx.work:work-testing:2.11.2")
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)
     androidTestImplementation(libs.androidx.lifecycle.testing)
@@ -213,10 +296,20 @@ dependencies {
 
 configurations {
     all {
-        // remove Baseline Profile Installer or whatever it is...
-        exclude(group = "androidx.profileinstaller", module = "profileinstaller")
         // remove unwanted splitties libraries...
         exclude(group = "com.louiscad.splitties", module = "splitties-appctx")
         exclude(group = "com.louiscad.splitties", module = "splitties-systemservices")
+    }
+}
+
+// Android 变体的 QuickJS 只带 .so，桌面 JVM 单测加载不了它（见 JsVoiceBridgeContractTest）。
+// 只在**单元测试**的配置上换成带桌面原生库的 jvm 变体：APK 仍然打包 android 变体，
+// 生产依赖与打出来的包都不受影响。
+configurations.matching {
+    it.name.endsWith("UnitTestRuntimeClasspath") || it.name.endsWith("UnitTestCompileClasspath")
+}.configureEach {
+    resolutionStrategy.dependencySubstitution {
+        substitute(module("io.github.dokar3:quickjs-kt"))
+            .using(module("io.github.dokar3:quickjs-kt-jvm:" + libs.versions.quickjs.kt.get()))
     }
 }

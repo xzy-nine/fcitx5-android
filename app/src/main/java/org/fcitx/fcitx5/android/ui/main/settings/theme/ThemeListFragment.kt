@@ -4,6 +4,8 @@
  */
 package org.fcitx.fcitx5.android.ui.main.settings.theme
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -21,21 +23,25 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeFilesManager
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
+import org.fcitx.fcitx5.android.data.theme.ThemeMonet
 import org.fcitx.fcitx5.android.ui.common.withLoadingDialog
 import org.fcitx.fcitx5.android.utils.applyNavBarInsetsBottomPadding
 import org.fcitx.fcitx5.android.utils.importErrorDialog
+import org.fcitx.fcitx5.android.utils.parcelable
 import org.fcitx.fcitx5.android.utils.queryFileName
 import org.fcitx.fcitx5.android.utils.toast
-import splitties.resources.styledDrawable
+import java.io.ByteArrayInputStream
 import java.util.UUID
 
 class ThemeListFragment : Fragment() {
 
     private lateinit var imageLauncher: ActivityResultLauncher<Theme.Custom?>
+    private lateinit var monetEditorLauncher: ActivityResultLauncher<Theme.Monet>
 
     private lateinit var importLauncher: ActivityResultLauncher<String>
 
     private lateinit var exportLauncher: ActivityResultLauncher<String>
+    private lateinit var shareImportManager: ThemeShareImportManager
 
     private lateinit var themeListAdapter: ThemeListAdapter
 
@@ -50,30 +56,43 @@ class ThemeListFragment : Fragment() {
         }
     }
 
+    @Keep
+    private val onThemeListChangeListener = ThemeManager.OnThemeListChangeListener { themes ->
+        lifecycleScope.launch {
+            themeListAdapter.setThemes(themes)
+            updateSelectedThemes()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        shareImportManager = ThemeShareImportManager(
+            fragment = this,
+            previewViewProvider = {
+                parentFragment?.view?.findViewWithTag<View>("theme_preview_capture")
+            }
+        ) { newCreated, theme, migrated ->
+            onThemeImported(newCreated, theme, migrated)
+        }
+        parentFragmentManager.setFragmentResultListener(REQUEST_THEME_IMPORTED, this) { _, bundle ->
+            val theme = bundle.parcelable<Theme.Custom>(BUNDLE_THEME) ?: return@setFragmentResultListener
+            val newCreated = bundle.getBoolean(BUNDLE_NEW_CREATED, false)
+            val migrated = bundle.getBoolean(BUNDLE_MIGRATED, false)
+            onThemeImported(newCreated, theme, migrated)
+        }
 
         imageLauncher = registerForActivityResult(CustomThemeActivity.Contract()) { result ->
             if (result == null) return@registerForActivityResult
-            when (result) {
-                is CustomThemeActivity.BackgroundResult.Created -> {
-                    val theme = result.theme
-                    themeListAdapter.prependTheme(theme)
-                    ThemeManager.saveTheme(theme)
-                    if (!followSystemDayNightTheme) {
-                        ThemeManager.setNormalModeTheme(theme)
-                    }
-                }
-                is CustomThemeActivity.BackgroundResult.Deleted -> {
-                    val name = result.name
-                    themeListAdapter.removeTheme(name)
-                    ThemeManager.deleteTheme(name)
-                }
-                is CustomThemeActivity.BackgroundResult.Updated -> {
-                    val theme = result.theme
-                    themeListAdapter.replaceTheme(theme)
-                    ThemeManager.saveTheme(theme)
-                }
+            // The editor has already persisted and published its transaction.
+            themeListAdapter.setThemes(ThemeManager.getAllThemes())
+            updateSelectedThemes()
+        }
+        monetEditorLauncher = registerForActivityResult(MonetThemeEditorActivity.Contract()) { result ->
+            if (result == null) return@registerForActivityResult
+            // refreshThemes() scans the theme directory on IO now (see D9).
+            lifecycleScope.launch {
+                ThemeManager.refreshThemes()
+                updateSelectedThemes()
             }
         }
         importLauncher =
@@ -89,16 +108,18 @@ class ThemeListFragment : Fragment() {
                         return@withLoadingDialog
                     }
                     try {
-                        val (newCreated, theme, migrated) = withContext(Dispatchers.IO) {
-                            val inputStream = cr.openInputStream(uri)!!
-                            ThemeFilesManager.importTheme(inputStream).getOrThrow()
+                        val (_, _, migrated) = withContext(Dispatchers.IO) {
+                            val zipBytes = cr.openInputStream(uri)!!.use(ThemeFilesManager::readArchive)
+                            val decodedName = ThemeFilesManager.decodeTheme(ByteArrayInputStream(zipBytes))
+                                .getOrNull()
+                                ?.name
+                            val importedName = decodedName?.let { ThemeManager.nonActiveImportName(it) }
+                            ThemeFilesManager.importTheme(
+                                ByteArrayInputStream(zipBytes),
+                                importedName?.takeIf { it != decodedName }
+                            ).getOrThrow()
                         }
                         ThemeManager.refreshThemes()
-                        if (newCreated) {
-                            themeListAdapter.prependTheme(theme)
-                        } else {
-                            themeListAdapter.replaceTheme(theme)
-                        }
                         if (migrated) {
                             ctx.toast(R.string.theme_migrated)
                         }
@@ -135,16 +156,37 @@ class ThemeListFragment : Fragment() {
             override fun onAddNewTheme() = addTheme()
             override fun onSelectTheme(theme: Theme) = selectTheme(theme)
             override fun onEditTheme(theme: Theme.Custom) = editTheme(theme)
+            override fun onEditMonetTheme(theme: Theme.Monet) = editMonetTheme(theme)
+            override fun onEditRandomTheme(theme: Theme.Custom) = editRandomTheme(theme)
+            override fun onRandomizeTheme() = randomizeTheme()
             override fun onExportTheme(theme: Theme.Custom) = exportTheme(theme)
         }
-        ThemeManager.refreshThemes()
         themeListAdapter.setThemes(ThemeManager.getAllThemes())
         updateSelectedThemes()
-        ThemeManager.addOnChangedListener(onThemeChangeListener)
+        lifecycleScope.launch {
+            ThemeManager.ensureRandomSlotSeeded()
+            themeListAdapter.setThemes(ThemeManager.getAllThemes())
+            val themes = withContext(Dispatchers.IO) {
+                ThemeFilesManager.listThemes()
+            }
+            ThemeManager.refreshThemes(themes)
+        }
         return ResponsiveThemeListView(requireContext()).apply {
             adapter = themeListAdapter
             applyNavBarInsetsBottomPadding()
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        ThemeManager.addOnChangedListener(onThemeChangeListener)
+        ThemeManager.addOnThemeListChangedListener(onThemeListChangeListener)
+    }
+
+    override fun onStop() {
+        ThemeManager.removeOnChangedListener(onThemeChangeListener)
+        ThemeManager.removeOnThemeListChangedListener(onThemeListChangeListener)
+        super.onStop()
     }
 
     private fun updateSelectedThemes(activeTheme: Theme? = null) {
@@ -163,9 +205,12 @@ class ThemeListFragment : Fragment() {
         val actions = arrayOf(
             getString(R.string.choose_image),
             getString(R.string.import_from_file),
-            getString(R.string.duplicate_builtin_theme)
+            getString(R.string.duplicate_builtin_theme),
+            getString(R.string.theme_share_active),
+            getString(R.string.theme_import_qr_scan),
+            getString(R.string.theme_import_qr_image)
         )
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.new_theme)
             .setNegativeButton(android.R.string.cancel, null)
             .setItems(actions) { _, i ->
@@ -177,23 +222,31 @@ class ThemeListFragment : Fragment() {
                             // force AlertDialog's customPanel to grow
                             minimumHeight = Int.MAX_VALUE
                         }
-                        val dialog = AlertDialog.Builder(ctx)
+                        val dialog = MaterialAlertDialogBuilder(ctx)
                             .setTitle(getString(R.string.duplicate_builtin_theme).removeSuffix("…"))
                             .setNegativeButton(android.R.string.cancel, null)
                             .setView(view)
                             .create()
+                        val duplicableThemes =
+                            ThemeManager.BuiltinThemes + listOf(ThemeMonet.getLight(), ThemeMonet.getDark())
                         view.adapter = object :
-                            SimpleThemeListAdapter<Theme.Builtin>(ThemeManager.BuiltinThemes) {
-                            override fun onClick(theme: Theme.Builtin) {
+                            SimpleThemeListAdapter<Theme>(duplicableThemes) {
+                            override fun onClick(theme: Theme) {
                                 val newTheme =
-                                    theme.deriveCustomNoBackground(UUID.randomUUID().toString())
-                                themeListAdapter.prependTheme(newTheme)
+                                    when (theme) {
+                                        is Theme.Builtin -> theme.deriveCustomNoBackground(UUID.randomUUID().toString())
+                                        is Theme.Monet -> theme.toCustom().copy(name = UUID.randomUUID().toString())
+                                        else -> return
+                                    }
                                 ThemeManager.saveTheme(newTheme)
                                 dialog.dismiss()
                             }
                         }
                         dialog.show()
                     }
+                    3 -> shareImportManager.shareActiveThemeFromMenu()
+                    4 -> shareImportManager.importThemeByQrScan()
+                    5 -> shareImportManager.importThemeByQrImage()
                 }
             }
             .show()
@@ -202,17 +255,15 @@ class ThemeListFragment : Fragment() {
     private fun selectTheme(theme: Theme) {
         if (followSystemDayNightTheme) {
             val ctx = requireContext()
-            AlertDialog.Builder(ctx)
-                .setIcon(ctx.styledDrawable(android.R.attr.alertDialogIcon))
+            MaterialAlertDialogBuilder(ctx)
+                .setIconAttribute(android.R.attr.alertDialogIcon)
                 .setTitle(R.string.configure)
                 .setMessage(R.string.theme_message_follow_system_day_night_mode_enabled)
                 .setPositiveButton(android.R.string.ok, null)
                 .setNegativeButton(R.string.disable_it) { _, _ ->
                     followSystemDayNightTheme = false
-                    lifecycleScope.launch {
-                        ThemeManager.setNormalModeTheme(theme)
-                        updateSelectedThemes()
-                    }
+                    ThemeManager.setNormalModeTheme(theme)
+                    updateSelectedThemes()
                 }
                 .show()
             return
@@ -224,13 +275,57 @@ class ThemeListFragment : Fragment() {
         imageLauncher.launch(theme)
     }
 
+    private fun editRandomTheme(theme: Theme.Custom) {
+        imageLauncher.launch(theme)
+    }
+
+    private fun randomizeTheme() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val result = ThemeManager.randomizeTheme()
+            requireContext().toast(
+                getString(
+                    R.string.random_theme_toast,
+                    result.total,
+                    result.contrast,
+                    result.hue,
+                    result.sat,
+                    result.light
+                )
+            )
+            updateSelectedThemes()
+        }
+    }
+
+    private fun editMonetTheme(theme: Theme.Monet) {
+        // 设备不支持自定义映射时原先是静默 return：用户点了编辑按钮、什么也没发生，
+        // 既不知道被拒绝也不知道为什么。改成明确提示。
+        if (!ThemeMonet.supportsCustomMappingEditor(requireContext())) {
+            requireContext().toast(R.string.monet_editor_unavailable)
+            return
+        }
+        monetEditorLauncher.launch(theme)
+    }
+
     private fun exportTheme(theme: Theme.Custom) {
         beingExported = theme
         exportLauncher.launch(theme.name + ".zip")
     }
 
-    override fun onDestroy() {
-        ThemeManager.removeOnChangedListener(onThemeChangeListener)
-        super.onDestroy()
+    private fun onThemeImported(newCreated: Boolean, theme: Theme.Custom, migrated: Boolean) {
+        // refreshThemes() scans the theme directory on IO now (see D9).
+        lifecycleScope.launch {
+            ThemeManager.refreshThemes()
+            if (migrated) {
+                requireContext().toast(R.string.theme_migrated)
+            }
+        }
     }
+
+    companion object {
+        const val REQUEST_THEME_IMPORTED = "theme_list_request_imported"
+        const val BUNDLE_THEME = "theme_list_bundle_theme"
+        const val BUNDLE_NEW_CREATED = "theme_list_bundle_new_created"
+        const val BUNDLE_MIGRATED = "theme_list_bundle_migrated"
+    }
+
 }

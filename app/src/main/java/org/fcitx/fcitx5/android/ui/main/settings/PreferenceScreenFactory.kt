@@ -4,8 +4,10 @@
  */
 package org.fcitx.fcitx5.android.ui.main.settings
 
-import android.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentManager
@@ -19,14 +21,17 @@ import androidx.preference.PreferenceDataStore
 import androidx.preference.PreferenceManager
 import androidx.preference.PreferenceScreen
 import arrow.core.getOrElse
+import kotlinx.coroutines.launch
+import org.fcitx.fcitx5.android.FcitxApplication
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.Key
 import org.fcitx.fcitx5.android.core.RawConfig
-import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.daemon.FcitxDaemon
+import org.fcitx.fcitx5.android.data.RimeDataDirectoryState
 import org.fcitx.fcitx5.android.ui.main.modified.MySwitchPreference
 import org.fcitx.fcitx5.android.utils.LongClickPreference
 import org.fcitx.fcitx5.android.utils.buildDocumentsProviderIntent
-import org.fcitx.fcitx5.android.utils.buildPrimaryStorageIntent
+import org.fcitx.fcitx5.android.utils.buildStorageDirectoryIntent
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigBool
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor.ConfigCustom
@@ -44,8 +49,6 @@ import org.fcitx.fcitx5.android.utils.toast
 import timber.log.Timber
 
 object PreferenceScreenFactory {
-
-    private val hideKeyConfig by AppPrefs.getInstance().advanced.hideKeyConfig
 
     fun create(
         preferenceManager: PreferenceManager,
@@ -77,19 +80,21 @@ object PreferenceScreenFactory {
         save: () -> Unit
     ) {
 
-        // Hide key related configs
-        if (hideKeyConfig && ConfigType.pretty(descriptor.ty).contains("Key")) {
-            return
-        }
-
         if (descriptor is ConfigCustom) {
             custom(context, fragmentManager, cfg, screen, descriptor, save)
             return
         }
 
-        fun stubPreference() = Preference(context).apply {
-            summary =
-                "${context.getString(R.string.unimplemented_type)} '${ConfigType.pretty(descriptor.ty)}'"
+        // 上游配置树里出现、而本应用尚未实现的类型。
+        //
+        // 原先会渲染成一行「⛔ 未实现类型 'xxx'」：那是写给开发者的诊断信息，
+        // 普通用户既看不懂也无法操作，只会在设置页里制造噪音。现在改成
+        // 不渲染 + 记一条日志（开发者可在「实时日志」中看到同样的信息）。
+        fun unsupported(): Preference? {
+            Timber.w(
+                "Unsupported config type: ${ConfigType.pretty(descriptor.ty)} (name=${descriptor.name})"
+            )
+            return null
         }
 
         fun <T : Any> navigate(route: T): Boolean {
@@ -102,39 +107,9 @@ object PreferenceScreenFactory {
             }
         }
 
-        fun pinyinDictionary() = Preference(context).apply {
-            setOnPreferenceClickListener {
-                navigate(SettingsRoute.PinyinDict(""))
-            }
-        }
-
-        fun punctuationEditor(title: String, lang: String?) = Preference(context).apply {
-            setOnPreferenceClickListener {
-                navigate(SettingsRoute.Punctuation(title, lang))
-            }
-        }
-
-        fun quickPhraseEditor() = Preference(context).apply {
-            setOnPreferenceClickListener {
-                navigate(SettingsRoute.QuickPhraseList)
-            }
-        }
-
-        fun tableInputMethod() = Preference(context).apply {
-            setOnPreferenceClickListener {
-                navigate(SettingsRoute.TableInputMethods)
-            }
-        }
-
-        fun pinyinCustomPhrase() = Preference(context).apply {
-            setOnPreferenceClickListener {
-                navigate(SettingsRoute.PinyinCustomPhrase)
-            }
-        }
-
         fun rimeUserDataDir(title: String): Preference = LongClickPreference(context).apply {
             setOnPreferenceClickListener {
-                AlertDialog.Builder(context)
+                MaterialAlertDialogBuilder(context)
                     .setTitle(title)
                     .setMessage(R.string.open_rime_user_data_dir)
                     .setNegativeButton(android.R.string.cancel, null)
@@ -152,11 +127,7 @@ object PreferenceScreenFactory {
             // make it a hidden option, because of compatibility issues
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 setOnPreferenceLongClickListener {
-                    try {
-                        context.startActivity(buildPrimaryStorageIntent("data/rime"))
-                    } catch (e: Exception) {
-                        context.toast(e)
-                    }
+                    openCurrentRimeDataDir(context)
                 }
             }
         }
@@ -185,15 +156,8 @@ object PreferenceScreenFactory {
             }
         }
 
-        fun addonConfigPreference(addon: String) = Preference(context).apply {
-            setOnPreferenceClickListener {
-                navigate(
-                    SettingsRoute.AddonConfig(descriptor.description ?: descriptor.name, addon)
-                )
-            }
-        }
-
-        when (descriptor) {
+        // 用可空局部变量承接：未实现的类型返回 null，此时整项都不加入页面。
+        val built: Preference? = when (descriptor) {
             is ConfigBool -> MySwitchPreference(context).apply {
                 summary = descriptor.tooltip
                 setDefaultValue(descriptor.defaultValue)
@@ -206,21 +170,43 @@ object PreferenceScreenFactory {
             }
             is ConfigEnumList -> listPreference(ConfigType.TyEnum)
             is ConfigExternal -> when (descriptor.knownType) {
-                ConfigExternal.ETy.PinyinDict -> pinyinDictionary()
-                ConfigExternal.ETy.Punctuation -> punctuationEditor(
-                    descriptor.description ?: descriptor.name,
-                    // fcitx://config/addon/punctuation/punctuationmap/zh_CN
-                    descriptor.uri?.substringAfterLast('/')
-                )
-                ConfigExternal.ETy.QuickPhrase -> quickPhraseEditor()
-                ConfigExternal.ETy.Chttrans -> addonConfigPreference("chttrans")
-                ConfigExternal.ETy.TableGlobal -> addonConfigPreference("table")
-                ConfigExternal.ETy.AndroidTable -> tableInputMethod()
-                ConfigExternal.ETy.PinyinCustomPhrase -> pinyinCustomPhrase()
+                ConfigExternal.ETy.MultiSelect -> Preference(context).apply {
+                    setOnPreferenceClickListener {
+                        val uri = descriptor.uri ?: return@setOnPreferenceClickListener false
+                        val parsed = parseMultiSelectRoute(uri, descriptor.description ?: descriptor.name)
+                            ?: return@setOnPreferenceClickListener false
+                        navigate(parsed)
+                    }
+                }
+                ConfigExternal.ETy.AddonDirProfileManager -> Preference(context).apply {
+                    setOnPreferenceClickListener {
+                        val uri = descriptor.uri ?: return@setOnPreferenceClickListener false
+                        val parsed = parseAddonDirProfileRoute(
+                            uri,
+                            descriptor.description ?: descriptor.name
+                        ) ?: return@setOnPreferenceClickListener false
+                        navigate(parsed)
+                    }
+                }
+                ConfigExternal.ETy.AddonAction -> Preference(context).apply {
+                    setOnPreferenceClickListener {
+                        val uri = descriptor.uri ?: return@setOnPreferenceClickListener false
+                        val parsed = parseAddonActionRoute(uri)
+                            ?: return@setOnPreferenceClickListener false
+                        runAddonAction(context, parsed.first, parsed.second)
+                    }
+                }
+                ConfigExternal.ETy.RimeImport -> Preference(context).apply {
+                    setOnPreferenceClickListener {
+                        context.startActivity(android.content.Intent(context,
+                            org.fcitx.fcitx5.android.ui.main.settings.im.RimeImportActivity::class.java))
+                        true
+                    }
+                }
                 ConfigExternal.ETy.RimeUserDataDir -> rimeUserDataDir(
                     descriptor.description ?: descriptor.name
                 )
-                else -> stubPreference()
+                else -> unsupported()
             }
             is ConfigInt -> {
                 val min = descriptor.intMin
@@ -248,13 +234,15 @@ object PreferenceScreenFactory {
             is ConfigList -> if (descriptor.ty.subtype in ListFragment.supportedSubtypes)
                 listPreference(descriptor.ty.subtype)
             else
-                stubPreference()
+                unsupported()
             is ConfigString -> EditTextPreference(context).apply {
                 summaryProvider = EditTextPreference.SimpleSummaryProvider.getInstance()
                 setDefaultValue(descriptor.defaultValue)
             }
             is ConfigCustom -> throw IllegalAccessException("Impossible!")
-        }.apply {
+        }
+        // null 表示该类型本应用不支持：整项不渲染，也不再套用通用样式。
+        built?.apply {
             key = descriptor.name
             title = descriptor.description ?: descriptor.name
             isSingleLineTitle = false
@@ -295,6 +283,114 @@ object PreferenceScreenFactory {
         descriptor.customTypeDef?.values?.forEach {
             general(context, fragmentManager, cfg?.findByName(it.name), screen, it, subStore, save)
         }
+    }
+
+    private fun parseMultiSelectRoute(
+        uriText: String,
+        title: String
+    ): SettingsRoute.MultiSelect? {
+        val uri = Uri.parse(uriText)
+        val segments = uri.pathSegments
+        if (segments.size < 3 || segments.first() != "addon") {
+            Timber.w("Invalid multi-select URI: $uriText")
+            return null
+        }
+        val addon = segments[1]
+        val path = segments.drop(2).joinToString("/")
+        val option = uri.getQueryParameter("option")
+        if (option.isNullOrBlank()) {
+            Timber.w("Missing option in multi-select URI: $uriText")
+            return null
+        }
+        val min = uri.getQueryParameter("min")?.toIntOrNull() ?: 0
+        return SettingsRoute.MultiSelect(
+            title = title,
+            addon = addon,
+            path = path,
+            option = option,
+            min = min
+        )
+    }
+
+    private fun parseAddonDirProfileRoute(
+        uriText: String,
+        title: String
+    ): SettingsRoute.AddonDirProfileManager? {
+        val uri = Uri.parse(uriText)
+        val segments = uri.pathSegments
+        if (segments.size < 3 || segments.first() != "addon") {
+            Timber.w("Invalid addon dir profile URI: $uriText")
+            return null
+        }
+        val addon = segments[1]
+        val path = segments.drop(2).joinToString("/")
+        if (addon.isBlank() || path.isBlank()) {
+            Timber.w("Invalid addon/path in URI: $uriText")
+            return null
+        }
+        return SettingsRoute.AddonDirProfileManager(title, addon, path)
+    }
+
+    private fun parseAddonActionRoute(uriText: String): Pair<String, String>? {
+        val uri = Uri.parse(uriText)
+        val segments = uri.pathSegments
+        if (segments.size < 3 || segments.first() != "addon") {
+            Timber.w("Invalid addon action URI: $uriText")
+            return null
+        }
+        val addon = segments[1]
+        val path = segments.drop(2).joinToString("/")
+        if (addon.isBlank() || path.isBlank()) {
+            Timber.w("Invalid addon action target in URI: $uriText")
+            return null
+        }
+        return addon to path
+    }
+
+    private fun runAddonAction(context: Context, addon: String, path: String): Boolean {
+        FcitxApplication.getInstance().coroutineScope.launch {
+            val connectionName = "settings-addon-action-${System.nanoTime()}"
+            val conn = FcitxDaemon.connect(connectionName)
+            try {
+                conn.runOnReady {
+                    setAddonSubConfig(addon, path, RawConfig())
+                }
+                context.toast(R.string.done)
+            } catch (e: Exception) {
+                Timber.w("Addon action failed: addon=$addon path=$path error=$e")
+                context.toast(e)
+            } finally {
+                FcitxDaemon.disconnect(connectionName)
+            }
+        }
+        return true
+    }
+
+    private fun openCurrentRimeDataDir(context: Context): Boolean {
+        FcitxApplication.getInstance().coroutineScope.launch {
+            val connectionName = "settings-rime-user-dir-${System.nanoTime()}"
+            val conn = FcitxDaemon.connect(connectionName)
+            val currentDir = try {
+                conn.runOnReady {
+                    val raw = getAddonSubConfig("rime", "profile-manager")
+                    val state = RimeDataDirectoryState.fromConfig(
+                        raw, context.getExternalFilesDir(null)!!.resolve("data")
+                    )
+                    state.paths.getValue(state.current)
+                }
+            } catch (e: Exception) {
+                context.toast(R.string.addon_dir_profile_open_failed)
+                return@launch
+            } finally {
+                FcitxDaemon.disconnect(connectionName)
+            }
+            try {
+                context.startActivity(buildStorageDirectoryIntent(currentDir))
+            } catch (e: Exception) {
+                context.toast(R.string.addon_dir_profile_open_failed)
+            }
+        }
+        return true
     }
 
 }

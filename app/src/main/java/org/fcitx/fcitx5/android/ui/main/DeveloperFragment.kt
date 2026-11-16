@@ -4,11 +4,14 @@
  */
 package org.fcitx.fcitx5.android.ui.main
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+
 import android.os.Bundle
 import android.os.Debug
+import android.view.View
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
-import androidx.appcompat.app.AlertDialog
+import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -21,6 +24,7 @@ import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.ui.common.PaddingPreferenceFragment
 import org.fcitx.fcitx5.android.ui.main.modified.MySwitchPreference
+import org.fcitx.fcitx5.android.ui.main.settings.search.scrollToPendingPreference
 import org.fcitx.fcitx5.android.utils.addPreference
 import org.fcitx.fcitx5.android.utils.iso8601UTCDateTime
 import org.fcitx.fcitx5.android.utils.setupForest
@@ -30,6 +34,8 @@ import timber.log.Timber
 import java.io.File
 
 class DeveloperFragment : PaddingPreferenceFragment() {
+
+    private val viewModel: MainViewModel by activityViewModels()
 
     private lateinit var hprofFile: File
     private lateinit var launcher: ActivityResultLauncher<String>
@@ -89,10 +95,10 @@ class DeveloperFragment : PaddingPreferenceFragment() {
                 isIconSpaceReserved = false
                 isSingleLineTitle = false
             })
-            addPreference(R.string.restart_fcitx_instance) {
-                AlertDialog.Builder(context)
-                    .setTitle(R.string.restart_fcitx_instance)
-                    .setMessage(R.string.restart_fcitx_instance_confirm)
+            addPreference(R.string.direct_rime_restart_engine) {
+                MaterialAlertDialogBuilder(context)
+                    .setTitle(R.string.direct_rime_restart_engine)
+                    .setMessage(R.string.direct_rime_restart_engine_confirm)
                     .setNegativeButton(android.R.string.cancel, null)
                     .setPositiveButton(android.R.string.ok) { _, _ ->
                         lifecycleScope.launch {
@@ -103,7 +109,7 @@ class DeveloperFragment : PaddingPreferenceFragment() {
                     .show()
             }
             addPreference(R.string.delete_and_sync_data) {
-                AlertDialog.Builder(context)
+                MaterialAlertDialogBuilder(context)
                     .setTitle(R.string.delete_and_sync_data)
                     .setMessage(R.string.delete_and_sync_data_message)
                     .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -118,7 +124,7 @@ class DeveloperFragment : PaddingPreferenceFragment() {
                     .show()
             }
             addPreference(R.string.clear_clb_db) {
-                AlertDialog.Builder(context)
+                MaterialAlertDialogBuilder(context)
                     .setTitle(R.string.clear_clb_db)
                     .setMessage(R.string.clear_clp_db_confirm)
                     .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -142,4 +148,10 @@ class DeveloperFragment : PaddingPreferenceFragment() {
         }
     }
 
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        // 本页是 PaddingPreferenceFragment（非 ManagedPreferenceFragment），
+        // 滚动定位需要自己接一次。
+        scrollToPendingPreference(viewModel)
+    }
 }

@@ -13,11 +13,40 @@ import android.util.AttributeSet
 import android.view.Gravity
 import android.widget.TextView
 import androidx.core.graphics.withSave
+import org.fcitx.fcitx5.android.input.font.FontProviders
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import android.graphics.Typeface
+import android.text.Spanned
+import android.text.TextPaint
+import android.text.style.CharacterStyle
+
+private inline fun forEachTextRun(
+    text: CharSequence,
+    paint: TextPaint,
+    block: (plainText: String, start: Int, end: Int, runPaint: TextPaint) -> Unit,
+) {
+    val plainText = text.toString()
+    val spanned = text as? Spanned
+    if (spanned == null) {
+        block(plainText, 0, plainText.length, paint)
+        return
+    }
+
+    var start = 0
+    while (start < plainText.length) {
+        val end = spanned.nextSpanTransition(start, plainText.length, CharacterStyle::class.java)
+        val runPaint = TextPaint(paint)
+        spanned.getSpans(start, end, CharacterStyle::class.java).forEach {
+            it.updateDrawState(runPaint)
+        }
+        block(plainText, start, end, runPaint)
+        start = end
+    }
+}
 
 @SuppressLint("AppCompatCustomView")
 class AutoScaleTextView @JvmOverloads constructor(
@@ -44,6 +73,11 @@ class AutoScaleTextView @JvmOverloads constructor(
 
     var scaleMode = Mode.None
 
+    // Keep a cached copy of the source text so that drawTextWithSpans can read
+    // CharacterStyle spans without re-allocating a String on every draw.
+    private var text: CharSequence = ""
+    private var plainText: String = ""
+
     private var needsMeasureText = true
     private val fontMetrics = Paint.FontMetrics()
     private val textBounds = Rect()
@@ -54,14 +88,90 @@ class AutoScaleTextView @JvmOverloads constructor(
     private var textScaleX = 1.0f
     private var textScaleY = 1.0f
 
-    override fun setText(charSequence: CharSequence?, bufferType: BufferType) {
-        if (charSequence == null || !text.contentEquals(charSequence)) {
+    companion object {
+        val fontTypefaceMap: MutableMap<String, Typeface?>
+            get() = FontProviders.fontTypefaceMap
+
+        /**
+         * Measure the horizontal width using the same CharacterStyle runs as drawing.
+         * Single-code-point text keeps the existing ink-bounds behavior; longer text uses
+         * the sum of each run's advance so metric-affecting spans are accounted for.
+         */
+        internal fun measureTextWidth(text: CharSequence, paint: TextPaint): Int {
+            val plainText = text.toString()
+            if (Character.codePointCount(plainText, 0, plainText.length) == 1) {
+                val bounds = Rect()
+                forEachTextRun(text, paint) { runText, start, end, runPaint ->
+                    runPaint.getTextBounds(runText, start, end, bounds)
+                }
+                return bounds.width()
+            }
+
+            var width = 0.0f
+            forEachTextRun(text, paint) { runText, start, end, runPaint ->
+                width += runPaint.measureText(runText, start, end)
+            }
+            return ceil(width).toInt()
+        }
+    }
+
+    fun setFontTypeFace(key: String) {
+        fontTypeFaceKey = key
+        setTypeface(FontProviders.resolveTypeface(key, typeface))
+    }
+
+    /**
+     * Internal property for BaseKeyboard to set font key without immediately applying font.
+     * Font will be applied in batch by BaseKeyboard.reloadLayout().
+     */
+    internal var fontKey: String
+        get() = fontTypeFaceKey
+        set(value) { fontTypeFaceKey = value }
+
+    private var fontTypeFaceKey: String = "font"
+
+    init {
+        // Defer font setup to parent view (BaseKeyboard.reloadLayout()) for better performance
+        // Font will be set in batch when keyboard layout is loaded/reloaded
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+    }
+
+    override fun setTextSize(unit: Int, size: Float) {
+        super.setTextSize(unit, size)
+        needsMeasureText = true
+        needsCalculateTransform = true
+    }
+
+    override fun setTypeface(tf: Typeface?) {
+        val previous = typeface
+        super.setTypeface(tf)
+        if (typeface !== previous) {
+            // TextView's Layout does not own this view's measured bounds or transform.
             needsMeasureText = true
             needsCalculateTransform = true
-            super.setText(charSequence, bufferType)
             requestLayout()
             invalidate()
         }
+    }
+
+    override fun setText(charSequence: CharSequence?, bufferType: BufferType) {
+        // setText can be called from the super constructor; guard against the
+        // shadowed `text` field not yet being initialized by comparing safely.
+        if (charSequence == null || charSequence != text) {
+            needsMeasureText = true
+            needsCalculateTransform = true
+            text = charSequence ?: ""
+            plainText = text.toString()
+            requestLayout()
+            invalidate()
+        }
+    }
+
+    override fun getText(): CharSequence {
+        return text
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -89,16 +199,17 @@ class AutoScaleTextView @JvmOverloads constructor(
         if (needsMeasureText) {
             val paint = paint
             paint.getFontMetrics(fontMetrics)
-            val codePointCount = Character.codePointCount(text, 0, text.length)
+            val codePointCount = Character.codePointCount(plainText, 0, plainText.length)
             if (codePointCount == 1) {
-                // use actual text bounds when there is only one "character",
-                // e.g. full-width punctuation
-                paint.getTextBounds(text.toString(), 0, text.length, textBounds)
+                // Keep actual ink bounds for one code point, applying any spans first.
+                forEachTextRun(text, paint) { runText, start, end, runPaint ->
+                    runPaint.getTextBounds(runText, start, end, textBounds)
+                }
             } else {
                 textBounds.set(
                     /* left = */ 0,
                     /* top = */ floor(fontMetrics.top).toInt(),
-                    /* right = */ ceil(paint.measureText(text.toString())).toInt(),
+                    /* right = */ measureTextWidth(text, paint),
                     /* bottom = */ ceil(fontMetrics.bottom).toInt()
                 )
             }
@@ -122,20 +233,34 @@ class AutoScaleTextView @JvmOverloads constructor(
         val textWidth: Float = textBounds.width().toFloat()
         val textTop: Float = fontMetrics.top
         val textHeight: Float = fontMetrics.bottom - fontMetrics.top
-        if (textWidth > contentWidth) {
+
+        val widthScaleLimit = if (textWidth > 0f && contentWidth > 0) {
+            contentWidth / textWidth
+        } else {
+            1.0f
+        }
+        val heightScaleLimit = if (textHeight > 0f && contentHeight > 0) {
+            contentHeight / textHeight
+        } else {
+            1.0f
+        }
+        val shouldScaleByWidth = textWidth > contentWidth
+        val shouldScaleByHeight = textHeight > contentHeight
+
+        if (shouldScaleByWidth || (scaleMode == Mode.Proportional && shouldScaleByHeight)) {
             when (scaleMode) {
                 Mode.None -> {
                     textScaleX = 1.0f
                     textScaleY = 1.0f
                 }
                 Mode.Horizontal -> {
-                    textScaleX = contentWidth / textWidth
+                    textScaleX = widthScaleLimit
                     textScaleY = 1.0f
                 }
                 Mode.Proportional -> {
-                    val scale = contentWidth / textWidth
-                    textScaleX = scale
-                    textScaleY = scale
+                    val textScale = min(1.0f, min(widthScaleLimit, heightScaleLimit))
+                    textScaleX = textScale
+                    textScaleY = textScale
                 }
             }
         } else {
@@ -194,7 +319,15 @@ class AutoScaleTextView @JvmOverloads constructor(
             translate(scrollX.toFloat(), scrollY.toFloat())
             translate(baselineX, baselineY)
             scale(textScaleX, textScaleY)
-            drawText(text.toString(), 0.0f, 0.0f, paint)
+            drawTextWithSpans(canvas, paint)
+        }
+    }
+
+    private fun drawTextWithSpans(canvas: Canvas, paint: TextPaint) {
+        var x = 0f
+        forEachTextRun(text, paint) { runText, start, end, runPaint ->
+            canvas.drawText(runText, start, end, x, 0f, runPaint)
+            x += runPaint.measureText(runText, start, end)
         }
     }
 

@@ -6,9 +6,6 @@ package org.fcitx.fcitx5.android.input.clipboard
 
 import android.util.Log
 import com.huaban.analysis.jieba.WordDictionary
-import org.fcitx.fcitx5.android.data.pinyin.CustomPhraseManager
-import org.fcitx.fcitx5.android.data.pinyin.PinyinDictManager
-import org.fcitx.fcitx5.android.data.pinyin.dict.PinyinDictionary
 import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.utils.appContext
 import java.io.File
@@ -69,84 +66,54 @@ object ClipboardDictFeeder {
         AutoDictSync.notifyDictChanged()
     }
 
+    /**
+     * 从 Rime 词库导出 jieba 自定义词典。
+     *
+     * 本构建只带 Rime 引擎，词库是文本格式（`.dict.yaml` 与用户 `.txt`），不存在 libime
+     * 二进制互转。找不到可读词库时保持 jieba 内置词典，分词功能不受影响。
+     */
     private fun doFeed() {
         val cacheDir = File(appContext.cacheDir, CACHE_SUBDIR).also { it.mkdirs() }
         val userDict = File(cacheDir, USER_DICT_NAME)
         val fpFile = File(cacheDir, FINGERPRINT_NAME)
 
-        val dictionaries = PinyinDictManager.listDictionaries()
-        val phrases = CustomPhraseManager.load()
-        val fingerprint = computeFingerprint(dictionaries, phrases)
+        val sources = rimeWordSources()
+        if (sources.isEmpty()) {
+            Log.i(TAG, "no rime word source, keep jieba builtin dict")
+            return
+        }
+        val fingerprint = sources.joinToString(";") { "${it.absolutePath}:${it.lastModified()}:${it.length()}" }
+            .hashCode().toString()
 
         if (userDict.exists() && fpFile.exists() && fpFile.readText() == fingerprint) {
-            // 已生成且词库未变：直接加载磁盘词典，跳过导出与生成
             loadUserDictFile(userDict)
             return
         }
 
         val words = LinkedHashSet<String>()
-        dictionaries.forEach { dict ->
-            val txt = textCacheFor(dict, cacheDir) ?: return@forEach
-            readWords(txt, words)
-        }
-        phrases?.forEach { collectCustomPhrase(it.value, words) }
+        sources.forEach { readWords(it, words) }
+        if (words.isEmpty()) return
 
         userDict.bufferedWriter(Charsets.UTF_8).use { w ->
-            words.forEach { w.write("$it 100 n\n") }
+            words.take(MAX_WORDS).forEach { w.write("$it 100 n\n") }
         }
         fpFile.writeText(fingerprint)
         loadUserDictFile(userDict)
     }
 
-    private fun computeFingerprint(
-        dictionaries: List<PinyinDictionary>,
-        phrases: Array<*>?
-    ): String {
-        val sb = StringBuilder()
-        dictionaries.forEach { d ->
-            val f = d.file
-            sb.append(f.absolutePath).append(':').append(f.lastModified()).append(':')
-                .append(f.length()).append(';')
-        }
-        phrases?.forEach { sb.append(it.toString()).append(',') }
-        return sb.toString().hashCode().toString()
+    /** Rime 侧可导出为分词词典的文本词库：用户自造词与自定义短语。 */
+    private fun rimeWordSources(): List<File> {
+        val root = appContext.getExternalFilesDir(null)?.resolve("data") ?: return emptyList()
+        val candidates = listOf(
+            root.resolve("rime/user.txt"),
+            root.resolve("data/customphrase"),
+        )
+        return candidates.filter { it.isFile && it.length() > 0 }
     }
 
-    /**
-     * 返回词典对应的文本词库文件：
-     * - .dict（libime 二进制）：pinyinDictConv 反编译，按源 mtime 缓存；
-     * - .scel（SCEL 二进制词库格式）：先 sougouDictConv 转 bin 再 pinyinDictConv 转文本；
-     * - .txt（文本词库）：直接返回源文件。
-     */
-    private fun textCacheFor(dict: PinyinDictionary, cacheDir: File): File? {
-        val src = dict.file
-        return when (dict.type) {
-            PinyinDictionary.Type.Text -> src
-            PinyinDictionary.Type.LibIME -> {
-                val cache = File(cacheDir, "${src.nameWithoutExtension}.txt")
-                if (!cache.exists() || cache.lastModified() < src.lastModified()) {
-                    PinyinDictManager.pinyinDictConv(
-                        src.absolutePath, cache.absolutePath, PinyinDictManager.MODE_BIN_TO_TXT
-                    )
-                }
-                cache.takeIf { it.exists() }
-            }
-            PinyinDictionary.Type.Sougou -> {
-                val bin = File(cacheDir, "${src.nameWithoutExtension}.bin")
-                val cache = File(cacheDir, "${src.nameWithoutExtension}.txt")
-                if (!cache.exists() || cache.lastModified() < src.lastModified()) {
-                    PinyinDictManager.sougouDictConv(src.absolutePath, bin.absolutePath)
-                    PinyinDictManager.pinyinDictConv(
-                        bin.absolutePath, cache.absolutePath, PinyinDictManager.MODE_BIN_TO_TXT
-                    )
-                }
-                cache.takeIf { it.exists() }
-            }
-        }
-    }
 
+    /** 逐行读取词库文本，按空格/制表符取首列作为词条。 */
     private fun readWords(file: File, words: MutableSet<String>) {
-        if (!file.exists()) return
         file.bufferedReader(Charsets.UTF_8).useLines { lines ->
             for (line in lines) {
                 if (words.size >= MAX_WORDS) break

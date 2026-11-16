@@ -4,18 +4,20 @@
  */
 package org.fcitx.fcitx5.android.input.broadcast
 
+import android.graphics.drawable.Drawable
 import android.view.inputmethod.EditorInfo
+import org.fcitx.fcitx5.android.data.theme.IconThemeManager
 import androidx.annotation.DrawableRes
 import org.fcitx.fcitx5.android.R
 import org.mechdancer.dependency.Dependent
-import org.mechdancer.dependency.UniqueComponent
+import org.fcitx.fcitx5.android.input.dependency.InputUniqueComponent
 import org.mechdancer.dependency.manager.ManagedHandler
 import org.mechdancer.dependency.manager.managedHandler
 import org.mechdancer.dependency.manager.must
 import splitties.bitflags.hasFlag
 
 class ReturnKeyDrawableComponent :
-    UniqueComponent<ReturnKeyDrawableComponent>(), Dependent, ManagedHandler by managedHandler() {
+    InputUniqueComponent<ReturnKeyDrawableComponent>(ReturnKeyDrawableComponent::class), Dependent, ManagedHandler by managedHandler() {
 
     companion object {
         @DrawableRes
@@ -28,8 +30,34 @@ class ReturnKeyDrawableComponent :
     var resourceId: Int = DEFAULT_DRAWABLE
         private set
 
+    /** Non-null when the active icon theme provides an SVG override for the current action. */
+    var iconThemeDrawable: Drawable? = null
+        private set
+
+    /** Current action slot name (for debugging / external icon theme checks). */
+    var currentSlot: String? = null
+        private set
+
     @DrawableRes
     private var actionDrawable: Int = DEFAULT_DRAWABLE
+
+    private fun slotForEditorInfo(info: EditorInfo): String? {
+        if (info.imeOptions.hasFlag(EditorInfo.IME_FLAG_NO_ENTER_ACTION)) return "keys.return.default"
+        return when (info.imeOptions and EditorInfo.IME_MASK_ACTION) {
+            EditorInfo.IME_ACTION_GO -> "keys.return.go"
+            EditorInfo.IME_ACTION_SEARCH -> "keys.return.search"
+            EditorInfo.IME_ACTION_SEND -> "keys.return.send"
+            EditorInfo.IME_ACTION_NEXT -> "keys.return.next"
+            EditorInfo.IME_ACTION_DONE -> "keys.return.done"
+            EditorInfo.IME_ACTION_PREVIOUS -> "keys.return.previous"
+            else -> "keys.return.default"
+        }
+    }
+
+    private fun resolveIconThemeDrawable(slot: String?): Drawable? {
+        val candidates = listOfNotNull(slot, "keys.return.default").distinct()
+        return candidates.firstNotNullOfOrNull { IconThemeManager.resolveIconDrawable(it) }
+    }
 
     @DrawableRes
     private fun drawableFromEditorInfo(info: EditorInfo): Int {
@@ -49,15 +77,26 @@ class ReturnKeyDrawableComponent :
 
     fun updateDrawableOnEditorInfo(info: EditorInfo) {
         actionDrawable = drawableFromEditorInfo(info)
-        if (resourceId == actionDrawable) return
+        currentSlot = slotForEditorInfo(info)
+        iconThemeDrawable = resolveIconThemeDrawable(currentSlot)
         resourceId = actionDrawable
         broadcaster.onReturnKeyDrawableUpdate(resourceId)
     }
 
     fun updateDrawableOnPreedit(preeditEmpty: Boolean) {
         val newResId = if (preeditEmpty) actionDrawable else DEFAULT_DRAWABLE
-        if (resourceId == newResId) return
+        if (preeditEmpty) {
+            iconThemeDrawable = resolveIconThemeDrawable(currentSlot)
+        } else {
+            currentSlot = "keys.return.default"
+            iconThemeDrawable = resolveIconThemeDrawable(currentSlot)
+        }
         resourceId = newResId
+        broadcaster.onReturnKeyDrawableUpdate(resourceId)
+    }
+
+    fun onIconThemeChanged() {
+        iconThemeDrawable = resolveIconThemeDrawable(currentSlot)
         broadcaster.onReturnKeyDrawableUpdate(resourceId)
     }
 }

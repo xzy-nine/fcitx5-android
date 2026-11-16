@@ -28,15 +28,8 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.DeveloperScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HomeScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.InputMethodListScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.LicensesScreen
-import org.fcitx.fcitx5.android.ui.main.compose.screens.PinyinCustomPhraseScreen
-import org.fcitx.fcitx5.android.ui.main.compose.screens.PinyinDictionaryScreen
-import org.fcitx.fcitx5.android.ui.main.compose.screens.PluginListScreen
-import org.fcitx.fcitx5.android.ui.main.compose.screens.PunctuationScreen
-import org.fcitx.fcitx5.android.ui.main.compose.screens.QuickPhraseEditScreen
-import org.fcitx.fcitx5.android.ui.main.compose.screens.QuickPhraseListScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.RawConfigHostScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.SettingsSearchDialog
-import org.fcitx.fcitx5.android.ui.main.compose.screens.TableInputMethodsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.ThemeScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WebDavSyncScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceInputSettingsScreen
@@ -226,42 +219,6 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }
-                entry<AppRoute.PluginList> {
-                    PluginListScreen(onBack = { backStack.removeLastOrNull() })
-                }
-                entry<AppRoute.QuickPhraseList> {
-                    QuickPhraseListScreen(
-                        onEdit = { fileName ->
-                            navigateTo(AppRoute.QuickPhraseEdit(fileName))
-                        },
-                        onBack = { backStack.removeLastOrNull() },
-                    )
-                }
-                entry<AppRoute.QuickPhraseEdit> { route ->
-                    QuickPhraseEditScreen(
-                        fileName = route.fileName,
-                        onBack = { backStack.removeLastOrNull() },
-                    )
-                }
-                entry<AppRoute.TableInputMethods> {
-                    TableInputMethodsScreen(onBack = { backStack.removeLastOrNull() })
-                }
-                entry<AppRoute.PinyinCustomPhrase> {
-                    PinyinCustomPhraseScreen(onBack = { backStack.removeLastOrNull() })
-                }
-                entry<AppRoute.PinyinDictionary> { route ->
-                    PinyinDictionaryScreen(
-                        initialUri = route.uri,
-                        onBack = { backStack.removeLastOrNull() },
-                    )
-                }
-                entry<AppRoute.Punctuation> { route ->
-                    PunctuationScreen(
-                        title = route.title,
-                        lang = route.lang,
-                        onBack = { backStack.removeLastOrNull() },
-                    )
-                }
                 entry<AppRoute.Theme> {
                     ThemeScreen(onBack = { backStack.removeLastOrNull() })
                 }
@@ -271,8 +228,8 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 entry<AppRoute.LegacyInputMethodConfig> { route ->
                     LegacyScreen(SettingsRoute.InputMethodConfig(route.name, route.uniqueName))
                 }
-                entry<AppRoute.LegacyPinyinDict> { route ->
-                    LegacyScreen(SettingsRoute.PinyinDict(route.uri))
+                entry<AppRoute.LegacyPinyinDict> {
+                    LegacyScreen(SettingsRoute.InputMethodConfig("Rime", "rime"))
                 }
                 entry<AppRoute.Prefs> { route ->
                     if (route.category == PrefCategory.Broadcast) {
@@ -353,8 +310,8 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }
-                entry<AppRoute.LegacyPunctuation> { route ->
-                    LegacyScreen(SettingsRoute.Punctuation(route.title, route.lang))
+                entry<AppRoute.LegacyPunctuation> {
+                    LegacyScreen(SettingsRoute.InputMethodConfig("Rime", "rime"))
                 }
             }
         }
@@ -373,20 +330,13 @@ fun appRouteOf(route: SettingsRoute): AppRoute = when (route) {
     SettingsRoute.Clipboard -> AppRoute.Prefs(PrefCategory.Clipboard)
     SettingsRoute.Broadcast -> AppRoute.Prefs(PrefCategory.Broadcast)
     SettingsRoute.Symbol -> AppRoute.Prefs(PrefCategory.Symbols)
-    SettingsRoute.Plugin -> AppRoute.PluginList
     SettingsRoute.Advanced -> AppRoute.Prefs(PrefCategory.Advanced)
     SettingsRoute.Developer -> AppRoute.Developer
     SettingsRoute.License -> AppRoute.Licenses
     SettingsRoute.About -> AppRoute.About
-    SettingsRoute.TableInputMethods -> AppRoute.TableInputMethods
-    SettingsRoute.QuickPhraseList -> AppRoute.QuickPhraseList
-    SettingsRoute.PinyinCustomPhrase -> AppRoute.PinyinCustomPhrase
     // parameterized legacy routes that are not reachable through a fixed entry:
     // they are only produced by intent extras, so map to a fresh legacy entry hardcoding the
     // resolver-side handling on next intent-driven visit.
-    is SettingsRoute.AddonConfig -> AppRoute.AddonConfig(route.name, route.uniqueName)
     is SettingsRoute.ListConfig -> AppRoute.Legacy(LegacyTarget.Index)
-    is SettingsRoute.PinyinDict -> AppRoute.PinyinDictionary(route.uri)
-    is SettingsRoute.Punctuation -> AppRoute.Punctuation(route.title, route.lang)
-    is SettingsRoute.QuickPhraseEdit -> AppRoute.QuickPhraseEdit(route.param.quickPhrase.file.name)
+    else -> AppRoute.Legacy(LegacyTarget.Index)
 }

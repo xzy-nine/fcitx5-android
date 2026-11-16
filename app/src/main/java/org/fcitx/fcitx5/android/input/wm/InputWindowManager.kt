@@ -26,7 +26,7 @@ import splitties.views.dsl.core.lParams
 import splitties.views.dsl.core.matchParent
 import timber.log.Timber
 
-class InputWindowManager : UniqueViewComponent<InputWindowManager, FrameLayout>(),
+class InputWindowManager : UniqueViewComponent<InputWindowManager, FrameLayout>(InputWindowManager::class),
     InputBroadcastReceiver {
 
     private val context by manager.context()
@@ -37,6 +37,8 @@ class InputWindowManager : UniqueViewComponent<InputWindowManager, FrameLayout>(
 
     private var currentWindow: InputWindow? = null
     private var currentView: View? = null
+
+    var onWindowChanged: ((InputWindow) -> Unit)? = null
 
     private val disableAnimation by AppPrefs.getInstance().advanced.disableAnimation
 
@@ -136,6 +138,10 @@ class InputWindowManager : UniqueViewComponent<InputWindowManager, FrameLayout>(
             scope += window
             createWindowView(window)
         }
+        // allow the incoming window to adjust surrounding layout before the old one is removed,
+        // so switches that depend on external layout changes can land in the final position directly.
+        if (window is EssentialWindow)
+            window.beforeAttached()
         if (currentWindow != null) {
             val oldWindow = currentWindow!!
             val oldView = currentView!!
@@ -160,9 +166,6 @@ class InputWindowManager : UniqueViewComponent<InputWindowManager, FrameLayout>(
             if (oldWindow !is EssentialWindow)
                 scope -= oldWindow
         }
-        // call before attached for essential window
-        if (window is EssentialWindow)
-            window.beforeAttached()
         // add the new window to layout
         view.apply { add(newView, lParams(matchParent, matchParent)) }
         currentView = newView
@@ -170,6 +173,7 @@ class InputWindowManager : UniqueViewComponent<InputWindowManager, FrameLayout>(
         // notify the window it was attached
         window.onAttached()
         currentWindow = window
+        onWindowChanged?.invoke(window)
         // broadcast the new window was added to layout
         broadcaster.onWindowAttached(window)
     }
@@ -181,4 +185,6 @@ class InputWindowManager : UniqueViewComponent<InputWindowManager, FrameLayout>(
     }
 
     fun isAttached(window: InputWindow) = currentWindow === window
+
+    fun currentWindowOrNull(): InputWindow? = currentWindow
 }

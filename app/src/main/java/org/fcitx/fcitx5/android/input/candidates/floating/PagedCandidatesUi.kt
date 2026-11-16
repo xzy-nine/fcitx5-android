@@ -21,6 +21,7 @@ import com.google.android.flexbox.FlexboxLayoutManager
 import org.fcitx.fcitx5.android.core.FcitxEvent
 import org.fcitx.fcitx5.android.core.FcitxEvent.PagedCandidateEvent.LayoutHint
 import org.fcitx.fcitx5.android.data.theme.Theme
+import org.fcitx.fcitx5.android.input.font.FontProviders
 import splitties.views.dsl.core.Ui
 import splitties.views.dsl.recyclerview.recyclerView
 
@@ -31,12 +32,23 @@ class PagedCandidatesUi(
     private val onCandidateClick: (Int) -> Unit,
     private val onCandidateAction: (Int, String, View) -> Unit,
     private val onPrevPage: () -> Unit,
-    private val onNextPage: () -> Unit
+    private val onNextPage: () -> Unit,
+    private val highlightRadius: Float
 ) : Ui {
 
     private var data = FcitxEvent.PagedCandidateEvent.Data.Empty
 
     private var isVertical = false
+
+    private var isReversed = false
+
+    /**
+     * 上一次整体重绑时观察到的字体数据版本号（见 [FontProviders.fontGeneration]）。
+     *
+     * 只改字体/字号时候选内容一个字符都没变，[update] 的「无变化就跳过」判断会把这次
+     * 刷新整个吞掉，所以版本号必须参与判定。
+     */
+    private var appliedFontGeneration = FontProviders.fontGeneration
 
     sealed class UiHolder(open val ui: Ui) : RecyclerView.ViewHolder(ui.root) {
         class Candidate(override val ui: LabeledCandidateItemUi) : UiHolder(ui)
@@ -58,7 +70,7 @@ class PagedCandidatesUi(
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): UiHolder {
             return when (viewType) {
-                0 -> UiHolder.Candidate(LabeledCandidateItemUi(ctx, theme, setupTextView))
+                0 -> UiHolder.Candidate(LabeledCandidateItemUi(ctx, theme, setupTextView, highlightRadius))
                 else -> UiHolder.Pagination(PaginationUi(ctx, theme)).apply {
                     ui.prevIcon.setOnClickListener {
                         onPrevPage.invoke()
@@ -79,10 +91,14 @@ class PagedCandidatesUi(
                     val candidate = data.candidates[position]
                     holder.ui.update(candidate, active = position == data.cursorIndex)
                     holder.ui.root.setOnClickListener {
-                        onCandidateClick.invoke(position)
+                        val index = holder.bindingAdapterPosition
+                        if (data.candidates.getOrNull(index) != candidate) return@setOnClickListener
+                        onCandidateClick.invoke(index)
                     }
                     holder.ui.root.setOnLongClickListener { v ->
-                        onCandidateAction.invoke(position, candidate.text, v)
+                        val index = holder.bindingAdapterPosition
+                        if (data.candidates.getOrNull(index) != candidate) return@setOnLongClickListener true
+                        onCandidateAction.invoke(index, candidate.text, v)
                         true
                     }
                     holder.ui.root.updateLayoutParams<FlexboxLayoutManager.LayoutParams> {
@@ -125,14 +141,28 @@ class PagedCandidatesUi(
         data: FcitxEvent.PagedCandidateEvent.Data,
         orientation: FloatingCandidatesOrientation
     ) {
-        this.data = data
-        this.isVertical = when (orientation) {
-            FloatingCandidatesOrientation.Automatic -> data.layoutHint == LayoutHint.Vertical
-            else -> orientation == FloatingCandidatesOrientation.Vertical
+        val (newIsVertical, newIsReversed) = when (orientation) {
+            FloatingCandidatesOrientation.Automatic -> (data.layoutHint == LayoutHint.Vertical) to false
+            FloatingCandidatesOrientation.Horizontal -> false to false
+            FloatingCandidatesOrientation.Vertical -> true to false
+            FloatingCandidatesOrientation.VerticalReversed -> true to true
         }
+        // Skip update if nothing changed to avoid unnecessary rebind/redraw.
+        // 字体数据版本号变化时必须放行，否则改完「字体设定」后浮动候选窗
+        // 会停在旧字体上，直到候选内容本身变化才肯重绑。
+        val fontGeneration = FontProviders.fontGeneration
+        val previous = this.data
+        this.data = data
+        if (previous == data && this.isVertical == newIsVertical &&
+            this.isReversed == newIsReversed && fontGeneration == appliedFontGeneration
+        ) return
+
+        appliedFontGeneration = fontGeneration
+        this.isVertical = newIsVertical
+        this.isReversed = newIsReversed
         candidatesLayoutManager.apply {
             if (isVertical) {
-                flexDirection = FlexDirection.COLUMN
+                flexDirection = if (isReversed) FlexDirection.COLUMN_REVERSE else FlexDirection.COLUMN
                 alignItems = AlignItems.STRETCH
             } else {
                 flexDirection = FlexDirection.ROW

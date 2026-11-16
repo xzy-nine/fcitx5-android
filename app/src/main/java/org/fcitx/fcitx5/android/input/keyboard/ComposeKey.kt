@@ -298,6 +298,15 @@ private fun KeyContent(
         is KeyDef.Appearance.AltText ->
             AltTextKeyContent(appearance, visuals, insets, textColor, autoScale)
 
+        is KeyDef.Appearance.ImageAltText -> Icon(
+            painter = painterResource(appearance.src),
+            contentDescription = null,
+            tint = textColor,
+        )
+
+        is KeyDef.Appearance.ToolbarText ->
+            KeyText(appearance, appearance.displayText, textColor, autoScale = autoScale)
+
         is KeyDef.Appearance.Text ->
             KeyText(appearance, appearance.displayText, textColor, autoScale = autoScale)
     }
@@ -319,7 +328,7 @@ private fun AltTextKeyContent(
         LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val punctuationPosition = remember { ThemeManager.prefs.punctuationPosition.getValue() }
     val topRight = when (punctuationPosition) {
-        PunctuationPosition.TopRight -> true
+        PunctuationPosition.TopRight, PunctuationPosition.TopCenter -> true
         PunctuationPosition.None -> false
         // Bottom：竖屏放底部，横屏放右上（View 侧同一分支）
         PunctuationPosition.Bottom -> landscape
@@ -590,7 +599,7 @@ private fun buildKeyGestureSpec(def: KeyDef, externalSwipe: ComposeKeySwipeSpec?
     var longPressPopup: KeyDef.Popup? = null
     def.popup?.forEach {
         when (it) {
-            is KeyDef.Popup.Menu, is KeyDef.Popup.Keyboard ->
+            is KeyDef.Popup.Menu, is KeyDef.Popup.Keyboard, is KeyDef.Popup.LongPressKeyboard ->
                 if (longPressPopup == null) longPressPopup = it
 
             is KeyDef.Popup.Preview -> if (preview == null) preview = it

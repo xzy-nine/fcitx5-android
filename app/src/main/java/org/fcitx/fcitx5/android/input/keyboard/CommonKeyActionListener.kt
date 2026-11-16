@@ -16,8 +16,6 @@ import org.fcitx.fcitx5.android.input.candidates.horizontal.ComposeCandidateComp
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.fcitx
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
-import org.fcitx.fcitx5.android.input.dialog.AddMoreInputMethodsPrompt
-import org.fcitx.fcitx5.android.input.dialog.InputMethodPickerDialog
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener.BackspaceSwipeState.Reset
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener.BackspaceSwipeState.Selection
 import org.fcitx.fcitx5.android.input.keyboard.CommonKeyActionListener.BackspaceSwipeState.Stopped
@@ -27,15 +25,12 @@ import org.fcitx.fcitx5.android.input.keyboard.KeyAction.FcitxKeyAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.LangSwitchAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.MoveSelectionAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.PickerSwitchAction
-import org.fcitx.fcitx5.android.input.keyboard.KeyAction.QuickPhraseAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.ShowInputMethodPickerAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.SpaceLongPressAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyAction.SymAction
-import org.fcitx.fcitx5.android.input.keyboard.KeyAction.UnicodeAction
 import org.fcitx.fcitx5.android.input.picker.PickerWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
-import org.fcitx.fcitx5.android.utils.switchToNextIME
 import org.mechdancer.dependency.Dependent
 import org.mechdancer.dependency.UniqueComponent
 import org.mechdancer.dependency.manager.ManagedHandler
@@ -65,7 +60,6 @@ class CommonKeyActionListener :
     private val kbdPrefs = AppPrefs.getInstance().keyboard
 
     private val spaceKeyLongPressBehavior by kbdPrefs.spaceKeyLongPressBehavior
-    private val langSwitchKeyBehavior by kbdPrefs.langSwitchKeyBehavior
 
     private var backspaceSwipeState = Stopped
 
@@ -84,14 +78,7 @@ class CommonKeyActionListener :
         reset()
     }
 
-    private fun showInputMethodPicker() {
-        fcitx.launchOnReady {
-            service.lifecycleScope.launch {
-                service.showDialog(InputMethodPickerDialog.build(it, service, context))
-            }
-        }
-    }
-
+    // custom: 输入法选择器由 InputMethodUtil.showPicker() 直接调起，无需本类包装。
     val listener by lazy {
         // 用匿名对象而不是 SAM 简写：需要同时覆写 onKeyActionRelease（空格长按的物理松手）
         object : KeyActionListener {
@@ -123,38 +110,13 @@ class CommonKeyActionListener :
                     commitAndReset()
                     service.lifecycleScope.launch { service.commitText(action.text) }
                 }
-                is QuickPhraseAction -> service.postFcitxJob {
-                    commitAndReset()
-                    triggerQuickPhrase()
-                }
-                is UnicodeAction -> service.postFcitxJob {
-                    commitAndReset()
-                    triggerUnicode()
-                }
+                // custom: QuickPhrase / Unicode 是 fcitx addon，本构建只带 Rime 引擎，不提供这些动作。
                 is LangSwitchAction -> {
-                    when (langSwitchKeyBehavior) {
-                        LangSwitchBehavior.Enumerate -> {
-                            service.postFcitxJob {
-                                if (enabledIme().size < 2) {
-                                    service.lifecycleScope.launch {
-                                        service.showDialog(AddMoreInputMethodsPrompt.build(context))
-                                    }
-                                } else {
-                                    enumerateIme()
-                                }
-                            }
-                        }
-                        LangSwitchBehavior.ToggleActivate -> {
-                            service.postFcitxJob {
-                                toggleIme()
-                            }
-                        }
-                        LangSwitchBehavior.NextInputMethodApp -> {
-                            service.switchToNextIME()
-                        }
-                    }
+                    // 本构建只带 Rime 引擎：语言键发一次独立 Shift 敲击，
+                    // 由引擎的 ascii_composer（ascii_mode）切换中英文。
+                    service.sendStandaloneShiftTap()
                 }
-                is ShowInputMethodPickerAction -> showInputMethodPicker()
+                is ShowInputMethodPickerAction -> InputMethodUtil.showPicker()
                 is MoveSelectionAction -> {
                     when (backspaceSwipeState) {
                         Stopped -> {
@@ -202,7 +164,7 @@ class CommonKeyActionListener :
                         SpaceLongPressBehavior.ToggleActivate -> service.postFcitxJob {
                             toggleIme()
                         }
-                        SpaceLongPressBehavior.ShowPicker -> showInputMethodPicker()
+                        SpaceLongPressBehavior.ShowPicker -> InputMethodUtil.showPicker()
                         SpaceLongPressBehavior.VoiceInput -> {
                             // custom: 内置语音输入优先；未启用或引擎未就绪时由
                             // VoiceInputComponent 自行回落到外部语音输入法（保持既有行为）。

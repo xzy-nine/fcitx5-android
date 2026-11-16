@@ -121,7 +121,7 @@ class MainFragment : PaddingPreferenceFragment() {
                 addDestinationPreference(
                     R.string.plugins,
                     R.drawable.ic_baseline_android_24,
-                    SettingsRoute.Plugin
+                    SettingsRoute.AddonList
                 )
                 addDestinationPreference(
                     R.string.advanced,

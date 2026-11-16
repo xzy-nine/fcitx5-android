@@ -1,0 +1,123 @@
+name: PR CI
+
+on:
+  push:
+    branches: ['fix/**']
+    paths:
+      - 'app/**'
+      - 'direct-rime/**'
+      - 'lib/common/**'
+      - 'build-logic/**'
+      - '.github/workflows/pr.yml'
+  pull_request:
+    branches:
+      - fx-rime-only
+    paths:
+      - '**/**'
+      - '!*.md'
+      - '!.gitignore'
+      - '!docs/**'
+
+permissions:
+  contents: read
+
+env:
+  BUILD_ABI: arm64-v8a
+
+jobs:
+  unit_test:
+    name: JVM unit tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Fetch source code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Test input performance tools without device access
+        run: python3 -m unittest discover -s tools/input-perf -p 'test_*.py' -v
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android environment
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Test SDK integrity and offline recovery
+        run: >-
+          ./gradlew --no-daemon -p build-logic
+          '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8'
+          -Pkotlin.compiler.execution.strategy=in-process --max-workers=2
+          :convention:test --tests RimeSdkArchiveTest
+
+      - name: Prepare pinned NDK before configuring the app
+        run: |
+          python3 -m unittest discover -s tools -p test_prepare_ci_ndk.py -v
+          python3 tools/prepare-ci-ndk.py
+
+      - name: Run JVM unit tests
+        run: |
+          ./gradlew :app:testFxDebugUnitTest
+          python3 tools/check-junit-results.py
+
+  debug_build:
+    name: Debug APK build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Fetch source code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android environment
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Prepare pinned NDK before configuring the app
+        run: python3 tools/prepare-ci-ndk.py
+
+      - name: Prepare personal build sources
+        run: ./prepare_personal_build.sh
+
+      - name: Build Debug APK
+        run: ./gradlew :app:assembleFxDebug
+
+      - name: Compile the instrumentation-only cadence harness
+        run: |
+          target=app/src/androidTest/java/org/fcitx/fcitx5/android/core/CandidateTapTest.kt
+          test ! -e "$target"
+          cp tools/input-perf/CadenceCandidateTapTest.kt "$target"
+          ./gradlew :app:compileFxDebugAndroidTestKotlin
+
+      - name: Android lint
+        run: ./gradlew :app:lintFxDebug
+
+      - name: Reject legacy native dependencies and backend classes
+        run: |
+          python3 tools/verify-direct-rime-apk.py app/build/outputs/apk/fx/debug/*.apk
+          python3 tools/audit-direct-rime-link.py app/build/outputs/apk/fx/debug/*.apk > native-link-audit.json
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: direct-rime-pr-native-audit
+          path: native-link-audit.json

@@ -19,6 +19,11 @@ compose = "1.12.0"
 commonsCompress = "1.28.0"
 onnxruntimeAndroid = "1.28.0"
 mlkitDigitalInk = "19.0.0"
+zxing = "3.5.3"
+zxingEmbedded = "4.3.0"
+xz = "1.10"
+androidsvg = "1.4"
+quickjs-kt = "1.0.15"
 
 [libraries]
 android-gradlePlugin = { group = "com.android.tools.build", name = "gradle", version.ref = "androidGradlePlugin" }
@@ -32,10 +37,10 @@ androidx-autofill = { module = "androidx.autofill:autofill", version = "1.3.0" }
 androidx-constraintlayout = { module = "androidx.constraintlayout:constraintlayout", version = "2.2.1" }
 androidx-coordinatorlayout = { module = "androidx.coordinatorlayout:coordinatorlayout", version = "1.3.0" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version = "1.18.0" }
+androidx-fragment = { module = "androidx.fragment:fragment-ktx", version = "1.8.9" }
 androidx-lifecycle-viewmodel = { module = "androidx.lifecycle:lifecycle-viewmodel-ktx", version.ref = "lifecycle" }
 androidx-lifecycle-livedata = { module = "androidx.lifecycle:lifecycle-livedata-ktx", version.ref = "lifecycle" }
 androidx-lifecycle-runtime = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle" }
-androidx-lifecycle-common = { module = "androidx.lifecycle:lifecycle-common-java8", version.ref = "lifecycle" }
 androidx-lifecycle-service = { module = "androidx.lifecycle:lifecycle-service", version.ref = "lifecycle" }
 androidx-navigation-fragment = { module = "androidx.navigation:navigation-fragment-ktx", version.ref = "navigation" }
 androidx-navigation-ui = { module = "androidx.navigation:navigation-ui-ktx", version.ref = "navigation" }
@@ -48,6 +53,8 @@ androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "
 androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 androidx-room-paging = { module = "androidx.room:room-paging", version.ref = "room" }
 androidx-startup = { module = "androidx.startup:startup-runtime", version = "1.2.0" }
+androidx-tracing-ktx = { module = "androidx.tracing:tracing-ktx", version = "1.2.0" }
+androidx-transition = { module = "androidx.transition:transition", version = "1.7.2" }
 androidx-viewpager2 = { module = "androidx.viewpager2:viewpager2", version = "1.1.0" }
 material = { module = "com.google.android.material:material", version = "1.14.0" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
@@ -97,6 +104,11 @@ okhttp-sse = { module = "com.squareup.okhttp3:okhttp-sse", version.ref = "okhttp
 onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntimeAndroid" }
 # custom: 手写识别（Google ML Kit 数字墨水；识别在端上，语言模型运行时下载）
 mlkit-digital-ink = { module = "com.google.mlkit:digital-ink-recognition", version.ref = "mlkitDigitalInk" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
+zxing-embedded = { module = "com.journeyapps:zxing-android-embedded", version.ref = "zxingEmbedded" }
+xz = { module = "org.tukaani:xz", version.ref = "xz" }
+androidsvg = { module = "com.caverock:androidsvg", version.ref = "androidsvg" }
+quickjs-kt = { module = "io.github.dokar3:quickjs-kt", version.ref = "quickjs-kt" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }

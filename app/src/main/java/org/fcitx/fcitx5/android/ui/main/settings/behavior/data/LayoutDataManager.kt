@@ -1,0 +1,1418 @@
+/*
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
+ */
+package org.fcitx.fcitx5.android.ui.main.settings.behavior.data
+
+import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import org.fcitx.fcitx5.android.utils.FileUtil
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.*
+import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.data.theme.ThemeManager
+import org.fcitx.fcitx5.android.input.keyboard.AuxBarPosition
+import org.fcitx.fcitx5.android.input.keyboard.AuxBarConfig
+import org.fcitx.fcitx5.android.input.keyboard.LayoutVariant
+import org.fcitx.fcitx5.android.input.keyboard.TextKeyboard
+import org.fcitx.fcitx5.android.ui.main.settings.behavior.migration.DataMigrationManager
+import org.fcitx.fcitx5.android.ui.main.settings.behavior.utils.LayoutJsonUtils
+import java.io.File
+
+/**
+ * 布局数据管理器，管理键盘布局的数据结构。
+ *
+ * 主要功能：
+ * - 数据加载与保存
+ * - 布局增删改查操作
+ * - 子模式（submode）支持
+ * - 数据验证
+ */
+class LayoutDataManager(private val context: Context) {
+    private val saveMutex = Mutex()
+    private companion object {
+        private const val LAYOUT_META_KEY = "__meta__"
+        private const val LAYOUT_META_HEIGHT_PERCENT_KEY = "keyboard_height_percent"
+        private const val LAYOUT_META_HEIGHT_PERCENT_LANDSCAPE_KEY = "keyboard_height_percent_landscape"
+        private const val LAYOUT_META_AUX_BAR_KEY = "aux_bar"
+    }
+
+    private fun legacySwipeTargetIsUp(): Boolean =
+        LayoutJsonUtils.legacySwipeTargetsUpFromSettings(
+            AppPrefs.getInstance().keyboard.swipeSymbolDirection.getValue(),
+            ThemeManager.prefs.punctuationPosition.getValue()
+        )
+
+    /**
+     * 所有布局条目
+     * Key 格式：
+     * - "layoutName" - 基础布局
+     * - "layoutName:subModeLabel" - 子模式布局
+     */
+    val entries = mutableMapOf<String, MutableList<MutableList<MutableMap<String, Any?>>>>()
+    val layoutHeightPercentOverrides = mutableMapOf<String, Int>()
+    val layoutHeightPercentOverridesLandscape = mutableMapOf<String, Int>()
+    val layoutAuxBarConfigs = mutableMapOf<String, AuxBarConfig?>()
+    val layoutAuxBarKeys = mutableMapOf<String, MutableList<MutableMap<String, Any?>>>()
+    
+    /**
+     * 原始数据快照，用于检测是否有更改
+     */
+    private var originalEntries: Map<String, List<List<Map<String, Any?>>>> = emptyMap()
+    private var originalLayoutHeightPercentOverrides: Map<String, Int> = emptyMap()
+    private var lastParsedLayoutHeightPercentOverrides: Map<String, Int> = emptyMap()
+    private var originalLayoutHeightPercentOverridesLandscape: Map<String, Int> = emptyMap()
+    private var lastParsedLayoutHeightPercentOverridesLandscape: Map<String, Int> = emptyMap()
+    private var originalLayoutAuxBarConfigs: Map<String, AuxBarConfig?> = emptyMap()
+    private var lastParsedLayoutAuxBarConfigs: Map<String, AuxBarConfig?> = emptyMap()
+    private var originalLayoutAuxBarKeys: Map<String, List<Map<String, Any?>>> = emptyMap()
+    private var lastParsedLayoutAuxBarKeys: Map<String, List<Map<String, Any?>>> = emptyMap()
+    
+    /**
+     * 迁移管理器
+     */
+    private val migrationManager = DataMigrationManager(this)
+
+    /** 上一次加载中出现的、需要让用户知道的问题。 */
+    sealed interface LoadWarning {
+        /** 文件存在但解析失败：内存里现在是内置预设，直接保存会覆盖掉损坏但可能可修的文件。 */
+        data class ParseFailed(val fileName: String, val cause: Throwable?) : LoadWarning
+
+        /** 内存迁移失败，已放弃迁移结果并沿用磁盘内容。 */
+        data class MigrationFailed(val cause: Throwable) : LoadWarning
+    }
+
+    var lastLoadWarning: LoadWarning? = null
+        private set
+
+    /**
+     * 解析失败时为 true：此时 entries 是内置预设而不是用户数据，保存会覆盖原文件。
+     * 调用方应据此阻止或二次确认保存。
+     */
+    val loadedFromCorruptFile: Boolean
+        get() = lastLoadWarning is LoadWarning.ParseFailed
+
+    /**
+     * 用户已确认过该警告（例如同意用当前内存内容覆盖损坏的文件），
+     * 之后不再重复拦截保存。
+     */
+    fun acknowledgeLoadWarning() {
+        lastLoadWarning = null
+    }
+    
+    // ==================== 数据加载与保存 ====================
+    
+    /**
+     * 从文件加载布局数据
+     * 
+     * @param file 布局文件
+     * @return 加载是否成功
+     */
+    /**
+     * [loadFromFile] on [Dispatchers.IO].
+     *
+     * Reading + JSON parsing + migration of a layout file took long enough to drop frames when
+     * done on the main thread, which is where every caller ran (see D7).
+     */
+    suspend fun loadFromFileAsync(file: File?): Boolean = withContext(Dispatchers.IO) {
+        loadFromFile(file)
+    }
+
+    /**
+     * [saveToFile] on [Dispatchers.IO].
+     *
+     * Save does validation, a backup copy, serialization and an atomic write — all file work.
+     */
+    suspend fun saveToFileAsync(file: File): Boolean = saveMutex.withLock {
+        val snapshot = withContext(Dispatchers.Main.immediate) { captureSaveSnapshot() }
+        val saved = withContext(Dispatchers.IO) { snapshot.saveToFile(file) }
+        if (saved) withContext(Dispatchers.Main.immediate) { acceptSavedSnapshot(snapshot) }
+        saved
+    }
+
+    /** Capture UI-owned data once, including nested macro maps/lists. IO only sees this copy. */
+    internal fun captureSaveSnapshot(): LayoutDataManager {
+        pruneLayoutHeightOverrides()
+        normalizeAllRowsForSave()
+        entries.keys.map(LayoutJsonUtils::baseLayoutNameFromEntryKey).distinct().forEach { name ->
+            if (LayoutJsonUtils.hasSubLayouts(entries.keys, name)) migrationManager.cleanupBaseLayoutDisplayText(name)
+        }
+        return LayoutDataManager(context).also { snapshot ->
+            snapshot.entries.putAll(normalizedEntries().mapValues { (_, rows) ->
+                rows.map { row -> row.map { copyKey(it) }.toMutableList() }.toMutableList()
+            })
+            snapshot.layoutHeightPercentOverrides.putAll(layoutHeightPercentOverrides)
+            snapshot.layoutHeightPercentOverridesLandscape.putAll(layoutHeightPercentOverridesLandscape)
+            snapshot.layoutAuxBarConfigs.putAll(layoutAuxBarConfigs)
+            snapshot.layoutAuxBarKeys.putAll(layoutAuxBarKeys.mapValues { (_, keys) -> keys.map(::copyKey).toMutableList() })
+        }
+    }
+
+    internal fun acceptSavedSnapshot(snapshot: LayoutDataManager) {
+        originalEntries = snapshot.originalEntries
+        originalLayoutHeightPercentOverrides = snapshot.originalLayoutHeightPercentOverrides
+        originalLayoutHeightPercentOverridesLandscape = snapshot.originalLayoutHeightPercentOverridesLandscape
+        originalLayoutAuxBarConfigs = snapshot.originalLayoutAuxBarConfigs
+        originalLayoutAuxBarKeys = snapshot.originalLayoutAuxBarKeys
+    }
+
+    private fun copyValue(value: Any?): Any? = when (value) {
+        is Map<*, *> -> value.entries.associateTo(linkedMapOf()) { it.key to copyValue(it.value) }
+        is List<*> -> value.map(::copyValue).toMutableList()
+        else -> value
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun copyKey(key: Map<String, Any?>): MutableMap<String, Any?> = copyValue(key) as MutableMap<String, Any?>
+
+    fun loadFromFile(file: File?): Boolean {
+        entries.clear()
+        layoutHeightPercentOverrides.clear()
+        layoutHeightPercentOverridesLandscape.clear()
+        layoutAuxBarConfigs.clear()
+        layoutAuxBarKeys.clear()
+        lastLoadWarning = null
+        lastParseFailure = null
+        
+        val fileHasContent = file?.exists() == true
+        val parsed = if (fileHasContent) {
+            parseJsonText(file!!.readText(), file.name)
+        } else {
+            loadDefaultPreset()
+        }
+        // 文件存在却解析失败与"文件不存在"是两回事：前者内存里现在是内置预设，
+        // 直接保存会永久覆盖用户的（可能只是小语法错的）布局文件。
+        if (fileHasContent && lastParseFailure != null) {
+            lastLoadWarning = LoadWarning.ParseFailed(file!!.name, lastParseFailure)
+        }
+        
+        // 将解析结果复制到 entries
+        parsed.toSortedMap().forEach { (k, v) ->
+            entries[k] = v.map { row ->
+                row.map { key -> key.toMutableMap() }.toMutableList()
+            }.toMutableList()
+        }
+        if (fileHasContent) {
+            LayoutJsonUtils.migrateDirectionalSwipeFields(
+                entries,
+                legacyTargetIsUp = legacySwipeTargetIsUp()
+            )
+        }
+        layoutHeightPercentOverrides.putAll(lastParsedLayoutHeightPercentOverrides)
+        layoutHeightPercentOverridesLandscape.putAll(lastParsedLayoutHeightPercentOverridesLandscape)
+        layoutAuxBarConfigs.putAll(lastParsedLayoutAuxBarConfigs)
+        layoutAuxBarKeys.putAll(
+            lastParsedLayoutAuxBarKeys.mapValues { (_, keys) ->
+                keys.map { it.toMutableMap() }.toMutableList()
+            }
+        )
+        pruneLayoutHeightOverrides()
+        
+        // 确保至少有一个布局
+        if (entries.isEmpty()) {
+            val defaultLayout = loadDefaultPreset()
+            defaultLayout.forEach { (k, v) ->
+                entries[k] = v.map { row ->
+                    row.map { key -> key.toMutableMap() }.toMutableList()
+                }.toMutableList()
+            }
+        }
+
+        // 迁移只在确实需要时执行：checkIfMigrationNeeded 原本写了却从未被调用，
+        // 导致每次打开编辑器都跑一遍纯内存迁移。
+        if (file != null && migrationManager.checkIfMigrationNeeded()) {
+            runCatching {
+                migrationManager.migrateAllDisplayTextToSubmodeStructure()
+            }.onFailure { e ->
+                // 迁移是纯内存操作：失败时磁盘文件依然完好，用旧备份覆盖它
+                // 反而会把用户数据回退。这里只放弃本次内存迁移结果，重新按
+                // 磁盘内容还原内存状态，不触碰任何文件。
+                android.util.Log.e("LayoutDataManager", "Migration failed; keeping on-disk data", e)
+                reloadEntriesFromDisk(file)
+                lastLoadWarning = LoadWarning.MigrationFailed(e)
+            }
+        }
+
+        // 保存原始数据快照
+        originalEntries = normalizedEntries()
+        originalLayoutHeightPercentOverrides = layoutHeightPercentOverrides.toSortedMap()
+        originalLayoutHeightPercentOverridesLandscape = layoutHeightPercentOverridesLandscape.toSortedMap()
+        originalLayoutAuxBarConfigs = layoutAuxBarConfigs.toSortedMap()
+        originalLayoutAuxBarKeys = normalizedLayoutAuxBarKeys()
+
+        return true
+    }
+    
+    /**
+     * 解析 JSON 文件
+     */
+    private fun parseJsonFile(file: File): Map<String, List<List<Map<String, Any?>>>> {
+        return parseJsonText(file.readText(), file.name)
+    }
+
+    /**
+     * 用磁盘上的内容重新填充内存状态，不写入任何文件。
+     * 用于内存迁移失败后放弃迁移结果。
+     */
+    private fun reloadEntriesFromDisk(file: File) {
+        entries.clear()
+        val restoredParsed = if (file.exists() && file.length() > 0) {
+            parseJsonText(file.readText(), file.name)
+        } else {
+            loadDefaultPreset()
+        }
+        restoredParsed.toSortedMap().forEach { (k, v) ->
+            entries[k] = v.map { row ->
+                row.map { key -> key.toMutableMap() }.toMutableList()
+            }.toMutableList()
+        }
+        LayoutJsonUtils.migrateDirectionalSwipeFields(
+            entries,
+            legacyTargetIsUp = legacySwipeTargetIsUp()
+        )
+        layoutHeightPercentOverrides.clear()
+        layoutHeightPercentOverrides.putAll(lastParsedLayoutHeightPercentOverrides)
+        layoutHeightPercentOverridesLandscape.clear()
+        layoutHeightPercentOverridesLandscape.putAll(lastParsedLayoutHeightPercentOverridesLandscape)
+        layoutAuxBarConfigs.clear()
+        layoutAuxBarConfigs.putAll(lastParsedLayoutAuxBarConfigs)
+        layoutAuxBarKeys.clear()
+        layoutAuxBarKeys.putAll(
+            lastParsedLayoutAuxBarKeys.mapValues { (_, keys) ->
+                keys.map { it.toMutableMap() }.toMutableList()
+            }
+        )
+        pruneLayoutHeightOverrides()
+        if (entries.isEmpty()) {
+            loadDefaultPreset().forEach { (k, v) ->
+                entries[k] = v.map { row ->
+                    row.map { key -> key.toMutableMap() }.toMutableList()
+                }.toMutableList()
+            }
+        }
+    }
+
+    /**
+     * 解析一个布局对象里的各层子布局，把每一层**连同它自己的分体排列**展开成扁平条目。
+     *
+     * 磁盘上的结构是"每个子布局内部各带一份分体排列"：
+     *
+     * ```json
+     * "rime": {
+     *   "default": [...],
+     *   "__variant__:split": [...],          // 默认子布局的分体排列
+     *   "倉頡五代": {
+     *     "default": [...],
+     *     "__variant__:split": [...]         // 倉頡五代 自己的分体排列
+     *   }
+     * }
+     * ```
+     *
+     * 于是每一层都要先按 [LayoutJsonUtils.parseEntryKey] 拆出"子布局 + 排列"，再决定条目键。
+     * 直接把 `__variant__:split` 当子布局名拼成 `rime:倉頡五代:__variant__:split` 是错的——
+     * 那样分体排列会挂到布局本体上，用户给方案配的分体排列就跑到别的子布局去了。
+     */
+    private fun parseSubLayouts(
+        container: JsonObject,
+        entryKey: String,
+        result: MutableMap<String, List<List<Map<String, Any?>>>>,
+        heightOverrides: MutableMap<String, Int>,
+        heightOverridesLandscape: MutableMap<String, Int>,
+        auxBarConfigs: MutableMap<String, AuxBarConfig?>,
+        auxBarKeys: MutableMap<String, List<Map<String, Any?>>>
+    ) {
+        container.entries.forEach { (subModeLabel, subModeValue) ->
+            if (subModeLabel == LAYOUT_META_KEY) return@forEach
+
+            // 该标签对应的条目身份（子布局 + 排列）。认不出来就跳过这一层，
+            // 而不是把它当成子布局塞进去：一个 `__variant__:横屏` 这样的手写笔误会
+            // 变成一个删不掉、点了没反应的方案选项。
+            val identity = LayoutJsonUtils.parseEntryKey(
+                if (subModeLabel == "default" || subModeLabel == "") entryKey else "$entryKey:$subModeLabel"
+            ) ?: run {
+                android.util.Log.w(
+                    "LayoutDataManager",
+                    "Skipping unrecognized sub layout '$subModeLabel' under '$entryKey'"
+                )
+                return@forEach
+            }
+            val key = identity.toEntryKey()
+
+            fun recordMeta(element: JsonObject) {
+                parseLayoutHeightPercent(element)?.let { heightOverrides[key] = it }
+                parseLayoutHeightPercentLandscape(element)?.let { heightOverridesLandscape[key] = it }
+                parseLayoutAuxBar(element)?.let { auxBarConfigs[key] = it }
+                parseLayoutAuxBarKeys(element)?.let { auxBarKeys[key] = it }
+            }
+
+            val rowsElement: JsonArray? = when (subModeValue) {
+                is JsonArray -> subModeValue
+                is JsonObject -> {
+                    recordMeta(subModeValue)
+                    // 这一层里可能还带它自己的分体排列（`__variant__:split` 写在 default 旁边），
+                    // 递归展开；本体自身的行集合则回到本函数处理。
+                    parseSubLayouts(
+                        container = subModeValue,
+                        entryKey = key,
+                        result = result,
+                        heightOverrides = heightOverrides,
+                        heightOverridesLandscape = heightOverridesLandscape,
+                        auxBarConfigs = auxBarConfigs,
+                        auxBarKeys = auxBarKeys
+                    )
+                    (subModeValue["default"] as? JsonArray) ?: (subModeValue[""] as? JsonArray)
+                }
+                else -> null
+            }
+
+            if (rowsElement != null) {
+                result[key] = normalizeRowsForParsedData(LayoutJsonUtils.parseLayoutRows(rowsElement))
+            }
+            // 这一层只带分体排列、没有普通排列时**不**补一个空条目：普通排列由上层回退
+            // （子布局 → 布局本体）提供，编辑器也照这个规则解析。补空条目反而会让
+            // 「这一层还没配普通排列」变成一条"有布局但一行都没有"的脏数据，
+            // 保存时被 validateEntries 拦下、用户却看不出哪里错了。
+        }
+    }
+
+    fun parseJsonText(
+        jsonText: String,
+        sourceName: String = "<memory>",
+        fallbackToDefault: Boolean = true
+    ): Map<String, List<List<Map<String, Any?>>>> {
+        lastParsedLayoutHeightPercentOverrides = emptyMap()
+        lastParsedLayoutHeightPercentOverridesLandscape = emptyMap()
+        lastParsedLayoutAuxBarConfigs = emptyMap()
+        lastParsedLayoutAuxBarKeys = emptyMap()
+        val lenientJson = Json {
+            ignoreUnknownKeys = true
+            isLenient = true
+        }
+
+        return runCatching {
+            var jsonStr = jsonText
+            // 移除 // 注释 - 使用统一的工具方法
+            jsonStr = LayoutJsonUtils.removeJsonComments(jsonStr)
+
+            val jsonElement = lenientJson.parseToJsonElement(jsonStr)
+            val jsonObject = jsonElement.jsonObject
+            val result = mutableMapOf<String, List<List<Map<String, Any?>>>>()
+            val parsedLayoutHeightOverrides = mutableMapOf<String, Int>()
+            val parsedLayoutHeightOverridesLandscape = mutableMapOf<String, Int>()
+            val parsedAuxBarConfigs = mutableMapOf<String, AuxBarConfig?>()
+            val parsedAuxBarKeys = mutableMapOf<String, List<Map<String, Any?>>>()
+
+            // 处理每个布局条目
+            jsonObject.entries.forEach { (layoutName, layoutValue) ->
+                try {
+                    when (layoutValue) {
+                        is JsonArray -> {
+                            val rows = normalizeRowsForParsedData(LayoutJsonUtils.parseLayoutRows(layoutValue))
+                            result[layoutName] = rows
+                        }
+                        is JsonObject -> {
+                            parseLayoutHeightPercent(layoutValue)?.let { parsedLayoutHeightOverrides[layoutName] = it }
+                            parseLayoutHeightPercentLandscape(layoutValue)?.let { parsedLayoutHeightOverridesLandscape[layoutName] = it }
+                            parseLayoutAuxBar(layoutValue)?.let { parsedAuxBarConfigs[layoutName] = it }
+                            parseLayoutAuxBarKeys(layoutValue)?.let { parsedAuxBarKeys[layoutName] = it }
+                            parseSubLayouts(
+                                container = layoutValue.jsonObject,
+                                entryKey = layoutName,
+                                result = result,
+                                heightOverrides = parsedLayoutHeightOverrides,
+                                heightOverridesLandscape = parsedLayoutHeightOverridesLandscape,
+                                auxBarConfigs = parsedAuxBarConfigs,
+                                auxBarKeys = parsedAuxBarKeys
+                            )
+                        }
+                        else -> {
+                            android.util.Log.w("LayoutDataManager", "Skipping invalid layout value for: $layoutName, type: ${layoutValue::class.simpleName}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("LayoutDataManager", "Failed to parse layout: $layoutName", e)
+                }
+            }
+            // 向后兼容：旧文件仅有竖屏高度时，横屏沿用同一数值
+            parsedLayoutHeightOverrides.forEach { (key, value) ->
+                parsedLayoutHeightOverridesLandscape.putIfAbsent(key, value)
+            }
+            lastParsedLayoutHeightPercentOverrides = parsedLayoutHeightOverrides.toSortedMap()
+            lastParsedLayoutHeightPercentOverridesLandscape = parsedLayoutHeightOverridesLandscape.toSortedMap()
+            lastParsedLayoutAuxBarConfigs = parsedAuxBarConfigs.toSortedMap()
+            lastParsedLayoutAuxBarKeys = parsedAuxBarKeys.toSortedMap()
+            
+            if (result.isEmpty()) {
+                android.util.Log.w("LayoutDataManager", "No valid layouts found in JSON file")
+            }
+            
+            result
+        }.onFailure { e ->
+            android.util.Log.e("LayoutDataManager", "Failed to parse JSON from: $sourceName", e)
+            // 记下失败原因：调用方（loadFromFile）据此区分"文件不存在"与"文件损坏"，
+            // 损坏时必须阻止后续保存把内置预设覆盖上去。
+            lastParseFailure = e
+        }.getOrNull() ?: if (fallbackToDefault) loadDefaultPreset() else emptyMap()
+    }
+
+    /** [parseJsonText] 最近一次失败的异常，供 [loadFromFile] 判定文件是否损坏。 */
+    private var lastParseFailure: Throwable? = null
+
+    fun exportCurrentJsonString(): String {
+        val prettyJson = Json { prettyPrint = true }
+        return prettyJson.encodeToString(currentSaveJson()) + "\n"
+    }
+
+    /**
+     * Same content as [exportCurrentJsonString] in the on-disk compact shape (one line per key).
+     *
+     * Used for the editor's draft snapshot, where size matters: the pretty-printed form of a
+     * heavily customized layout is several times larger, and the snapshot is written on the main
+     * thread while the Activity is stopping.
+     */
+    fun exportCurrentJsonCompact(): String =
+        LayoutJsonUtils.formatJsonCompact(currentSaveJson()) + "\n"
+
+    private fun currentSaveJson(): JsonObject = LayoutJsonUtils.convertToSaveJson(
+        entries,
+        layoutHeightPercentOverrides,
+        layoutHeightPercentOverridesLandscape,
+        layoutAuxBarConfigs,
+        normalizedLayoutAuxBarKeys()
+    )
+    
+    /**
+     * 加载默认预设布局
+     */
+    private fun loadDefaultPreset(): Map<String, List<List<Map<String, Any?>>>> {
+        val defaultLayout = TextKeyboard.getDefaultLayout(showLangSwitch = true)
+        val rows = defaultLayout.map { row ->
+            row.map { keyDef ->
+                LayoutJsonUtils.keyDefToJson(keyDef)
+            }
+        }
+        return mapOf("default" to rows)
+    }
+    
+    /**
+     * 保存布局到文件
+     * 
+     * @param file 目标文件
+     * @return 保存是否成功
+     */
+    fun saveToFile(file: File): Boolean {
+        return runCatching {
+            pruneLayoutHeightOverrides()
+            normalizeAllRowsForSave()
+            // 验证数据
+            val errors = validateEntries()
+            if (errors.isNotEmpty()) {
+                throw ValidationException(errors)
+            }
+
+            // 创建备份
+            migrationManager.createBackup(file)
+
+            // Only clean the base layout's displayText when submode layouts exist
+            val baseLayoutNames = entries.keys.map { key ->
+                LayoutJsonUtils.baseLayoutNameFromEntryKey(key)
+            }.distinct()
+            
+            // Only clear base layout displayText for layouts that actually have submode variants
+            baseLayoutNames.forEach { layoutName ->
+                if (LayoutJsonUtils.hasSubLayouts(entries.keys, layoutName)) {
+                    migrationManager.cleanupBaseLayoutDisplayText(layoutName)
+                }
+            }
+
+            // Create directory
+            file.parentFile?.mkdirs()
+
+            // Convert to JSON and save, using compact format (each key object on one line)
+            val jsonElement = LayoutJsonUtils.convertToSaveJson(
+                entries,
+                layoutHeightPercentOverrides,
+                layoutHeightPercentOverridesLandscape,
+                layoutAuxBarConfigs,
+                normalizedLayoutAuxBarKeys()
+            )
+            val compactJson = LayoutJsonUtils.formatJsonCompact(jsonElement)
+
+            // 写盘前先把「即将写入磁盘的那份数据」固化成快照。
+            //
+            // 这几行过去放在 writeAtomically 之后、重新读一遍 entries：保存是异步的
+            // （saveToFileAsync 跑在 Dispatchers.IO），写盘期间用户继续编辑的话，那些
+            // 新编辑会被并进基线，hasChanges() 随即返回 false —— 退出时不再弹「放弃
+            // 修改」，这段编辑就永久丢了。放到写盘之前后，保存期间产生的新编辑仍计入
+            // hasChanges()，退出提示正常出现。
+            //
+            // 附带好处：规范化/序列化阶段的异常（例如主线程并发修改导致的
+            // ConcurrentModificationException）现在会在写盘前抛出，磁盘保留上一份
+            // 完好文件，而不是写完之后才失败。
+            val snapshotEntries = normalizedEntries()
+            val snapshotHeightOverrides = layoutHeightPercentOverrides.toSortedMap()
+            val snapshotHeightOverridesLandscape = layoutHeightPercentOverridesLandscape.toSortedMap()
+            val snapshotAuxBarConfigs = layoutAuxBarConfigs.toSortedMap()
+            val snapshotAuxBarKeys = normalizedLayoutAuxBarKeys()
+
+            writeAtomically(file, compactJson + "\n")
+            
+            // 清除缓存
+            TextKeyboard.clearCachedKeyDefLayouts()
+            
+            // 更新原始数据快照：用写盘前固化的那份（见上方说明），不能在这里重新读
+            // entries —— 否则写盘期间到达的新编辑会被并进基线，hasChanges() 随即为
+            // false，退出提示消失、编辑丢失。
+            originalEntries = snapshotEntries
+            originalLayoutHeightPercentOverrides = snapshotHeightOverrides
+            originalLayoutHeightPercentOverridesLandscape = snapshotHeightOverridesLandscape
+            originalLayoutAuxBarConfigs = snapshotAuxBarConfigs
+            originalLayoutAuxBarKeys = snapshotAuxBarKeys
+            
+            true
+        }.getOrElse { e ->
+            android.util.Log.e("LayoutDataManager", "Save failed", e)
+            false
+        }
+    }
+
+    /**
+     * 原子写入：先写同目录临时文件并 fsync，再 rename 覆盖目标。
+     *
+     * 直接 writeText 覆盖原文件时，若在写入过程中进程被杀（低内存、用户强杀），
+     * 磁盘上会留下被截断的半个 JSON —— 下次打开编辑器解析失败退回内置布局，
+     * 再保存一次用户的自定义布局就永久丢了。
+     */
+    private fun writeAtomically(file: File, content: String) {
+        FileUtil.writeAtomically(file, content)
+    }
+    
+    // ==================== 布局操作 ====================
+    
+    /**
+     * 添加新布局
+     * 
+     * @param newName 新布局名称
+     * @param copyFrom 从中复制的源布局名称（可选）
+     * @return 是否成功
+     */
+    fun addLayout(newName: String, copyFrom: String? = null): Boolean {
+        if (entries.containsKey(newName)) {
+            return false
+        }
+
+        val newRows = if (copyFrom != null) {
+            entries[copyFrom]?.let { copyLayout(it) } ?: mutableListOf()
+        } else {
+            mutableListOf()
+        }
+
+        entries[newName] = newRows
+        return true
+    }
+    
+    /**
+     * 删除布局
+     * 
+     * @param layoutKey 布局键（可以是 "layoutName" 或 "layoutName:subModeLabel"）
+     * @return 删除后剩余的布局键列表
+     */
+    fun deleteLayout(layoutKey: String): List<String> {
+        val layoutName = LayoutJsonUtils.baseLayoutNameFromEntryKey(layoutKey)
+        
+        // 删除指定布局
+        entries.remove(layoutKey)
+        
+        // 如果删除的是基础布局，需要处理子模式布局
+        if (layoutKey == layoutName) {
+            val remainingSubModeKeys = entries.keys.filter {
+                it.startsWith("$layoutName:")
+            }.sorted()
+            
+            if (remainingSubModeKeys.isNotEmpty()) {
+                // 提升第一个子模式为基础布局
+                val firstSubModeKey = remainingSubModeKeys.first()
+                val subModeLayout = entries[firstSubModeKey]
+
+                if (subModeLayout != null) {
+                    entries[layoutName] = copyLayout(subModeLayout)
+                    entries.remove(firstSubModeKey)
+                }
+            }
+        }
+        
+        // 如果没有布局了，加载默认布局
+        if (entries.isEmpty()) {
+            val defaultLayout = loadDefaultPreset()
+            defaultLayout.forEach { (k, v) ->
+                entries[k] = v.map { row ->
+                    row.map { key -> key.toMutableMap() }.toMutableList()
+                }.toMutableList()
+            }
+        }
+        
+        return entries.keys.toList()
+    }
+    
+    /**
+     * Add submode layout
+     *
+     * @param layoutName Base layout name
+     * @param subModeLabel Submode label
+     * @return Whether successful
+     */
+    fun addSubModeLayout(layoutName: String, subModeLabel: String): Boolean {
+        val subModeKey = "$layoutName:$subModeLabel"
+
+        if (entries.containsKey(subModeKey)) {
+            return false
+        }
+
+        // Get source layout (prefer base layout, then other submode layouts)
+        val baseLayout = entries[layoutName]
+        val existingSubModeKeys = entries.keys.filter {
+            it.startsWith("$layoutName:") && it != "$layoutName:default"
+        }
+
+        val sourceLayout = if (baseLayout != null && baseLayout.isNotEmpty()) {
+            baseLayout
+        } else if (existingSubModeKeys.isNotEmpty()) {
+            entries[existingSubModeKeys.first()]
+        } else {
+            null
+        }
+
+        // Copy and migrate data
+        val newLayout = sourceLayout?.let { copyLayout(it) } ?: mutableListOf()
+        migrationManager.migrateDisplayTextForSubMode(newLayout, subModeLabel)
+
+        entries[subModeKey] = newLayout
+        return true
+    }
+
+    /**
+     * 为某个**子布局**新建分体排列。
+     *
+     * 分体排列属于一个具体的子布局（方案 / 层 / 布局本体的「默认」），不是整个布局共用一份：
+     * 「给倉頡五代单独配一套分体排列」是这个功能最主要的诉求，而共用一份做不出这件事。
+     *
+     * 与 [addSubModeLayout] 的关键差别是**不做 displayText 迁移**：分体排列是同一批方案的
+     * 另一套排列，键面上按方案分组的显示文本必须原样保留；若按 [addSubModeLayout] 那样把
+     * 显示文本重写成某个方案专用，切回普通排列后同一份内容就被改写了。这里只深拷贝行数据。
+     *
+     * @param layoutName 基础布局名称
+     * @param subLayout 子布局标签；null 表示布局本体（「默认」子布局）
+     * @param variant 目标排列（[LayoutVariant.Docked] 没有条目，返回 null）
+     * @return 新建/复用后的完整条目键，失败返回 null
+     */
+    fun addVariantLayout(layoutName: String, subLayout: String?, variant: LayoutVariant): String? {
+        val variantKey = variant.jsonKey ?: return null
+        val entryKey = LayoutJsonUtils.entryKeyOf(layoutName, subLayout, variant)
+        if (entries.containsKey(entryKey)) return entryKey
+
+        // 初值取该子布局的**普通排列**（没有就再往上找布局本体的普通排列）。
+        // 分体排列是拿普通排列改出来的：断点位置、空格怎么放，都是在本来的行上调整。
+        val source = entries[LayoutJsonUtils.entryKeyOf(layoutName, subLayout, LayoutVariant.Docked)]
+            ?: subLayout?.let { child ->
+                entries[LayoutJsonUtils.entryKeyOf(layoutName, null, LayoutVariant.Docked)]
+            }
+        val sourceRows = source ?: return null
+
+        entries[entryKey] = copyLayout(sourceRows)
+        return entryKey
+    }
+
+    /**
+     * 删除某个子布局的分体排列。
+     *
+     * @return 是否确实删掉了条目
+     */
+    fun deleteVariantLayout(layoutName: String, subLayout: String?, variant: LayoutVariant): Boolean {
+        val variantKey = variant.jsonKey ?: return false
+        return entries.remove(LayoutJsonUtils.entryKeyOf(layoutName, subLayout, variant)) != null
+    }
+
+    /** 某个子布局是否已经配了独立的分体排列。 */
+    fun hasSplitLayout(layoutName: String, subLayout: String?): Boolean =
+        entries.containsKey(LayoutJsonUtils.entryKeyOf(layoutName, subLayout, LayoutVariant.Split))
+
+    /** 某个子布局的分体排列条目键；没配时返回 null。 */
+    fun splitLayoutEntryKey(layoutName: String, subLayout: String?): String? =
+        LayoutJsonUtils.entryKeyOf(layoutName, subLayout, LayoutVariant.Split)
+            .takeIf { entries.containsKey(it) }
+
+    /**
+     * 添加子布局（用于层切换功能）。
+     *
+     * 子布局使用保留前缀，避免与真实 submode 标签冲突。
+     *
+     * @param layoutName 基础布局名称
+     * @param childName 子布局名称（不包含前缀）
+     * @return 新建后的完整布局键，失败返回 null
+     */
+    fun addChildLayout(layoutName: String, childName: String): String? {
+        val normalizedChild = childName.trim()
+        if (normalizedChild.isEmpty()) return null
+        if (normalizedChild.contains(':')) return null
+        val subModeLabel = LayoutJsonUtils.toLayerSubModeLabel(normalizedChild)
+        val childKey = "$layoutName:$subModeLabel"
+        if (entries.containsKey(childKey)) return null
+
+        val sourceLayout = entries[layoutName]
+            ?: entries.keys.firstOrNull { it.startsWith("$layoutName:") }?.let { entries[it] }
+            ?: return null
+
+        entries[childKey] = copyLayout(sourceLayout)
+        return childKey
+    }
+    
+    /**
+     * 删除子模式布局
+     * 
+     * @param layoutName 基础布局名称
+     * @param subModeLabel 子模式标签
+     */
+    fun deleteSubModeLayout(layoutName: String, subModeLabel: String) {
+        val subModeKey = "$layoutName:$subModeLabel"
+        entries.remove(subModeKey)
+    }
+    
+    /**
+     * 添加新行
+     * 
+     * @param layoutKey 布局键
+     * @param rowIndex 行索引（插入位置），如果为 null 则添加到末尾
+     */
+    fun addRow(layoutKey: String, rowIndex: Int? = null) {
+        val rows = getRowsRef(layoutKey) ?: return
+        if (rowIndex != null && rowIndex in 0..rows.size) {
+            rows.add(rowIndex, mutableListOf())
+        } else {
+            rows.add(mutableListOf())
+        }
+    }
+    
+    /**
+     * 删除行
+     * 
+     * @param layoutKey 布局键
+     * @param rowIndex 行索引
+     * @return 是否成功
+     */
+    fun deleteRow(layoutKey: String, rowIndex: Int): Boolean {
+        val rows = getRowsRef(layoutKey) ?: return false
+        return if (rowIndex in 0 until rows.size) {
+            rows.removeAt(rowIndex)
+            true
+        } else {
+            false
+        }
+    }
+    
+    /**
+     * 添加键
+     * 
+     * @param layoutKey 布局键
+     * @param rowIndex 行索引
+     * @param keyData 键数据
+     * @param keyIndex 键索引（插入位置），如果为 null 则添加到末尾
+     */
+    fun addKey(layoutKey: String, rowIndex: Int, keyData: Map<String, Any?>, keyIndex: Int? = null) {
+        val rows = getRowsRef(layoutKey) ?: return
+        if (rowIndex !in 0 until rows.size) return
+        
+        val newRow = rows[rowIndex]
+        val newKey = keyData.toMutableMap()
+        
+        if (keyIndex != null && keyIndex in 0..newRow.size) {
+            newRow.add(keyIndex, newKey)
+        } else {
+            newRow.add(newKey)
+        }
+    }
+    
+    /**
+     * 更新键
+     * 
+     * @param layoutKey 布局键
+     * @param rowIndex 行索引
+     * @param keyIndex 键索引
+     * @param keyData 新键数据
+     * @return 是否成功
+     */
+    fun updateKey(layoutKey: String, rowIndex: Int, keyIndex: Int, keyData: Map<String, Any?>): Boolean {
+        val rows = getRowsRef(layoutKey) ?: return false
+        return if (rowIndex in 0 until rows.size && keyIndex in 0 until rows[rowIndex].size) {
+            rows[rowIndex][keyIndex] = keyData.toMutableMap()
+            true
+        } else {
+            false
+        }
+    }
+    
+    /**
+     * 删除键
+     * 
+     * @param layoutKey 布局键
+     * @param rowIndex 行索引
+     * @param keyIndex 键索引
+     * @return 是否成功
+     */
+    fun deleteKey(layoutKey: String, rowIndex: Int, keyIndex: Int): Boolean {
+        val rows = getRowsRef(layoutKey) ?: return false
+        return if (rowIndex in 0 until rows.size && keyIndex in 0 until rows[rowIndex].size) {
+            rows[rowIndex].removeAt(keyIndex)
+            true
+        } else {
+            false
+        }
+    }
+    
+    /**
+     * 交换行顺序
+     * 
+     * @param layoutKey 布局键
+     * @param fromPosition 原始位置
+     * @param toPosition 目标位置
+     * @return 是否成功
+     */
+    fun swapRows(layoutKey: String, fromPosition: Int, toPosition: Int): Boolean {
+        val rows = getRowsRef(layoutKey) ?: return false
+        return if (fromPosition in 0 until rows.size && toPosition in 0 until rows.size) {
+            val temp = rows[fromPosition]
+            rows[fromPosition] = rows[toPosition]
+            rows[toPosition] = temp
+            true
+        } else {
+            false
+        }
+    }
+    
+    /**
+     * 获取指定布局的行数据引用
+     */
+    private fun getRowsRef(layoutKey: String): MutableList<MutableList<MutableMap<String, Any?>>>? {
+        return entries[layoutKey]
+    }
+    
+    /**
+     * 获取指定键的数据
+     */
+    fun getKey(layoutKey: String, rowIndex: Int, keyIndex: Int): Map<String, Any?>? {
+        val rows = getRowsRef(layoutKey) ?: return null
+        return if (rowIndex in 0 until rows.size && keyIndex in 0 until rows[rowIndex].size) {
+            rows[rowIndex][keyIndex].toMap()
+        } else {
+            null
+        }
+    }
+    
+    /**
+     * 获取子模式标签列表。
+     *
+     * 分体排列条目不算子模式：它是某个子布局的属性，不是用户可切换的输入方案。
+     */
+    fun getSubModeLabels(layoutName: String): List<String> {
+        val labels = linkedSetOf<String>()
+
+        // 从子模式布局键收集
+        LayoutJsonUtils.subLayoutLabelsOf(entries.keys, layoutName).forEach { label ->
+            if (label.isNotEmpty() && label != "default" &&
+                !LayoutJsonUtils.isReservedSubModeLabel(label)
+            ) {
+                labels.add(label)
+            }
+        }
+        
+        // 从 displayText 收集
+        val rows = entries[layoutName]
+        rows?.forEach { row ->
+            row.forEach { key ->
+                when (val displayText = key["displayText"]) {
+                    is JsonObject -> {
+                        displayText.keys.forEach { mode ->
+                            val normalized = mode.trim()
+                            if (normalized.isNotEmpty() && normalized != "default") {
+                                labels.add(normalized)
+                            }
+                        }
+                    }
+                    is Map<*, *> -> {
+                        displayText.keys.forEach { mode ->
+                            val normalized = mode?.toString()?.trim().orEmpty()
+                            if (normalized.isNotEmpty() && normalized != "default") {
+                                labels.add(normalized)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return labels.toList()
+    }
+    
+    // ==================== 验证 ====================
+    
+    /**
+     * 检查是否有更改
+     */
+    fun hasChanges(): Boolean {
+        pruneLayoutHeightOverrides()
+        return normalizedEntries() != originalEntries ||
+            layoutHeightPercentOverrides.toSortedMap() != originalLayoutHeightPercentOverrides ||
+            layoutHeightPercentOverridesLandscape.toSortedMap() != originalLayoutHeightPercentOverridesLandscape ||
+            layoutAuxBarConfigs.toSortedMap() != originalLayoutAuxBarConfigs ||
+            normalizedLayoutAuxBarKeys() != originalLayoutAuxBarKeys
+    }
+    
+    /**
+     * 验证数据完整性
+     * 
+     * @return 错误消息列表，如果为空则表示数据有效
+     */
+    fun validateEntries(): List<String> {
+        val errors = mutableListOf<String>()
+
+        layoutHeightPercentOverrides.forEach { (layoutName, percent) ->
+            if (percent !in 10..90) {
+                errors.add("布局 \"$layoutName\" 的 keyboard_height_percent 必须在 10 到 90 之间")
+            }
+        }
+
+        layoutHeightPercentOverridesLandscape.forEach { (layoutName, percent) ->
+            if (percent !in 10..90) {
+                errors.add("布局 \"$layoutName\" 的 keyboard_height_percent_landscape 必须在 10 到 90 之间")
+            }
+        }
+        
+        // 检查重复的布局名称
+        val layoutNames = entries.keys.toList()
+        val duplicateNames = layoutNames.groupingBy { it }.eachCount().filter { it.value > 1 }
+        duplicateNames.forEach { (name, count) ->
+            errors.add("布局名称 \"$name\" 重复了 $count 次")
+        }
+        
+        entries.forEach { (layoutName, rows) ->
+            if (rows.isEmpty()) {
+                errors.add("布局 \"$layoutName\" 没有任何行")
+                return@forEach
+            }
+            
+            rows.forEachIndexed { rowIndex, row ->
+                if (row.isEmpty()) {
+                    errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行为空")
+                    return@forEachIndexed
+                }
+                
+                row.forEachIndexed { keyIndex, key ->
+                    validateKey(layoutName, rowIndex, keyIndex, key, errors)
+                }
+            }
+        }
+        
+        return errors
+    }
+    
+    /**
+     * 验证单个键的数据
+     */
+    private fun validateKey(
+        layoutName: String,
+        rowIndex: Int,
+        keyIndex: Int,
+        key: Map<String, Any?>,
+        errors: MutableList<String>
+    ) {
+        val type = key["type"] as? String
+        if (type == null) {
+            errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键缺少 type 字段")
+            return
+        }
+
+        when (type) {
+            "AlphabetKey" -> {
+                val main = key["main"] as? String
+                val alt = key["alt"] as? String
+                if (main.isNullOrBlank()) {
+                    errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 (AlphabetKey) 缺少 main 字段")
+                } else if (main.length != 1) {
+                    errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 (AlphabetKey) 的 main 字段必须是单个字符")
+                }
+                if (alt.isNullOrBlank()) {
+                    errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 (AlphabetKey) 缺少 alt 字段")
+                } else if (alt.length != 1) {
+                    errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 (AlphabetKey) 的 alt 字段必须是单个字符")
+                }
+            }
+            "LayoutSwitchKey", "SymbolKey" -> {
+                val label = key["label"] as? String
+                if (label.isNullOrBlank()) {
+                    errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 ($type) 缺少 label 字段")
+                }
+            }
+            // 运行时解析要求 MacroKey 必须有 tap 动作，写入侧必须同样要求，
+            // 否则编辑器能保存出让键盘无法加载该键的配置。
+            "MacroKey" -> {
+                if (key["tap"] == null) {
+                    errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 (MacroKey) 缺少 tap 动作")
+                }
+            }
+            // 空白占位键**故意没有任何必填字段**：主副字符全空就是它最常用的形态
+            // （键盘上一块看不见的空白），这里绝不能像其它键型那样补一条"缺少 main"。
+            // 它唯一写得出错的字段是 transparent——写个字符串进去会让真假判断失真。
+            "PlaceholderKey" -> {
+                val transparent = key["transparent"]
+                if (transparent != null && transparent !is Boolean) {
+                    errors.add(
+                        "布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 (PlaceholderKey) 的 transparent 字段必须是 true 或 false，但得到：${transparent::class.simpleName}"
+                    )
+                }
+            }
+        }
+
+        // 验证 weight - 改进的类型检查
+        key["weight"]?.let { weight ->
+            when (weight) {
+                is Number -> {
+                    val floatValue = weight.toFloat()
+                    if (floatValue < 0.0f || floatValue > 1.0f) {
+                        errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 ($type) 的 weight 字段必须在 0.0 到 1.0 之间")
+                    }
+                }
+                is String -> {
+                    // 尝试解析字符串为数字
+                    val parsedValue = weight.trim()
+                        .takeUnless { it.isEmpty() || it.equals("null", ignoreCase = true) }
+                        ?.toFloatOrNull()
+                    if (parsedValue == null) {
+                        errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 ($type) 的 weight 字段必须是数字，但得到：\"$weight\"")
+                    } else if (parsedValue < 0.0f || parsedValue > 1.0f) {
+                        errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 ($type) 的 weight 字段必须在 0.0 到 1.0 之间")
+                    }
+                }
+                else -> {
+                    errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 ($type) 的 weight 字段必须是数字，但得到：${weight::class.simpleName}")
+                }
+            }
+        }
+
+        key["rowHeightPercent"]?.let { rowHeightPercent ->
+            when (rowHeightPercent) {
+                is Number -> {
+                    val floatValue = rowHeightPercent.toFloat()
+                    if (floatValue < 1.0f || floatValue > 100.0f) {
+                        errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 ($type) 的 rowHeightPercent 必须在 1 到 100 之间")
+                    }
+                }
+                is String -> {
+                    val parsedValue = rowHeightPercent.trim()
+                        .takeUnless { it.isEmpty() || it.equals("null", ignoreCase = true) }
+                        ?.toFloatOrNull()
+                    if (parsedValue == null) {
+                        errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 ($type) 的 rowHeightPercent 字段必须是数字，但得到：\"$rowHeightPercent\"")
+                    } else if (parsedValue < 1.0f || parsedValue > 100.0f) {
+                        errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 ($type) 的 rowHeightPercent 必须在 1 到 100 之间")
+                    }
+                }
+                else -> {
+                    errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 ($type) 的 rowHeightPercent 字段必须是数字，但得到：${rowHeightPercent::class.simpleName}")
+                }
+            }
+        }
+
+        // 验证 displayText 中的重复模式名称
+        (key["displayText"] as? Map<*, *>)?.let { displayText ->
+            val modeNames = displayText.keys.filterIsInstance<String>().toList()
+            val duplicateModes = modeNames.groupingBy { it }.eachCount().filter { it.value > 1 }
+            duplicateModes.forEach { (mode, count) ->
+                errors.add("布局 \"$layoutName\" 第 ${rowIndex + 1} 行第 ${keyIndex + 1} 个键 ($type) 的 displayText 中模式名称 \"$mode\" 重复了 $count 次")
+            }
+        }
+    }
+    
+    // ==================== 工具方法 ====================
+
+    fun getLayoutHeightPercentOverride(layoutName: String): Int? {
+        return layoutHeightPercentOverrides[layoutName]
+    }
+
+    fun setLayoutHeightPercentOverride(layoutName: String, value: Int?) {
+        if (value == null) {
+            layoutHeightPercentOverrides.remove(layoutName)
+        } else {
+            layoutHeightPercentOverrides[layoutName] = value.coerceIn(10, 90)
+        }
+    }
+
+    fun getLayoutHeightPercentOverrideLandscape(layoutName: String): Int? {
+        return layoutHeightPercentOverridesLandscape[layoutName]
+    }
+
+    fun setLayoutHeightPercentOverrideLandscape(layoutName: String, value: Int?) {
+        if (value == null) {
+            layoutHeightPercentOverridesLandscape.remove(layoutName)
+        } else {
+            layoutHeightPercentOverridesLandscape[layoutName] = value.coerceIn(10, 90)
+        }
+    }
+
+    fun latestParsedLayoutHeightPercentOverrides(): Map<String, Int> {
+        return lastParsedLayoutHeightPercentOverrides
+    }
+
+    fun latestParsedLayoutHeightPercentOverridesLandscape(): Map<String, Int> {
+        return lastParsedLayoutHeightPercentOverridesLandscape
+    }
+
+    /**
+     * Aux bar configuration from the most recent [parseJsonText].
+     *
+     * Needed by callers that parse a document without going through [loadFromFile] — the editor's
+     * saved-instance-state restore does exactly that, and without these two accessors it restored
+     * the keys and the heights but left the aux bar at whatever was on disk (B1).
+     */
+    fun latestParsedLayoutAuxBarConfigs(): Map<String, AuxBarConfig?> = lastParsedLayoutAuxBarConfigs
+
+    fun latestParsedLayoutAuxBarKeys(): Map<String, List<Map<String, Any?>>> = lastParsedLayoutAuxBarKeys
+
+    private fun parseLayoutHeightPercent(layoutObject: JsonObject): Int? {
+        return parseLayoutHeightPercentMeta(layoutObject, LAYOUT_META_HEIGHT_PERCENT_KEY)
+    }
+
+    private fun parseLayoutHeightPercentLandscape(layoutObject: JsonObject): Int? {
+        return parseLayoutHeightPercentMeta(layoutObject, LAYOUT_META_HEIGHT_PERCENT_LANDSCAPE_KEY)
+    }
+
+    private fun parseLayoutHeightPercentMeta(layoutObject: JsonObject, key: String): Int? {
+        val meta = layoutObject[LAYOUT_META_KEY] as? JsonObject ?: return null
+        val raw = (meta[key] as? JsonPrimitive)?.intOrNull
+            ?: (meta[key] as? JsonPrimitive)?.content?.toIntOrNull()
+        return raw?.takeIf { it in 10..90 }
+    }
+
+    private fun parseLayoutAuxBar(layoutObject: JsonObject): AuxBarConfig? {
+        val meta = layoutObject[LAYOUT_META_KEY] as? JsonObject ?: return null
+        val auxBarConfig = meta[LAYOUT_META_AUX_BAR_KEY] as? JsonObject ?: return null
+        val position = when ((auxBarConfig["position"] as? JsonPrimitive)?.content) {
+            "top" -> AuxBarPosition.Top
+            "bottom" -> AuxBarPosition.Bottom
+            "left" -> AuxBarPosition.Left
+            "right" -> AuxBarPosition.Right
+            "above_preedit" -> AuxBarPosition.AbovePreedit
+            else -> return null
+        }
+        val sizePercent = if (position == AuxBarPosition.AbovePreedit) {
+            0f
+        } else {
+            (auxBarConfig["size_percent"] as? JsonPrimitive)?.floatOrNull
+                ?.takeIf { it.isFinite() }
+                ?.coerceIn(5f, 95f)
+                ?: return null
+        }
+        return AuxBarConfig(position, sizePercent)
+    }
+
+    fun getLayoutAuxBarConfig(layoutName: String): AuxBarConfig? {
+        return layoutAuxBarConfigs[LayoutJsonUtils.auxBarOwnerKey(layoutName)]
+    }
+
+    fun setLayoutAuxBarConfig(layoutName: String, config: AuxBarConfig?) {
+        val ownerKey = LayoutJsonUtils.auxBarOwnerKey(layoutName)
+        if (config == null) {
+            layoutAuxBarConfigs.remove(ownerKey)
+        } else {
+            val normalizedSize = config.sizePercent
+                .takeIf { it.isFinite() }
+                ?.coerceIn(5f, 95f)
+                ?: 5f
+            layoutAuxBarConfigs[ownerKey] = config.copy(
+                sizePercent = normalizedSize
+            )
+        }
+    }
+
+    fun getLayoutAuxBarKeys(layoutName: String): List<Map<String, Any?>> {
+        return layoutAuxBarKeys[LayoutJsonUtils.auxBarOwnerKey(layoutName)]?.map { it.toMap() } ?: emptyList()
+    }
+
+    fun getLayoutAuxBarKeysRef(layoutName: String): MutableList<MutableMap<String, Any?>> {
+        return layoutAuxBarKeys.getOrPut(LayoutJsonUtils.auxBarOwnerKey(layoutName)) { mutableListOf() }
+    }
+
+    fun setLayoutAuxBarKeys(layoutName: String, keys: List<Map<String, Any?>>) {
+        val ownerKey = LayoutJsonUtils.auxBarOwnerKey(layoutName)
+        if (keys.isEmpty()) {
+            layoutAuxBarKeys.remove(ownerKey)
+        } else {
+            layoutAuxBarKeys[ownerKey] = keys.map { it.toMutableMap() }.toMutableList()
+        }
+    }
+
+    private fun normalizedLayoutAuxBarKeys(): Map<String, List<Map<String, Any?>>> {
+        return layoutAuxBarKeys.toSortedMap().mapValues { (_, keys) ->
+            keys.map(::copyKey)
+        }
+    }
+
+    /**
+     * 从 aux_bar 元数据中解析自定义按键列表（无 tabs 时用于填充辅助选择栏）。
+     */
+    private fun parseLayoutAuxBarKeys(layoutObject: JsonObject): List<Map<String, Any?>>? {
+        val meta = layoutObject[LAYOUT_META_KEY] as? JsonObject ?: return null
+        val auxBarConfig = meta[LAYOUT_META_AUX_BAR_KEY] as? JsonObject ?: return null
+        val keysElement = auxBarConfig["keys"] as? JsonArray ?: return null
+        val rows = LayoutJsonUtils.parseLayoutRows(JsonArray(listOf(keysElement)))
+        return rows.firstOrNull()?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun normalizeRowsForParsedData(rows: List<List<Map<String, Any?>>>): List<List<Map<String, Any?>>> {
+        return copyLayout(rows).also { normalizeRowHeightPercents(it) }
+    }
+
+    private fun normalizeAllRowsForSave() {
+        entries.values.forEach { rows ->
+            normalizeRowHeightPercents(rows)
+        }
+    }
+
+    private fun pruneLayoutHeightOverrides() {
+        val validLayoutKeys = entries.keys.toSet()
+        layoutHeightPercentOverrides.keys.retainAll(validLayoutKeys)
+        layoutHeightPercentOverridesLandscape.keys.retainAll(validLayoutKeys)
+        layoutAuxBarConfigs.keys.retainAll(validLayoutKeys)
+        layoutAuxBarKeys.keys.retainAll(validLayoutKeys)
+    }
+
+    private fun normalizeRowHeightPercents(rows: MutableList<MutableList<MutableMap<String, Any?>>>) {
+        rows.forEach { row ->
+            row.forEach { key ->
+                val parsed = when (val raw = key["rowHeightPercent"]) {
+                    is Number -> raw.toFloat()
+                    is String -> raw.trim().toFloatOrNull()
+                    else -> null
+                }?.takeIf { it in 1f..100f }
+
+                if (parsed == null) {
+                    key.remove("rowHeightPercent")
+                } else {
+                    key["rowHeightPercent"] = parsed
+                }
+            }
+        }
+    }
+     
+    /**
+     * 从 JsonArray 解析布局行。
+     *
+     * @param rowsArray JSON 数组，包含布局行数据
+     * @return 解析后的布局行列表
+     */
+    fun parseLayoutRows(rowsArray: JsonArray): List<List<Map<String, Any?>>> {
+        val rows = mutableListOf<List<Map<String, Any?>>>()
+        for (i in rowsArray.indices) {
+            val rowArray = rowsArray[i].jsonArray
+            val row = mutableListOf<Map<String, Any?>>()
+            for (j in rowArray.indices) {
+                val rowElement = rowArray[j]
+                if (rowElement is JsonNull) continue
+                if (rowElement !is JsonObject) continue
+
+                val keyJson = rowElement
+                val keyMap = mutableMapOf<String, Any?>()
+                keyJson.entries.forEach { (key, value) ->
+                    keyMap[key] = normalizeKeyValue(key, when (value) {
+                        is JsonObject -> value.toMap().mapValues { it.value.let { e -> LayoutJsonUtils.toAny(e) } }
+                        is JsonArray -> value.map { LayoutJsonUtils.toAny(it) }
+                        is JsonPrimitive -> {
+                            if (value.isString) value.content
+                            else value.booleanOrNull ?: value.intOrNull ?: value.doubleOrNull ?: value.content
+                        }
+                        is JsonNull -> null
+                    })
+                }
+                row.add(keyMap)
+            }
+            rows.add(row)
+        }
+        return rows
+    }
+
+    private fun normalizeKeyValue(key: String, value: Any?): Any? {
+        if (key != "weight" &&
+            key != "rowHeightPercent" &&
+            key != "textColor" &&
+            key != "altTextColor" &&
+            key != "backgroundColor" &&
+            key != "shadowColor"
+        ) return value
+        return when (value) {
+            null -> null
+            is Number -> if (key == "weight" || key == "rowHeightPercent") value.toFloat() else value.toInt()
+            is String -> {
+                value.trim()
+                    .takeUnless { it.isEmpty() || it.equals("null", ignoreCase = true) }
+                    ?.let {
+                        if (key == "weight" || key == "rowHeightPercent") {
+                            it.toFloatOrNull()
+                        } else {
+                            when {
+                                it.startsWith("#") -> it.removePrefix("#").toLongOrNull(16)?.toInt()
+                                it.startsWith("0x", ignoreCase = true) -> it.removePrefix("0x").toLongOrNull(16)?.toInt()
+                                else -> it.toLongOrNull()?.toInt()
+                            }
+                        }
+                    }
+            }
+            else -> null
+        }
+    }
+    
+    /**
+     * 深拷贝布局数据。
+     *
+     * @param sourceLayout 源布局数据
+     * @return 拷贝后的布局数据
+     */
+    fun copyLayout(sourceLayout: List<List<Map<String, Any?>>>): MutableList<MutableList<MutableMap<String, Any?>>> {
+        val copiedLayout = mutableListOf<MutableList<MutableMap<String, Any?>>>()
+        for (sourceRow in sourceLayout) {
+            val newRow = mutableListOf<MutableMap<String, Any?>>()
+            for (sourceKey in sourceRow) {
+                val newKey = mutableMapOf<String, Any?>()
+                sourceKey.forEach { (k, v) ->
+                    newKey[k] = when (v) {
+                        is Map<*, *> -> mutableMapOf<String, Any?>().apply {
+                            v.forEach { (kk, vv) -> put(kk.toString(), vv) }
+                        }
+                        is List<*> -> v.toList()
+                        else -> v
+                    }
+                }
+                newRow.add(newKey)
+            }
+            copiedLayout.add(newRow)
+        }
+        return copiedLayout
+    }
+    
+    /**
+     * 标准化数据用于比较。
+     *
+     * @return 标准化后的数据
+     */
+    fun normalizedEntries(): Map<String, List<List<Map<String, Any?>>>> =
+        entries.toSortedMap().mapValues { (_, rows) ->
+            rows.map { row ->
+                row.map(::copyKey)
+            }
+        }
+
+    /**
+     * 验证异常类
+     */
+    class ValidationException(val errors: List<String>) : Exception("Validation failed: ${errors.joinToString("; ")}")
+}

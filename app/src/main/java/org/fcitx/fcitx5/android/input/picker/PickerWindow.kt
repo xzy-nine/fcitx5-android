@@ -69,12 +69,20 @@ class PickerWindow(
     private val popupPreview: Boolean = true,
     private val followKeyBorder: Boolean = true,
     private val policy: PickerPolicy = DefaultPickerPolicy()
-) : InputWindow.ExtendedInputWindow<PickerWindow>(), EssentialWindow, ComposeWindow {
+) : InputWindow.ExtendedInputWindow<PickerWindow>(PickerWindow::class), EssentialWindow, ComposeWindow {
 
     enum class Key : EssentialWindow.Key {
         Symbol,
         Emoji,
-        Emoticon
+        Emoticon;
+
+        companion object {
+            /** 全部可作为宏「层目标」的键名。 */
+            val layerTargetNames: List<String> = entries.map { it.name }
+
+            /** 按名称解析，未知名称返回 null。 */
+            fun ofName(name: String): Key? = entries.firstOrNull { it.name == name }
+        }
     }
 
     private val windowManager: InputWindowManager by manager.must()

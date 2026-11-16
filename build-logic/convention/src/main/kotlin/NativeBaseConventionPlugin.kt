@@ -13,14 +13,20 @@ import org.gradle.kotlin.dsl.register
 open class NativeBaseConventionPlugin : Plugin<Project> {
 
     override fun apply(target: Project) {
-        val prebuiltDir = target.rootProject.projectDir.resolve("lib/fcitx5/src/main/cpp/prebuilt")
-        val isBuildingBundle = target.rootProject.gradle.startParameter.taskNames.any {
-            it.startsWith("${target.path}:bundle")
+        val prebuiltDir = target.rootProject.projectDir.resolve("native/rime-sdk")
+        target.tasks.configureEach {
+            if (name.startsWith("configureCMake") || name.startsWith("buildCMake") || name == "preBuild") {
+                dependsOn(target.rootProject.tasks.named("prepareRimeSdk"))
+            }
         }
+        val abiOverride = target.buildAbiOverride
+        val selectedAbis = selectBuildAbis(abiOverride, Versions.supportedABIs)
+        val isBuildingBundle = requestsBundle(target.rootProject.gradle.startParameter.taskNames, target.path)
         target.extensions.configure<CommonExtension> {
             ndkVersion = target.ndkVersion
             defaultConfig.apply {
                 minSdk = Versions.minSdk
+                if (isBuildingBundle && abiOverride != null) ndk.abiFilters.addAll(selectedAbis)
                 @Suppress("UnstableApiUsage")
                 externalNativeBuild {
                     cmake {
@@ -45,7 +51,7 @@ open class NativeBaseConventionPlugin : Plugin<Project> {
                     isEnable = true
                     isUniversalApk = false
                     reset()
-                    (target.buildAbiOverride?.split(",") ?: Versions.supportedABIs).forEach {
+                    selectedAbis.forEach {
                         include(it)
                     }
                 }

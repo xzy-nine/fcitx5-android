@@ -14,7 +14,6 @@ import org.fcitx.fcitx5.android.ui.main.modified.MySwitchPreference
 import org.fcitx.fcitx5.android.ui.main.settings.DialogSeekBarPreference
 import org.fcitx.fcitx5.android.ui.main.settings.EditTextIntPreference
 import org.fcitx.fcitx5.android.ui.main.settings.TwinSeekBarPreference
-import org.fcitx.fcitx5.android.utils.InputMethodUtil
 import org.fcitx.fcitx5.android.utils.includes
 
 abstract class ManagedPreferenceUi<T : Preference>(
@@ -43,6 +42,25 @@ abstract class ManagedPreferenceUi<T : Preference>(
             if (this@Switch.summary != null)
                 setSummary(this@Switch.summary)
             setTitle(this@Switch.title)
+        }
+    }
+
+    class StringSet(
+        @StringRes
+        val title: Int,
+        key: String,
+        val defaultValue: Set<String>,
+        @StringRes
+        val summary: Int? = null,
+        enableUiOn: (() -> Boolean)? = null
+    ) : ManagedPreferenceUi<Preference>(key, enableUiOn) {
+        override fun createUi(context: Context) = Preference(context).apply {
+            key = this@StringSet.key
+            isIconSpaceReserved = false
+            isSingleLineTitle = false
+            setTitle(this@StringSet.title)
+            if (this@StringSet.summary != null)
+                setSummary(this@StringSet.summary)
         }
     }
 
@@ -85,12 +103,7 @@ abstract class ManagedPreferenceUi<T : Preference>(
             setDefaultValue(defaultValue)
             setTitle(this@VoiceInputList.title)
             setDialogTitle(this@VoiceInputList.title)
-            val voiceInputMethods = InputMethodUtil.listVoiceInputMethods()
-            entryValues = arrayOf("", *voiceInputMethods.map { it.first.id }.toTypedArray())
-            entries = arrayOf(
-                context.getString(R.string.system_default),
-                *voiceInputMethods.map { it.first.loadLabel(context.packageManager) }.toTypedArray()
-            )
+            refreshEntries(this)
             // shows "(Not Available)" if selected id is not present
             summaryProvider = Preference.SummaryProvider<ListPreference> { preference ->
                 if (preference.entryValues.includes(preference.value)) {
@@ -98,6 +111,16 @@ abstract class ManagedPreferenceUi<T : Preference>(
                 } else {
                     context.getString(R.string._not_available_)
                 }
+            }
+        }
+
+        companion object {
+            /** Re-read providers after returning from plugin import/removal without recreating the page. */
+            fun refreshEntries(preference: ListPreference) {
+                val context = preference.context
+                val entries = org.fcitx.fcitx5.android.input.voice.VoiceInputChoices.list(context)
+                preference.entryValues = entries.map { it.id }.toTypedArray()
+                preference.entries = entries.map { it.label }.toTypedArray()
             }
         }
     }

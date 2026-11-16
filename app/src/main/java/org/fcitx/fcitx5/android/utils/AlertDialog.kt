@@ -5,50 +5,28 @@
 
 package org.fcitx.fcitx5.android.utils
 
-import android.app.AlertDialog
-import android.widget.Button
+import android.app.Dialog
+import android.view.WindowManager
+import androidx.appcompat.app.AlertDialog
 
-val AlertDialog.positiveButton: Button
-    get() = getButton(AlertDialog.BUTTON_POSITIVE)
-
-val AlertDialog.negativeButton: Button
-    get() = getButton(AlertDialog.BUTTON_NEGATIVE)
-
-val AlertDialog.neutralButton: Button
-    get() = getButton(AlertDialog.BUTTON_NEUTRAL)
+/** Call after content installation for forms that can create text fields dynamically. */
+internal fun Dialog.allowImeInput() {
+    window?.apply {
+        clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+        setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+    }
+}
 
 /**
  * Change positive button listener **AFTER** [AlertDialog.show] has been called.
  *
  * In the listener: `true` to dismiss the dialog; `false` to keep the dialog open.
  */
-fun AlertDialog.onPositiveButtonClick(l: AlertDialog.() -> Boolean?): AlertDialog {
-    positiveButton.setOnClickListener {
-        if (l.invoke(this) == true) dismiss()
-    }
-    return this
-}
-
-/**
- * Change negative button listener **AFTER** [AlertDialog.show] has been called.
- *
- * In the listener: `true` to dismiss the dialog; `false` to keep the dialog open.
- */
-fun AlertDialog.onNegativeButtonClick(l: AlertDialog.() -> Boolean): AlertDialog {
-    negativeButton.setOnClickListener {
-        if (l.invoke(this)) dismiss()
-    }
-    return this
-}
-
-/**
- * Change neutral button listener **AFTER** [AlertDialog.show] has been called.
- *
- * In the listener: `true` to dismiss the dialog; `false` to keep the dialog open.
- */
-fun AlertDialog.onNeutralButtonClick(l: AlertDialog.() -> Boolean): AlertDialog {
-    neutralButton.setOnClickListener {
-        if (l.invoke(this)) dismiss()
+fun AlertDialog.onPositiveButtonClick(
+    listener: AlertDialog.() -> Boolean?
+): AlertDialog {
+    getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+        if (listener.invoke(this) == true) dismiss()
     }
     return this
 }

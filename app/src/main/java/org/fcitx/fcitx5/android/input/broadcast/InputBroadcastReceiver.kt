@@ -10,6 +10,7 @@ import org.fcitx.fcitx5.android.core.Action
 import org.fcitx.fcitx5.android.core.CapabilityFlags
 import org.fcitx.fcitx5.android.core.FcitxEvent.CandidateListEvent
 import org.fcitx.fcitx5.android.core.FcitxEvent.InputPanelEvent
+import org.fcitx.fcitx5.android.core.FcitxEvent.PagedCandidateEvent
 import org.fcitx.fcitx5.android.core.FormattedText
 import org.fcitx.fcitx5.android.core.InputMethodEntry
 import org.fcitx.fcitx5.android.input.wm.InputWindow
@@ -19,7 +20,7 @@ interface InputBroadcastReceiver {
 
     fun onScopeSetupFinished(scope: DynamicScope) {}
 
-    fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {}
+    fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags, restarting: Boolean) {}
 
     fun onClientPreeditUpdate(data: FormattedText) {}
 
@@ -37,10 +38,13 @@ interface InputBroadcastReceiver {
 
     fun onWindowDetached(window: InputWindow) {}
 
-    fun onPunctuationUpdate(mapping: Map<String, String>) {}
-
     fun onPreeditEmptyStateUpdate(empty: Boolean) {}
 
     fun onReturnKeyDrawableUpdate(@DrawableRes resourceId: Int) {}
 
+}
+
+/** Consume the complete page instead of its list-only compatibility presentation. */
+interface PagedCandidateReceiver : InputBroadcastReceiver {
+    fun onPagedCandidateUpdate(data: PagedCandidateEvent.Data)
 }

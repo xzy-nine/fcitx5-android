@@ -18,8 +18,6 @@
     <!-- Custom: split keyboard -->
     <string name="split_keyboard">分離式鍵盤</string>
     <string name="split_keyboard_blank_ratio">分離式鍵盤空白比例</string>
-    <string name="split_keyboard_threshold">分離式鍵盤閾值 (寬/高)</string>
-    <string name="space_behavior_voice_input">切換到語音輸入</string>
     <string name="group_split_keyboard">分離式鍵盤</string>
     <string name="group_key_gestures">按鍵手勢</string>
     <string name="group_candidate_style">候選詞樣式</string>
@@ -63,7 +61,6 @@
     <string name="pinyin_dict_delete_confirm">確定刪除辭典「%1$s」？</string>
 
     <!-- Custom: settings search -->
-    <string name="search">搜尋</string>
     <string name="search_settings">搜尋設定</string>
     <string name="search_no_results">沒有找到「%1$s」相關設定</string>
     <string name="search_hint">依名稱搜尋設定</string>

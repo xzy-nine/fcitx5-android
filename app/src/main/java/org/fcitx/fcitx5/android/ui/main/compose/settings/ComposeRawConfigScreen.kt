@@ -425,11 +425,12 @@ private fun unsupportedSummary(tooltip: String?, typeName: String): String =
 
 /** Destination of a resolved external row; `null` when it needs a local dialog instead. */
 private fun RawConfigExternalAction.routeOrNull(): AppRoute? = when (this) {
-    RawConfigExternalAction.PinyinDictionary -> AppRoute.PinyinDictionary("")
-    is RawConfigExternalAction.Punctuation -> AppRoute.Punctuation(title, lang)
-    RawConfigExternalAction.QuickPhrase -> AppRoute.QuickPhraseList
-    RawConfigExternalAction.PinyinCustomPhrase -> AppRoute.PinyinCustomPhrase
-    RawConfigExternalAction.TableInputMethods -> AppRoute.TableInputMethods
+    // 单引擎构建：libime 系数据管理入口已随多引擎移除，统一落到唯一 Rime 设置页
+    RawConfigExternalAction.PinyinDictionary,
+    is RawConfigExternalAction.Punctuation,
+    RawConfigExternalAction.QuickPhrase,
+    RawConfigExternalAction.PinyinCustomPhrase,
+    RawConfigExternalAction.TableInputMethods -> AppRoute.InputMethodConfig("Rime", "rime")
     // the addon name must go into `uniqueName`: RawConfigHostScreen reads it as the addon id
     is RawConfigExternalAction.AddonConfig ->
         AppRoute.RawConfigHost(RawConfigHostType.AddonConfig, name = addon, uniqueName = addon)

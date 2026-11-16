@@ -61,8 +61,13 @@ class PopupKeyboardUi(
         val textView = view(::AutoScaleTextView) {
             text = this@PopupKeyUi.text
             scaleMode = AutoScaleTextView.Mode.Proportional
-            textSize = 23f
+            // Use configured font size with fallback to default (23f)
+            val fontSize = org.fcitx.fcitx5.android.input.font.FontProviders.getFontSize(
+                "popup_key_font", 23f
+            )
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, fontSize)
             setTextColor(theme.keyTextColor)
+            setFontTypeFace("popup_key_font")
         }
 
         override val root = frameLayout {
@@ -74,7 +79,7 @@ class PopupKeyboardUi(
 
     private val inactiveBackground = GradientDrawable().apply {
         cornerRadius = radius
-        setColor(theme.popupBackgroundColor)
+        setColor(theme.backgroundColor)
     }
 
     private val focusBackground = GradientDrawable().apply {
@@ -219,7 +224,7 @@ class PopupKeyboardUi(
 
     override fun onTrigger(): KeyAction? {
         val key = keys.getOrNull(focusedIndex) ?: return null
-        return KeyAction.FcitxKeyAction(key)
+        return popupKeyAction(key)
     }
 
 }

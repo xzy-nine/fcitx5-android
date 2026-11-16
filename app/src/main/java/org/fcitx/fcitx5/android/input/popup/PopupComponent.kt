@@ -22,7 +22,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
-import org.fcitx.fcitx5.android.input.broadcast.PunctuationComponent
 import org.fcitx.fcitx5.android.input.dependency.context
 import org.fcitx.fcitx5.android.input.dependency.inputMethodService
 import org.fcitx.fcitx5.android.input.dependency.theme
@@ -52,9 +51,7 @@ class PopupComponent :
 
     private val service by manager.inputMethodService()
     private val context by manager.context()
-    private val theme by manager.theme()
-    private val punctuation: PunctuationComponent by manager.must()
-
+    private val theme by manager.theme()
     private val _state = MutableStateFlow(PopupLayerState())
 
     /** 100ms 最小显示时长对应的延迟隐藏任务，按触发键 id 索引 */
@@ -220,9 +217,7 @@ class PopupComponent :
             is KeyDef.Popup.Keyboard.Preset -> {
                 val preset = PopupPreset[keyboard.label] ?: return
                 keys = preset.toList()
-                labels = if (keyboard.transformPunctuation && punctuation.enabled) {
-                    keys.map { punctuation.transform(it) }
-                } else keys
+                labels = keys
             }
 
             is KeyDef.Popup.Keyboard.Explicit -> {
@@ -426,6 +421,9 @@ class PopupComponent :
                 is PopupAction.PreviewUpdateAction -> updatePopup(viewId, content)
                 is PopupAction.ShowKeyboardAction -> showKeyboard(viewId, keyboard, bounds)
                 is PopupAction.ShowMenuAction -> showMenu(viewId, menu, bounds)
+                is PopupAction.DismissAllAction -> dismissAll()
+                // LongPressKeyboard 表示长按直接触发其 action，不弹层
+                is PopupAction.ShowLongPressKeyboardAction -> Unit
                 is PopupAction.TriggerAction -> outAction = triggerFocused(viewId)
             }
         }

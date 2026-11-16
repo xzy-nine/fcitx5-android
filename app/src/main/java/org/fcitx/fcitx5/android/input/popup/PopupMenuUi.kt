@@ -11,6 +11,7 @@ import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.OvalShape
 import android.widget.ImageView
 import androidx.core.graphics.ColorUtils
+import org.fcitx.fcitx5.android.data.theme.IconThemeManager
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.input.keyboard.KeyDef
 import splitties.dimensions.dp
@@ -35,7 +36,7 @@ class PopupMenuUi(
 
     private val inactiveBackground = InsetDrawable(
         ShapeDrawable(OvalShape()).apply {
-            paint.color = theme.accentKeyBackgroundColor
+            paint.color = theme.backgroundColor
         },
         (keySize - ctx.dp(33)) / 2
     )
@@ -44,7 +45,7 @@ class PopupMenuUi(
         ShapeDrawable(OvalShape()).apply {
             paint.color = ColorUtils.compositeColors(
                 theme.keyPressHighlightColor,
-                theme.accentKeyBackgroundColor
+                theme.backgroundColor
             )
         },
         (keySize - ctx.dp(34)) / 2
@@ -61,12 +62,13 @@ class PopupMenuUi(
 
     private var focusedIndex = columnOrder[focusColumn]
 
-    private val keyViews = items.map {
+    private val keyViews = items.map { item ->
+        val resolvedIcon = item.iconSlot?.let { IconThemeManager.resolveIconDrawable(it) }
         imageView {
             background = inactiveBackground
             scaleType = ImageView.ScaleType.CENTER_INSIDE
-            imageDrawable = drawable(it.icon)!!.apply {
-                setTint(theme.accentKeyTextColor)
+            imageDrawable = (resolvedIcon ?: drawable(item.icon))!!.apply {
+                setTint(theme.keyTextColor)
             }
         }
     }

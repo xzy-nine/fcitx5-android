@@ -1,0 +1,120 @@
+/*
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
+ */
+package org.fcitx.fcitx5.android.input.bar
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class PasswordToolbarPolicyTest {
+
+    @Test
+    fun higherPriorityContentPrecedesForcedAndAutomaticPasswordNumberRow() {
+        assertEquals(
+            IdleToolbarContent.Clipboard,
+            resolveIdleToolbarContent(
+                clipboardFresh = true,
+                inlineSuggestionPresent = true,
+                forceNumberRow = true,
+                passwordMode = PasswordToolbarMode.NumberRow
+            )
+        )
+        assertEquals(
+            IdleToolbarContent.InlineSuggestion,
+            resolveIdleToolbarContent(
+                clipboardFresh = false,
+                inlineSuggestionPresent = true,
+                forceNumberRow = true,
+                passwordMode = PasswordToolbarMode.NumberRow
+            )
+        )
+    }
+
+    @Test
+    fun passwordFallbackAppliesAfterHigherPriorityContent() {
+        assertEquals(
+            IdleToolbarContent.NumberRow,
+            resolveIdleToolbarContent(
+                clipboardFresh = false,
+                inlineSuggestionPresent = false,
+                forceNumberRow = false,
+                passwordMode = PasswordToolbarMode.NumberRow
+            )
+        )
+        assertEquals(
+            IdleToolbarContent.Toolbar,
+            resolveIdleToolbarContent(
+                clipboardFresh = false,
+                inlineSuggestionPresent = false,
+                forceNumberRow = false,
+                passwordMode = PasswordToolbarMode.NotPassword
+            )
+        )
+    }
+
+    @Test
+    fun nonPasswordFieldUsesNormalToolbar() {
+        assertEquals(
+            PasswordToolbarMode.NotPassword,
+            resolvePasswordToolbarMode(
+                isPasswordField = false,
+                showNumberRow = false,
+                isNumberLayout = false,
+                numberRowDismissed = false
+            )
+        )
+    }
+
+    @Test
+    fun enabledPreferenceShowsClickableNumberRowTarget() {
+        assertEquals(
+            PasswordToolbarMode.NumberRow,
+            resolvePasswordToolbarMode(
+                isPasswordField = true,
+                showNumberRow = true,
+                isNumberLayout = false,
+                numberRowDismissed = false
+            )
+        )
+    }
+
+    @Test
+    fun disabledPreferenceFallsBackToNormalToolbar() {
+        assertEquals(
+            PasswordToolbarMode.NotPassword,
+            resolvePasswordToolbarMode(
+                isPasswordField = true,
+                showNumberRow = false,
+                isNumberLayout = false,
+                numberRowDismissed = false
+            )
+        )
+    }
+
+    @Test
+    fun numericPasswordLayoutFallsBackToNormalToolbar() {
+        assertEquals(
+            PasswordToolbarMode.NotPassword,
+            resolvePasswordToolbarMode(
+                isPasswordField = true,
+                showNumberRow = true,
+                isNumberLayout = true,
+                numberRowDismissed = false
+            )
+        )
+    }
+
+    @Test
+    fun dismissingNumberRowFallsBackToNormalToolbar() {
+        assertEquals(
+            PasswordToolbarMode.NotPassword,
+            resolvePasswordToolbarMode(
+                isPasswordField = true,
+                showNumberRow = true,
+                isNumberLayout = false,
+                numberRowDismissed = true
+            )
+        )
+    }
+}

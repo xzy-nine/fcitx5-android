@@ -13,19 +13,17 @@ import android.graphics.Rect
 import android.net.Uri
 import android.os.Bundle
 import android.os.Parcelable
+import android.provider.MediaStore
 import android.view.Menu
 import android.view.ViewGroup
 import androidx.activity.addCallback
-import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContract
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.result.contract.ActivityResultContract
+import org.fcitx.fcitx5.android.ui.common.SettingsUiActivity
 import androidx.appcompat.graphics.drawable.DrawerArrowDrawable
-import androidx.appcompat.widget.Toolbar
+import com.google.android.material.appbar.MaterialToolbar as Toolbar
 import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updateLayoutParams
 import com.canhub.cropper.CropImageOptions
 import com.canhub.cropper.CropImageView
 import kotlinx.parcelize.IgnoredOnParcel
@@ -48,11 +46,10 @@ import splitties.views.dsl.core.add
 import splitties.views.dsl.core.matchParent
 import splitties.views.dsl.core.view
 import splitties.views.dsl.core.wrapContent
-import splitties.views.topPadding
 import timber.log.Timber
 import java.io.File
 
-class CropImageActivity : AppCompatActivity() {
+class CropImageActivity : SettingsUiActivity() {
 
     companion object {
         const val CROP_OPTIONS = "crop_options"
@@ -85,7 +82,8 @@ class CropImageActivity : AppCompatActivity() {
             val rect: Rect,
             val rotation: Int,
             val file: File,
-            val srcUri: Uri
+            val srcUri: Uri,
+            val srcFile: File? = null
         ) : CropResult() {
             // TODO: find some way to transfer large Bitmap without writing to file
             @IgnoredOnParcel
@@ -122,23 +120,26 @@ class CropImageActivity : AppCompatActivity() {
     private lateinit var cropView: CropImageView
 
     private lateinit var sourceImageUri: Uri
-
-    private val launcher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri == null) {
-            setResult(RESULT_CANCELED)
-            finish()
-        } else {
-            sourceImageUri = uri
-            cropView.setImageUriAsync(uri)
-        }
-    }
+    private lateinit var imagePickerLauncher: ActivityResultLauncher<Intent>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         cropOption = intent.parcelable<CropOption>(CROP_OPTIONS) ?: CropOption.New(1, 1)
-        enableEdgeToEdge()
+        imagePickerLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                val uri = result.data?.data
+                if (result.resultCode != RESULT_OK || uri == null) {
+                    setResult(RESULT_CANCELED)
+                    finish()
+                    return@registerForActivityResult
+                }
+                sourceImageUri = uri
+                cropView.setImageUriAsync(uri)
+            }
         setupRootView()
         setContentView(root)
+        setSupportActionBar(toolbar)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
         setupCropView(cropOption)
         onBackPressedDispatcher.addCallback {
             setResult(RESULT_CANCELED)
@@ -151,10 +152,8 @@ class CropImageActivity : AppCompatActivity() {
 
     private fun setupRootView() {
         toolbar = view(::Toolbar) {
-            backgroundColor = styledColor(android.R.attr.colorPrimary)
-            elevation = dp(4f)
+            id = R.id.toolbar
             navigationIcon = DrawerArrowDrawable(context).apply { progress = 1f }
-            setupToolbarMenu(menu)
         }
         cropView = CropImageView(this)
         root = constraintLayout {
@@ -168,17 +167,11 @@ class CropImageActivity : AppCompatActivity() {
                 bottomOfParent()
             })
         }
-        ViewCompat.setOnApplyWindowInsetsListener(root) { _, windowInsets ->
-            val statusBars = windowInsets.getInsets(WindowInsetsCompat.Type.statusBars())
-            val navBars = windowInsets.getInsets(WindowInsetsCompat.Type.navigationBars())
-            root.updateLayoutParams<ViewGroup.MarginLayoutParams> {
-                leftMargin = navBars.left
-                rightMargin = navBars.right
-                bottomMargin = navBars.bottom
-            }
-            toolbar.topPadding = statusBars.top
-            windowInsets
-        }
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        setupToolbarMenu(menu)
+        return true
     }
 
     private fun setupToolbarMenu(menu: Menu) {
@@ -215,7 +208,7 @@ class CropImageActivity : AppCompatActivity() {
         cropView.setAspectRatio(option.width, option.height)
         when (option) {
             is CropOption.New -> {
-                launcher.launch("image/*")
+                launchSystemImagePicker()
             }
             is CropOption.Edit -> {
                 sourceImageUri = option.sourceUri
@@ -231,6 +224,13 @@ class CropImageActivity : AppCompatActivity() {
         }
     }
 
+    private fun launchSystemImagePicker() {
+        val intent = Intent(Intent.ACTION_PICK).apply {
+            setDataAndType(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*")
+        }
+        imagePickerLauncher.launch(intent)
+    }
+
     private fun onCropImage() {
         val tempOutFile = File.createTempFile("cropped", ".png", cacheDir)
         try {
@@ -240,11 +240,28 @@ class CropImageActivity : AppCompatActivity() {
                 options = CropImageView.RequestSizeOptions.RESIZE_INSIDE,
             )
             tempOutFile.outputStream().use { bitmap!!.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            val tempSrcFile = runCatching {
+                val extension = contentResolver.getType(sourceImageUri)?.let {
+                    android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(it)
+                }?.takeIf { it.isNotBlank() } ?: "img"
+                val src = File.createTempFile("source", ".$extension", cacheDir)
+                val input = contentResolver.openInputStream(sourceImageUri)
+                    ?: if (sourceImageUri.scheme == "file") {
+                        val srcPath = sourceImageUri.path ?: return@runCatching null
+                        File(srcPath).inputStream()
+                    } else null
+                if (input == null) return@runCatching null
+                input.use { stream ->
+                    src.outputStream().use { output -> stream.copyTo(output) }
+                }
+                src.takeIf { it.length() > 0L }
+            }.getOrNull()
             val success = CropResult.Success(
                 rect = cropView.cropRect!!,
                 rotation = cropView.rotatedDegrees,
                 file = tempOutFile,
-                srcUri = sourceImageUri
+                srcUri = sourceImageUri,
+                srcFile = tempSrcFile
             )
             setResult(RESULT_OK, Intent().putExtra(CROP_RESULT, success))
         } catch (e: Exception) {

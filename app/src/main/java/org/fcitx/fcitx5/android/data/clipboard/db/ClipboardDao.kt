@@ -17,11 +17,14 @@ interface ClipboardDao {
     @Query("UPDATE ${ClipboardEntry.TABLE_NAME} SET pinned=:pinned WHERE id=:id")
     suspend fun updatePinStatus(id: Int, pinned: Boolean)
 
-    @Query("UPDATE ${ClipboardEntry.TABLE_NAME} SET text=:text WHERE id=:id")
-    suspend fun updateText(id: Int, text: String)
+    @Query("UPDATE ${ClipboardEntry.TABLE_NAME} SET text=:text WHERE id=:id AND deleted=0")
+    suspend fun updateText(id: Int, text: String): Int
 
     @Query("UPDATE ${ClipboardEntry.TABLE_NAME} SET timestamp=:timestamp WHERE id=:id")
     suspend fun updateTime(id: Int, timestamp: Long)
+
+    @Query("UPDATE ${ClipboardEntry.TABLE_NAME} SET originalText=:originalText WHERE id=:id AND originalText=''")
+    suspend fun updateOriginalTextIfEmpty(id: Int, originalText: String)
 
     @Query("SELECT COUNT(*) FROM ${ClipboardEntry.TABLE_NAME} WHERE deleted=0")
     suspend fun itemCount(): Int
@@ -32,23 +35,160 @@ interface ClipboardDao {
     @Query("SELECT * FROM ${ClipboardEntry.TABLE_NAME} WHERE rowId=:rowId AND deleted=0 LIMIT 1")
     suspend fun get(rowId: Long): ClipboardEntry?
 
-    @Query("SELECT EXISTS(SELECT 1 FROM ${ClipboardEntry.TABLE_NAME} WHERE pinned=0 AND deleted=0)")
-    suspend fun haveUnpinned(): Boolean
-
-    @Query("SELECT * FROM ${ClipboardEntry.TABLE_NAME} WHERE pinned=0 AND deleted=0")
-    suspend fun getAllUnpinned(): List<ClipboardEntry>
-
     @Query("SELECT * FROM ${ClipboardEntry.TABLE_NAME} WHERE deleted=0 ORDER BY pinned DESC, timestamp DESC")
     fun allEntries(): PagingSource<Int, ClipboardEntry>
 
-    @Query("SELECT * FROM ${ClipboardEntry.TABLE_NAME} WHERE text=:text AND sensitive=:sensitive AND deleted=0 LIMIT 1")
-    suspend fun find(text: String, sensitive: Boolean = false): ClipboardEntry?
+    /** Same category boundaries as the keyboard page, with literal substring filtering. */
+    @Query(
+        "SELECT * FROM ${ClipboardEntry.TABLE_NAME} WHERE deleted=0 " +
+            "AND (:category='All' OR (:category='Favorites' AND pinned=1) " +
+            "OR (:category='Local' AND source='${ClipboardEntry.SOURCE_LOCAL}' AND pinned=0 " +
+            "AND text NOT LIKE 'content://%' AND text NOT LIKE 'file://%') " +
+            "OR (:category='Media' AND (text LIKE 'content://%' OR text LIKE 'file://%')) " +
+            "OR (:category='Remote' AND source='${ClipboardEntry.SOURCE_REMOTE}')) " +
+            "AND (text LIKE '%' || :query || '%' ESCAPE '\\' " +
+            "OR originalText LIKE '%' || :query || '%' ESCAPE '\\') " +
+            "ORDER BY pinned DESC, timestamp DESC"
+    )
+    fun searchEntriesPaged(query: String, category: String): PagingSource<Int, ClipboardEntry>
+
+    @Query("SELECT * FROM ${ClipboardEntry.TABLE_NAME} WHERE pinned=1 AND deleted=0 ORDER BY timestamp DESC")
+    fun favoriteEntries(): PagingSource<Int, ClipboardEntry>
+
+    @Query(
+        "SELECT * FROM ${ClipboardEntry.TABLE_NAME} " +
+                "WHERE source=:source AND text NOT LIKE 'content://%' AND text NOT LIKE 'file://%' AND pinned=0 AND deleted=0 " +
+                "ORDER BY timestamp DESC"
+    )
+    fun textEntriesBySource(source: String): PagingSource<Int, ClipboardEntry>
+
+    @Query(
+        "SELECT * FROM ${ClipboardEntry.TABLE_NAME} " +
+                "WHERE source=:source AND deleted=0 " +
+                "ORDER BY pinned DESC, timestamp DESC"
+    )
+    fun entriesBySource(source: String): PagingSource<Int, ClipboardEntry>
+
+    @Query(
+        "SELECT * FROM ${ClipboardEntry.TABLE_NAME} " +
+                "WHERE (text LIKE 'content://%' OR text LIKE 'file://%') AND deleted=0 " +
+                "ORDER BY pinned DESC, timestamp DESC"
+    )
+    fun mediaEntries(): PagingSource<Int, ClipboardEntry>
+
+    @Query(
+        "SELECT * FROM ${ClipboardEntry.TABLE_NAME} " +
+                "WHERE text=:text AND sensitive=:sensitive AND source=:source AND deleted=0 LIMIT 1"
+    )
+    suspend fun find(
+        text: String,
+        sensitive: Boolean = false,
+        source: String = ClipboardEntry.SOURCE_LOCAL
+    ): ClipboardEntry?
+
+    @Query(
+        "SELECT * FROM ${ClipboardEntry.TABLE_NAME} " +
+            "WHERE source=:source AND sensitive=:sensitive AND deleted=0 AND type LIKE 'image/%' " +
+            "AND (text LIKE 'content://%' OR text LIKE 'file://%') " +
+            "ORDER BY timestamp DESC LIMIT :limit"
+    )
+    suspend fun recentMediaEntries(source: String, sensitive: Boolean, limit: Int): List<ClipboardEntry>
 
     @Query("SELECT id FROM ${ClipboardEntry.TABLE_NAME} WHERE deleted=0")
     suspend fun findAllIds(): IntArray
 
     @Query("SELECT id FROM ${ClipboardEntry.TABLE_NAME} WHERE pinned=0 AND deleted=0")
     suspend fun findUnpinnedIds(): IntArray
+
+    @Query("SELECT id FROM ${ClipboardEntry.TABLE_NAME} WHERE pinned=1 AND deleted=0")
+    suspend fun findPinnedIds(): IntArray
+
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM ${ClipboardEntry.TABLE_NAME} " +
+            "WHERE source=:source AND text NOT LIKE 'content://%' AND text NOT LIKE 'file://%' " +
+            "AND pinned=0 AND deleted=0)"
+    )
+    suspend fun haveUnpinnedTextEntriesBySource(source: String): Boolean
+
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM ${ClipboardEntry.TABLE_NAME} " +
+            "WHERE source=:source AND pinned=0 AND deleted=0)"
+    )
+    suspend fun haveUnpinnedEntriesBySource(source: String): Boolean
+
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM ${ClipboardEntry.TABLE_NAME} " +
+            "WHERE (text LIKE 'content://%' OR text LIKE 'file://%') AND pinned=0 AND deleted=0)"
+    )
+    suspend fun haveUnpinnedMediaEntries(): Boolean
+
+    @Query(
+        "SELECT id FROM ${ClipboardEntry.TABLE_NAME} " +
+            "WHERE source=:source AND text NOT LIKE 'content://%' AND text NOT LIKE 'file://%' AND deleted=0"
+    )
+    suspend fun findAllTextEntryIdsBySource(source: String): IntArray
+
+    @Query(
+        "SELECT id FROM ${ClipboardEntry.TABLE_NAME} " +
+            "WHERE source=:source AND deleted=0"
+    )
+    suspend fun findAllEntryIdsBySource(source: String): IntArray
+
+    @Query(
+        "SELECT id FROM ${ClipboardEntry.TABLE_NAME} " +
+            "WHERE source=:source AND text NOT LIKE 'content://%' AND text NOT LIKE 'file://%' " +
+            "AND pinned=0 AND deleted=0"
+    )
+    suspend fun findUnpinnedTextEntryIdsBySource(source: String): IntArray
+
+    @Query(
+        "SELECT id FROM ${ClipboardEntry.TABLE_NAME} " +
+            "WHERE source=:source AND pinned=0 AND deleted=0"
+    )
+    suspend fun findUnpinnedEntryIdsBySource(source: String): IntArray
+
+    @Query(
+        "SELECT id FROM ${ClipboardEntry.TABLE_NAME} " +
+            "WHERE (text LIKE 'content://%' OR text LIKE 'file://%') AND deleted=0"
+    )
+    suspend fun findAllMediaEntryIds(): IntArray
+
+    @Query(
+        "SELECT id FROM ${ClipboardEntry.TABLE_NAME} " +
+            "WHERE (text LIKE 'content://%' OR text LIKE 'file://%') AND pinned=0 AND deleted=0"
+    )
+    suspend fun findUnpinnedMediaEntryIds(): IntArray
+
+    @Query(
+        "SELECT * FROM ${ClipboardEntry.TABLE_NAME} " +
+            "WHERE source=:source AND text NOT LIKE 'content://%' AND text NOT LIKE 'file://%' " +
+            "AND pinned=0 AND deleted=0"
+    )
+    suspend fun getAllUnpinnedTextEntriesBySource(source: String): List<ClipboardEntry>
+
+    @Query(
+        "SELECT * FROM ${ClipboardEntry.TABLE_NAME} " +
+            "WHERE source=:source AND pinned=0 AND deleted=0"
+    )
+    suspend fun getAllUnpinnedEntriesBySource(source: String): List<ClipboardEntry>
+
+    @Query(
+        "SELECT * FROM ${ClipboardEntry.TABLE_NAME} " +
+            "WHERE source=:source AND deleted=0"
+    )
+    suspend fun getAllEntriesBySource(source: String): List<ClipboardEntry>
+
+    @Query(
+        "SELECT * FROM ${ClipboardEntry.TABLE_NAME} " +
+            "WHERE (text LIKE 'content://%' OR text LIKE 'file://%') AND pinned=0 AND deleted=0"
+    )
+    suspend fun getAllUnpinnedMediaEntries(): List<ClipboardEntry>
+
+    @Query(
+        "SELECT * FROM ${ClipboardEntry.TABLE_NAME} " +
+            "WHERE (text LIKE 'content://%' OR text LIKE 'file://%') AND deleted=0"
+    )
+    suspend fun getAllMediaEntries(): List<ClipboardEntry>
 
     @Query("UPDATE ${ClipboardEntry.TABLE_NAME} SET deleted=1 WHERE id in (:ids)")
     suspend fun markAsDeleted(vararg ids: Int)

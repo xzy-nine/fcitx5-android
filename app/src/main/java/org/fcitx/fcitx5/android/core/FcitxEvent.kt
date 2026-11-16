@@ -6,6 +6,16 @@ package org.fcitx.fcitx5.android.core
 
 sealed class FcitxEvent<T>(open val data: T) {
 
+    internal var inputSession: Long = 0
+    internal var candidateActionContext: CandidateActionContext? = null
+    // Monotonic producer time for commit delivery diagnostics; excluded from equality.
+    internal var commitProducedNanos: Long = 0
+
+    // Opt-in diagnostics only. Kept outside data-class equality and never logged with text.
+    internal var diagnosticSequence: Long = 0
+    internal var diagnosticProducedNanos: Long = 0
+    internal var diagnosticEmittedNanos: Long = 0
+
     abstract val eventType: EventType
 
     data class CandidateListEvent(override val data: Data) :
@@ -43,7 +53,24 @@ sealed class FcitxEvent<T>(open val data: T) {
 
         override val eventType = EventType.Commit
 
+        internal var statistics: InputOperationStatistics? = null
+
         data class Data(val text: String, val cursor: Int)
+    }
+
+    /** Counts admitted DOWN operations; never forwarded to Android as another key. */
+    internal data class StatisticsKeyEvent(val statistics: InputOperationStatistics, val sym: Int) :
+        FcitxEvent<Unit>(Unit) {
+        override val eventType = EventType.StatisticsKey
+    }
+
+    /** Optional metrics travel together while intermediate presentation frames may still merge. */
+    internal data class StatisticsKeysEvent(
+        val keys: List<StatisticsKeyEvent>,
+        val epoch: Long,
+        val dropped: Long = 0
+    ) : FcitxEvent<Unit>(Unit) {
+        override val eventType = EventType.StatisticsKeys
     }
 
     data class ClientPreeditEvent(override val data: FormattedText) :
@@ -62,7 +89,9 @@ sealed class FcitxEvent<T>(open val data: T) {
             val preedit: FormattedText,
             val auxUp: FormattedText,
             val auxDown: FormattedText,
-            val tabs: Array<CandidateAction>
+            val tabs: Array<CandidateAction>,
+            val auxBarActions: Array<AuxBarAction> = emptyArray(),
+            val statusHintId: Long = 0
         ) {
             constructor() : this(
                 FormattedText.Empty,
@@ -81,6 +110,8 @@ sealed class FcitxEvent<T>(open val data: T) {
                 if (auxUp != other.auxUp) return false
                 if (auxDown != other.auxDown) return false
                 if (!tabs.contentEquals(other.tabs)) return false
+                if (!auxBarActions.contentEquals(other.auxBarActions)) return false
+                if (statusHintId != other.statusHintId) return false
 
                 return true
             }
@@ -90,6 +121,8 @@ sealed class FcitxEvent<T>(open val data: T) {
                 result = 31 * result + auxUp.hashCode()
                 result = 31 * result + auxDown.hashCode()
                 result = 31 * result + tabs.contentHashCode()
+                result = 31 * result + auxBarActions.contentHashCode()
+                result = 31 * result + statusHintId.hashCode()
                 return result
             }
         }
@@ -160,12 +193,7 @@ sealed class FcitxEvent<T>(open val data: T) {
         override val eventType = EventType.PagedCandidate
 
         enum class LayoutHint {
-            NotSet, Vertical, Horizontal;
-
-            companion object {
-                private val Types = entries.toTypedArray()
-                fun of(value: Int) = Types[value]
-            }
+            NotSet, Vertical, Horizontal
         }
 
         data class Data(
@@ -219,35 +247,10 @@ sealed class FcitxEvent<T>(open val data: T) {
          * [fcitx/event.h](https://github.com/fcitx/fcitx5/blob/5.1.16/src/lib/fcitx/event.h#L41)
          */
         enum class Reason {
-            Trigger, Deactivate, AltTrigger, Activate, Enumerate, GroupChange, CapabilityChanged, Other;
-
-            companion object {
-                private val Types = entries.toTypedArray()
-                fun of(value: Int) = Types[value]
-            }
+            Trigger, Deactivate, AltTrigger, Activate, Enumerate, GroupChange, CapabilityChanged, Other
         }
 
         data class Data(val reason: Reason, val oldInputMethod: String)
-    }
-
-    data class UnknownEvent(override val data: Array<Any>) : FcitxEvent<Array<Any>>(data) {
-
-        override val eventType = EventType.Unknown
-
-        override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-            if (javaClass != other?.javaClass) return false
-
-            other as UnknownEvent
-
-            if (!data.contentEquals(other.data)) return false
-
-            return true
-        }
-
-        override fun hashCode(): Int {
-            return data.contentHashCode()
-        }
     }
 
     enum class EventType {
@@ -262,77 +265,7 @@ sealed class FcitxEvent<T>(open val data: T) {
         DeleteSurrounding,
         PagedCandidate,
         SwitchInputMethod,
-        Unknown
-    }
-
-    companion object {
-
-        private val Types = EventType.entries.toTypedArray()
-
-        @Suppress("UNCHECKED_CAST")
-        fun create(type: Int, params: Array<Any>) =
-            when (Types[type]) {
-                EventType.Candidate -> CandidateListEvent(
-                    CandidateListEvent.Data(
-                        params[0] as Int,
-                        params[1] as Array<CandidateWord>
-                    )
-                )
-                EventType.Commit -> CommitStringEvent(
-                    CommitStringEvent.Data(
-                        params[0] as String,
-                        params[1] as Int
-                    )
-                )
-                EventType.ClientPreedit -> ClientPreeditEvent(params[0] as FormattedText)
-                EventType.InputPanel -> InputPanelEvent(
-                    InputPanelEvent.Data(
-                        params[0] as FormattedText,
-                        params[1] as FormattedText,
-                        params[2] as FormattedText,
-                        params[3] as Array<CandidateAction>
-                    )
-                )
-                EventType.Ready -> ReadyEvent()
-                EventType.Key -> KeyEvent(
-                    KeyEvent.Data(
-                        KeySym(params[0] as Int),
-                        KeyStates.of(params[1] as Int),
-                        params[2] as Int,
-                        params[3] as Boolean,
-                        params[4] as Int
-                    )
-                )
-                EventType.Change -> IMChangeEvent(params[0] as InputMethodEntry)
-                EventType.StatusArea -> StatusAreaEvent(
-                    StatusAreaEvent.Data(
-                        params[0] as Array<Action>,
-                        params[1] as InputMethodEntry
-                    )
-                )
-                EventType.DeleteSurrounding -> (params[0] as IntArray).let {
-                    DeleteSurroundingEvent(DeleteSurroundingEvent.Data(it[0], it[1]))
-                }
-                EventType.PagedCandidate -> if (params.isEmpty()) {
-                    PagedCandidateEvent(PagedCandidateEvent.Data.Empty)
-                } else {
-                    PagedCandidateEvent(
-                        PagedCandidateEvent.Data(
-                            params[0] as Array<CandidateWord>,
-                            params[1] as Int,
-                            PagedCandidateEvent.LayoutHint.of(params[2] as Int),
-                            params[3] as Boolean,
-                            params[4] as Boolean
-                        )
-                    )
-                }
-                EventType.SwitchInputMethod -> SwitchInputMethodEvent(
-                    SwitchInputMethodEvent.Data(
-                        SwitchInputMethodEvent.Reason.of(params[0] as Int),
-                        params[1] as String
-                    )
-                )
-                else -> UnknownEvent(params)
-            }
+        StatisticsKey,
+        StatisticsKeys
     }
 }

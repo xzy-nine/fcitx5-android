@@ -64,10 +64,14 @@ class ThemeSerializationTest {
         Assert.assertEquals("Round trip", decoded, decoded.toJson().toCustomTheme().first)
     }
 
+    /**
+     * A 2.0 document now needs migrating: CURRENT_VERSION moved to 2.1 when the candidate
+     * label/text/comment colors were added, along with a 2.0 -> 2.1 migration that derives
+     * them from the key colors.
+     */
     @Test
     fun version2() {
-        // Version 2.0 —— 上一版格式。CURRENT_VERSION 已升至 2.1（新增 candidate* 颜色），
-        // 因此解码 2.0 主题必定触发一次迁移；「当前版本不迁移」由 preservation() 覆盖。
+        // Version 2.0
         val raw = """
             {
                "name":"",
@@ -99,7 +103,26 @@ class ThemeSerializationTest {
             }
         """.trimIndent()
         val (decoded, migrated) = raw.toCustomTheme()
-        Assert.assertEquals("Migration should happen (2.0 -> 2.1)", true, migrated)
+        Assert.assertEquals("Migration should happen", true, migrated)
+        // The 2.0 -> 2.1 migration derives the candidate colors from the key colors.
+        Assert.assertEquals("candidateTextColor from keyTextColor", -1, decoded.candidateTextColor)
+        Assert.assertEquals("candidateLabelColor from keyTextColor", -1, decoded.candidateLabelColor)
+        Assert.assertEquals(
+            "candidateCommentColor from altKeyTextColor",
+            -905969665,
+            decoded.candidateCommentColor
+        )
         Assert.assertEquals("Round trip", decoded, decoded.toJson().toCustomTheme().first)
+    }
+
+    /** The current version round-trips without being migrated. */
+    @Test
+    fun currentVersion() {
+        val current = ThemePreset
+            .TransparentDark
+            .deriveCustomBackground("", "", "")
+        val (decoded, migrated) = current.toJson().toCustomTheme()
+        Assert.assertEquals("Migration shouldn't happen", false, migrated)
+        Assert.assertEquals("Round trip", current, decoded)
     }
 }

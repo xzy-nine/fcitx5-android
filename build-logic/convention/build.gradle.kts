@@ -22,6 +22,8 @@ dependencies {
     compileOnly(libs.kotlin.gradlePlugin)
     compileOnly(libs.aboutlibraries.plugin)
     implementation(libs.kotlinx.serialization.json)
+    testImplementation("junit:junit:4.13.2")
+    testImplementation(gradleTestKit())
     // A workaround to enable version catalog usage in the convention plugin,
     // see https://github.com/gradle/gradle/issues/15383#issuecomment-779893192
     implementation(files(LibrariesForLibs::class.java.protectionDomain.codeSource.location))
@@ -29,6 +31,10 @@ dependencies {
 
 gradlePlugin {
     plugins {
+        register("rimeSdk") {
+            id = "org.fcitx.fcitx5.android.rime-sdk"
+            implementationClass = "RimeSdkPlugin"
+        }
         register("androidAppConvention") {
             id = "org.fcitx.fcitx5.android.app-convention"
             implementationClass = "AndroidAppConventionPlugin"
@@ -37,10 +43,6 @@ gradlePlugin {
             id = "org.fcitx.fcitx5.android.lib-convention"
             implementationClass = "AndroidLibConventionPlugin"
         }
-        register("androidPluginAppConvention") {
-            id = "org.fcitx.fcitx5.android.plugin-app-convention"
-            implementationClass = "AndroidPluginAppConventionPlugin"
-        }
         register("buildMetadata") {
             id = "org.fcitx.fcitx5.android.build-metadata"
             implementationClass = "BuildMetadataPlugin"
@@ -48,14 +50,6 @@ gradlePlugin {
         register("dataDescriptor") {
             id = "org.fcitx.fcitx5.android.data-descriptor"
             implementationClass = "DataDescriptorPlugin"
-        }
-        register("fcitxComponent") {
-            id = "org.fcitx.fcitx5.android.fcitx-component"
-            implementationClass = "FcitxComponentPlugin"
-        }
-        register("fcitxHeaders") {
-            id = "org.fcitx.fcitx5.android.fcitx-headers"
-            implementationClass = "FcitxHeadersPlugin"
         }
         register("nativeAppConvention") {
             id = "org.fcitx.fcitx5.android.native-app-convention"

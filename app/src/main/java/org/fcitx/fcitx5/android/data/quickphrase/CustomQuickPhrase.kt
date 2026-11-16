@@ -43,7 +43,7 @@ class CustomQuickPhrase(
             file.name.endsWith(".$EXT.$DISABLE") -> {
                 false
             }
-            else -> errorArg(R.string.exception_quickphrase_filename, file.name)
+            else -> errorArg(R.string.exception_text_dict_filename, file.name)
         }
     }
 

@@ -100,11 +100,16 @@ fun ThemeScreen(onBack: () -> Unit) {
     var showNewDialog by remember { mutableStateOf(false) }
     var duplicateDialog by remember { mutableStateOf(false) }
 
+    val reloadScope = rememberCoroutineScope()
+
     fun reload() {
-        ThemeManager.refreshThemes()
-        themes = ThemeManager.getAllThemes()
-        activeTheme = ThemeManager.activeTheme
-        followSystem = ThemeManager.prefs.followSystemDayNightTheme.getValue()
+        // 主题列表刷新需要读盘，放到协程里跑，刷新完成后再取值。
+        reloadScope.launch {
+            ThemeManager.refreshThemes()
+            themes = ThemeManager.getAllThemes()
+            activeTheme = ThemeManager.activeTheme
+            followSystem = ThemeManager.prefs.followSystemDayNightTheme.getValue()
+        }
     }
 
     val themeListener = remember {

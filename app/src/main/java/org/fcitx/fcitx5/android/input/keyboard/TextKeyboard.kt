@@ -22,13 +22,74 @@ import splitties.views.imageResource
 @SuppressLint("ViewConstructor")
 class TextKeyboard(
     context: Context,
-    theme: Theme
+    theme: Theme,
+    initialIme: InputMethodEntry? = null,
+    val isPreview: Boolean = false
 ) : BaseKeyboard(context, theme, Layout) {
+
+    /** 预览期按覆盖的 JSON 解析布局；无覆盖时用内置表。 */
+    override val keyLayout: List<List<KeyDef>>
+        get() = resolveLayoutForPreview()
 
     enum class CapsState { None, Once, Lock }
 
     companion object {
+        /** 布局 JSON 解析缓存；布局编辑器与标定页在重建预览前置空。 */
+        var cachedLayoutJsonMap: Map<String, List<List<KeyDef>>>? = null
+
         const val Name = KeyboardLayoutNames.Text
+        /** 默认预设布局。custom 的布局是固定表，[showLangSwitch] 不改变结果。 */
+        @Suppress("UNUSED_PARAMETER")
+        fun getDefaultLayout(showLangSwitch: Boolean = true): List<List<KeyDef>> = Layout
+
+        /** 清空布局 JSON 解析缓存。 */
+        fun clearCachedKeyDefLayouts() {
+            cachedLayoutJsonMap = null
+        }
+
+        /** 真实键盘最近一次收到的输入法条目，供窗口级调用方读取。 */
+        @Volatile
+        var ime: InputMethodEntry? = null
+            private set
+
+        internal fun updateIme(entry: InputMethodEntry) {
+            ime = entry
+        }
+
+        /**
+         * 在 [block] 执行期间把 [json] 作为布局来源。
+         *
+         * 只影响 block 内的查询；真实布局来源与真实缓存条目不受影响。
+         */
+        fun <T> withPreviewLayout(json: kotlinx.serialization.json.JsonObject, block: () -> T): T {
+            val previous = previewLayoutOverride
+            previewLayoutOverride = json
+            return try {
+                block()
+            } finally {
+                previewLayoutOverride = previous
+                cachedLayoutJsonMap = null
+            }
+        }
+
+        /** 预览期生效的布局 JSON；null 表示用真实布局。 */
+        @Volatile
+        private var previewLayoutOverride: kotlinx.serialization.json.JsonObject? = null
+
+        /** 按当前覆盖解析布局；无覆盖时返回内置默认表。 */
+        internal fun resolveLayoutForPreview(): List<List<KeyDef>> {
+            val json = previewLayoutOverride ?: return Layout
+            val rows = json["default"] as? kotlinx.serialization.json.JsonArray ?: return Layout
+            return org.fcitx.fcitx5.android.ui.main.settings.behavior.utils.LayoutJsonUtils
+                .let { utils ->
+                    rows.mapNotNull { row ->
+                        val arr = row as? kotlinx.serialization.json.JsonArray ?: return@mapNotNull null
+                        val parsed = utils.parseKeyJsonArray(arr)
+                        parsed.mapNotNull { utils.createKeyDef(it) }.ifEmpty { return@mapNotNull null }
+                    }
+                }.ifEmpty { Layout }
+        }
+
 
         val Layout: List<List<KeyDef>> = listOf(
             listOf(
@@ -76,13 +137,13 @@ class TextKeyboard(
         )
     }
 
-    val caps: ImageKeyView get() = findViewById(R.id.button_caps)
-    val backspace: ImageKeyView get() = findViewById(R.id.button_backspace)
-    val quickphrase: ImageKeyView get() = findViewById(R.id.button_quickphrase)
-    val lang: ImageKeyView get() = findViewById(R.id.button_lang)
-    val space: ImageTextKeyView get() = findViewById(R.id.button_space)
-    val `return`: ImageKeyView get() = findViewById(R.id.button_return)
-
+    // 预览布局可以只含部分键，访问器按可空处理。
+    val caps: ImageKeyView? get() = findViewById<ImageKeyView?>(R.id.button_caps)
+    val backspace: ImageKeyView? get() = findViewById<ImageKeyView?>(R.id.button_backspace)
+    val quickphrase: ImageKeyView? get() = findViewById<ImageKeyView?>(R.id.button_quickphrase)
+    val lang: ImageKeyView? get() = findViewById<ImageKeyView?>(R.id.button_lang)
+    val space: ImageTextKeyView? get() = findViewById<ImageTextKeyView?>(R.id.button_space)
+    val `return`: ImageKeyView? get() = findViewById<ImageKeyView?>(R.id.button_return)
     private val showLangSwitchKey = AppPrefs.getInstance().keyboard.showLangSwitchKey
 
     @Keep
@@ -101,10 +162,10 @@ class TextKeyboard(
         }
 
     init {
-        updateLangSwitchKey(showLangSwitchKey.getValue())
+        lang?.let { updateLangSwitchKey(showLangSwitchKey.getValue()) }
         showLangSwitchKey.registerOnChangeListener(showLangSwitchKeyListener)
         spaceKeyLongPressBehavior.registerOnChangeListener(spaceKeyLongPressBehaviorListener)
-        space.setIconVisible(spaceKeyLongPressBehavior.getValue() == SpaceLongPressBehavior.VoiceInput)
+        space?.setIconVisible(spaceKeyLongPressBehavior.getValue() == SpaceLongPressBehavior.VoiceInput)
     }
 
     private val textKeys: List<TextKeyView>
@@ -165,8 +226,11 @@ class TextKeyboard(
         updateAlphabetKeys()
     }
 
+    /** 预览键盘的返回键外观覆盖，空实现由子类或编辑器设置。 */
+    protected open fun onReturnDrawableOverride(@Suppress("UNUSED_PARAMETER") drawable: Int) = Unit
+
     override fun onReturnDrawableUpdate(returnDrawable: Int) {
-        `return`.img.imageResource = returnDrawable
+        `return`?.img?.imageResource = returnDrawable
     }
 
     override fun onPunctuationUpdate(mapping: Map<String, String>) {
@@ -175,8 +239,9 @@ class TextKeyboard(
     }
 
     override fun onInputMethodUpdate(ime: InputMethodEntry) {
+        if (!isPreview) updateIme(ime)
         super.onInputMethodUpdate(ime)
-        space.mainText.text = buildString {
+        space?.mainText?.text = buildString {
             append(ime.displayName)
             ime.subMode.run { label.ifEmpty { name.ifEmpty { null } } }?.let { append(" ($it)") }
         }
@@ -232,7 +297,7 @@ class TextKeyboard(
     }
 
     private fun updateCapsButtonIcon() {
-        caps.img.apply {
+        caps?.img?.apply {
             imageResource = when (capsState) {
                 CapsState.None -> R.drawable.ic_capslock_none
                 CapsState.Once -> R.drawable.ic_capslock_once
@@ -242,11 +307,11 @@ class TextKeyboard(
     }
 
     private fun updateLangSwitchKey(visible: Boolean) {
-        lang.visibility = if (visible) View.VISIBLE else View.GONE
+        lang?.visibility = if (visible) View.VISIBLE else View.GONE
     }
 
     private fun updateSpaceVoiceIcon() {
-        space.setIconVisible(spaceKeyLongPressBehavior.getValue() == SpaceLongPressBehavior.VoiceInput)
+        space?.setIconVisible(spaceKeyLongPressBehavior.getValue() == SpaceLongPressBehavior.VoiceInput)
     }
 
     override fun onKeyboardLayoutRebuilt() {

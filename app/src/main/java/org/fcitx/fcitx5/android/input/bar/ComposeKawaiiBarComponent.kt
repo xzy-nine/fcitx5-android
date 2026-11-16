@@ -555,7 +555,7 @@ class ComposeKawaiiBarComponent :
         scope.cancel()
     }
 
-    override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags) {
+    override fun onStartInput(info: EditorInfo, capFlags: CapabilityFlags, restarting: Boolean) {
         isCapabilityFlagsPassword = toolbarNumRowOnPassword && capFlags.has(CapabilityFlag.Password)
         isInlineSuggestionPresent = false
         numberRowState = NumberRowState.Auto

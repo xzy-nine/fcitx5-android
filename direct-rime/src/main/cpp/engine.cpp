@@ -1,0 +1,722 @@
+#include "engine.h"
+#include "io-trace.h"
+#include <cstring>
+#include <algorithm>
+#include <chrono>
+#include <filesystem>
+#include <limits>
+#include <sstream>
+#include <rime_levers_api.h>
+#include <stdexcept>
+#include <utility>
+#if INPUT_DIAGNOSTICS
+#include <sys/resource.h>
+#endif
+#ifdef __ANDROID__
+#include <android/trace.h>
+#endif
+
+namespace direct_rime {
+namespace {
+template <typename Cleanup>
+class ScopeExit {
+public:
+    explicit ScopeExit(Cleanup cleanup) : cleanup_(std::move(cleanup)) {}
+    ScopeExit(const ScopeExit&) = delete;
+    ScopeExit& operator=(const ScopeExit&) = delete;
+    ~ScopeExit() { cleanup_(); }
+private:
+    Cleanup cleanup_;
+};
+template <typename Cleanup> ScopeExit(Cleanup) -> ScopeExit<Cleanup>;
+
+struct Trace {
+    explicit Trace(const char* name) {
+#ifdef __ANDROID__
+        ATrace_beginSection(name);
+#else
+        (void)name;
+#endif
+    }
+    ~Trace() {
+#ifdef __ANDROID__
+        ATrace_endSection();
+#endif
+    }
+};
+struct TimedTrace {
+    Trace trace;
+#if INPUT_DIAGNOSTICS
+    int64_t& elapsed;
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    TimedTrace(const char* name, int64_t& elapsed) : trace(name), elapsed(elapsed) {}
+    ~TimedTrace() {
+        elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count();
+    }
+#else
+    TimedTrace(const char* name, int64_t&) : trace(name) {}
+#endif
+};
+struct CoreTrace {
+    TimedTrace trace;
+#if INPUT_DIAGNOSTICS
+    std::array<int64_t, 16>& timing;
+    IoScope io;
+    rusage before{};
+    bool valid;
+    CoreTrace(const char* name, std::array<int64_t, 16>& values)
+        : trace(name, values[0]), timing(values), valid(getrusage(RUSAGE_THREAD, &before) == 0) {}
+    ~CoreTrace() {
+        std::copy(io.values.nanos.begin(), io.values.nanos.end(), timing.begin() + 10);
+        timing[15] = io.values.calls;
+        rusage after{};
+        if (!valid || getrusage(RUSAGE_THREAD, &after) != 0) {
+            std::fill(timing.begin() + 5, timing.begin() + 10, -1);
+            return;
+        }
+        auto cpu = [](const rusage& usage) -> int64_t {
+            return (static_cast<int64_t>(usage.ru_utime.tv_sec) + usage.ru_stime.tv_sec) * 1000000000LL +
+                   (static_cast<int64_t>(usage.ru_utime.tv_usec) + usage.ru_stime.tv_usec) * 1000;
+        };
+        timing[5] = cpu(after) - cpu(before);
+        timing[6] = after.ru_minflt - before.ru_minflt;
+        timing[7] = after.ru_majflt - before.ru_majflt;
+        timing[8] = after.ru_nvcsw - before.ru_nvcsw;
+        timing[9] = after.ru_nivcsw - before.ru_nivcsw;
+    }
+#else
+    CoreTrace(const char* name, std::array<int64_t, 16>& values) : trace(name, values[0]) {}
+#endif
+};
+std::string safe(const char* value) { return value ? value : ""; }
+}
+
+bool utf16(const std::string& input, std::u16string& output) {
+    output.clear();
+    for (size_t i = 0; i < input.size();) {
+        auto c = static_cast<unsigned char>(input[i++]);
+        uint32_t cp = c;
+        int n = 0;
+        if (c >= 0xc2 && c <= 0xdf) { cp = c & 31; n = 1; }
+        else if (c >= 0xe0 && c <= 0xef) { cp = c & 15; n = 2; }
+        else if (c >= 0xf0 && c <= 0xf4) { cp = c & 7; n = 3; }
+        else if (c >= 0x80) return false;
+        if (i + n > input.size()) return false;
+        for (int j = 0; j < n; ++j) {
+            auto next = static_cast<unsigned char>(input[i++]);
+            if ((next & 0xc0) != 0x80) return false;
+            cp = (cp << 6) | (next & 63);
+        }
+        if ((n == 1 && cp < 0x80) || (n == 2 && cp < 0x800) ||
+            (n == 3 && cp < 0x10000) || (cp >= 0xd800 && cp <= 0xdfff) || cp > 0x10ffff)
+            return false;
+        if (cp <= 0xffff) output.push_back(static_cast<char16_t>(cp));
+        else { cp -= 0x10000; output.push_back(0xd800 + (cp >> 10)); output.push_back(0xdc00 + (cp & 1023)); }
+    }
+    return true;
+}
+
+bool Snapshot::canReusePresentation(const Snapshot& previous) const {
+    return !handled && commit.empty() && gate == Ready && previous.gate == Ready &&
+        generation == previous.generation && optionsRevision == previous.optionsRevision &&
+        tabsRevision == previous.tabsRevision &&
+        ascii == previous.ascii && page == previous.page && lastPage == previous.lastPage &&
+        cursor == previous.cursor && highlighted == previous.highlighted &&
+        preedit == previous.preedit && schema == previous.schema && schemaName == previous.schemaName &&
+        preview == previous.preview && candidates == previous.candidates && comments == previous.comments &&
+        tabs == previous.tabs && labels == previous.labels;
+}
+bool Snapshot::canCachePresentation() const {
+    if (gate != Ready) return false;
+    constexpr size_t maxBytes = 64 * 1024, maxStrings = 1024;
+    size_t bytes = 0, strings = 0;
+    auto fits = [&](const std::string& text) {
+        if (text.size() > maxBytes - bytes) return false;
+        bytes += text.size();
+        return true;
+    };
+    for (const auto* text : {&commit, &preedit, &schema, &schemaName, &preview})
+        if (!fits(*text)) return false;
+    for (const auto* values : {&candidates, &comments, &tabs, &labels}) {
+        if (values->size() > maxStrings - strings) return false;
+        strings += values->size();
+        for (const auto& text : *values) if (!fits(text)) return false;
+    }
+    return true;
+}
+
+Engine::Engine(RimeApi* api) : api_(api), owner_(std::this_thread::get_id()) {}
+void Engine::owner() const {
+    if (owner_ != std::this_thread::get_id()) throw std::logic_error("librime thread owner violated");
+}
+void Engine::notification(void* context, RimeSessionId, const char* type, const char* value) {
+    // librime can call this from its maintenance thread. Do not touch JNI/session state.
+    if (std::strcmp(type, "schema") == 0 || std::strcmp(type, "option") == 0)
+        ++static_cast<Engine*>(context)->optionsRevision_;
+    if (std::strcmp(type, "deploy") == 0) {
+        auto* engine = static_cast<Engine*>(context);
+        const bool failure = std::strcmp(value, "failure") == 0;
+        const bool success = std::strcmp(value, "success") == 0;
+        const bool start = std::strcmp(value, "start") == 0;
+        if (failure || success || start) engine->deployFailed_.store(failure);
+        if (engine->syncResult_.load() != SyncResult::Idle) {
+            if (failure) {
+                engine->syncResult_.store(SyncResult::Failed);
+            } else if (success) {
+                auto expected = SyncResult::Waiting;
+                engine->syncResult_.compare_exchange_strong(expected, SyncResult::Succeeded);
+            } else if (start) {
+                // A subsequent batch needs its own terminal notification, but
+                // an earlier failure remains sticky for this whole operation.
+                auto expected = SyncResult::Succeeded;
+                engine->syncResult_.compare_exchange_strong(expected, SyncResult::Waiting);
+            }
+        }
+    }
+}
+void Engine::start(const std::string& shared, const std::string& user,
+                   const std::string& version, bool fullCheck) {
+    Trace trace("rime.direct.initialize");
+    owner();
+    if (started_) throw std::logic_error("engine already started");
+    shared_ = shared; user_ = user; version_ = version;
+    initialize(fullCheck);
+    if (fullCheck && deployFailed_.load()) {
+        stop();
+        throw std::runtime_error("部署失败，请检查方案文件后重新部署");
+    }
+}
+void Engine::initialize(bool fullCheck) {
+    invalidateStatusCache();
+    deployFailed_.store(false);
+    if (fullCheck) {
+        // Rime's compiler compares source mtimes with one-second resolution.
+        // Explicit redeploy must also rebuild edits copied with unchanged times.
+        // Invalidate only generated YAML with a corresponding source; retain
+        // compiled-only schemes, dictionary/model binaries and all user DBs.
+        namespace fs = std::filesystem;
+        const auto build = fs::path(user_) / "build";
+        if (fs::is_directory(build)) for (const auto& entry : fs::directory_iterator(build)) {
+            if (entry.path().extension() != ".yaml" || !entry.is_regular_file()) continue;
+            const auto name = entry.path().filename();
+            if (fs::is_regular_file(fs::path(user_) / name) || fs::is_regular_file(fs::path(shared_) / name))
+                fs::remove(entry.path()); // Unlink a symlink, never follow it to delete its target.
+        }
+    }
+    RimeTraits traits{}; RIME_STRUCT_INIT(RimeTraits, traits);
+    traits.shared_data_dir = shared_.c_str(); traits.user_data_dir = user_.c_str();
+    traits.app_name = "rime.direct-android"; traits.distribution_name = "中州鹅";
+    traits.distribution_code_name = "中州鹅"; traits.distribution_version = version_.c_str();
+    traits.log_dir = ""; traits.min_log_level = 2;
+    if (!setup_) { api_->setup(&traits); setup_ = true; }
+    api_->initialize(&traits);
+    started_ = true;
+    saveOptionsLoaded_ = false; // a deployment can change switcher/save_options
+    api_->set_notification_handler(notification, this);
+    { Trace maintenance("rime.direct.startup_maintenance");
+      const bool launched = api_->start_maintenance(fullCheck);
+      api_->join_maintenance_thread();
+      // A forced check returning false failed before the deploy thread started
+      // (e.g. installation_update), so no failure notification will arrive.
+      if (fullCheck && !launched) deployFailed_.store(true); }
+}
+void Engine::stop() {
+    owner();
+    invalidateStatusCache();
+    if (!started_) return;
+    api_->join_maintenance_thread();
+    if (session_) api_->destroy_session(session_);
+    session_ = 0; active_ = false; sessionProgram_.clear(); tabs_.clear();
+    api_->set_notification_handler(nullptr, nullptr);
+    api_->finalize(); started_ = false;
+}
+Gate Engine::gate(int64_t generation) const {
+    if (generation != generation_) return Stale;
+    if (!started_) return NoSession;
+    if (api_->is_maintenance_mode()) return Maintenance;
+    if (deployFailed_.load()) return DeployFailed;
+    if (!active_ || !session_ || !api_->find_session(session_)) return NoSession;
+    return Ready;
+}
+void Engine::clearSession() {
+    invalidateStatusCache();
+    if (!session_) return;
+    // Never learn or deliver unfinished input from the previous editor.
+    api_->set_option(session_, "_no_learning", true);
+    api_->clear_composition(session_);
+    if (RIME_API_AVAILABLE(api_, clear_tabs)) api_->clear_tabs(session_);
+    RimeCommit commit{}; RIME_STRUCT_INIT(RimeCommit, commit);
+    if (api_->get_commit(session_, &commit)) {
+        ScopeExit cleanup([&] { api_->free_commit(&commit); });
+    }
+    tabs_.clear();
+}
+Snapshot Engine::begin(int64_t generation, const std::string& program, bool noLearning) {
+    Trace trace("rime.direct.bind");
+    owner();
+    timing_.fill(0);
+    if (generation <= generation_) { Snapshot s; s.generation = generation; s.gate = Stale; return s; }
+    invalidateStatusCache();
+    ++optionsRevision_;
+    generation_ = generation; active_ = false;
+    { CoreTrace core("rime.direct.bind_core", timing_);
+      if (started_ && !api_->is_maintenance_mode() && !deployFailed_.load()) {
+        // Lua components can retain private context beyond clear_composition.
+        // Do not carry that runtime across sensitive fields in either direction.
+        const bool reuse = session_ && !noLearning && !sessionNoLearning_ &&
+            !program.empty() && program == sessionProgram_ && api_->find_session(session_);
+        if (reuse) {
+            Trace reuseTrace("rime.direct.reuse_session");
+            clearSession(); ++sessionsReused_;
+        } else {
+            if (session_) { clearSession(); api_->destroy_session(session_); }
+            session_ = 0;
+            if (!schemas().empty()) {
+                Trace createTrace("rime.direct.create_session");
+                session_ = api_->create_session();
+                if (session_) ++sessionsCreated_;
+            }
+        }
+        if (session_) {
+            sessionProgram_ = program;
+            sessionNoLearning_ = noLearning;
+            api_->set_option(session_, "_no_learning", noLearning);
+            api_->set_property(session_, "client_app", program.c_str());
+            active_ = true;
+        }
+      } }
+    return snapshot(generation);
+}
+Snapshot Engine::end(int64_t generation) {
+    owner();
+    if (generation == generation_) {
+        invalidateStatusCache();
+        Trace trace("rime.direct.end_binding");
+        if (active_) { clearSession(); ++sessionsEnded_; }
+        active_ = false;
+    }
+    return snapshot(generation);
+}
+std::vector<int64_t> Engine::sessionStats() const {
+    owner(); return {sessionsCreated_, sessionsReused_, sessionsEnded_};
+}
+std::array<int64_t, 16> Engine::operationTiming() const { owner(); return timing_; }
+Snapshot Engine::key(int64_t generation, int sym, int mask, bool release, bool statistics) {
+    owner();
+    timing_.fill(0);
+    if (gate(generation) != Ready) return snapshot(generation);
+    const auto inputStatistics = captureInputStatistics(statistics);
+    // Exactly the mask used by fcitx5-rime, including IBus's virtual Super and release.
+    int states = mask & ((1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 6));
+    if (states & (1 << 6)) states |= (1 << 26);
+    if (release) states |= (1 << 30);
+    bool handled;
+    { CoreTrace trace("rime.direct.process_key", timing_); handled = api_->process_key(session_, sym, states); }
+    return snapshot(generation, handled, inputStatistics);
+}
+Snapshot Engine::action(int64_t generation, int64_t revision, int action, int index, const std::string& value, bool statistics) {
+    Trace trace(action == 1 || action == 11 ? "rime.direct.select_candidate" : "rime.direct.action");
+    owner();
+    timing_.fill(0);
+    if (gate(generation) != Ready) return snapshot(generation);
+    if (revision != revision_) { Snapshot s; s.generation = generation; s.gate = Stale; return s; }
+    const auto inputStatistics = captureInputStatistics(statistics);
+    { CoreTrace core("rime.direct.action_core", timing_);
+      switch (action) {
+    case 0: api_->clear_composition(session_); break;
+    case 1: if (index >= 0) api_->select_candidate_on_current_page(session_, index); break;
+    case 2: if (RIME_API_AVAILABLE(api_, change_page)) api_->change_page(session_, index < 0); break;
+    case 3: api_->set_option(session_, "ascii_mode", false); api_->select_schema(session_, value.c_str()); break;
+    case 4:
+        if (index >= 0 && static_cast<size_t>(index) < tabs_.size() && RIME_API_AVAILABLE(api_, select_tab))
+            api_->select_tab(session_, 0, tabs_[index].label.c_str(), tabs_[index].span);
+        break;
+    case 5:
+        if (index >= 0 && RIME_API_AVAILABLE(api_, delete_candidate_on_current_page))
+            api_->delete_candidate_on_current_page(session_, index);
+        break;
+    case 6: setOption("ascii_mode", !api_->get_option(session_, "ascii_mode")); break;
+    case 7: if (RIME_API_AVAILABLE(api_, clear_tabs)) api_->clear_tabs(session_); break;
+    case 8: setOption(value, index != 0); break;
+    case 9: if (index >= 0 && RIME_API_AVAILABLE(api_, set_caret_pos)) api_->set_caret_pos(session_, index); break;
+    case 10: api_->commit_composition(session_); break;
+    case 11: if (index >= 0) api_->select_candidate(session_, index); break;
+    case 12: if (index >= 0 && RIME_API_AVAILABLE(api_, delete_candidate)) api_->delete_candidate(session_, index); break;
+    case 13: break; // Read current output without moving the caret or recomposing.
+    default: throw std::invalid_argument("unknown direct Rime action");
+      } }
+    return snapshot(generation, action != 13, inputStatistics);
+}
+int64_t Engine::captureInputStatistics(bool requested) const {
+    if (!requested || sessionNoLearning_ || !RIME_API_AVAILABLE(api_, get_input)) return -1;
+    const char* text;
+    try { text = api_->get_input(session_); }
+    catch (const std::exception&) { return -1; } // Optional observation must not reject the real operation.
+    if (!text) return 0;
+    const bool command = *text == '/';
+    const auto* cursor = reinterpret_cast<const unsigned char*>(text);
+    int64_t units = 0;
+    // Count standard UTF-8 directly, without copying a string or allocating UTF-16.
+    // Like jni::string, a malformed sequence represents one replacement character.
+    constexpr int64_t replacement = 1LL << 1;
+    while (*cursor) {
+        const auto lead = *cursor++;
+        uint32_t cp = lead;
+        int continuation = 0;
+        if (lead >= 0xc2 && lead <= 0xdf) { cp = lead & 31; continuation = 1; }
+        else if (lead >= 0xe0 && lead <= 0xef) { cp = lead & 15; continuation = 2; }
+        else if (lead >= 0xf0 && lead <= 0xf4) { cp = lead & 7; continuation = 3; }
+        else if (lead >= 0x80) return replacement;
+        for (int i = 0; i < continuation; ++i) {
+            const auto next = *cursor++;
+            if ((next & 0xc0) != 0x80) return replacement;
+            cp = (cp << 6) | (next & 63);
+        }
+        if ((continuation == 1 && cp < 0x80) || (continuation == 2 && cp < 0x800) ||
+            (continuation == 3 && cp < 0x10000) || (cp >= 0xd800 && cp <= 0xdfff) || cp > 0x10ffff)
+            return replacement;
+        units += cp > 0xffff ? 2 : 1;
+        // Consumers add the commit-trigger key to this length using an Int.
+        if (units >= std::numeric_limits<int>::max()) return -1;
+    }
+    return (units << 1) | (command ? 1 : 0);
+}
+std::optional<RawInput> Engine::rawInput(int64_t generation, int64_t revision) {
+    owner();
+    if (gate(generation) != Ready || revision != revision_ ||
+        !RIME_API_AVAILABLE(api_, get_input) || !RIME_API_AVAILABLE(api_, get_caret_pos)) return std::nullopt;
+    auto text = safe(api_->get_input(session_));
+    const auto caret = api_->get_caret_pos(session_);
+    if (caret > text.size() || text.size() > static_cast<size_t>(std::numeric_limits<int>::max())) return std::nullopt;
+    return RawInput{std::move(text), static_cast<int>(caret)};
+}
+void Engine::invalidateStatusCache() { statusCache_.reset(); }
+void Engine::readStatus(Snapshot& result) {
+    struct StatusFields { std::string schema, schemaName; bool ascii = false; };
+    auto apply = [&](const auto& value) {
+        result.schema = value.schema;
+        result.schemaName = value.schemaName;
+        result.ascii = value.ascii;
+    };
+    auto clearResult = [&] {
+        result.schema.clear();
+        result.schemaName.clear();
+        result.ascii = false;
+    };
+
+    const auto observed = optionsRevision_.load();
+    if (statusCache_ && statusCache_->generation == result.generation &&
+        statusCache_->session == session_ && statusCache_->optionsRevision == observed) {
+        apply(*statusCache_);
+        if (optionsRevision_.load() == observed) return;
+    }
+
+    // Never let a failed or unstable refresh fall back to fields from an older
+    // editor or option revision. A later snapshot will retry the native API.
+    invalidateStatusCache();
+    clearResult();
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        const auto before = optionsRevision_.load();
+        RimeStatus status{}; RIME_STRUCT_INIT(RimeStatus, status);
+        bool read;
+        { Trace trace("rime.direct.get_status"); read = api_->get_status(session_, &status); }
+        if (!read) return;
+        StatusFields fresh;
+        {
+            ScopeExit cleanup([&] { api_->free_status(&status); });
+            fresh.schema = safe(status.schema_id);
+            fresh.schemaName = safe(status.schema_name);
+            fresh.ascii = status.is_ascii_mode;
+        }
+        const auto after = optionsRevision_.load();
+        if (before == after) {
+            apply(fresh);
+            constexpr size_t maxBytes = 64 * 1024;
+            if (fresh.schema.size() <= maxBytes && fresh.schemaName.size() <= maxBytes - fresh.schema.size()) {
+                statusCache_ = StatusCache{result.generation, session_, after,
+                    std::move(fresh.schema), std::move(fresh.schemaName), fresh.ascii};
+            }
+            return;
+        }
+        if (attempt == 1) {
+            // Continuous notifications cannot be made atomic here. Return the
+            // last fresh fields, but deliberately leave the cache invalid.
+            apply(fresh);
+        }
+    }
+}
+Snapshot Engine::snapshot(int64_t generation, bool handled, int64_t inputStatistics) {
+    Trace trace("rime.direct.snapshot");
+    Snapshot s; s.generation = generation; s.revision = revision_; s.handled = handled; s.gate = gate(generation);
+    if (s.gate == Stale) return s;
+    s.revision = ++revision_;
+    if (s.gate != Ready) {
+        invalidateStatusCache();
+        return s; // Gated keys are always swallowed, including release.
+    }
+    s.inputStatistics = inputStatistics;
+    RimeCommit commit{}; RIME_STRUCT_INIT(RimeCommit, commit);
+    { TimedTrace trace("rime.direct.read_commit", timing_[1]);
+      if (api_->get_commit(session_, &commit)) {
+        ScopeExit cleanup([&] { api_->free_commit(&commit); });
+        s.commit = safe(commit.text);
+      } }
+    RimeContext context{}; RIME_STRUCT_INIT(RimeContext, context);
+    { TimedTrace trace("rime.direct.read_context", timing_[2]);
+      if (api_->get_context(session_, &context)) {
+        ScopeExit cleanup([&] { api_->free_context(&context); });
+        s.preedit = safe(context.composition.preedit); s.cursor = context.composition.cursor_pos;
+        s.highlighted = context.menu.highlighted_candidate_index;
+        s.preview = safe(context.commit_text_preview);
+        s.page = context.menu.page_no; s.lastPage = context.menu.is_last_page;
+        const auto keys = safe(context.menu.select_keys);
+        s.labels.reserve(context.menu.num_candidates);
+        s.candidates.reserve(context.menu.num_candidates);
+        s.comments.reserve(context.menu.num_candidates);
+        for (int i = 0; i < context.menu.num_candidates; ++i) {
+            s.labels.push_back(RIME_STRUCT_HAS_MEMBER(context, context.select_labels) && context.select_labels
+                ? safe(context.select_labels[i]) + " "
+                : i < static_cast<int>(keys.size()) ? keys.substr(i, 1) + " " : std::to_string((i + 1) % 10) + " ");
+            s.candidates.push_back(safe(context.menu.candidates[i].text));
+            s.comments.push_back(safe(context.menu.candidates[i].comment));
+        }
+      } }
+    std::vector<Tab> nextTabs;
+    { TimedTrace tabsTrace("rime.direct.read_input_tabs", timing_[4]);
+      if (RIME_API_AVAILABLE(api_, get_input_tabs) && RIME_API_AVAILABLE(api_, free_input_tabs)) {
+          char** labels = nullptr; size_t* spans = nullptr; int* sources = nullptr; size_t count = 0;
+          if (api_->get_input_tabs(session_, 0, &labels, &spans, &sources, &count)) {
+              ScopeExit cleanup([&] { api_->free_input_tabs(labels, spans, sources, count); });
+              std::u16string decoded;
+              for (size_t i = 0; i < count; ++i) {
+                  auto label = safe(labels[i]);
+                  if (label.empty() || !utf16(label, decoded)) continue;
+                  nextTabs.push_back({label, spans[i]}); s.tabs.push_back(label);
+              }
+            }
+      } }
+    if (nextTabs != tabs_) {
+        tabs_ = std::move(nextTabs);
+        ++tabsRevision_;
+    }
+    s.tabsRevision = tabsRevision_;
+    { TimedTrace statusTrace("rime.direct.read_status", timing_[3]); readStatus(s); }
+    s.optionsRevision = optionsRevision_.load();
+    return s;
+}
+bool Engine::deploy() {
+    owner();
+    // A failed forced initialization may already have finalized the runtime.
+    // Keep deployment retryable after the user fixes the files/permissions.
+    if (shared_.empty() || user_.empty()) return false;
+    // Recreating only the session retains Lua require()'s module cache and
+    // component-held config. Finalize unloads those modules and flushes DBs;
+    // setup/glog remains process-wide and must not be run a second time.
+    stop();
+    initialize(true);
+    return !deployFailed_.load();
+}
+std::vector<std::string> Engine::schemas() {
+    owner();
+    std::vector<std::string> result;
+    if (!started_ || api_->is_maintenance_mode()) return result;
+    RimeSchemaList list{};
+    if (api_->get_schema_list(&list)) {
+        ScopeExit cleanup([&] { api_->free_schema_list(&list); });
+        for (size_t i = 0; i < list.size; ++i) result.push_back(safe(list.list[i].schema_id));
+    }
+    return result;
+}
+
+std::vector<std::string> Engine::schemaEntries() {
+    owner();
+    std::vector<std::string> result;
+    if (!started_ || api_->is_maintenance_mode()) return result;
+    RimeSchemaList list{};
+    if (api_->get_schema_list(&list)) {
+        ScopeExit cleanup([&] { api_->free_schema_list(&list); });
+        for (size_t i = 0; i < list.size; ++i) {
+            result.push_back(safe(list.list[i].schema_id));
+            result.push_back(safe(list.list[i].name));
+        }
+    }
+    return result;
+}
+std::vector<std::string> Engine::options() {
+    owner();
+    std::vector<std::string> result;
+    if (gate(generation_) != Ready) return result;
+    char schema[1024]{};
+    if (!api_->get_current_schema(session_, schema, sizeof(schema))) return result;
+    RimeConfig config{};
+    if (!api_->schema_open(schema, &config)) return result;
+    ScopeExit cleanup([&] { api_->config_close(&config); });
+    auto get = [&](const std::string& key) { return safe(api_->config_get_cstring(&config, key.c_str())); };
+    for (size_t i = 0; i < api_->config_list_size(&config, "switches"); ++i) {
+        auto prefix = "switches/@" + std::to_string(i);
+        const auto states = api_->config_list_size(&config, (prefix + "/states").c_str());
+        // A switch without states is intentionally hidden, as in fcitx5-rime.
+        if (states <= 1) continue;
+        auto name = get(prefix + "/name");
+        auto group = std::to_string(i);
+        if (!name.empty()) {
+            if (states != 2) continue;
+            auto state = api_->get_option(session_, name.c_str());
+            auto current = get(prefix + "/states/@" + (state ? "1" : "0"));
+            auto target = get(prefix + "/states/@" + (state ? "0" : "1"));
+            result.insert(result.end(), {name, current + " → " + target, state ? "1" : "0", ""});
+        } else {
+            const auto count = api_->config_list_size(&config, (prefix + "/options").c_str());
+            if (count != states) continue;
+            for (size_t j = 0; j < count; ++j) {
+                name = get(prefix + "/options/@" + std::to_string(j));
+                if (name.empty()) continue;
+                auto label = get(prefix + "/states/@" + std::to_string(j));
+                result.insert(result.end(), {name, label.empty() ? name : label,
+                    api_->get_option(session_, name.c_str()) ? "1" : "0", group});
+            }
+        }
+    }
+    return result;
+}
+void Engine::setOption(const std::string& option, bool value) {
+    api_->set_option(session_, option.c_str(), value);
+    if (saveableOption(option)) rememberOption(option, value);
+}
+bool Engine::saveableOption(const std::string& option) {
+    // Only the options librime's own switcher persists are remembered; an option a
+    // schema pins with `reset` keeps its declared default, exactly as upstream.
+    if (option.empty() || option[0] == '_') return false;
+    if (!started_ || !session_) return false;
+    if (!RIME_API_AVAILABLE(api_, config_open) || !RIME_API_AVAILABLE(api_, config_list_size) ||
+        !RIME_API_AVAILABLE(api_, config_get_cstring) || !RIME_API_AVAILABLE(api_, config_close)) return false;
+    if (!saveOptionsLoaded_) {
+        // Switcher owns the .default schema, not the active input schema. Its
+        // restore whitelist therefore comes only from the deployed default config.
+        RimeConfig config{};
+        if (!api_->config_open("default", &config)) return false;
+        ScopeExit cleanup([&] { api_->config_close(&config); });
+        saveOptions_.clear();
+        const auto count = api_->config_list_size(&config, "switcher/save_options");
+        for (size_t i = 0; i < count; ++i) {
+            auto name = safe(api_->config_get_cstring(&config, ("switcher/save_options/@" + std::to_string(i)).c_str()));
+            if (!name.empty()) saveOptions_.insert(name);
+        }
+        saveOptionsLoaded_ = true;
+    }
+    return saveOptions_.count(option) != 0;
+}
+void Engine::rememberOption(const std::string& option, bool value) {
+    // librime restores config var/option/<name> when a session starts; without this
+    // write the frontend's own toggle lives only in the session that set it.
+    if (!RIME_API_AVAILABLE(api_, user_config_open) || !RIME_API_AVAILABLE(api_, config_set_bool) ||
+        !RIME_API_AVAILABLE(api_, config_close)) return;
+    RimeConfig config{};
+    if (!api_->user_config_open("user", &config)) return;
+    ScopeExit cleanup([&] { api_->config_close(&config); });
+    api_->config_set_bool(&config, ("var/option/" + option).c_str(), value);
+}
+namespace {
+RimeLeversApi* levers(RimeApi* api) {
+    if (!RIME_API_AVAILABLE(api, find_module)) return nullptr;
+    auto* module = api->find_module("levers");
+    auto* result = module && module->get_api ? reinterpret_cast<RimeLeversApi*>(module->get_api()) : nullptr;
+    if (!result || !RIME_STRUCT_HAS_MEMBER(*result, result->select_schemas) ||
+        !result->switcher_settings_init || !result->load_settings || !result->save_settings ||
+        !result->select_schemas || !result->get_available_schema_list ||
+        !result->get_selected_schema_list || !result->schema_list_destroy || !result->custom_settings_destroy) return nullptr;
+    return result;
+}
+}
+std::string Engine::schemaSelection() {
+    owner();
+    auto* api = started_ ? levers(api_) : nullptr;
+    if (!api) return {};
+    auto* settings = api->switcher_settings_init();
+    if (!settings) return {};
+    auto* custom = reinterpret_cast<RimeCustomSettings*>(settings);
+    ScopeExit settingsCleanup([&] { api->custom_settings_destroy(custom); });
+    api->load_settings(custom);
+    RimeSchemaList available{}, selected{};
+    std::vector<std::string> selectedIds;
+    if (api->get_selected_schema_list(settings, &selected)) {
+        ScopeExit selectedCleanup([&] { api->schema_list_destroy(&selected); });
+        for (size_t i = 0; i < selected.size; ++i) selectedIds.push_back(safe(selected.list[i].schema_id));
+    }
+    std::ostringstream result;
+    if (api->get_available_schema_list(settings, &available)) {
+        ScopeExit availableCleanup([&] { api->schema_list_destroy(&available); });
+        for (size_t i = 0; i < available.size; ++i) {
+            auto id = safe(available.list[i].schema_id);
+            auto enabled = std::find(selectedIds.begin(), selectedIds.end(), id) != selectedIds.end();
+            if (i) result << '\n';
+            result << (enabled ? '1' : '0') << '\t' << id << '\t' << safe(available.list[i].name);
+        }
+    }
+    return result.str();
+}
+bool Engine::selectSchemas(const std::vector<std::string>& ids) {
+    owner();
+    auto* api = started_ ? levers(api_) : nullptr;
+    if (!api || ids.empty()) return false;
+    auto* settings = api->switcher_settings_init();
+    if (!settings) return false;
+    auto* custom = reinterpret_cast<RimeCustomSettings*>(settings);
+    ScopeExit cleanup([&] { api->custom_settings_destroy(custom); });
+    api->load_settings(custom);
+    std::vector<const char*> values;
+    for (const auto& id : ids) values.push_back(id.c_str());
+    const bool ok = api->select_schemas(settings, values.data(), values.size()) && api->save_settings(custom);
+    return ok;
+}
+bool Engine::sync() {
+    owner();
+    if (!started_ || api_->is_maintenance_mode()) return false;
+    Trace trace("rime.direct.sync");
+    try {
+        // Session cleanup alone leaves Lua-owned Memory/LevelDB objects alive
+        // until GC. Finalize releases plugin resources and flushes databases
+        // before the maintenance worker opens them for backup/merge. Reuse the
+        // process-wide setup and avoid a forced schema rebuild on every sync.
+        stop();
+        initialize(false);
+        if (deployFailed_.load()) return false;
+        syncResult_.store(SyncResult::Waiting);
+        const bool launched = api_->sync_user_data();
+        // RimeSyncUserData cleans up every native session before launching work.
+        session_ = 0; active_ = false; sessionProgram_.clear(); tabs_.clear();
+        api_->join_maintenance_thread();
+        const bool succeeded = launched && syncResult_.load() == SyncResult::Succeeded;
+        syncResult_.store(SyncResult::Idle);
+        deployFailed_.store(!succeeded);
+        return succeeded;
+    } catch (...) {
+        syncResult_.store(SyncResult::Idle);
+        deployFailed_.store(true);
+        active_ = false;
+        throw;
+    }
+}
+
+std::vector<std::string> Engine::candidates(int64_t generation, int offset, int limit) {
+    Trace trace("rime.direct.read_candidates");
+    owner();
+    std::vector<std::string> result;
+    if (gate(generation) != Ready || offset < 0 || limit <= 0 || limit > 256) return result;
+    RimeCandidateListIterator iter{};
+    if (!api_->candidate_list_from_index(session_, &iter, offset)) return result;
+    bool canEnd = true;
+    ScopeExit cleanup([&] { if (canEnd) api_->candidate_list_end(&iter); });
+    for (int i = 0; i < limit; ++i) {
+        // The pinned API deletes the previous text/comment before allocating
+        // their replacements. If next() throws, its partially updated pointers
+        // are not safe to close. Wrapper copies after a normal return are safe.
+        canEnd = false;
+        const bool hasCandidate = api_->candidate_list_next(&iter);
+        canEnd = true;
+        if (!hasCandidate) break;
+        result.push_back(safe(iter.candidate.text)); result.push_back(safe(iter.candidate.comment));
+    }
+    return result;
+}
+}

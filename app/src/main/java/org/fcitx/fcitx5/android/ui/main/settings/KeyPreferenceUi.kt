@@ -16,8 +16,8 @@ import org.fcitx.fcitx5.android.core.KeySym
 import org.fcitx.fcitx5.android.input.FcitxInputMethodService
 import splitties.dimensions.dp
 import splitties.resources.drawable
-import splitties.resources.styledColor
-import splitties.resources.styledColorSL
+import org.fcitx.fcitx5.android.utils.settingsColor
+import org.fcitx.fcitx5.android.utils.settingsColorStateList
 import splitties.resources.styledDrawable
 import splitties.views.dsl.constraintlayout.above
 import splitties.views.dsl.constraintlayout.after
@@ -32,8 +32,8 @@ import splitties.views.dsl.constraintlayout.startOfParent
 import splitties.views.dsl.constraintlayout.topOfParent
 import splitties.views.dsl.core.Ui
 import splitties.views.dsl.core.add
-import splitties.views.dsl.core.button
-import splitties.views.dsl.core.editText
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.textfield.TextInputEditText
 import splitties.views.dsl.core.imageButton
 import splitties.views.dsl.core.textView
 import splitties.views.dsl.core.wrapContent
@@ -49,7 +49,8 @@ class KeyPreferenceUi(override val ctx: Context) : Ui {
     private inner class ModifierButton(label: String, val modifier: KeyState) : Ui {
         override val ctx = this@KeyPreferenceUi.ctx
 
-        override val root = button {
+        override val root = MaterialButton(ctx).apply {
+            id = android.view.View.generateViewId()
             text = label
             isAllCaps = false
             // those 2 are both necessary, don't ask me why ´_>`
@@ -68,11 +69,11 @@ class KeyPreferenceUi(override val ctx: Context) : Ui {
             }
 
         fun applyStyles() = root.apply {
-            backgroundTintList = ctx.styledColorSL(
+            backgroundTintList = ctx.settingsColorStateList(
                 if (checked) android.R.attr.colorAccent else android.R.attr.colorBackgroundFloating
             )
             setTextColor(
-                ctx.styledColor(
+                ctx.settingsColor(
                     if (checked) android.R.attr.colorForegroundInverse else android.R.attr.colorForeground
                 )
             )
@@ -85,7 +86,8 @@ class KeyPreferenceUi(override val ctx: Context) : Ui {
         ModifierButton("Shift", KeyState.Shift)
     )
 
-    private val input = editText {
+    private val input = TextInputEditText(ctx).apply {
+        id = android.view.View.generateViewId()
         textSize = 16f // sp
         inputType = EditorInfo.TYPE_CLASS_TEXT or EditorInfo.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         imeOptions = EditorInfo.IME_FLAG_FORCE_ASCII
@@ -112,7 +114,7 @@ class KeyPreferenceUi(override val ctx: Context) : Ui {
     private val clearButton = imageButton {
         background = styledDrawable(android.R.attr.actionBarItemBackground)
         imageDrawable = drawable(R.drawable.ic_baseline_delete_24)!!.apply {
-            setTint(styledColor(android.R.attr.colorControlNormal))
+            setTint(settingsColor(android.R.attr.colorControlNormal))
         }
         setOnClickListener {
             setKey(Key.None)

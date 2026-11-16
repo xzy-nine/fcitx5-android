@@ -12,9 +12,25 @@
         tools:node="remove" />
 
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <!-- custom: 内置语音输入（录音采集 + 模型下载所需） -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -25,10 +41,14 @@
 
     <queries>
         <intent>
-            <action android:name="${applicationId}.plugin.MANIFEST" />
+            <action android:name="${applicationId}.plugin.VOICE_INPUT" />
         </intent>
         <intent>
             <action android:name="android.view.InputMethod" />
+        </intent>
+        <intent>
+            <action android:name="org.rime.plugin.MANIFEST" />
+            <category android:name="android.intent.category.DEFAULT" />
         </intent>
     </queries>
 
@@ -50,7 +70,10 @@
     <application
         android:name=".FcitxApplication"
         android:allowBackup="true"
+        android:backupAgent=".data.UiSettingsBackupAgent"
+        android:fullBackupOnly="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
+        android:enableOnBackInvokedCallback="true"
         android:fullBackupContent="@xml/full_backup_content"
         android:icon="@mipmap/app_icon"
         android:label="@string/app_name"
@@ -58,11 +81,43 @@
         android:roundIcon="@mipmap/app_icon_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.FcitxAppTheme"
+        android:usesCleartextTraffic="true"
+        tools:replace="android:supportsRtl"
         tools:targetApi="33">
+        <activity
+            android:name=".ui.main.settings.behavior.UserDataRestoreActivity"
+            android:exported="false"
+            android:process=":restore"
+            android:theme="@style/Theme.FcitxSettings.System" />
         <activity
             android:name=".ui.setup.SetupActivity"
             android:exported="false"
+            android:theme="@style/Theme.FcitxSettings.System"
             android:launchMode="singleTask" />
+        <activity
+            android:name=".ui.main.settings.im.RimeImportActivity"
+            android:exported="false"
+            android:label="@string/direct_rime_import" />
+        <activity
+            android:name=".ui.main.settings.im.RimeEngineManagerActivity"
+            android:exported="false"
+            android:label="@string/rime_engine_variants_title" />
+        <activity
+            android:name=".ui.main.stats.InputStatsActivity"
+            android:exported="false"
+            android:label="@string/stats_title" />
+        <activity
+            android:name=".ui.main.wanxiang.WanxiangUpdateActivity"
+            android:exported="false"
+            android:label="@string/wanxiang_update" />
+        <activity
+            android:name=".ui.main.rimeupdate.RimeSchemeUpdateActivity"
+            android:exported="false"
+            android:label="@string/scheme_update_title" />
+        <activity
+            android:name=".ui.main.wanxiang.WanxiangAdvancedActivity"
+            android:exported="false"
+            android:label="@string/wanxiang_advanced" />
         <activity
             android:name=".ui.main.LogActivity"
             android:directBootAware="true"
@@ -74,6 +129,114 @@
             android:configChanges="orientation|screenSize"
             android:exported="false"
             android:label="@string/edit_theme" />
+        <activity
+            android:name=".ui.main.settings.theme.ThemeColorEditorActivity"
+            android:configChanges="orientation|screenSize"
+            android:exported="false"
+            android:label="@string/edit_color" />
+        <activity
+            android:name=".ui.main.settings.voice.JsVoicePluginSettingsActivity"
+            android:configChanges="orientation|screenSize"
+            android:exported="false"
+            android:label="@string/js_voice_settings_title" />
+        <activity
+            android:name=".ui.main.settings.voice.JsVoicePluginsActivity"
+            android:configChanges="orientation|screenSize"
+            android:exported="false"
+            android:label="@string/js_voice_plugins_title" />
+        <activity
+            android:name=".ui.main.settings.icon.IconThemeListActivity"
+            android:configChanges="orientation|screenSize"
+            android:exported="false"
+            android:label="@string/icon_theme" />
+        <activity
+            android:name=".ui.main.settings.icon.IconThemeEditorActivity"
+            android:configChanges="orientation|screenSize"
+            android:exported="false"
+            android:label="@string/edit_icon_theme" />
+        <activity
+            android:name=".ui.main.settings.theme.MonetThemeEditorActivity"
+            android:configChanges="orientation|screenSize"
+            android:exported="false"
+            android:label="@string/edit_monet_theme" />
+        <activity
+            android:name=".ui.main.settings.behavior.FontsetEditorActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
+            android:exported="false"
+            android:label="@string/edit_fontset" />
+        <activity
+            android:name=".ui.main.settings.behavior.PopupEditorActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
+            android:exported="false"
+            android:label="@string/edit_popup_preset" />
+        <activity
+            android:name=".ui.main.settings.behavior.TextKeyboardLayoutEditorActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
+            android:exported="false"
+            android:label="@string/edit_text_keyboard_layout" />
+        <activity
+            android:name=".ui.main.settings.behavior.dialog.KeyEditorActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
+            android:exported="false"
+            android:label="@string/edit_text_keyboard_layout" />
+        <activity
+            android:name=".ui.main.settings.behavior.dialog.LayoutFileProfileInputActivity"
+            android:exported="false"
+            android:label="@string/edit_text_keyboard_layout" />
+        <activity
+            android:name=".ui.main.settings.behavior.dialog.LayoutNameInputActivity"
+            android:exported="false"
+            android:label="@string/edit_text_keyboard_layout" />
+        <activity
+            android:name=".ui.main.update.UpdateCheckActivity"
+            android:exported="false"
+            android:label="@string/update_page_title" />
+        <activity
+            android:name=".ui.main.update.UpdateHostsSettingsActivity"
+            android:exported="false"
+            android:label="@string/update_hosts_settings_title" />
+        <activity
+            android:name=".ui.main.update.UpdateMirrorEditActivity"
+            android:exported="false"
+            android:label="@string/update_mirror_edit_title" />
+        <!--
+            Registered even though no entry point navigates here yet: the class, its adapter
+            and its layout all exist, so an unregistered declaration is a latent
+            ActivityNotFoundException the moment an entry point is added.
+        -->
+        <activity
+            android:name=".ui.main.update.UpdateMirrorListActivity"
+            android:exported="false"
+            android:label="@string/update_mirror_settings_title" />
+        <activity
+            android:name=".ui.main.settings.behavior.dialog.TextKeyboardLayoutProfilePickerActivity"
+            android:autoRemoveFromRecents="true"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:taskAffinity=".ui.main.settings.behavior.dialog.TextKeyboardLayoutProfilePickerActivity"
+            android:theme="@style/Theme.TransparentOverlayActivity" />
+        <activity
+            android:name=".ui.main.settings.behavior.share.QrScanCaptureActivity"
+            android:exported="false"
+            android:screenOrientation="fullSensor"
+            android:stateNotNeeded="true"
+            android:theme="@style/zxing_CaptureTheme"
+            android:windowSoftInputMode="stateAlwaysHidden" />
+        <activity
+            android:name=".ui.main.settings.behavior.TextKeyboardLayoutProfileManagerActivity"
+            android:exported="false"
+            android:label="@string/text_keyboard_layout_manage_title" />
+        <activity
+            android:name=".ui.main.settings.behavior.ButtonsCustomizerActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
+            android:exported="false"
+            android:label="@string/edit_buttons" />
+        <activity
+            android:name=".ui.main.settings.behavior.SplitKeyboardCalibrationActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
+            android:exported="false"
+            android:label="@string/split_keyboard_calibration_title" />
         <activity
             android:name=".ui.main.CropImageActivity"
             android:exported="false" />
@@ -104,35 +267,26 @@
                 <action android:name="android.intent.action.APPLICATION_PREFERENCES" />
             </intent-filter>
             <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
 
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
 
-                <data android:scheme="file" />
-                <data android:scheme="content" />
                 <data android:mimeType="*/*" />
-                <data android:host="*" />
-                <!--
-                  there has to be so many segments:
-                  https://stackoverflow.com/questions/3400072/pathpattern-to-match-file-extension/8599921#8599921
-                -->
-                <data android:pathPattern=".*\\.dict" />
-                <data android:pathPattern=".*\\..*\\.dict" />
-                <data android:pathPattern=".*\\..*\\..*\\.dict" />
-                <data android:pathPattern=".*\\..*\\..*\\..*\\.dict" />
-                <data android:pathPattern=".*\\.scel" />
-                <data android:pathPattern=".*\\..*\\.scel" />
-                <data android:pathPattern=".*\\..*\\..*\\.scel" />
-                <data android:pathPattern=".*\\..*\\..*\\..*\\.scel" />
-                <data android:pathPattern=".*\\.txt" />
-                <data android:pathPattern=".*\\..*\\.txt" />
-                <data android:pathPattern=".*\\..*\\..*\\.txt" />
-                <data android:pathPattern=".*\\..*\\..*\\..*\\.txt" />
-                <!-- pathSuffix works on API 31+ -->
-                <data android:pathSuffix=".dict" />
-                <data android:pathSuffix=".scel" />
-                <data android:pathSuffix=".txt" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="*/*" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="image/*" />
             </intent-filter>
         </activity>
 
@@ -140,7 +294,7 @@
             android:name=".input.FcitxInputMethodService"
             android:directBootAware="true"
             android:exported="true"
-            android:label="@string/app_name"
+            android:label="${appLabel}"
             android:permission="android.permission.BIND_INPUT_METHOD">
             <intent-filter>
                 <action android:name="android.view.InputMethod" />
@@ -152,10 +306,16 @@
         </service>
 
         <service
+            android:name=".core.engine.RimeEngineProbeService"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":rime_engine_probe"
+            android:stopWithTask="true" />
+
+        <service
             android:name=".FcitxRemoteService"
-            android:exported="true"
             android:permission="${applicationId}.permission.IPC"
-            tools:ignore="SystemPermissionTypo">
+            android:exported="true">
             <intent-filter>
                 <action android:name="${applicationId}.IPC" />
             </intent-filter>
@@ -181,6 +341,41 @@
             android:exported="false"
             android:process=":asr" />
 
+        <!--
+          dataSync, not remoteMessaging: this service polls a clipboard server and uploads local
+          changes. Android 14+ requires the declared type to match actual use (see C21).
+        -->
+        <service
+            android:name=".clipboardsync.MainService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <activity
+            android:name=".clipboardsync.ui.ClipboardSyncSettingsActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.ClipboardSync.Settings" />
+
+        <activity
+            android:name=".clipboardsync.ui.ClipboardCaptureActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:finishOnTaskLaunch="true"
+            android:theme="@style/Theme.ClipboardSync.Capture" />
+
+        <service
+            android:name=".clipboardsync.service.QuickSyncTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_clipboard_sync"
+            android:label="@string/quick_sync_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            tools:targetApi="n">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
         <provider
             android:name=".provider.FcitxDataProvider"
             android:authorities="${applicationId}.provider"
@@ -190,6 +385,26 @@
             <intent-filter>
                 <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
             </intent-filter>
+        </provider>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/clipboard_file_paths" />
+        </provider>
+
+        <provider
+            android:name=".utils.ShareFileProvider"
+            android:authorities="${applicationId}.share.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_file_paths" />
         </provider>
 
         <!-- remove unneeded components from com.canhub.cropper -->
@@ -203,6 +418,21 @@
             android:authorities="${applicationId}.cropper.fileprovider"
             tools:node="remove" />
 
+        <!-- Every scan entry uses QrScanOptions and our QrScanCaptureActivity. -->
+        <activity
+            android:name="com.journeyapps.barcodescanner.CaptureActivity"
+            tools:node="remove" />
+
+        <!-- Clipboard Room is single-process and does not enable this optional service. -->
+        <service
+            android:name="androidx.room.MultiInstanceInvalidationService"
+            tools:node="remove" />
+
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
@@ -210,6 +440,11 @@
             android:exported="false"
             tools:node="merge">
             <!-- do not inject splitties AppCompat -->
+            <!-- WorkManager starts on demand on the update page, never on IME startup. -->
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
             <meta-data
                 android:name="splitties.views.dsl.appcompat.experimental.AppCompatViewInstantiatorInjecter"
                 android:value="androidx.startup"

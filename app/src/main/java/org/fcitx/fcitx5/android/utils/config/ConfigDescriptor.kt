@@ -177,16 +177,21 @@ sealed class ConfigDescriptor<T, U> : Parcelable {
         val knownType: ETy? = null
     ) : ConfigDescriptor<ConfigType.TyExternal, Nothing>() {
         enum class ETy {
+            RimeUserDataDir,
+            MultiSelect,
+            AddonDirProfileManager,
+            AddonAction,
+            RimeImport,
+
+            // custom: libime 系的 addon 外部页类型。
+            // 引擎侧已不再提供这些 addon，保留枚举值以便配置描述符的解析不崩。
             PinyinDict,
             Punctuation,
             QuickPhrase,
+            PinyinCustomPhrase,
             Chttrans,
             TableGlobal,
-            PinyinCustomPhrase,
-            RimeUserDataDir,
-
-            // manually added on Android side for TableManager
-            AndroidTable
+            AndroidTable,
         }
 
         override val ty: ConfigType<ConfigType.TyExternal>
@@ -317,16 +322,28 @@ sealed class ConfigDescriptor<T, U> : Parcelable {
                             raw.description,
                             raw.tooltip,
                             raw.findByName("External")?.value,
-                            when (raw.name) {
-                                "DictManager" -> ConfigExternal.ETy.PinyinDict
-                                "Punctuation" -> ConfigExternal.ETy.Punctuation
-                                "QuickPhrase", "Editor" -> ConfigExternal.ETy.QuickPhrase
-                                "Chttrans" -> ConfigExternal.ETy.Chttrans
-                                "TableGlobal" -> ConfigExternal.ETy.TableGlobal
-                                "CustomPhrase" -> ConfigExternal.ETy.PinyinCustomPhrase
-                                "UserDataDir" -> ConfigExternal.ETy.RimeUserDataDir
-                                "AndroidTable" -> ConfigExternal.ETy.AndroidTable
-                                else -> null
+                            when {
+                                raw.findByName("External")?.value == "fcitx://direct-rime/import" ->
+                                    ConfigExternal.ETy.RimeImport
+                                raw.findByName("External")?.value?.startsWith("fcitx://multiselect/") == true ->
+                                    ConfigExternal.ETy.MultiSelect
+                                raw.findByName("External")?.value?.startsWith("fcitx://addon-dir-profile/") == true ->
+                                    ConfigExternal.ETy.AddonDirProfileManager
+                                raw.findByName("External")?.value?.startsWith("fcitx://addon-action/") == true ->
+                                    ConfigExternal.ETy.AddonAction
+                                // 按外部页名称识别其余类型
+                                else -> when (raw.name) {
+                                    "DictManager" -> ConfigExternal.ETy.PinyinDict
+                                    "Punctuation" -> ConfigExternal.ETy.Punctuation
+                                    "QuickPhrase", "Editor" -> ConfigExternal.ETy.QuickPhrase
+                                    "Chttrans" -> ConfigExternal.ETy.Chttrans
+                                    "TableGlobal" -> ConfigExternal.ETy.TableGlobal
+                                    "CustomPhrase" -> ConfigExternal.ETy.PinyinCustomPhrase
+                                    "UserDataDir" -> ConfigExternal.ETy.RimeUserDataDir
+                                    "MultiSelect" -> ConfigExternal.ETy.MultiSelect
+                                    "AndroidTable" -> ConfigExternal.ETy.AndroidTable
+                                    else -> null
+                                }
                             }
                         )
                     }

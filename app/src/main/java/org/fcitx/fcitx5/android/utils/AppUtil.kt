@@ -18,6 +18,10 @@ import kotlin.system.exitProcess
 
 object AppUtil {
 
+    fun appLabel(context: Context): String = runCatching {
+        context.applicationInfo.loadLabel(context.packageManager).toString()
+    }.getOrDefault(context.getString(R.string.app_name))
+
     fun launchMain(context: Context) {
         context.startActivity<MainActivity> {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
@@ -31,6 +35,9 @@ object AppUtil {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
         }
     }
+
+    fun launchMainToRoute(context: Context, route: SettingsRoute) =
+        launchMainToDest(context, route)
 
     fun launchMainToKeyboard(context: Context) =
         launchMainToDest(context, SettingsRoute.VirtualKeyboard)

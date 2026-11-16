@@ -17,26 +17,30 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.RawConfig
-import org.fcitx.fcitx5.android.data.quickphrase.QuickPhrase
 import org.fcitx.fcitx5.android.ui.main.AboutFragment
 import org.fcitx.fcitx5.android.ui.main.DeveloperFragment
 import org.fcitx.fcitx5.android.ui.main.LicensesFragment
 import org.fcitx.fcitx5.android.ui.main.MainFragment
-import org.fcitx.fcitx5.android.ui.main.PluginFragment
-import org.fcitx.fcitx5.android.ui.main.settings.addon.AddonConfigFragment
-import org.fcitx.fcitx5.android.ui.main.settings.addon.AddonListFragment
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.AdvancedSettingsFragment
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.CandidatesSettingsFragment
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.ClipboardSettingsFragment
+import org.fcitx.fcitx5.android.ui.main.settings.behavior.DataBackupFragment
+import org.fcitx.fcitx5.android.ui.main.settings.behavior.KeyboardGroupFragment
+import org.fcitx.fcitx5.android.ui.main.settings.behavior.KeyboardModesFragment
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.KeyboardSettingsFragment
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.BroadcastSettingsFragment
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.SymbolSettingsFragment
-import org.fcitx.fcitx5.android.ui.main.settings.global.GlobalConfigFragment
+import org.fcitx.fcitx5.android.ui.main.settings.behavior.TextEditingSettingsFragment
+import org.fcitx.fcitx5.android.ui.main.settings.group.SettingsGroupFragment
+import org.fcitx.fcitx5.android.ui.main.settings.group.SettingsGroupSpecs
 import org.fcitx.fcitx5.android.ui.main.settings.im.InputMethodConfigFragment
-import org.fcitx.fcitx5.android.ui.main.settings.im.InputMethodListFragment
 import org.fcitx.fcitx5.android.ui.main.settings.theme.ThemeFragment
+import org.fcitx.fcitx5.android.ui.main.settings.theme.SettingsUiAppearanceFragment
+import org.fcitx.fcitx5.android.ui.main.settings.theme.SettingsUiMotionFragment
+import org.fcitx.fcitx5.android.utils.AppUtil
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor
 import org.fcitx.fcitx5.android.utils.parcelable
+import kotlin.reflect.KType
 import kotlin.reflect.typeOf
 
 @Parcelize
@@ -61,16 +65,32 @@ sealed class SettingsRoute : Parcelable {
     @Serializable
     data object AddonList : SettingsRoute()
 
-    @Serializable
-    data class AddonConfig(val name: String, val uniqueName: String) : SettingsRoute()
-
     /* ========== Android ========== */
+
+    /**
+     * 首页一级入口下的分组页，由 [SettingsGroupSpecs] 驱动。
+     * 用 id 标识分组，避免为每个分组各建一个路由类与 Fragment。
+     */
+    @Serializable
+    data class SettingsGroup(val id: String) : SettingsRoute()
 
     @Serializable
     data object Theme : SettingsRoute()
 
     @Serializable
+    data object SettingsUiAppearance : SettingsRoute()
+
+    @Serializable
+    data object SettingsUiMotion : SettingsRoute()
+
+    @Serializable
+    data object IconTheme : SettingsRoute()
+
+    @Serializable
     data object VirtualKeyboard : SettingsRoute()
+
+    @Serializable
+    data class KeyboardGroup(val group: Int) : SettingsRoute()
 
     @Serializable
     data object CandidatesWindow : SettingsRoute()
@@ -85,7 +105,15 @@ sealed class SettingsRoute : Parcelable {
     data object Symbol : SettingsRoute()
 
     @Serializable
-    data object Plugin : SettingsRoute()
+    data object TextEditing : SettingsRoute()
+
+    /** 浮动键盘与单手键盘。原先没有任何设置入口，只能靠工具栏按钮触发。 */
+    @Serializable
+    data object KeyboardModes : SettingsRoute()
+
+    /** 数据与备份：从「高级」拆出，避免与兼容性开关混在一起。 */
+    @Serializable
+    data object DataBackup : SettingsRoute()
 
     @Serializable
     data object Advanced : SettingsRoute()
@@ -127,6 +155,9 @@ sealed class SettingsRoute : Parcelable {
                         return Json.decodeFromString(value)
                     }
                 }
+
+                val TypeMap: Map<KType, NavType<*>> =
+                    mapOf(typeOf<Params>() to NavType)
             }
         }
 
@@ -139,81 +170,59 @@ sealed class SettingsRoute : Parcelable {
     }
 
     @Serializable
-    data class PinyinDict(val uri: String? = null) : SettingsRoute() {
-        constructor(uri: Uri) : this(uri.toString())
-    }
+    data class MultiSelect(
+        val title: String,
+        val addon: String,
+        val path: String,
+        val option: String,
+        val min: Int = 0
+    ) : SettingsRoute()
 
     @Serializable
-    data class Punctuation(val title: String, val lang: String? = null) : SettingsRoute()
-
-    @Serializable
-    data object QuickPhraseList : SettingsRoute()
-
-    @Serializable
-    data class QuickPhraseEdit(val param: Param) : SettingsRoute() {
-        constructor(quickPhrase: QuickPhrase) : this(Param(quickPhrase))
-
-        @Serializable
-        @Parcelize
-        data class Param(val quickPhrase: QuickPhrase) : Parcelable {
-            companion object {
-                val NavType = object : NavType<Param>(isNullableAllowed = false) {
-                    override fun put(bundle: SavedState, key: String, value: Param) {
-                        bundle.putParcelable(key, value)
-                    }
-
-                    override fun get(bundle: SavedState, key: String): Param? {
-                        return bundle.parcelable<Param>(key)
-                    }
-
-                    override fun serializeAsValue(value: Param): String {
-                        return Uri.encode(Json.encodeToString(value))
-                    }
-
-                    override fun parseValue(value: String): Param {
-                        return Json.decodeFromString(value)
-                    }
-                }
-            }
-        }
-    }
-
-    @Serializable
-    data object TableInputMethods : SettingsRoute()
-
-    @Serializable
-    data object PinyinCustomPhrase : SettingsRoute()
+    data class AddonDirProfileManager(
+        val title: String,
+        val addon: String,
+        val path: String
+    ) : SettingsRoute()
 
     companion object {
         fun createGraph(controller: NavController) = controller.createGraph(Index) {
             val ctx = controller.context
+            val appLabel = AppUtil.appLabel(ctx)
 
             /* ========== Index ========== */
 
             fragment<MainFragment, Index> {
-                label = ctx.getString(R.string.app_name)
+                label = appLabel
             }
 
             /* ========== Fcitx ========== */
 
-            fragment<GlobalConfigFragment, GlobalConfig>()
-            fragment<InputMethodListFragment, InputMethodList> {
-                label = ctx.getString(R.string.input_methods)
-            }
+            fragment<LegacyEngineSettingsFragment, GlobalConfig>()
+            fragment<LegacyEngineSettingsFragment, InputMethodList>()
             fragment<InputMethodConfigFragment, InputMethodConfig>()
-            fragment<AddonListFragment, AddonList> {
-                label = ctx.getString(R.string.addons)
-            }
-            fragment<AddonConfigFragment, AddonConfig>()
+            fragment<LegacyEngineSettingsFragment, AddonList>()
 
             /* ========== Android ========== */
 
             fragment<ThemeFragment, Theme> {
                 label = ctx.getString(R.string.theme)
             }
+            fragment<SettingsUiAppearanceFragment, SettingsUiAppearance> {
+                label = ctx.getString(R.string.settings_ui_appearance)
+            }
+            fragment<SettingsUiMotionFragment, SettingsUiMotion> {
+                label = ctx.getString(R.string.settings_ui_motion_title)
+            }
             fragment<KeyboardSettingsFragment, VirtualKeyboard> {
                 label = ctx.getString(R.string.virtual_keyboard)
             }
+            fragment<KeyboardGroupFragment, KeyboardGroup>()
+            fragment<KeyboardModesFragment, KeyboardModes> {
+                label = ctx.getString(R.string.keyboard_modes_title)
+            }
+            // 分组页的标题在创建页面外壳时从规格表解析，无需等待入场动画结束。
+            fragment<SettingsGroupFragment, SettingsGroup>()
             fragment<CandidatesSettingsFragment, CandidatesWindow> {
                 label = ctx.getString(R.string.candidates_window)
             }
@@ -226,11 +235,15 @@ sealed class SettingsRoute : Parcelable {
             fragment<SymbolSettingsFragment, Symbol> {
                 label = ctx.getString(R.string.emoji_and_symbols)
             }
-            fragment<PluginFragment, Plugin> {
-                label = ctx.getString(R.string.plugins)
+            fragment<TextEditingSettingsFragment, TextEditing> {
+                label = ctx.getString(R.string.text_editing)
             }
             fragment<AdvancedSettingsFragment, Advanced> {
                 label = ctx.getString(R.string.advanced)
+            }
+            // 数据与备份从「高级」拆出，见 DataBackupFragment 的说明。
+            fragment<DataBackupFragment, DataBackup> {
+                label = ctx.getString(R.string.settings_group_data)
             }
             fragment<DeveloperFragment, Developer> {
                 label = ctx.getString(R.string.developer)
@@ -245,22 +258,10 @@ sealed class SettingsRoute : Parcelable {
             /* ========== External ========== */
 
             fragment<ListFragment, ListConfig>(
-                typeMap = mapOf(typeOf<ListConfig.Params>() to ListConfig.Params.NavType)
+                typeMap = ListConfig.Params.TypeMap
             )
-            fragment<PinyinDictionaryFragment, PinyinDict> {
-                label = ctx.getString(R.string.pinyin_dict)
-            }
-            fragment<PunctuationEditorFragment, Punctuation>()
-            fragment<QuickPhraseListFragment, QuickPhraseList> {
-                label = ctx.getString(R.string.quickphrase_editor)
-            }
-            fragment<QuickPhraseEditFragment, QuickPhraseEdit>(
-                typeMap = mapOf(typeOf<QuickPhraseEdit.Param>() to QuickPhraseEdit.Param.NavType)
-            )
-            fragment<TableInputMethodFragment, TableInputMethods> {
-                label = ctx.getString(R.string.table_im)
-            }
-            fragment<PinyinCustomPhraseFragment, PinyinCustomPhrase>()
+            fragment<GenericMultiSelectFragment, MultiSelect>()
+            fragment<AddonDirProfileManagerFragment, AddonDirProfileManager>()
         }
     }
 }

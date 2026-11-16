@@ -98,7 +98,7 @@ object SettingsSearchManager {
             IndexItem(R.string.candidates_window, R.drawable.ic_baseline_list_alt_24, SettingsRoute.CandidatesWindow),
             IndexItem(R.string.clipboard, R.drawable.ic_clipboard, SettingsRoute.Clipboard),
             IndexItem(R.string.emoji_and_symbols, R.drawable.ic_baseline_emoji_symbols_24, SettingsRoute.Symbol),
-            IndexItem(R.string.plugins, R.drawable.ic_baseline_android_24, SettingsRoute.Plugin),
+            IndexItem(R.string.plugins, R.drawable.ic_baseline_android_24, SettingsRoute.AddonList),
             IndexItem(R.string.advanced, R.drawable.ic_baseline_more_horiz_24, SettingsRoute.Advanced),
             IndexItem(R.string.developer, R.drawable.ic_baseline_code_24, SettingsRoute.Developer),
             IndexItem(R.string.about, R.drawable.ic_baseline_info_24, SettingsRoute.About),

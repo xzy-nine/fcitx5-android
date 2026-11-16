@@ -9,18 +9,26 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.cancellable
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
+import timber.log.Timber
 
-class Logcat(val pid: Int? = Process.myPid()) : CoroutineScope by CoroutineScope(Dispatchers.IO) {
+class Logcat(
+    val pid: Int? = Process.myPid(),
+    private val createProcess: (Array<String>) -> java.lang.Process = { Runtime.getRuntime().exec(it) }
+) : CoroutineScope by CoroutineScope(Dispatchers.IO) {
 
+    private val processLock = Any()
+    private var generation = 0L
     private var process: java.lang.Process? = null
     private var emittingJob: Job? = null
 
@@ -37,11 +45,15 @@ class Logcat(val pid: Int? = Process.myPid()) : CoroutineScope by CoroutineScope
      */
     fun getLogAsync(): Deferred<Result<List<String>>> = async {
         runCatching {
-            Runtime.getRuntime()
-                .exec(arrayOf("logcat", pid?.let { "--pid=$it" } ?: "", "-d"))
-                .inputStream
-                .bufferedReader()
-                .readLines()
+            val snapshotProcess = Runtime.getRuntime().exec(logcatArgv("-d"))
+            try {
+                snapshotProcess.inputStream.bufferedReader().use { it.readLines() }
+            } finally {
+                // Reap the child and close its pipes; otherwise the process object and its
+                // three file descriptors linger until GC.
+                runCatching { snapshotProcess.waitFor() }
+                snapshotProcess.destroy()
+            }
         }
     }
 
@@ -50,38 +62,80 @@ class Logcat(val pid: Int? = Process.myPid()) : CoroutineScope by CoroutineScope
      */
     fun clearLog(): Job =
         launch {
-            runCatching { Runtime.getRuntime().exec(arrayOf("logcat", "-c")) }
+            runCatching {
+                val clearProcess = Runtime.getRuntime().exec(arrayOf("logcat", "-c"))
+                try {
+                    clearProcess.waitFor()
+                } finally {
+                    clearProcess.destroy()
+                }
+            }
         }
 
     /**
      * Create a process reading logcat, sending lines to [logFlow]
      */
-    fun initLogFlow() =
-        if (process != null)
-            errorState(R.string.exception_logcat_created)
-        else launch {
-            runCatching {
-                Runtime
-                    .getRuntime()
-                    .exec(arrayOf("logcat", pid?.let { "--pid=$it" } ?: "", "-v", "brief"))
-                    .also { process = it }
-                    .inputStream
-                    .bufferedReader()
-                    .lineSequence()
-                    .asFlow()
-                    .flowOn(Dispatchers.IO)
-                    .cancellable()
-                    .collect { flow.emit(it) }
+    fun initLogFlow(): Job = synchronized(processLock) {
+        if (emittingJob?.isActive == true) errorState(R.string.exception_logcat_created)
+        val expected = ++generation
+        launch(start = CoroutineStart.LAZY) {
+            var child: java.lang.Process? = null
+            try {
+                coroutineContext.ensureActive()
+                val created = createProcess(logcatArgv())
+                child = created
+                synchronized(processLock) {
+                    // shutdown can win while Runtime.exec is still creating the child.
+                    if (expected != generation) throw CancellationException("Log reader stopped")
+                    process = created
+                }
+                val reader = created.inputStream.bufferedReader()
+                try {
+                    reader.lineSequence().asFlow().cancellable().collect { flow.emit(it) }
+                } finally {
+                    created.destroy()
+                    reader.close()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.e(e, "Logcat reader failed")
+            } finally {
+                // Old readers cannot clear or destroy a newer reader's process.
+                synchronized(processLock) {
+                    if (process === child) process = null
+                    if (expected == generation) emittingJob = null
+                }
+                child?.destroy()
             }
-        }.also { emittingJob = it }
+        }.also { emittingJob = it; it.start() }
+    }
 
     /**
      * Destroy the reading process
      */
     fun shutdownLogFlow() {
-        process?.destroy()
-        emittingJob?.cancel()
+        val (current, job) = synchronized(processLock) {
+            ++generation
+            (process to emittingJob).also { process = null; emittingJob = null }
+        }
+        job?.cancel()
+        // Kill before closing a pipe that may have a blocking read in progress.
+        // Process.destroy/stream cleanup must not block the UI detaching this view.
+        if (current != null) launch { current.destroy() }
     }
+
+    /**
+     * Build the logcat argv, omitting `--pid` when [pid] is null instead of passing an
+     * empty string as a bogus argument.
+     */
+    private fun logcatArgv(vararg extraArgs: String): Array<String> = buildList {
+        add("logcat")
+        pid?.let { add("--pid=$it") }
+        add("-v")
+        add("threadtime")
+        addAll(extraArgs)
+    }.toTypedArray()
 
     companion object {
         val default by lazy { Logcat() }

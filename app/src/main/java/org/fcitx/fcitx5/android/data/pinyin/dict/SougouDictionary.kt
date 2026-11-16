@@ -5,7 +5,6 @@
 package org.fcitx.fcitx5.android.data.pinyin.dict
 
 import org.fcitx.fcitx5.android.R
-import org.fcitx.fcitx5.android.data.pinyin.PinyinDictManager
 import org.fcitx.fcitx5.android.utils.errorArg
 import java.io.File
 
@@ -22,9 +21,7 @@ class SougouDictionary(file: File) : PinyinDictionary() {
     }
 
     override fun toTextDictionary(dest: File): TextDictionary {
-        ensureTxt(dest)
-        PinyinDictManager.sougouDictConv(file.absolutePath, dest.absolutePath)
-        return TextDictionary(dest)
+        throw UnsupportedOperationException("Sogou binary dictionaries are not supported")
     }
 
     override fun toLibIMEDictionary(dest: File): LibIMEDictionary {

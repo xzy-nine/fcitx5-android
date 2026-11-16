@@ -1,0 +1,922 @@
+/*
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-FileCopyrightText: Copyright 2026 Fcitx5 for Android Contributors
+ */
+package org.fcitx.fcitx5.android.input.action
+
+import android.content.Intent
+import android.content.Context
+import android.view.KeyEvent
+import android.view.View
+import androidx.annotation.DrawableRes
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import org.fcitx.fcitx5.android.R
+import org.fcitx.fcitx5.android.core.SubtypeManager
+import org.fcitx.fcitx5.android.daemon.FcitxConnection
+import org.fcitx.fcitx5.android.daemon.launchOnReady
+import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
+import org.fcitx.fcitx5.android.data.theme.ThemeManager
+import org.fcitx.fcitx5.android.input.FcitxInputMethodService
+import org.fcitx.fcitx5.android.input.clipboard.ClipboardWindow
+import org.fcitx.fcitx5.android.input.editing.TextEditingWindow
+import org.fcitx.fcitx5.android.input.status.StatusAreaWindow
+import org.fcitx.fcitx5.android.input.wm.InputWindowManager
+import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
+import org.fcitx.fcitx5.android.ui.main.settings.behavior.ButtonsCustomizerActivity
+import org.fcitx.fcitx5.android.ui.main.settings.behavior.FontsetEditorActivity
+import org.fcitx.fcitx5.android.ui.main.settings.behavior.TextKeyboardLayoutEditorActivity
+import org.fcitx.fcitx5.android.ui.main.settings.behavior.dialog.TextKeyboardLayoutProfilePickerActivity
+import org.fcitx.fcitx5.android.ui.main.settings.icon.IconThemeListActivity
+import org.fcitx.fcitx5.android.input.voice.js.JsAppButtonBinding
+import org.fcitx.fcitx5.android.utils.AppUtil
+import org.fcitx.fcitx5.android.utils.InputMethodUtil
+import org.fcitx.fcitx5.android.utils.buildDocumentsProviderIntent
+import org.fcitx.fcitx5.android.utils.toast
+
+/**
+ * Represents a configurable button action that can be used in Kawaii Bar, Status Area, or keyboard.
+ */
+sealed class ButtonAction {
+    /**
+     * Unique identifier for this button action.
+     */
+    abstract val id: String
+
+    /**
+     * Default icon resource for this button.
+     */
+    @get:DrawableRes
+    abstract val defaultIcon: Int
+
+    /**
+     * Default label string resource for this button.
+     */
+    abstract val defaultLabelRes: Int
+
+    /**
+     * Icon theme slot name for this button. Null if not covered by icon themes.
+     */
+    open val iconSlot: String? = null
+
+    /**
+     * Execute the action.
+     * @param context Android context
+     * @param service Input method service
+     * @param fcitx Fcitx connection
+     * @param windowManager Window manager for attaching/detaching windows
+     * @param view The view that triggered this action (for popup menus, etc.)
+     * @param onActionComplete Callback to be invoked after action is completed
+     */
+    abstract fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View? = null,
+        onActionComplete: (() -> Unit)? = null
+    )
+
+    /**
+     * Check if this button should be active (highlighted).
+     * @param service Input method service
+     * @return true if the button should be shown as active
+     */
+    open fun isActive(service: FcitxInputMethodService): Boolean = false
+
+    /**
+     * Whether this action overrides [onLongPress] with an actual behavior. Toolbar buttons
+     * consult this to decide whether a long press is handled; when false the press falls
+     * through to a normal click on release.
+     */
+    open val hasLongPress: Boolean = false
+
+    /**
+     * Long press action for this button, if different from short press.
+     * @param context Android context
+     * @param service Input method service
+     * @param fcitx Fcitx connection
+     * @param windowManager Window manager
+     * @param view The view that triggered this action
+     */
+    open fun onLongPress(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View
+    ) {
+        // Default: no long press action
+    }
+
+    companion object {
+        /**
+         * Get a ButtonAction by its ID.
+         * @param id The button ID
+         * @return The corresponding ButtonAction, or null if not found
+         */
+        fun fromId(id: String): ButtonAction? =
+            JsAppButtonBinding.decode(id)?.let { JsAppButtonAction(it.pluginId, it.appId) }
+                ?: allActions.find { it.id == id }
+
+        /**
+         * All available button actions.
+         */
+        val allActions by lazy {
+            listOf(
+                UndoAction,
+                RedoAction,
+                CursorMoveAction,
+                FloatingToggleAction,
+                ClipboardAction,
+                VoiceInputAction,
+                AiAssistantAction,
+                JsToolsAction,
+                ThemeToggleAction,
+                RandomThemeAction,
+                LanguageSwitchAction,
+                ThemeAction,
+                IconThemeAction,
+                InputMethodOptionsAction,
+                ReloadConfigAction,
+                VirtualKeyboardAction,
+                OneHandedKeyboardAction,
+                BrowseUserDataDirAction,
+                SettingsGlobalOptionsAction,
+                SettingsInputMethodsAction,
+                SettingsCandidatesWindowAction,
+                SettingsClipboardSettingsAction,
+                SettingsSymbolSettingsAction,
+                SettingsAdvancedAction,
+                SettingsDeveloperAction,
+                SettingsAboutAction,
+                SettingsLicenseAction,
+                EditTextKeyboardLayoutAction,
+                TextKeyboardLayoutFileSelectAction,
+                EditFontsetAction,
+                SwitchInputMethodAction,
+                RimeSchemaMenuAction,
+                MoreAction
+            )
+        }
+
+        /**
+         * Button actions available for Kawaii Bar.
+         */
+        val kawaiiBarActions by lazy {
+            listOf(
+                UndoAction,
+                RedoAction,
+                CursorMoveAction,
+                FloatingToggleAction,
+                ClipboardAction,
+                VoiceInputAction,
+                AiAssistantAction,
+                JsToolsAction,
+                ThemeToggleAction,
+                RandomThemeAction
+            )
+        }
+
+        /**
+         * Button actions available for Status Area.
+         */
+        val statusAreaActions by lazy {
+            listOf(
+                LanguageSwitchAction,
+                ThemeAction,
+                RandomThemeAction,
+                IconThemeAction,
+                InputMethodOptionsAction,
+                ReloadConfigAction,
+                VirtualKeyboardAction,
+                OneHandedKeyboardAction
+            )
+        }
+
+        /**
+         * All actions that can be added to either section.
+         */
+        val allConfigurableActions by lazy {
+            (kawaiiBarActions + statusAreaActions).distinctBy { it.id }
+        }
+    }
+}
+
+// Kawaii Bar Actions
+
+data object UndoAction : ButtonAction() {
+    override val id = "undo"
+    override val defaultIcon = R.drawable.ic_baseline_undo_24
+    override val defaultLabelRes = R.string.undo
+    override val iconSlot = "toolbar.undo"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        service.sendCombinationKeyEvents(KeyEvent.KEYCODE_Z, ctrl = true)
+    }
+}
+
+data object RedoAction : ButtonAction() {
+    override val id = "redo"
+    override val defaultIcon = R.drawable.ic_baseline_redo_24
+    override val defaultLabelRes = R.string.redo
+    override val iconSlot = "toolbar.redo"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        service.sendCombinationKeyEvents(KeyEvent.KEYCODE_Z, ctrl = true, shift = true)
+    }
+}
+
+data object CursorMoveAction : ButtonAction() {
+    override val id = "cursor_move"
+    override val defaultIcon = R.drawable.ic_cursor_move
+    override val defaultLabelRes = R.string.text_editing
+    override val iconSlot = "toolbar.cursor_move"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        windowManager.attachWindow(TextEditingWindow())
+    }
+}
+
+data object FloatingToggleAction : ButtonAction() {
+    override val id = "floating_toggle"
+    override val defaultIcon = R.drawable.ic_floating_toggle_24
+    override val defaultLabelRes = R.string.floating_keyboard
+    override val iconSlot = "toolbar.floating_toggle"
+    override val hasLongPress = true
+
+    // custom: 浮动/调整模式由 Compose 键盘的调音覆盖层接管，工具栏动作保留但不生效。
+    override fun isActive(service: FcitxInputMethodService): Boolean = false
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        onActionComplete?.invoke()
+    }
+}
+
+data object ClipboardAction : ButtonAction() {
+    override val id = "clipboard"
+    override val defaultIcon = R.drawable.ic_clipboard
+    override val defaultLabelRes = R.string.clipboard
+    override val iconSlot = "toolbar.clipboard"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        windowManager.attachWindow(ClipboardWindow())
+    }
+}
+
+data object VoiceInputAction : ButtonAction() {
+    override val id = "voice_input"
+    override val defaultIcon = R.drawable.ic_baseline_keyboard_voice_24
+    override val defaultLabelRes = R.string.switch_to_voice_input
+    override val iconSlot = "system.voice_input"
+    override val hasLongPress = true
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        // custom: 语音面板由 ComposeVoicePanel 托管，工具栏语音键另行接线。
+        service.toast(R.string.voice_input)
+    }
+}
+
+data object MoreAction : ButtonAction() {
+    override val id = "more"
+    override val defaultIcon = R.drawable.ic_baseline_more_horiz_24
+    override val defaultLabelRes = R.string.status_area
+    override val iconSlot = "toolbar.more"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        windowManager.attachWindow(StatusAreaWindow())
+    }
+}
+
+data object ThemeToggleAction : ButtonAction() {
+    override val id = "theme_toggle"
+    override val defaultIcon = R.drawable.ic_theme_light_dark_24
+    override val defaultLabelRes = R.string.toggle_day_night_theme
+    override val iconSlot = "toolbar.theme_toggle"
+    override val hasLongPress = true
+
+    override fun isActive(service: FcitxInputMethodService): Boolean {
+        return ThemeManager.isUsingConfiguredDarkTheme()
+    }
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        ThemeManager.toggleConfiguredDayNightTheme()
+        onActionComplete?.invoke()
+    }
+
+    override fun onLongPress(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View
+    ) {
+        AppUtil.launchMainToThemeList(context)
+    }
+}
+
+data object RandomThemeAction : ButtonAction() {
+    override val id = "random_theme"
+    override val defaultIcon = R.drawable.ic_random_theme_24
+    override val defaultLabelRes = R.string.random_theme
+    override val iconSlot = "toolbar.random_theme"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        service.lifecycleScope.launch {
+            val result = ThemeManager.randomizeTheme()
+            context.toast(
+                context.getString(
+                    R.string.random_theme_toast,
+                    result.total,
+                    result.contrast,
+                    result.hue,
+                    result.sat,
+                    result.light
+                )
+            )
+            onActionComplete?.invoke()
+        }
+    }
+}
+
+// Status Area Actions
+
+data object LanguageSwitchAction : ButtonAction() {
+    override val id = "language_switch"
+    override val defaultIcon = R.drawable.ic_baseline_language_24
+    override val defaultLabelRes = R.string.language_switch
+    override val iconSlot = "toolbar.language_switch"
+    override val hasLongPress = true
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        // Same behavior as the keyboard's globe key (see CommonKeyActionListener): send one
+        // standalone Shift tap and let the engine decide. For Rime that is ascii_composer's
+        // ascii_mode (Chinese/Latin) toggle.
+        service.sendStandaloneShiftTap()
+    }
+
+    override fun onLongPress(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View
+    ) {
+        InputMethodUtil.showPicker()
+    }
+}
+
+data object ThemeAction : ButtonAction() {
+    override val id = "theme"
+    override val defaultIcon = R.drawable.ic_baseline_palette_24
+    override val defaultLabelRes = R.string.theme
+    override val iconSlot = "toolbar.theme"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        AppUtil.launchMainToThemeList(context)
+    }
+}
+
+data object IconThemeAction : ButtonAction() {
+    override val id = "icon_theme"
+    override val defaultIcon = R.drawable.ic_icon_theme_24
+    override val defaultLabelRes = R.string.icon_theme
+    override val iconSlot = "toolbar.icon_theme"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        context.startActivity(Intent(context, IconThemeListActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+        })
+    }
+}
+
+data object InputMethodOptionsAction : ButtonAction() {
+    override val id = "input_method_options"
+    override val defaultIcon = R.drawable.ic_baseline_language_24
+    override val defaultLabelRes = R.string.input_method_options
+    override val iconSlot = "toolbar.input_method_options"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        fcitx.runImmediately { inputMethodEntryCached }.let {
+            AppUtil.launchMainToInputMethodConfig(context, it.uniqueName, it.displayName)
+        }
+    }
+}
+
+/**
+ * Rime 专版：直接呼出系统输入法选择器。
+ * 与 [LanguageSwitchAction] 的中/西文切换不同，这个动作不经过引擎，
+ * 只做系统级输入法切换。供宏按键「应用操作」和自定义按钮使用。
+ */
+data object SwitchInputMethodAction : ButtonAction() {
+    override val id = "switch_input_method"
+    override val defaultIcon = R.drawable.ic_baseline_keyboard_24
+    override val defaultLabelRes = R.string.switch_input_method
+    override val iconSlot = "toolbar.switch_input_method"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        InputMethodUtil.showPicker()
+    }
+}
+
+/**
+ * Rime 专版：弹出 Rime 方案切换菜单。
+ * 与语言键长按同一入口（RimeSchemaMenuDialog），供宏按键「应用操作」和自定义按钮使用。
+ * @see org.fcitx.fcitx5.android.input.dialog.RimeSchemaMenuDialog
+ */
+data object RimeSchemaMenuAction : ButtonAction() {
+    override val id = "rime_schema_menu"
+    override val defaultIcon = R.drawable.ic_baseline_library_books_24
+    override val defaultLabelRes = R.string.rime_schema_menu
+    override val iconSlot = "toolbar.rime_schema_menu"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        fcitx.launchOnReady {
+            service.lifecycleScope.launch {
+                service.showDialog(
+                    org.fcitx.fcitx5.android.input.dialog.RimeSchemaMenuDialog.build(it, service, context)
+                )
+            }
+        }
+    }
+}
+
+data object ReloadConfigAction : ButtonAction() {
+    override val id = "reload_config"
+    override val defaultIcon = R.drawable.ic_baseline_sync_24
+    override val defaultLabelRes = R.string.reload_config
+    override val iconSlot = "toolbar.reload_config"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        fcitx.launchOnReady { f ->
+            f.reloadConfig()
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                SubtypeManager.syncWith(f.enabledIme())
+            }
+            service.lifecycleScope.launch {
+                android.widget.Toast.makeText(service, R.string.done, android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+}
+
+data object VirtualKeyboardAction : ButtonAction() {
+    override val id = "virtual_keyboard"
+    override val defaultIcon = R.drawable.ic_baseline_keyboard_24
+    override val defaultLabelRes = R.string.virtual_keyboard
+    override val iconSlot = "toolbar.virtual_keyboard"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        AppUtil.launchMainToKeyboard(context)
+    }
+}
+
+data object OneHandedKeyboardAction : ButtonAction() {
+    override val id = "one_handed_keyboard"
+    override val defaultIcon = R.drawable.ic_baseline_keyboard_tab_24
+    override val defaultLabelRes = R.string.one_handed_keyboard
+    override val iconSlot = "toolbar.one_handed_keyboard"
+
+    override fun isActive(service: FcitxInputMethodService): Boolean {
+        return service.isOneHandKeyboardEnabled()
+    }
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        service.toggleOneHandKeyboard()
+    }
+}
+
+data object BrowseUserDataDirAction : ButtonAction() {
+    override val id = "browse_user_data_dir"
+    override val defaultIcon = R.drawable.ic_baseline_more_horiz_24
+    override val defaultLabelRes = R.string.browse_user_data_dir
+    override val iconSlot = "toolbar.browse_user_data"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        runCatching {
+            context.startActivity(buildDocumentsProviderIntent())
+        }.onFailure {
+            context.toast(it)
+        }
+    }
+}
+
+data object SettingsGlobalOptionsAction : ButtonAction() {
+    override val id = "settings_global_options"
+    override val defaultIcon = R.drawable.ic_baseline_tune_24
+    override val defaultLabelRes = R.string.rime_settings
+    override val iconSlot = "toolbar.settings_global"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        AppUtil.launchMainToRoute(context, SettingsRoute.InputMethodConfig(context.getString(R.string.rime_settings), "rime"))
+    }
+}
+
+data object SettingsInputMethodsAction : ButtonAction() {
+    override val id = "settings_input_methods"
+    override val defaultIcon = R.drawable.ic_baseline_language_24
+    override val defaultLabelRes = R.string.rime_settings
+    override val iconSlot = "toolbar.settings_ime"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        AppUtil.launchMainToRoute(context, SettingsRoute.InputMethodConfig(context.getString(R.string.rime_settings), "rime"))
+    }
+}
+
+data object SettingsCandidatesWindowAction : ButtonAction() {
+    override val id = "settings_candidates_window"
+    override val defaultIcon = R.drawable.ic_baseline_list_alt_24
+    override val defaultLabelRes = R.string.candidates_window
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        AppUtil.launchMainToRoute(context, SettingsRoute.CandidatesWindow)
+    }
+}
+
+data object SettingsClipboardSettingsAction : ButtonAction() {
+    override val id = "settings_clipboard"
+    override val defaultIcon = R.drawable.ic_clipboard
+    override val defaultLabelRes = R.string.clipboard
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        AppUtil.launchMainToRoute(context, SettingsRoute.Clipboard)
+    }
+}
+
+data object SettingsSymbolSettingsAction : ButtonAction() {
+    override val id = "settings_symbol"
+    override val defaultIcon = R.drawable.ic_baseline_emoji_symbols_24
+    override val defaultLabelRes = R.string.emoji_and_symbols
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        AppUtil.launchMainToRoute(context, SettingsRoute.Symbol)
+    }
+}
+
+data object SettingsAdvancedAction : ButtonAction() {
+    override val id = "settings_advanced"
+    override val defaultIcon = R.drawable.ic_baseline_more_horiz_24
+    override val defaultLabelRes = R.string.advanced
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        AppUtil.launchMainToRoute(context, SettingsRoute.Advanced)
+    }
+}
+
+data object SettingsDeveloperAction : ButtonAction() {
+    override val id = "settings_developer"
+    override val defaultIcon = R.drawable.ic_baseline_more_horiz_24
+    override val defaultLabelRes = R.string.developer
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        AppUtil.launchMainToRoute(context, SettingsRoute.Developer)
+    }
+}
+
+data object SettingsAboutAction : ButtonAction() {
+    override val id = "settings_about"
+    override val defaultIcon = R.drawable.ic_baseline_more_horiz_24
+    override val defaultLabelRes = R.string.about
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        AppUtil.launchMainToRoute(context, SettingsRoute.About)
+    }
+}
+
+data object SettingsLicenseAction : ButtonAction() {
+    override val id = "settings_license"
+    override val defaultIcon = R.drawable.ic_baseline_more_horiz_24
+    override val defaultLabelRes = R.string.license
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        AppUtil.launchMainToRoute(context, SettingsRoute.License)
+    }
+}
+
+data object EditTextKeyboardLayoutAction : ButtonAction() {
+    override val id = "edit_text_keyboard_layout"
+    override val defaultIcon = R.drawable.ic_baseline_keyboard_24
+    override val defaultLabelRes = R.string.edit_text_keyboard_layout
+    override val iconSlot = "toolbar.edit_layout"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        context.startActivity(Intent(context, TextKeyboardLayoutEditorActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
+    }
+}
+
+data object TextKeyboardLayoutFileSelectAction : ButtonAction() {
+    override val id = "text_keyboard_layout_file_select"
+    override val defaultIcon = R.drawable.ic_baseline_library_books_24
+    override val defaultLabelRes = R.string.text_keyboard_layout_file_select_title
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        context.startActivity(Intent(context, TextKeyboardLayoutProfilePickerActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
+    }
+}
+
+data object EditFontsetAction : ButtonAction() {
+    override val id = "edit_fontset"
+    override val defaultIcon = R.drawable.ic_baseline_text_format_24
+    override val defaultLabelRes = R.string.edit_fontset
+    override val iconSlot = "toolbar.edit_fontset"
+
+    override fun execute(
+        context: Context,
+        service: FcitxInputMethodService,
+        fcitx: FcitxConnection,
+        windowManager: InputWindowManager,
+        view: View?,
+        onActionComplete: (() -> Unit)?
+    ) {
+        context.startActivity(Intent(context, FontsetEditorActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
+    }
+}
+
+/** The same action is offered in both toolbar and status area configuration. */
+data object AiAssistantAction : ButtonAction() {
+    override val id = "ai_assistant"
+    override val defaultIcon = R.drawable.ic_auto_awesome_24
+    override val defaultLabelRes = R.string.ai_assistant
+    override val iconSlot = "toolbar.ai_assistant"
+    override val hasLongPress = true
+
+    override fun execute(context: Context, service: FcitxInputMethodService, fcitx: FcitxConnection,
+        windowManager: InputWindowManager, view: View?, onActionComplete: (() -> Unit)?) {
+        org.fcitx.fcitx5.android.input.voice.js.JsApps.toggle(service)
+    }
+
+    override fun onLongPress(context: Context, service: FcitxInputMethodService, fcitx: FcitxConnection,
+        windowManager: InputWindowManager, view: View) {
+        org.fcitx.fcitx5.android.input.voice.js.JsApps.configure(context)
+    }
+}
+
+/** One exact JS App shortcut encoded entirely in [id], so layout JSON needs no new schema. */
+internal data class JsAppButtonAction(
+    val pluginId: String,
+    val appId: String,
+) : ButtonAction() {
+    override val id = requireNotNull(JsAppButtonBinding.encode(pluginId, appId))
+    override val defaultIcon = when {
+        pluginId == "js:youdao-free-translate" && appId == "youdao_translate" ->
+            R.drawable.ic_translate_24
+        pluginId == "js:bilibili-translate" && appId == "bilibili_translate" ->
+            R.drawable.ic_bilibili_24
+        pluginId == "js:llm-assistant" && appId == "llm_assistant" ->
+            R.drawable.ic_auto_awesome_24
+        else -> R.drawable.ic_baseline_code_24
+    }
+    override val defaultLabelRes = R.string.js_tools
+    override val iconSlot = "toolbar.js_tools"
+    override val hasLongPress = true
+
+    override fun execute(context: Context, service: FcitxInputMethodService, fcitx: FcitxConnection,
+        windowManager: InputWindowManager, view: View?, onActionComplete: (() -> Unit)?) {
+        org.fcitx.fcitx5.android.input.voice.js.JsApps.toggleExact(service, pluginId, appId)
+    }
+
+    override fun onLongPress(context: Context, service: FcitxInputMethodService, fcitx: FcitxConnection,
+        windowManager: InputWindowManager, view: View) {
+        org.fcitx.fcitx5.android.input.voice.js.JsApps.configure(context, pluginId)
+    }
+}
+
+/** Editor template and compatibility behavior for the unreleased generic JS picker button. */
+data object JsToolsAction : ButtonAction() {
+    override val id = "js_tools"
+    override val defaultIcon = R.drawable.ic_baseline_code_24
+    override val defaultLabelRes = R.string.js_tools
+    override val iconSlot = "toolbar.js_tools"
+    override val hasLongPress = true
+
+    override fun execute(context: Context, service: FcitxInputMethodService, fcitx: FcitxConnection,
+        windowManager: InputWindowManager, view: View?, onActionComplete: (() -> Unit)?) {
+        service.toast(R.string.js_tools_select_hint)
+        context.startActivity(Intent(context, ButtonsCustomizerActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
+    }
+
+    override fun onLongPress(context: Context, service: FcitxInputMethodService, fcitx: FcitxConnection,
+        windowManager: InputWindowManager, view: View) {
+        context.startActivity(Intent(context, ButtonsCustomizerActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
+    }
+}

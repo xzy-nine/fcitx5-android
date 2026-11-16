@@ -29,7 +29,7 @@ import splitties.views.dsl.core.add
 import splitties.views.dsl.core.horizontalLayout
 import splitties.views.dsl.core.lParams
 
-class TextEditingWindow : InputWindow.ExtendedInputWindow<TextEditingWindow>(),
+class TextEditingWindow : InputWindow.ExtendedInputWindow<TextEditingWindow>(TextEditingWindow::class),
     ComposeWindow, InputBroadcastReceiver {
 
     private val service: FcitxInputMethodService by manager.inputMethodService()

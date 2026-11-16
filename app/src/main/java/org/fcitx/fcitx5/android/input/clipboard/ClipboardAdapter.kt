@@ -4,32 +4,45 @@
  */
 package org.fcitx.fcitx5.android.input.clipboard
 
+import android.graphics.Bitmap
+import android.content.Context
+import android.net.Uri
 import android.os.Build
+import android.util.LruCache
+import android.util.Patterns
 import android.view.ViewGroup
 import android.widget.PopupMenu
+import androidx.core.net.toUri
 import androidx.paging.PagingDataAdapter
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.utils.DeviceUtil
 import org.fcitx.fcitx5.android.utils.item
+import org.fcitx.fcitx5.android.utils.loadThumbnailBitmap
+import org.fcitx.fcitx5.android.utils.queryFileName
 import splitties.resources.styledColor
 import kotlin.math.min
 
 abstract class ClipboardAdapter(
     private val theme: Theme,
     private val entryRadius: Float,
-    private val maskSensitive: Boolean
+    private val maskSensitive: Boolean,
+    private val colors: ClipboardColors = ClipboardColors.keyboard(theme),
 ) : PagingDataAdapter<ClipboardEntry, ClipboardAdapter.ViewHolder>(diffCallback) {
 
     companion object {
+        private val thumbnailCache = object : LruCache<String, Bitmap>(24) {}
+        private val cnMainlandMobilePattern = Regex("^1[3-9]\\d{9}$")
+
         private val diffCallback = object : DiffUtil.ItemCallback<ClipboardEntry>() {
             override fun areItemsTheSame(
                 oldItem: ClipboardEntry,
@@ -46,113 +59,218 @@ abstract class ClipboardAdapter(
             }
         }
 
-        // Cache for analyzed chips by entry ID to avoid reprocessing on rebind
-        private val chipsCache = mutableMapOf<Int, List<ClipboardTextAnalyzer.Entity>>()
-
-        // 已抽离到 ClipboardTextUtils.kt 的 excerptClipboardText；此处保留委托兼容旧引用
+        /**
+         * excerpt text to show on ClipboardEntryUi, to reduce render time of very long text
+         * @param str text to excerpt
+         * @param mask mask text content with "•"
+         * @param lines max output lines
+         * @param chars max chars per output line
+         */
         fun excerptText(
             str: String,
             mask: Boolean = false,
             lines: Int = 4,
             chars: Int = 128
-        ): String = excerptClipboardText(str, mask, lines, chars)
+        ): String = buildString {
+            val length = str.length
+            var lineBreak = -1
+            for (i in 1..lines) {
+                val start = lineBreak + 1   // skip previous '\n'
+                val excerptEnd = min(start + chars, length)
+                lineBreak = str.indexOf('\n', start)
+                if (lineBreak < 0) {
+                    // no line breaks remaining, substring to end of text
+                    if (mask) {
+                        append(ClipboardEntry.BULLET.repeat(excerptEnd - start))
+                    } else {
+                        append(str.substring(start, excerptEnd))
+                    }
+                    break
+                } else {
+                    val end = min(excerptEnd, lineBreak)
+                    // append one line exactly
+                    if (mask) {
+                        append(ClipboardEntry.BULLET.repeat(end - start))
+                    } else {
+                        appendLine(str.substring(start, end))
+                    }
+                }
+            }
+        }
     }
 
     private var popupMenu: PopupMenu? = null
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    class ViewHolder(val entryUi: ClipboardEntryUi) : RecyclerView.ViewHolder(entryUi.root) {
+        var thumbnailJob: Job? = null
+        var boundThumbnailKey: String? = null
+    }
 
-    class ViewHolder(val entryUi: ClipboardEntryUi) : RecyclerView.ViewHolder(entryUi.root)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder =
         ViewHolder(ClipboardEntryUi(parent.context, theme, entryRadius))
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val entry = getItem(position) ?: return
-        // 整个 bind 过程兜底：任何异常都降级为纯文本，保证列表始终可渲染
-        val display = excerptText(entry.text, entry.sensitive && maskSensitive)
-
-        // Check cache first; if not present, use empty list initially and analyze off the main thread
-        val cachedChips = chipsCache[entry.id]
-        val chips = if (entry.sensitive && maskSensitive) {
-            emptyList()
-        } else if (cachedChips != null) {
-            cachedChips
-        } else {
-            // Start background analysis and update when ready
-            emptyList<ClipboardTextAnalyzer.Entity>().also {
-                scope.launch {
-                    val analyzed = withContext(Dispatchers.IO) {
-                        runCatching { ClipboardTextAnalyzer.analyze(entry.text) }
-                            .getOrDefault(emptyList())
+        with(holder.entryUi) {
+            val displayText = if (entry.isUriEntry()) {
+                compactUriLabel(ctx, entry)
+            } else {
+                excerptText(entry.text, entry.sensitive && maskSensitive)
+            }
+            val linkUri = entry.openableLinkUri()
+            val searchQuery = entry.searchableQuery()
+            val dialNumber = entry.dialableCnMobileNumber()
+            val splittableText = entry.splittableText()
+            val thumbnailKey = entry.imagePreviewKey()
+            val cachedThumbnail = thumbnailKey?.let { thumbnailCache.get(it) }
+            holder.thumbnailJob?.cancel()
+            holder.boundThumbnailKey = thumbnailKey
+            val entities = ClipboardTextAnalyzer.analyze(displayText)
+            if (thumbnailKey != null && cachedThumbnail == null) {
+                holder.thumbnailJob = scope.launch {
+                    val bitmap = entry.loadThumbnailBitmap(ctx)
+                    if (bitmap != null) {
+                        thumbnailCache.put(thumbnailKey, bitmap)
                     }
-                    chipsCache[entry.id] = analyzed
-                    // Refresh the affected item if still visible
-                    val currentEntry = getItem(position)
-                    if (currentEntry?.id == entry.id) {
-                        notifyItemChanged(position)
+                    if (holder.boundThumbnailKey == thumbnailKey) {
+                        holder.entryUi.setEntry(displayText, entry.pinned, entities)
                     }
                 }
             }
-        }
-
-        runCatching {
-            with(holder.entryUi) {
-                setEntry(display, entry.pinned, chips) { snippet ->
-                    onPasteText(snippet)
-                }
-                root.setOnClickListener {
+            root.setOnClickListener {
+                if (entry.isUriEntry()) {
+                    // For media entries, click shows menu
+                    showEntryMenu(
+                        anchor = root,
+                        entry = entry,
+                        linkUri = linkUri,
+                        searchQuery = searchQuery,
+                        dialNumber = dialNumber,
+                        splittableText = splittableText
+                    )
+                } else {
+                    // For text entries, click pastes
                     onPaste(entry)
                 }
-                root.setOnLongClickListener {
-                    val popup = PopupMenu(ctx, root)
-                    val menu = popup.menu
-                    val iconTint = ctx.styledColor(android.R.attr.colorControlNormal)
-                    if (entry.pinned) {
-                        menu.item(R.string.unpin, R.drawable.ic_outline_push_pin_24, iconTint) {
-                            onUnpin(entry.id)
-                        }
-                    } else {
-                        menu.item(R.string.pin, R.drawable.ic_baseline_push_pin_24, iconTint) {
-                            onPin(entry.id)
-                        }
-                    }
-                    menu.item(R.string.edit, R.drawable.ic_baseline_edit_24, iconTint) {
-                        onEdit(entry.id)
-                    }
-                    menu.item(R.string.share, R.drawable.ic_baseline_share_24, iconTint) {
-                        onShare(entry)
-                    }
-                    menu.item(R.string.delete, R.drawable.ic_baseline_delete_24, iconTint) {
-                        onDelete(entry.id)
-                    }
-                    popupMenu = popup
-                    popup.show()
-                    true
-                }
             }
-        }.onFailure { e ->
-            // 极端情况下连纯文本都失败，至少把文本塞进去，避免整页空白
-            runCatching {
-                holder.entryUi.textView.text = display
-                holder.entryUi.root.setOnClickListener { onPaste(entry) }
+            root.setOnLongClickListener {
+                // For all entries, long click shows menu
+                showEntryMenu(
+                    anchor = root,
+                    entry = entry,
+                    linkUri = linkUri,
+                    searchQuery = searchQuery,
+                    dialNumber = dialNumber,
+                    splittableText = splittableText
+                )
+                true
             }
         }
+    }
+
+    private fun showEntryMenu(
+        anchor: android.view.View,
+        entry: ClipboardEntry,
+        linkUri: Uri?,
+        searchQuery: String?,
+        dialNumber: String?,
+        splittableText: String?
+    ) {
+        val popup = PopupMenu(anchor.context, anchor)
+        val menu = popup.menu
+        val iconTint = anchor.context.styledColor(android.R.attr.colorControlNormal)
+        val isUriEntry = entry.isUriEntry()
+        val imageUri = entry.viewableImageUri()
+
+        if (!isUriEntry) {
+            menu.item(android.R.string.paste, R.drawable.ic_baseline_content_paste_24, iconTint) {
+                onPaste(entry)
+            }
+        }
+        if (entry.pinned) {
+            menu.item(R.string.remove_from_favorites, R.drawable.ic_outline_push_pin_24, iconTint) {
+                onUnpin(entry.id)
+            }
+        } else {
+            menu.item(R.string.add_to_favorites, R.drawable.ic_baseline_push_pin_24, iconTint) {
+                onPin(entry.id)
+            }
+        }
+        if (!isUriEntry) {
+            menu.item(R.string.edit, R.drawable.ic_baseline_edit_24, iconTint) {
+                onEdit(entry.id)
+            }
+        } else if (imageUri == null) {
+            menu.item(R.string.open_link, R.drawable.ic_baseline_language_24, iconTint) {
+                onOpenFile(entry)
+            }
+        }
+        menu.item(R.string.share, R.drawable.ic_baseline_share_24, iconTint) {
+            onShare(entry)
+        }
+        if (shouldShowUpload(entry)) {
+            menu.item(R.string.upload, R.drawable.ic_baseline_send_24, iconTint) {
+                onUpload(entry)
+            }
+        }
+        if (splittableText != null) {
+            menu.item(R.string.split_words, R.drawable.ic_baseline_spellcheck_24, iconTint) {
+                onSplitText(splittableText)
+            }
+        }
+        imageUri?.let { uri ->
+            menu.item(R.string.view_image, R.drawable.ic_baseline_image_24, iconTint) {
+                onViewImage(uri)
+            }
+        }
+        if (linkUri != null) {
+            menu.item(R.string.open_link, R.drawable.ic_baseline_language_24, iconTint) {
+                onOpenLink(linkUri)
+            }
+        }
+        if (searchQuery != null) {
+            menu.item(R.string.search, R.drawable.ic_baseline_search_24, iconTint) {
+                onSearch(searchQuery)
+            }
+        }
+        if (dialNumber != null) {
+            menu.item(R.string.dial, R.drawable.ic_baseline_call_24, iconTint) {
+                onDial(dialNumber)
+            }
+        }
+        menu.item(R.string.delete, R.drawable.ic_baseline_delete_24, iconTint) {
+            onDelete(entry.id)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !DeviceUtil.isSamsungOneUI && !DeviceUtil.isFlyme) {
+            popup.setForceShowIcon(true)
+        }
+        popup.setOnDismissListener {
+            if (it === popupMenu) popupMenu = null
+        }
+        popupMenu?.dismiss()
+        popupMenu = popup
+        popup.show()
+    }
+
+    override fun onViewRecycled(holder: ViewHolder) {
+        holder.thumbnailJob?.cancel()
+        holder.thumbnailJob = null
+        holder.boundThumbnailKey = null
+        super.onViewRecycled(holder)
     }
 
     fun getEntryAt(position: Int) = getItem(position)
 
     fun onDetached() {
+        scope.cancel()
         popupMenu?.dismiss()
         popupMenu = null
     }
 
     abstract fun onPaste(entry: ClipboardEntry)
 
-    /**
-     * 点击条目中提取出的实体气泡（验证码/号码/姓名等）时回调，参数为气泡对应的文本片段。
-     */
-    abstract fun onPasteText(text: String)
 
     abstract fun onPin(id: Int)
 
@@ -160,8 +278,114 @@ abstract class ClipboardAdapter(
 
     abstract fun onEdit(id: Int)
 
+    abstract fun onOpenFile(entry: ClipboardEntry)
+
     abstract fun onShare(entry: ClipboardEntry)
 
+    open fun shouldShowUpload(entry: ClipboardEntry): Boolean = false
+
+    open fun onUpload(entry: ClipboardEntry) = Unit
+
+    abstract fun onSplitText(text: String)
+
+    abstract fun onSearch(query: String)
+
+    abstract fun onDial(number: String)
+
+    abstract fun onOpenLink(uri: Uri)
+
+    abstract fun onViewImage(uri: Uri)
+
     abstract fun onDelete(id: Int)
+
+    private fun compactUriLabel(context: Context, entry: ClipboardEntry): String {
+        val uri = runCatching { Uri.parse(entry.text) }.getOrNull()
+        val fileName = uri?.let { resolveUriFileName(context, it) }
+        return if (entry.type.startsWith("image/")) {
+            ""
+        } else {
+            if (fileName.isNullOrBlank()) {
+                context.getString(R.string.clipboard_entry_file)
+            } else {
+                context.getString(R.string.clipboard_entry_file_named, fileName)
+            }
+        }
+    }
+
+    private fun resolveUriFileName(context: Context, uri: Uri): String? {
+        return when (uri.scheme) {
+            "content" -> context.contentResolver.queryFileName(uri)
+                ?: uri.lastPathSegment
+                ?: uri.path
+
+            "file" -> uri.lastPathSegment ?: uri.path
+            else -> uri.lastPathSegment ?: uri.path
+        }?.let { Uri.decode(it).substringAfterLast('/').substringAfterLast(':') }
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun ClipboardEntry.openableLinkUri(): Uri? {
+        if (isUriEntry()) return null
+        val raw = text.trim()
+        if (raw.isEmpty()) return null
+        val direct = runCatching { raw.toUri() }.getOrNull()
+        if (direct != null &&
+            direct.scheme?.lowercase() in setOf("http", "https") &&
+            !direct.host.isNullOrBlank()
+        ) {
+            return direct
+        }
+        return if (!raw.contains('\n') && Patterns.WEB_URL.matcher(raw).matches()) {
+            "https://$raw".toUri()
+        } else {
+            null
+        }
+    }
+
+    private fun ClipboardEntry.searchableQuery(): String? {
+        if (isUriEntry()) return null
+        val raw = text.trim()
+        return raw.takeIf { it.isNotEmpty() }
+    }
+
+    private fun ClipboardEntry.splittableText(): String? {
+        if (isUriEntry()) return null
+        val raw = text.trim()
+        // Upper bound as well as lower: the tokenizer truncates at MAX_TOKENIZE_LENGTH, so
+        // offering "split" on a much longer entry would silently only split its beginning.
+        return raw.takeIf {
+            it.length > 10 && it.length <= ClipboardTextTokenizer.MAX_TOKENIZE_LENGTH
+        }
+    }
+
+    private fun ClipboardEntry.dialableCnMobileNumber(): String? {
+        if (isUriEntry()) return null
+        val raw = text.trim()
+        if (raw.isEmpty() || raw.contains('\n')) return null
+        val compact = raw
+            .replace(" ", "")
+            .replace("-", "")
+            .replace("(", "")
+            .replace(")", "")
+            .replace("（", "")
+            .replace("）", "")
+        val normalized = when {
+            compact.startsWith("+86") -> compact.removePrefix("+86")
+            compact.startsWith("86") && compact.length > 11 -> compact.removePrefix("86")
+            else -> compact
+        }
+        if (!normalized.all { it.isDigit() }) return null
+        return normalized.takeIf { cnMainlandMobilePattern.matches(it) }
+    }
+
+    private fun ClipboardEntry.imagePreviewKey(): String? {
+        return if (isUriEntry() && type.startsWith("image/")) text else null
+    }
+
+    private fun ClipboardEntry.viewableImageUri(): Uri? {
+        if (!isUriEntry() || !type.startsWith("image/")) return null
+        return runCatching { Uri.parse(text) }.getOrNull()
+    }
 
 }

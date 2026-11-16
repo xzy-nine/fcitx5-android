@@ -6,7 +6,9 @@ package org.fcitx.fcitx5.android.ui.main.settings.theme
 
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.DiffUtil
 import org.fcitx.fcitx5.android.data.theme.Theme
+import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import splitties.views.dsl.core.Ui
 import kotlin.math.sign
 
@@ -23,25 +25,59 @@ abstract class ThemeListAdapter : RecyclerView.Adapter<ThemeListAdapter.ViewHold
 
     private fun positionOf(theme: Theme? = null): Int {
         if (theme == null) return -1
-        return entries.indexOfFirst { it.name == theme.name } + OFFSET
+        return positionOf(theme.name)
+    }
+
+    override fun onViewRecycled(holder: ViewHolder) {
+        super.onViewRecycled(holder)
+        if (holder.ui is ThemeThumbnailUi) {
+            holder.ui.cleanup()
+        }
     }
 
     fun setThemes(themes: List<Theme>) {
+        updateThemes(themes)
+    }
+
+    private fun updateThemes(themes: List<Theme>, renamedFrom: String? = null, renamedTo: String? = null) {
+        fun selectedName(index: Int) = entryAt(index)?.name?.let { if (it == renamedFrom) renamedTo else it }
+        val activeName = selectedName(activeIndex)
+        val lightName = selectedName(lightIndex)
+        val darkName = selectedName(darkIndex)
+        val previous = entries.toList()
+        val updated = themes.toList()
+        val difference = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+            override fun getOldListSize() = previous.size + OFFSET
+            override fun getNewListSize() = updated.size + OFFSET
+            override fun areItemsTheSame(old: Int, new: Int): Boolean =
+                if (old == 0 || new == 0) old == new else previous[old - OFFSET].name == updated[new - OFFSET].name
+            override fun areContentsTheSame(old: Int, new: Int): Boolean =
+                if (old == 0 || new == 0) old == new else previous[old - OFFSET] == updated[new - OFFSET]
+        })
         entries.clear()
-        entries.addAll(themes)
-        notifyItemRangeInserted(OFFSET, themes.size)
+        entries.addAll(updated)
+        activeIndex = positionOf(activeName)
+        lightIndex = positionOf(lightName)
+        darkIndex = positionOf(darkName)
+        difference.dispatchUpdatesTo(this)
+    }
+
+    private fun positionOf(themeName: String?): Int {
+        if (themeName == null) return -1
+        val index = entries.indexOfFirst { it.name == themeName }
+        return if (index < 0) -1 else index + OFFSET
     }
 
     fun setSelectedThemes(active: Theme, light: Theme? = null, dark: Theme? = null) {
         val oldActive = entryAt(activeIndex)
         if (oldActive != active) {
-            notifyItemChanged(activeIndex)
+            if (activeIndex >= OFFSET) notifyItemChanged(activeIndex)
             activeIndex = positionOf(active)
-            notifyItemChanged(activeIndex)
+            if (activeIndex >= OFFSET) notifyItemChanged(activeIndex)
         }
         val oldLight = entryAt(lightIndex)
         if (oldLight != light) {
-            notifyItemChanged(lightIndex)
+            if (lightIndex >= OFFSET) notifyItemChanged(lightIndex)
             lightIndex = positionOf(light)
             if (lightIndex >= OFFSET) {
                 notifyItemChanged(lightIndex)
@@ -49,7 +85,7 @@ abstract class ThemeListAdapter : RecyclerView.Adapter<ThemeListAdapter.ViewHold
         }
         val oldDark = entryAt(darkIndex)
         if (oldDark != dark) {
-            notifyItemChanged(darkIndex)
+            if (darkIndex >= OFFSET) notifyItemChanged(darkIndex)
             darkIndex = positionOf(dark)
             if (darkIndex >= OFFSET) {
                 notifyItemChanged(darkIndex)
@@ -57,44 +93,20 @@ abstract class ThemeListAdapter : RecyclerView.Adapter<ThemeListAdapter.ViewHold
         }
     }
 
-    private fun prependOffset(index: Int): Int {
-        return if (index == -1) 0 else 1
-    }
-
     fun prependTheme(it: Theme) {
-        entries.add(0, it)
-        activeIndex += prependOffset(activeIndex)
-        lightIndex += prependOffset(lightIndex)
-        darkIndex += prependOffset(darkIndex)
-        notifyItemInserted(OFFSET)
-    }
-
-    private fun removedOffset(removedIndex: Int, index: Int): Int {
-        return if (index == -1) 0 else (removedIndex - OFFSET - index).sign
+        updateThemes(listOf(it) + entries)
     }
 
     fun removeTheme(name: String) {
-        val index = entries.indexOfFirst { it.name == name }
-        entries.removeAt(index)
-        notifyItemRemoved(index + OFFSET)
-        activeIndex += removedOffset(index, activeIndex)
-        lightIndex += removedOffset(index, lightIndex)
-        darkIndex += removedOffset(index, darkIndex)
-    }
-
-    private fun replaceIndex(replacedIndex: Int, index: Int): Int {
-        return if (replacedIndex + OFFSET == index) OFFSET else index
+        updateThemes(entries.filterNot { it.name == name })
     }
 
     fun replaceTheme(theme: Theme) {
-        val index = entries.indexOfFirst { it.name == theme.name }
-        entries.removeAt(index)
-        entries.add(0, theme)
-        activeIndex = replaceIndex(index, activeIndex)
-        lightIndex = replaceIndex(index, lightIndex)
-        darkIndex = replaceIndex(index, darkIndex)
-        notifyItemMoved(index + OFFSET, OFFSET)
-        notifyItemChanged(OFFSET)
+        replaceTheme(theme.name, theme)
+    }
+
+    fun replaceTheme(oldName: String, theme: Theme) {
+        updateThemes(listOf(theme) + entries.filterNot { it.name == oldName || it.name == theme.name }, oldName, theme.name)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
@@ -120,11 +132,12 @@ abstract class ThemeListAdapter : RecyclerView.Adapter<ThemeListAdapter.ViewHold
                         else -> ThemeThumbnailUi.State.Normal
                     }
                 )
+                val isRandom = ThemeManager.isRandomTheme(theme)
                 root.setOnClickListener {
                     onSelectTheme(theme)
                 }
                 root.setOnLongClickListener {
-                    if (theme is Theme.Custom) {
+                    if (theme is Theme.Custom && !isRandom) {
                         onExportTheme(theme)
                         true
                     } else if (theme is Theme.Monet) {
@@ -133,8 +146,19 @@ abstract class ThemeListAdapter : RecyclerView.Adapter<ThemeListAdapter.ViewHold
                     } else false
                 }
                 editButton.setOnClickListener {
-                    if (theme is Theme.Custom) onEditTheme(theme)
+                    when {
+                        isRandom -> onEditRandomTheme(theme as Theme.Custom)
+                        theme is Theme.Custom -> onEditTheme(theme)
+                        theme is Theme.Monet -> onEditMonetTheme(theme)
+                    }
                 }
+                exportButton.setOnClickListener {
+                    when {
+                        theme is Theme.Custom && !isRandom -> onExportTheme(theme)
+                        theme is Theme.Monet -> onExportTheme(theme.toCustom())
+                    }
+                }
+                setRandomAction(if (isRandom) ({ onRandomizeTheme() }) else null)
             }
             else -> throw IllegalArgumentException(INVALID_TYPE + it)
         }
@@ -149,6 +173,12 @@ abstract class ThemeListAdapter : RecyclerView.Adapter<ThemeListAdapter.ViewHold
     abstract fun onSelectTheme(theme: Theme)
 
     abstract fun onEditTheme(theme: Theme.Custom)
+
+    abstract fun onEditMonetTheme(theme: Theme.Monet)
+
+    abstract fun onEditRandomTheme(theme: Theme.Custom)
+
+    abstract fun onRandomizeTheme()
 
     abstract fun onExportTheme(theme: Theme.Custom)
 

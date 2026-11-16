@@ -5,8 +5,9 @@
 package org.fcitx.fcitx5.android.ui.main.settings.theme
 
 import android.os.Bundle
-import androidx.preference.SwitchPreference
-import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
+import androidx.preference.SwitchPreferenceCompat
+import androidx.preference.Preference
+import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceFragment
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 
@@ -14,38 +15,22 @@ class ThemeSettingsFragment : ManagedPreferenceFragment(ThemeManager.prefs) {
 
     private val followSystemDayNightTheme = ThemeManager.prefs.followSystemDayNightTheme
 
-    private var resumed = false
-
-    private lateinit var switchPreference: SwitchPreference
-
-    // sync SwitchPreference's state when `followSystemDayNightTheme` changed in ThemeListFragment
-    private val listener = ManagedPreference.OnChangeListener<Boolean> { _, v ->
-        if (resumed) return@OnChangeListener
-        switchPreference.isChecked = v
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        followSystemDayNightTheme.registerOnChangeListener(listener)
-    }
+    private lateinit var switchPreference: SwitchPreferenceCompat
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         super.onCreatePreferences(savedInstanceState, rootKey)
+        preferenceScreen.addPreference(Preference(requireContext()).apply {
+            key = "theme_global_settings_scope"
+            order = Int.MIN_VALUE
+            isSelectable = false
+            isIconSpaceReserved = false
+            setSummary(R.string.theme_global_settings_summary)
+        })
         switchPreference = findPreference(followSystemDayNightTheme.key)!!
     }
 
     override fun onResume() {
         super.onResume()
-        resumed = true
-    }
-
-    override fun onPause() {
-        super.onPause()
-        resumed = false
-    }
-
-    override fun onDestroy() {
-        followSystemDayNightTheme.unregisterOnChangeListener(listener)
-        super.onDestroy()
+        switchPreference.isChecked = followSystemDayNightTheme.getValue()
     }
 }

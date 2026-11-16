@@ -5,7 +5,6 @@
 package org.fcitx.fcitx5.android.data.pinyin.dict
 
 import org.fcitx.fcitx5.android.R
-import org.fcitx.fcitx5.android.data.pinyin.PinyinDictManager
 import org.fcitx.fcitx5.android.utils.errorArg
 import java.io.File
 
@@ -28,12 +27,6 @@ class TextDictionary(file: File) : PinyinDictionary() {
     }
 
     override fun toLibIMEDictionary(dest: File): LibIMEDictionary {
-        ensureBin(dest)
-        PinyinDictManager.pinyinDictConv(
-            file.absolutePath,
-            dest.absolutePath,
-            PinyinDictManager.MODE_TXT_TO_BIN
-        )
-        return LibIMEDictionary(dest)
+        throw UnsupportedOperationException("libime binary dictionaries are not supported")
     }
 }

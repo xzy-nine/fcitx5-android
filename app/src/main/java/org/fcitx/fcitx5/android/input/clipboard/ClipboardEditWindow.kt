@@ -40,7 +40,7 @@ class ClipboardEditWindow(
     private val entryId: Int = -1,
     private val useLastEntry: Boolean = false,
     private val returnToClipboard: Boolean = false
-) : InputWindow.ExtendedInputWindow<ClipboardEditWindow>(), ComposeWindow {
+) : InputWindow.ExtendedInputWindow<ClipboardEditWindow>(ClipboardEditWindow::class), ComposeWindow {
 
     private val service: FcitxInputMethodService by manager.inputMethodService()
     private val windowManager: InputWindowManager by manager.must()

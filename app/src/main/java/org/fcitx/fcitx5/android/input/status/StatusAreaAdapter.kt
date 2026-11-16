@@ -30,6 +30,16 @@ abstract class StatusAreaAdapter : RecyclerView.Adapter<StatusAreaAdapter.Holder
         holder.ui.root.setOnClickListener {
             onItemClick(it, entry)
         }
+        // Long press is offered for entries whose action defines one (ButtonAction.hasLongPress,
+        // e.g. theme_toggle opening the theme settings page); the window dispatches it via
+        // onItemLongClick.
+        if (entry is StatusAreaEntry.ActionEntry && entry.buttonAction.hasLongPress) {
+            holder.ui.root.setOnLongClickListener {
+                onItemLongClick(it, entry)
+            }
+        } else {
+            holder.ui.root.setOnLongClickListener(null)
+        }
     }
 
     abstract val theme: Theme
@@ -37,4 +47,8 @@ abstract class StatusAreaAdapter : RecyclerView.Adapter<StatusAreaAdapter.Holder
     override fun getItemCount() = entries.size
 
     abstract fun onItemClick(view: View, entry: StatusAreaEntry)
+
+    open fun onItemLongClick(view: View, entry: StatusAreaEntry): Boolean {
+        return false
+    }
 }

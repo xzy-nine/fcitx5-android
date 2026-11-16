@@ -4,9 +4,6 @@
  */
 package org.fcitx.fcitx5.android.sync.webdav
 
-import org.fcitx.fcitx5.android.core.reloadPinyinCustomPhrase
-import org.fcitx.fcitx5.android.core.reloadPinyinDict
-import org.fcitx.fcitx5.android.core.reloadQuickPhrase
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import timber.log.Timber
 
@@ -76,23 +73,8 @@ object DictReload {
             Timber.i("$TAG no fcitx connection, skip reload: $kinds")
             return
         }
-        if (Kind.PINYIN in kinds) {
-            connection.runIfReady {
-                Timber.i("$TAG reloadPinyinDict")
-                reloadPinyinDict()
-            }
-        }
-        if (Kind.CUSTOM_PHRASE in kinds) {
-            connection.runIfReady {
-                Timber.i("$TAG reloadPinyinCustomPhrase")
-                reloadPinyinCustomPhrase()
-            }
-        }
-        if (Kind.QUICKPHRASE in kinds) {
-            connection.runIfReady {
-                Timber.i("$TAG reloadQuickPhrase")
-                reloadQuickPhrase()
-            }
-        }
+        // 本构建只带 Rime 引擎：libime 系的 addon 热重载入口不存在，
+        // 词库在引擎下次启动（或部署）时自然生效，这里只记录命中的类别。
+        Timber.i("$TAG reload skipped for %s: engine reloads on next deploy", kinds)
     }
 }

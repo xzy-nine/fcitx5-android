@@ -10,6 +10,7 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.InputFeedbacks
+import org.fcitx.fcitx5.android.data.theme.IconThemeManager
 import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.input.bar.ui.ToolButton
 import splitties.dimensions.dp
@@ -28,7 +29,7 @@ import splitties.views.dsl.core.add
 import splitties.views.dsl.core.horizontalLayout
 import splitties.views.dsl.core.lParams
 
-class TextEditingUi(
+open class TextEditingUi(
     override val ctx: Context,
     private val theme: Theme,
     private val ripple: Boolean,
@@ -41,24 +42,24 @@ class TextEditingUi(
             setText(id)
         }
 
-    private fun iconButton(@DrawableRes icon: Int, altStyle: Boolean = false) =
+    private fun themedIconButton(slot: String, @DrawableRes fallback: Int, altStyle: Boolean = false) =
         TextEditingButton(ctx, theme, ripple, border, radius, altStyle).apply {
-            setIcon(icon)
+            setThemedIcon(slot, fallback)
         }
 
-    val upButton = iconButton(R.drawable.ic_baseline_keyboard_arrow_up_24).apply {
+    val upButton = themedIconButton("keys.cursor_up", R.drawable.ic_baseline_keyboard_arrow_up_24).apply {
         contentDescription = ctx.getString(R.string.move_cursor_up)
     }
 
-    val rightButton = iconButton(R.drawable.ic_baseline_keyboard_arrow_right_24).apply {
+    val rightButton = themedIconButton("keys.cursor_right", R.drawable.ic_baseline_keyboard_arrow_right_24).apply {
         contentDescription = ctx.getString(R.string.move_cursor_right)
     }
 
-    val downButton = iconButton(R.drawable.ic_baseline_keyboard_arrow_down_24).apply {
+    val downButton = themedIconButton("keys.cursor_down", R.drawable.ic_baseline_keyboard_arrow_down_24).apply {
         contentDescription = ctx.getString(R.string.move_cursor_down)
     }
 
-    val leftButton = iconButton(R.drawable.ic_baseline_keyboard_arrow_left_24).apply {
+    val leftButton = themedIconButton("keys.cursor_left", R.drawable.ic_baseline_keyboard_arrow_left_24).apply {
         contentDescription = ctx.getString(R.string.move_cursor_left)
     }
 
@@ -66,11 +67,11 @@ class TextEditingUi(
         enableActivatedState()
     }
 
-    val homeButton = iconButton(R.drawable.ic_baseline_first_page_24).apply {
+    val homeButton = themedIconButton("keys.home", R.drawable.ic_baseline_first_page_24).apply {
         contentDescription = ctx.getString(R.string.move_cursor_to_start)
     }
 
-    val endButton = iconButton(R.drawable.ic_baseline_last_page_24).apply {
+    val endButton = themedIconButton("keys.end", R.drawable.ic_baseline_last_page_24).apply {
         contentDescription = ctx.getString(R.string.move_cursor_to_end)
     }
 
@@ -84,12 +85,12 @@ class TextEditingUi(
 
     val pasteButton = textButton(android.R.string.paste, altStyle = true)
 
-    val backspaceButton = iconButton(R.drawable.ic_baseline_backspace_24, altStyle = true).apply {
+    val backspaceButton = themedIconButton("keys.backspace", R.drawable.ic_baseline_backspace_24, altStyle = true).apply {
         soundEffect = InputFeedbacks.SoundEffect.Delete
         contentDescription = ctx.getString(R.string.backspace)
     }
 
-    override val root = constraintLayout {
+    open override val root: View = constraintLayout {
         add(leftButton, lParams {
             topOfParent()
             leftOfParent()
@@ -171,7 +172,7 @@ class TextEditingUi(
         })
     }
 
-    fun updateSelection(hasSelection: Boolean, userSelection: Boolean) {
+    open fun updateSelection(hasSelection: Boolean, userSelection: Boolean) {
         selectButton.isActivated = (hasSelection || userSelection)
         if (hasSelection) {
             selectAllButton.apply {
@@ -190,11 +191,50 @@ class TextEditingUi(
         }
     }
 
+    val undoButton = ToolButton(ctx, R.drawable.ic_baseline_undo_24, theme).apply {
+        contentDescription = ctx.getString(R.string.undo)
+        applyThemeToolbarIcon(this, "toolbar.undo", R.drawable.ic_baseline_undo_24)
+    }
+
+    val redoButton = ToolButton(ctx, R.drawable.ic_baseline_redo_24, theme).apply {
+        contentDescription = ctx.getString(R.string.redo)
+        applyThemeToolbarIcon(this, "toolbar.redo", R.drawable.ic_baseline_redo_24)
+    }
+
     val clipboardButton = ToolButton(ctx, R.drawable.ic_clipboard, theme).apply {
         contentDescription = ctx.getString(R.string.clipboard)
+        applyThemeClipboardIcon(this)
+    }
+
+    private fun applyThemeToolbarIcon(button: ToolButton, slot: String, fallback: Int) {
+        val iconInfo = IconThemeManager.resolveIconDrawableInfo(slot)
+        if (iconInfo != null) {
+            button.setIconFromDrawable(iconInfo.drawable, tintWithTheme = iconInfo.tintWithTheme)
+        } else {
+            button.setIcon(fallback)
+        }
+    }
+
+    private fun applyThemeClipboardIcon(button: ToolButton) {
+        applyThemeToolbarIcon(button, "toolbar.clipboard", R.drawable.ic_clipboard)
+    }
+
+    fun refreshThemedIcons() {
+        upButton.setThemedIcon("keys.cursor_up", R.drawable.ic_baseline_keyboard_arrow_up_24)
+        downButton.setThemedIcon("keys.cursor_down", R.drawable.ic_baseline_keyboard_arrow_down_24)
+        leftButton.setThemedIcon("keys.cursor_left", R.drawable.ic_baseline_keyboard_arrow_left_24)
+        rightButton.setThemedIcon("keys.cursor_right", R.drawable.ic_baseline_keyboard_arrow_right_24)
+        homeButton.setThemedIcon("keys.home", R.drawable.ic_baseline_first_page_24)
+        endButton.setThemedIcon("keys.end", R.drawable.ic_baseline_last_page_24)
+        backspaceButton.setThemedIcon("keys.backspace", R.drawable.ic_baseline_backspace_24)
+        applyThemeToolbarIcon(undoButton, "toolbar.undo", R.drawable.ic_baseline_undo_24)
+        applyThemeToolbarIcon(redoButton, "toolbar.redo", R.drawable.ic_baseline_redo_24)
+        applyThemeClipboardIcon(clipboardButton)
     }
 
     val extension = horizontalLayout {
+        add(undoButton, lParams(dp(40), dp(40)))
+        add(redoButton, lParams(dp(40), dp(40)))
         add(clipboardButton, lParams(dp(40), dp(40)))
     }
 }

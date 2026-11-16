@@ -23,13 +23,24 @@ import kotlinx.coroutines.plus
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.data.broadcast.BroadcastSecurityManager
+import org.fcitx.fcitx5.android.core.data.DataManager
+import org.fcitx.fcitx5.android.core.engine.RimeEngineProbeService
+import org.fcitx.fcitx5.android.data.BundledPresets
 import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
 import org.fcitx.fcitx5.android.data.handwriting.GoogleDigitalInkEngine
 import org.fcitx.fcitx5.android.data.handwriting.HandwritingLegacyCleanup
 import org.fcitx.fcitx5.android.data.handwriting.MlKitBundledModel
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.data.prefs.AppPrefsMigration
+import org.fcitx.fcitx5.android.data.prefs.SettingsUiPreferences
+import org.fcitx.fcitx5.android.data.prefs.SmartDefaultInitializer
+import org.fcitx.fcitx5.android.data.prefs.SplitKeyboardStateManager
+import org.fcitx.fcitx5.android.data.theme.IconThemeManager
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
+import org.fcitx.fcitx5.android.input.config.DirectBootLayoutSync
+import org.fcitx.fcitx5.android.input.config.UserConfigFiles
+import org.fcitx.fcitx5.android.input.font.FontProviders
 import org.fcitx.fcitx5.android.ui.main.LogActivity
 import org.fcitx.fcitx5.android.utils.AppUtil
 import org.fcitx.fcitx5.android.utils.Locales
@@ -39,17 +50,47 @@ import org.fcitx.fcitx5.android.utils.userManager
 import timber.log.Timber
 import kotlin.system.exitProcess
 
-class FcitxApplication : Application() {
+class FcitxApplication : Application(), androidx.work.Configuration.Provider {
+
+    private var restoreProcess = false
+    private var engineProbeProcess = false
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        // The imported-engine probe is a disposable isolated-UID process. It only loads the
+        // packaged JNI bridge and copies the explicitly passed read-only descriptor into its own
+        // sealed memfd; normal preferences, recovery and data initialization must not run there.
+        engineProbeProcess = RimeEngineProbeService.isProbeProcess(base)
+        if (engineProbeProcess) return
+        restoreProcess = org.fcitx.fcitx5.android.data.UserDataRestoreRuntime.isRestoreProcess(base)
+        if (!restoreProcess) try {
+            org.fcitx.fcitx5.android.data.UserDataRestoreRuntime.recoverBeforeInitialization(base)
+        } catch (e: Exception) {
+            runCatching { org.fcitx.fcitx5.android.data.UserDataRestoreRuntime.launchRecovery(base, e) }
+            throw e
+        }
+        // custom: 内置谷歌数字墨水模型物化（assets → 应用私有目录）。
+        // 必须早于 ContentProvider：ML Kit 的模型已下载状态存在 shared_prefs，
+        // 其 MlKitInitProvider 在 Application.onCreate 之前运行。
+        // `:asr` 独立进程不涉及手写，跳过以免多进程同时写同一份 shared_prefs。
+        if (!engineProbeProcess && !getProcessName().endsWith(ASR_PROCESS_SUFFIX)) {
+            MlKitBundledModel.materializeIfNeeded(base)
+        }
+    }
+
+    override val workManagerConfiguration: androidx.work.Configuration
+        get() = androidx.work.Configuration.Builder().setMinimumLoggingLevel(android.util.Log.WARN).build()
 
     val coroutineScope = MainScope() + CoroutineName("FcitxApplication")
 
     private val shutdownReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action != Intent.ACTION_SHUTDOWN) return
-            Timber.d("Device shutting down, trying to save fcitx state...")
-            val fcitx = FcitxDaemon.getFirstConnectionOrNull()
-                ?: return Timber.d("No active fcitx connection, skipping")
-            fcitx.runImmediately { save() }
+            Timber.d("Device shutting down, closing the input engine...")
+            try {
+                FcitxDaemon.shutdownFcitx()
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to close the input engine during device shutdown")
+            }
         }
     }
 
@@ -81,6 +122,9 @@ class FcitxApplication : Application() {
     var isDirectBootMode = false
         private set
 
+    internal var directBootLayoutSync: DirectBootLayoutSync? = null
+        private set
+
     val directBootAwareContext: Context
         get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isDirectBootMode) {
             createDeviceProtectedStorageContext()
@@ -88,16 +132,6 @@ class FcitxApplication : Application() {
             applicationContext
         }
 
-    override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(newBase)
-        // custom: 内置谷歌数字墨水模型物化（assets → 应用私有目录）。
-        // **必须早于 ContentProvider**：ML Kit / GMS MDD 的「模型已下载」状态存在
-        // shared_prefs，而 ML Kit 的 MlKitInitProvider 会在 Application.onCreate 之前跑。
-        // `:asr` 独立进程不涉及手写，跳过以免多进程同时写同一份 shared_prefs。
-        if (!getProcessName().endsWith(ASR_PROCESS_SUFFIX)) {
-            MlKitBundledModel.materializeIfNeeded(newBase)
-        }
-    }
 
     override fun onCreate() {
         super.onCreate()
@@ -109,9 +143,17 @@ class FcitxApplication : Application() {
             instance = this
             return
         }
-        if (!userManager.isUserUnlocked) {
+        if (engineProbeProcess) return
+        if (restoreProcess) { instance = this; return }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !userManager.isUserUnlocked) {
             isDirectBootMode = true
             registerReceiver(unlockReceiver, IntentFilter(Intent.ACTION_USER_UNLOCKED))
+            // Unlock can finish between the first check and receiver registration.
+            // Choose normal storage now if its broadcast has already been missed.
+            if (userManager.isUserUnlocked) {
+                isDirectBootMode = false
+                unregisterReceiver(unlockReceiver)
+            }
         }
         val ctx = directBootAwareContext
 
@@ -129,16 +171,17 @@ class FcitxApplication : Application() {
                     // continuous crashes within 10 seconds, maybe in a crash loop. just bail
                     exitProcess(10)
                 }
+                val truncated = e.stackTraceToString().let {
+                    if (it.length > MAX_STACKTRACE_SIZE) it.take(MAX_STACKTRACE_SIZE) + "<truncated>" else it
+                }
+                org.fcitx.fcitx5.android.ui.main.log.CrashReportStore(ctx.noBackupFilesDir).record(
+                    "--------- Persisted app crash\nRecorded at (Unix ms): $crashTime\n" +
+                        "Crash build: ${BuildConfig.BUILD_GIT_HASH}\nCrash process: ${Process.myPid()}\n$truncated\n"
+                )
                 startActivity<LogActivity> {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     putExtra(LogActivity.FROM_CRASH, true)
                     // avoid transaction overflow
-                    val truncated = e.stackTraceToString().let {
-                        if (it.length > MAX_STACKTRACE_SIZE)
-                            it.take(MAX_STACKTRACE_SIZE) + "<truncated>"
-                        else
-                            it
-                    }
                     putExtra(LogActivity.CRASH_STACK_TRACE, truncated)
                 }
                 exitProcess(10)
@@ -159,6 +202,16 @@ class FcitxApplication : Application() {
         org.fcitx.fcitx5.android.core.data.DataSyncPreloader.start()
 
         AppPrefs.init(sharedPrefs)
+        AppPrefsMigration.apply(sharedPrefs)
+        SplitKeyboardStateManager.init(this)
+        val appPrefs = AppPrefs.getInstance()
+        SettingsUiPreferences.initialize(
+            ctx,
+            hadInitializedSettings = appPrefs.internal.settingsInitialized.getValue() ||
+                !appPrefs.internal.firstRun.getValue()
+        )
+        // Smart settings initialization (on first install)
+        SmartDefaultInitializer.initialize(this, appPrefs)
         // record last pid for crash logs
         AppPrefs.getInstance().internal.pid.apply {
             val currentPid = Process.myPid()
@@ -171,12 +224,31 @@ class FcitxApplication : Application() {
         if (BroadcastSecurityManager.isEnabled()) {
             BroadcastSecurityManager.startListening()
         }
-        ThemeManager.init(resources.configuration)
+        val themeInitialization = ThemeManager.init(resources.configuration)
+        // 安装内置键盘布局/主题/图标主题（幂等，后台执行，开箱即用）
+        if (!isDirectBootMode) {
+            UserConfigFiles.directBootTextKeyboardLayoutJson()?.let { destination ->
+                directBootLayoutSync = DirectBootLayoutSync(this, appPrefs.keyboard.textKeyboardLayoutProfile, destination)
+            }
+            BundledPresets.installAsync {
+                IconThemeManager.refreshAsync()
+            }
+            // Custom resources live in credential-protected external storage. The unlock
+            // receiver restarts this process before loading them with normal preferences.
+            // Preload off-main so the first keyboard can reuse the cached fonts and icons.
+            FontProviders.preloadFontsAsync()
+            IconThemeManager.initAsync()
+        }
         Locales.onLocaleChange(resources.configuration)
         registerReceiver(shutdownReceiver, IntentFilter(Intent.ACTION_SHUTDOWN))
-        if (!isDirectBootMode) {
-            AppPrefs.getInstance().syncToDeviceEncryptedStorage()
-            ThemeManager.syncToDeviceEncryptedStorage()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !isDirectBootMode) {
+            coroutineScope.launch {
+                themeInitialization?.join()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    AppPrefs.getInstance().syncToDeviceEncryptedStorage()
+                    ThemeManager.syncToDeviceEncryptedStorage()
+                }
+            }
         }
         ContextCompat.registerReceiver(
             this,
@@ -205,8 +277,14 @@ class FcitxApplication : Application() {
         }
     }
 
+    override fun onTerminate() {
+        directBootLayoutSync?.close()
+        super.onTerminate()
+    }
+
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        if (restoreProcess || engineProbeProcess) return
         ThemeManager.onSystemPlatteChange(newConfig)
         Locales.onLocaleChange(newConfig)
     }

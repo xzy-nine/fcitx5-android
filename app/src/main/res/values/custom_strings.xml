@@ -18,8 +18,6 @@
     <!-- Custom: split keyboard -->
     <string name="split_keyboard">Split keyboard</string>
     <string name="split_keyboard_blank_ratio">Split keyboard blank ratio</string>
-    <string name="split_keyboard_threshold">Split keyboard threshold (W/H)</string>
-    <string name="space_behavior_voice_input">Switch to voice input</string>
     <string name="group_split_keyboard">Split Keyboard</string>
     <string name="group_key_gestures">Key Gestures</string>
     <string name="group_candidate_style">Candidate Style</string>
@@ -52,7 +50,6 @@
     <string name="broadcast_action">org.fcitx.fcitx5.android.action.CLIPBOARD_BROADCAST</string>
 
     <!-- Custom: settings search -->
-    <string name="search">Search</string>
     <string name="search_settings">Search settings</string>
     <string name="search_no_results">No results for “%1$s”</string>
     <string name="search_hint">Search settings by name or description</string>
@@ -175,12 +172,9 @@
     <string name="hotkey">Hotkey</string>
 
     <!-- Custom: text editing / clipboard compose UI -->
-    <string name="cancel">Cancel</string>
-    <string name="ok">OK</string>
     <string name="select_all">Select all</string>
     <string name="invert_selection">Invert selection</string>
     <string name="cut">Cut</string>
-    <string name="copy">Copy</string>
     <string name="paste">Paste</string>
     <string name="selection">Selection</string>
     <string name="text_mode">Text mode</string>
@@ -397,4 +391,9 @@
     <string name="voice_preprocess_fallback_no_speech_dropped">No speech detected, audio dropped</string>
     <string name="voice_preprocess_low_level">Input level is low; the threshold is derived relatively</string>
     <string name="voice_preprocess_truncated">Truncated to the output limit</string>
+    <string name="pin">Pin</string>
+    <string name="unpin">Unpin</string>
+    <string name="expand_toolbar_by_default">Expand toolbar by default</string>
+    <string name="manage_table_im">Manage Table-based Input Methods</string>
+    <string name="expand_toolbar">Expand toolbar</string>
 </resources>
