@@ -128,7 +128,8 @@ class InputView(
     private val scope = DynamicScope()
     private val broadcaster = InputBroadcaster()
     // 按键弹窗层：根组合（createComposeInputView）经 PopupOverlayContent 渲染，故需对外可见
-    internal val popup = PopupComponent()    private val returnKeyDrawable = ReturnKeyDrawableComponent()
+    internal val popup = PopupComponent()
+    private val returnKeyDrawable = ReturnKeyDrawableComponent()
     private val preeditEmptyState = PreeditEmptyStateComponent()
     // 预编辑栏：根组合/Service 经 heightPx 读取当前高度做 insets 补偿，故需对外可见
     internal val composePreedit = ComposePreeditComponent()
@@ -271,7 +272,8 @@ class InputView(
         scope += theme.wrapToUniqueComponent()
         scope += themedContext.wrapToUniqueComponent()
         scope += broadcaster
-        scope += popup        scope += returnKeyDrawable
+        scope += popup
+        scope += returnKeyDrawable
         scope += preeditEmptyState
         scope += composePreedit
         scope += commonKeyActionListener
@@ -415,7 +417,9 @@ class InputView(
         // 冷启动阶段计时：本行之前是各组件与视图的属性初始化
         ColdStartTrace.mark("inputView:props")
         // MUST call before any operation
-        setupScope()        fcitx.launchOnReady {        }
+        setupScope()
+        fcitx.launchOnReady {
+        }
 
         // make sure KeyboardWindow's view has been created before it receives any broadcast
         windowManager.addEssentialWindow(keyboardWindow, createView = true)
@@ -726,6 +730,19 @@ class InputView(
                     broadcaster.onCandidateUpdate(it.data)
                 }
             }
+            is FcitxEvent.PagedCandidateEvent -> {
+                val feed = org.fcitx.fcitx5.android.input.handwriting.HandwritingCandidateFeed
+                if (feed.isActive) {
+                    broadcaster.onCandidateUpdate(
+                        FcitxEvent.CandidateListEvent.Data(
+                            total = -1,
+                            candidates = feed.words,
+                        )
+                    )
+                } else {
+                    broadcaster.onPagedCandidateUpdate(it.data)
+                }
+            }
             is FcitxEvent.ClientPreeditEvent -> {
                 preeditEmptyState.updatePreeditEmptyState(clientPreedit = it.data)
                 broadcaster.onClientPreeditUpdate(it.data)
@@ -737,7 +754,8 @@ class InputView(
             is FcitxEvent.IMChangeEvent -> {
                 broadcaster.onImeUpdate(it.data)
             }
-            is FcitxEvent.StatusAreaEvent -> {                broadcaster.onStatusAreaUpdate(it.data.actions)
+            is FcitxEvent.StatusAreaEvent -> {
+                broadcaster.onStatusAreaUpdate(it.data.actions)
             }
             else -> {}
         }

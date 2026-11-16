@@ -35,7 +35,7 @@ object DataManager {
 
     // should be consistent with the deserialization in DataDescriptorPlugin (:build-logic)
     private fun deserializeDataDescriptor(raw: String): DataDescriptor {
-        return json.decodeFromString<DataDescriptor>(raw)
+        return json.decodeFromString<DataDescriptor>(raw).withNormalizedPaths()
     }
 
     private fun serializeDataDescriptor(descriptor: DataDescriptor): String {
