@@ -29,14 +29,14 @@ android {
     namespace = packageBase
 
     defaultConfig {
-        applicationId = "org.fcitx.fcitx5.android.fx.rime"
+        applicationId = "org.fcitx.fcitx5.android"
         buildConfigField("boolean", "INPUT_DIAGNOSTICS", inputDiagnostics.toString())
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // custom: 应用名与图标不再随构建类型变化，debug/release 统一使用 release 版本
         resValue("mipmap", "app_icon", "@mipmap/ic_launcher")
         resValue("mipmap", "app_icon_round", "@mipmap/ic_launcher_round")
         resValue("string", "app_name", "@string/app_name_release")
-        manifestPlaceholders["appLabel"] = "@string/direct_rime_app_name"
+        manifestPlaceholders["appLabel"] = "@string/app_name"
         resValue("string", "ime_settings_activity", imeSettingsActivity)
 
         @Suppress("UnstableApiUsage")

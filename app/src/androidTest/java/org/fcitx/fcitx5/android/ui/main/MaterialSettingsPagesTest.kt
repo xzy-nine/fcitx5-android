@@ -216,10 +216,10 @@ class MaterialSettingsPagesTest {
                 row("Monet · Release / Debug", listOf(mono, debugMono).map {
                     AdaptiveIconDrawable(ColorDrawable(systemBackground), it.mutate().apply { setTint(systemForeground) })
                 })
-                row("In-app · 24dp", listOf(activity.getDrawable(R.drawable.ic_brand_goose)!!.mutate().apply {
+                row("In-app · 24dp", listOf(activity.getDrawable(R.mipmap.app_icon)!!.mutate().apply {
                     setTint(activity.settingsColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
                 }), 24)
-                dialog = MaterialAlertDialogBuilder(activity).setTitle("中州鹅 · 图标")
+                dialog = MaterialAlertDialogBuilder(activity).setTitle("Fcitx5 · 图标")
                     .setView(sheet).show()
             }
             instrumentation.waitForIdleSync()

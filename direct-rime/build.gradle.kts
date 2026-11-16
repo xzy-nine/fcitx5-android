@@ -7,7 +7,7 @@ android {
     compileSdk = 36
     ndkVersion = providers.gradleProperty("ndkVersion").getOrElse("28.0.13004108")
     defaultConfig {
-        applicationId = "org.fcitx.fcitx5.android.fx.rime.lab"
+        applicationId = "org.fcitx.fcitx5.android.rime.lab"
         minSdk = 23
         targetSdk = 36
         versionCode = 1

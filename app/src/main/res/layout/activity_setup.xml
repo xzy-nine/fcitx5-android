@@ -25,7 +25,7 @@
             android:accessibilityHeading="true"
             android:textAppearance="?attr/textAppearanceTitleLarge"
             android:textColor="?attr/colorOnSurface"
-            tools:text="靓企鹅·中州韵" />
+            tools:text="小企鹅输入法" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/skip_button"

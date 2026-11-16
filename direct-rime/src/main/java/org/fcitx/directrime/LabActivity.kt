@@ -25,7 +25,7 @@ class LabActivity : Activity() {
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 32, 24, 24) }
         content.addView(TextView(this).apply { text = "Rime 直连实验"; textSize = 26f })
         content.addView(TextView(this).apply {
-            text = "使用独立引擎和数据目录，可与靓企鹅共存。导入的是 Rime 用户目录 ZIP 副本，原目录不会被修改。此版本用于输入正确性与性能实验，尚未通过完整行为等价验证。"
+            text = "使用独立引擎和数据目录，可与主应用共存。导入的是 Rime 用户目录 ZIP 副本，原目录不会被修改。此版本用于输入正确性与性能实验，尚未通过完整行为等价验证。"
         })
         status = TextView(this).apply { text = "先安装测试方案，或导入自己的方案并部署。" }.also { content.addView(it) }
         fun button(label: String, click: () -> Unit) {

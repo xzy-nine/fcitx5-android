@@ -504,7 +504,7 @@ end
                 val words = getCandidates(0, 10)
                 assertEquals(listOf("你", "泥", "拟", "逆"), words.map { it.text })
                 assertTrue("Lua must see the new source and the APK's Chinese distribution/version",
-                    words.all { it.comment == "$label:中州鹅 ${BuildConfig.VERSION_NAME}" })
+                    words.all { it.comment == "$label:Fcitx5 ${BuildConfig.VERSION_NAME}" })
                 assertTrue(selectGlobal(0))
             }
             assertEquals("你", withTimeout(10_000) { commits.receive() })

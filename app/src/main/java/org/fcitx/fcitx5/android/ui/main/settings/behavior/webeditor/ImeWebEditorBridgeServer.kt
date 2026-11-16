@@ -667,7 +667,7 @@ object ImeWebEditorBridgeServer {
 
     private fun pairingHtml(message: String = "请在手机的网页编辑器对话框中查看 6 位配对码。") = """
         <!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
-        <meta name="viewport" content="width=device-width,initial-scale=1"><title>中州鹅 · 网页编辑器</title></head>
+        <meta name="viewport" content="width=device-width,initial-scale=1"><title>Fcitx5 · 网页编辑器</title></head>
         <body><main style="max-width:28rem;margin:4rem auto;padding:1rem;font:18px sans-serif">
         <h1>连接手机</h1><p>$message</p>
         <form method="post" action="/pair"><label>配对码 / Pairing code<br>
