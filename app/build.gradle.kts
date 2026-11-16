@@ -153,10 +153,14 @@ run {
     val prepareDirectRimeAssets = tasks.register<Sync>("prepareDirectRimeAssets") {
         dependsOn(rootProject.tasks.named("prepareRimeSdk"))
         into(directAssets)
-        from("src/main/assets") { exclude("usr/**", "descriptor.json") }
+        // rime-schemas 只并入 usr/share/rime-data（见下），不随 assets 原样复制。
+        from("src/main/assets") { exclude("usr/**", "descriptor.json", "rime-schemas/**") }
         into("usr/share/rime-data") {
             from(rootProject.file("native/rime-data"))
             from(rootProject.file("native/rime-prelude")) { include("key_bindings.yaml", "punctuation.yaml", "symbols.yaml") }
+            // custom: 内置简体拼音方案（方案定义与词典）。
+            // default.yaml 由 native/rime-data 提供（含引擎必需配置），此处只并入方案本身。
+            from("src/main/assets/rime-schemas")
         }
         into("usr/share/opencc") { from(rootProject.file("native/rime-sdk/opencc/data")) }
     }
@@ -185,7 +189,8 @@ generateDataDescriptor {
             "bundled/symbols",
             "bundled/symbols/symbols.json",
             "bundled/symbols/emoji.json",
-            "bundled/symbols/kaomoji.json"
+            "bundled/symbols/kaomoji.json",
+            "rime-schemas" // 已并入 usr/share/rime-data，不再单独同步
         )
     )
 }
