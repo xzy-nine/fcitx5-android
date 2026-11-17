@@ -52,6 +52,8 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.FontsetEditorScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.SplitKeyboardCalibrationScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.JsVoicePluginsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.TextKeyboardLayoutProfilePickerScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.LogMode
+import org.fcitx.fcitx5.android.ui.main.compose.screens.LogScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.UpdateMirrorListScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WanxiangUpdateScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingGestureDemoScreen
@@ -192,7 +194,10 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                     )
                 }
                 entry<AppRoute.Developer> {
-                    DeveloperScreen(onBack = { backStack.removeLastOrNull() })
+                    DeveloperScreen(
+                        onBack = { backStack.removeLastOrNull() },
+                        onNavigate = ::navigateTo,
+                    )
                 }
                 entry<AppRoute.InputMethodList> {
                     InputMethodListScreen(
@@ -317,6 +322,20 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 entry<AppRoute.TextKeyboardLayoutProfilePicker> {
                     TextKeyboardLayoutProfilePickerScreen(
                         onDismiss = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<AppRoute.LiveLog> {
+                    LogScreen(
+                        mode = LogMode.Live,
+                        crashStackTrace = null,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<AppRoute.CrashLog> { route ->
+                    LogScreen(
+                        mode = LogMode.Crash,
+                        crashStackTrace = route.stackTrace,
+                        onBack = { backStack.removeLastOrNull() },
                     )
                 }
                 entry<AppRoute.SettingsGroup> { route ->
@@ -445,6 +464,8 @@ fun composeRouteByName(name: String, arg: String? = null): AppRoute? = when (nam
     "SplitKeyboardCalibration" -> AppRoute.SplitKeyboardCalibration
     "JsVoicePlugins" -> AppRoute.JsVoicePlugins
     "TextKeyboardLayoutProfilePicker" -> AppRoute.TextKeyboardLayoutProfilePicker
+    "LiveLog" -> AppRoute.LiveLog
+    "CrashLog" -> AppRoute.CrashLog(arg)
     else -> null
 }
 

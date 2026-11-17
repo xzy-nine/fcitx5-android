@@ -41,7 +41,6 @@ import org.fcitx.fcitx5.android.sync.webdav.AutoDictSync
 import org.fcitx.fcitx5.android.input.config.DirectBootLayoutSync
 import org.fcitx.fcitx5.android.input.config.UserConfigFiles
 import org.fcitx.fcitx5.android.input.font.FontProviders
-import org.fcitx.fcitx5.android.ui.main.LogActivity
 import org.fcitx.fcitx5.android.utils.AppUtil
 import org.fcitx.fcitx5.android.utils.Locales
 import org.fcitx.fcitx5.android.utils.setupForest
@@ -178,11 +177,18 @@ class FcitxApplication : Application(), androidx.work.Configuration.Provider {
                     "--------- Persisted app crash\nRecorded at (Unix ms): $crashTime\n" +
                         "Crash build: ${BuildConfig.BUILD_GIT_HASH}\nCrash process: ${Process.myPid()}\n$truncated\n"
                 )
-                startActivity<LogActivity> {
+                // 崩溃日志页已由 Compose 承载，调用栈经路由参数传入
+                startActivity<org.fcitx.fcitx5.android.ui.main.MainActivity> {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                    putExtra(LogActivity.FROM_CRASH, true)
-                    // avoid transaction overflow
-                    putExtra(LogActivity.CRASH_STACK_TRACE, truncated)
+                    action = Intent.ACTION_RUN
+                    putExtra(
+                        org.fcitx.fcitx5.android.ui.main.MainActivity.EXTRA_COMPOSE_ROUTE,
+                        "CrashLog",
+                    )
+                    putExtra(
+                        org.fcitx.fcitx5.android.ui.main.MainActivity.EXTRA_COMPOSE_ROUTE_ARG,
+                        truncated,
+                    )
                 }
                 exitProcess(10)
             }

@@ -98,6 +98,14 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object TextKeyboardLayoutProfilePicker : AppRoute
 
+    /** 实时日志。 */
+    @Serializable
+    data object LiveLog : AppRoute
+
+    /** 崩溃日志；附带上次崩溃的调用栈。 */
+    @Serializable
+    data class CrashLog(val stackTrace: String? = null) : AppRoute
+
     /** 设置界面外观。 */
     @Serializable
     data object SettingsUiAppearance : AppRoute

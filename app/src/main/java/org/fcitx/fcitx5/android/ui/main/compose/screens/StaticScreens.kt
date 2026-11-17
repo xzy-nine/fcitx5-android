@@ -31,7 +31,6 @@ import org.fcitx.fcitx5.android.core.data.DataManager
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
-import org.fcitx.fcitx5.android.ui.main.LogActivity
 import org.fcitx.fcitx5.android.ui.main.compose.AppRoute
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleConfirmDialog
 import org.fcitx.fcitx5.android.utils.Const
@@ -215,7 +214,10 @@ fun LicensesScreen(
 }
 
 @Composable
-fun DeveloperScreen(onBack: () -> Unit) {
+fun DeveloperScreen(
+    onBack: () -> Unit,
+    onNavigate: (AppRoute) -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var restartConfirm by remember { mutableStateOf(false) }
@@ -305,7 +307,7 @@ fun DeveloperScreen(onBack: () -> Unit) {
             ) {
                 ArrowPreference(
                     title = stringResource(R.string.real_time_logs),
-                    onClick = { context.startActivity<LogActivity>() },
+                    onClick = { onNavigate(AppRoute.LiveLog) },
                 )
                 SwitchPreference(
                     title = stringResource(R.string.verbose_log),
