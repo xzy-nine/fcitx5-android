@@ -37,12 +37,12 @@ class ThemeStartupSafetyTest {
 
     @Test fun lockedStartupDoesNotLoadOrGenerateCredentialProtectedThemes() {
         val users = appContext.getSystemService(UserManager::class.java)
-        shadowOf(users).isUserUnlocked = false
+        shadowOf(users).setUserUnlocked(false)
         try {
             assertNull(ThemeManager.init(appContext.resources.configuration))
             assertNotNull(ThemeManager.activeTheme)
         } finally {
-            shadowOf(users).isUserUnlocked = true
+            shadowOf(users).setUserUnlocked(true)
         }
     }
 
