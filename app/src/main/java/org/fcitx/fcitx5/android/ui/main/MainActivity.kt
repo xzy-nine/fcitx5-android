@@ -7,9 +7,8 @@ package org.fcitx.fcitx5.android.ui.main
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AppCompatActivity
 import org.fcitx.fcitx5.android.BuildConfig
+import org.fcitx.fcitx5.android.ui.common.SettingsUiActivity
 import org.fcitx.fcitx5.android.ui.main.compose.ComposeMainShell
 import org.fcitx.fcitx5.android.ui.main.compose.FcitxComposeApp
 import org.fcitx.fcitx5.android.ui.main.settings.SearchResult
@@ -21,13 +20,12 @@ import org.fcitx.fcitx5.android.ui.main.settings.SearchResult
  * MainActivity (adding callbacks, menus or intent handling), port the change into
  * `compose/ComposeMainShell.kt` / `compose/FcitxComposeApp.kt` instead of this file.
  */
-class MainActivity : AppCompatActivity() {
+class MainActivity : SettingsUiActivity() {
 
     private lateinit var shell: ComposeMainShell
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
         shell = ComposeMainShell(this)
         setContent {
             FcitxComposeApp(this, shell)
