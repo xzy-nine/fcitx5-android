@@ -54,7 +54,7 @@ class EditorInfoWindow : InputWindow.ExtendedInputWindow<EditorInfoWindow>(Edito
         ToolButton(context, R.drawable.ic_baseline_content_copy_24, theme).apply {
             setOnClickListener {
                 val clipData = ClipData.newPlainText("", buildMarkdownString())
-                context.clipboardManager.setPrimaryClip(clipData)
+                context.clipboardManager.primaryClip = clipData
                 context.toast(R.string.done)
             }
         }

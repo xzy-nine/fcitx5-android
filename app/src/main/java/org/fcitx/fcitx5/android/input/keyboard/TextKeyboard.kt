@@ -307,7 +307,7 @@ class TextKeyboard(
     }
 
     private fun updateLangSwitchKey(visible: Boolean) {
-        lang?.visibility = if (visible) View.VISIBLE else View.GONE
+        lang?.visibility = if (visible) VISIBLE else GONE
     }
 
     private fun updateSpaceVoiceIcon() {

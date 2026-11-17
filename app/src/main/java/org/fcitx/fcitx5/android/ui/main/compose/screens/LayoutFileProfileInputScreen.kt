@@ -62,7 +62,7 @@ fun LayoutFileProfileInputScreen(
                         onInvalidName()
                         return@ArrowPreference
                     }
-                    onConfirm(normalized, if (showCopySwitch) copyCurrent else true)
+                    onConfirm(normalized, !showCopySwitch || copyCurrent)
                 },
             )
         },

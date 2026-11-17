@@ -249,7 +249,7 @@ class InputStatisticsDeviceTest {
                 SystemClock.uptimeMillis() - stableAt >= 500
             if (active) {
                 service = candidate
-                if (!stores.containsKey(candidate)) stores[candidate!!] = ServiceStatsState(
+                if (!stores.containsKey(candidate)) stores[candidate] = ServiceStatsState(
                     storeField.get(candidate) as InputStats?, layoutField.get(candidate), epochField.getLong(candidate))
                 storeField.set(candidate, stats)
             }

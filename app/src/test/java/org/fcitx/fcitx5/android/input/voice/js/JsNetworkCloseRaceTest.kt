@@ -107,7 +107,7 @@ class JsNetworkCloseRaceTest {
         val streams = streams(scope)
         val state = Class.forName(JsAppStreams::class.java.name + "\$ActiveStream")
             .getDeclaredConstructor(String::class.java).apply { isAccessible = true }.newInstance("1")
-        invoke(state, "attachJob", waiting as Job)
+        invoke(state, "attachJob", waiting)
         val map = RemovingLastEntryMap().apply { put("1", state) }
         replaceMap(streams, "activeStreams", map)
         try {

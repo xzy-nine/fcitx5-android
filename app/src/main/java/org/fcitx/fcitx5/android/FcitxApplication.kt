@@ -249,7 +249,7 @@ class FcitxApplication : Application(), androidx.work.Configuration.Provider {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !isDirectBootMode) {
             coroutineScope.launch {
                 themeInitialization?.join()
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                withContext(Dispatchers.IO) {
                     AppPrefs.getInstance().syncToDeviceEncryptedStorage()
                     ThemeManager.syncToDeviceEncryptedStorage()
                 }

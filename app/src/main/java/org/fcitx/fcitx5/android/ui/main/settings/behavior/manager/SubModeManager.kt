@@ -366,7 +366,7 @@ class SubModeManager(
          * @param currentLabel Current submode label
          * @return Scheme menu list
          */
-        internal fun pickSchemeMenu(
+        fun pickSchemeMenu(
             actions: Array<Action>,
             currentLabel: String
         ): List<Action>? {
@@ -395,7 +395,7 @@ class SubModeManager(
          * @param items Actions list
          * @return Items before separator
          */
-        internal fun takeItemsBeforeSeparator(
+        fun takeItemsBeforeSeparator(
             items: List<Action>
         ): List<Action> {
             val separatorIndex = items.indexOfFirst { it.isSeparator }
@@ -409,7 +409,7 @@ class SubModeManager(
          * @param action Action
          * @return Menu label
          */
-        internal fun toMenuLabel(action: Action): String? =
+        fun toMenuLabel(action: Action): String? =
             action.shortText.ifEmpty { action.longText }.ifEmpty { action.name }.trim().takeIf { it.isNotEmpty() }
 
     }

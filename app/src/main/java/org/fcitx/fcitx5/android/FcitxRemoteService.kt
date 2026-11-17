@@ -183,15 +183,13 @@ class FcitxRemoteService : Service() {
 
         override fun revokePairing(packageName: String): Boolean {
             Timber.tag(TAG).d("撤销配对: package=$packageName")
-            if (packageName.isBlank()) return false
-            return runBlocking {
+            return packageName.isNotBlank() && runBlocking {
                 BroadcastSecurityManager.revokePairing(packageName)
             }
         }
 
         override fun isAppPaired(packageName: String): Boolean {
-            if (packageName.isBlank()) return false
-            return runBlocking {
+            return packageName.isNotBlank() && runBlocking {
                 BroadcastSecurityManager.isAppPaired(packageName)
             }
         }

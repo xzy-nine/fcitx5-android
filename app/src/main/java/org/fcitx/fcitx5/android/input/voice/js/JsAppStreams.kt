@@ -217,7 +217,7 @@ internal class JsAppStreams(
             currentCoroutineContext().ensureActive()
             call.execute().use { response ->
                 if (!response.isSuccessful) error("HTTP " + response.code)
-                val source = response.body?.source() ?: error("Empty response")
+                val source = response.body.source() ?: error("Empty response")
                 if (response.header("Content-Type")?.contains("text/event-stream", true) == true) {
                     readEvents(state, source)
                 } else {

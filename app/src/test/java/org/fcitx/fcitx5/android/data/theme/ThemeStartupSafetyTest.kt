@@ -37,11 +37,13 @@ class ThemeStartupSafetyTest {
 
     @Test fun lockedStartupDoesNotLoadOrGenerateCredentialProtectedThemes() {
         val users = appContext.getSystemService(UserManager::class.java)
-        shadowOf(users).setUserUnlocked(false)
+        shadowOf(users).isUserUnlocked = false
         try {
             assertNull(ThemeManager.init(appContext.resources.configuration))
             assertNotNull(ThemeManager.activeTheme)
-        } finally { shadowOf(users).setUserUnlocked(true) }
+        } finally {
+            shadowOf(users).isUserUnlocked = true
+        }
     }
 
     @Test fun asynchronousSeedingPreservesTheSelectedThemeAndCachesItsScore() {

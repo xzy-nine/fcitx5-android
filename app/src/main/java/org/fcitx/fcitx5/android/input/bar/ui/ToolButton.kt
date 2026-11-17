@@ -61,7 +61,7 @@ class ToolButton(context: Context) : CustomGestureView(context) {
         setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 16f)
         scaleMode = AutoScaleTextView.Mode.Proportional
         gravity = gravityCenter
-        visibility = View.GONE
+        visibility = GONE
     }
 
     private var theme: Theme? = null
@@ -104,7 +104,7 @@ class ToolButton(context: Context) : CustomGestureView(context) {
         val boxPx = dp(ToolbarMetrics.iconBoxDp(percent, slotDp))
         image.scaleType = ImageView.ScaleType.FIT_CENTER
         image.padding = dp(ToolbarMetrics.iconPaddingDp(percent, slotDp))
-        image.updateLayoutParams<FrameLayout.LayoutParams> {
+        image.updateLayoutParams<LayoutParams> {
             width = boxPx
             height = boxPx
         }
@@ -149,8 +149,8 @@ class ToolButton(context: Context) : CustomGestureView(context) {
 
     fun setIcon(@DrawableRes icon: Int) {
         usingCustomDrawable = false
-        textView.visibility = View.GONE
-        image.visibility = View.VISIBLE
+        textView.visibility = GONE
+        image.visibility = VISIBLE
         image.imageTintList = currentIconColor()?.let { ColorStateList.valueOf(it) }
         image.imageResource = icon
     }
@@ -159,8 +159,8 @@ class ToolButton(context: Context) : CustomGestureView(context) {
         if (drawable != null) {
             usingCustomDrawable = true
             customDrawableTintWithTheme = tintWithTheme
-            textView.visibility = View.GONE
-            image.visibility = View.VISIBLE
+            textView.visibility = GONE
+            image.visibility = VISIBLE
             image.imageDrawable = drawable.mutate()
             if (tintWithTheme) {
                 image.imageTintList = null
@@ -174,8 +174,8 @@ class ToolButton(context: Context) : CustomGestureView(context) {
 
     fun setText(text: String?) {
         if (!text.isNullOrEmpty()) {
-            image.visibility = View.GONE
-            textView.visibility = View.VISIBLE
+            image.visibility = GONE
+            textView.visibility = VISIBLE
             textView.text = text
         }
     }
@@ -221,7 +221,7 @@ class ToolButton(context: Context) : CustomGestureView(context) {
 
     private fun applyBackground() {
         val theme = theme ?: return
-        val isText = textView.visibility == View.VISIBLE
+        val isText = textView.visibility == VISIBLE
         if (isText && isActive) {
             val activeBg = GradientDrawable().apply {
                 setColor(theme.accentKeyBackgroundColor and 0x00ffffff or (0x3f shl 24))

@@ -90,7 +90,7 @@ open class TextEditingUi(
         contentDescription = ctx.getString(R.string.backspace)
     }
 
-    open override val root: View = constraintLayout {
+    override val root: View = constraintLayout {
         add(leftButton, lParams {
             topOfParent()
             leftOfParent()

@@ -59,7 +59,7 @@ object DigitalInkMarketCategory :
         if (configured.isNotBlank()) {
             return setOf(MarketModelGrouping.baseTag(configured))
         }
-        val locale = context.resources.configuration.locales.takeIf { !it.isEmpty() }?.get(0)
+        val locale = context.resources.configuration.locales.takeIf { !it.isEmpty }?.get(0)
             ?: return emptySet()
         return setOf(
             MarketModelGrouping.baseTag(systemCandidateTags(locale).firstOrNull().orEmpty())
@@ -78,7 +78,7 @@ object DigitalInkMarketCategory :
      * 连规范 tag 都解析不出来 = ML Kit 完全不支持该语言，不给卡片（避免死卡片）。
      */
     override fun directDownloadModels(context: Context): List<MarketModel> {
-        val locale = context.resources.configuration.locales.takeIf { !it.isEmpty() }?.get(0)
+        val locale = context.resources.configuration.locales.takeIf { !it.isEmpty }?.get(0)
             ?: return emptyList()
         val requested = systemCandidateTags(locale).firstOrNull() ?: return emptyList()
         // 清单里已有该确切 tag → 它就在对应分组里，不重复给「直接下载」

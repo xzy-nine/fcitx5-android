@@ -35,7 +35,7 @@ import org.robolectric.util.ReflectionHelpers
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = FcitxApplication::class, shadows = [EditorApplicationShadow::class])
 class JsAppShortcutIntegrationTest {
-    private inner class Harness(inputType: Int = InputType.TYPE_CLASS_TEXT) : AutoCloseable {
+    private class Harness(inputType: Int = InputType.TYPE_CLASS_TEXT) : AutoCloseable {
         val host = Robolectric.buildActivity(Activity::class.java).setup().visible()
         val service = Robolectric.buildService(FcitxInputMethodService::class.java).get()
         val engineJobs = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)

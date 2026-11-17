@@ -71,8 +71,7 @@ internal fun isStandardWidthRow(row: List<KeyDef>): Boolean {
     val standard = 0.1f
     val eps = 1e-4f
     return row.all { def ->
-        if (isSpaceKeyDef(def)) true
-        else (def.appearance.percentWidth - standard).absoluteValue <= eps
+        isSpaceKeyDef(def) || (def.appearance.percentWidth - standard).absoluteValue <= eps
     }
 }
 

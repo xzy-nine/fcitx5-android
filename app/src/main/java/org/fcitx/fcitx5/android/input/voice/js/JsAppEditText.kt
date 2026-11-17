@@ -46,7 +46,7 @@ internal class JsAppEditText(context: Context) : TextInputEditText(context) {
 
     internal val isLocalCursorActive: Boolean
         get() = ownsLocalInput && keyListener != null && isEnabled && isFocused && attached &&
-            isShown && windowVisibility == View.VISIBLE && screenOn && selectionStart >= 0 &&
+            isShown && windowVisibility == VISIBLE && screenOn && selectionStart >= 0 &&
             selectionStart == selectionEnd
 
     private fun stopCursorBlink() {
@@ -109,7 +109,7 @@ internal class JsAppEditText(context: Context) : TextInputEditText(context) {
     }
 
     override fun onScreenStateChanged(screenState: Int) {
-        screenOn = screenState == View.SCREEN_STATE_ON
+        screenOn = screenState == SCREEN_STATE_ON
         super.onScreenStateChanged(screenState)
         restartCursorBlink()
     }

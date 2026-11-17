@@ -65,7 +65,7 @@ class KeyboardTestPanelTest {
         // Supply an enabled Activity-scoped service; the default shadow starts disabled
         // and could otherwise make a missing opt-out look successful.
         val manager = Shadow.newInstanceOf(ContentCaptureManager::class.java)
-        manager.setContentCaptureEnabled(true)
+        manager.isContentCaptureEnabled = true
         assertTrue(manager.isContentCaptureEnabled)
         val serviceName = activity.getSystemServiceName(ContentCaptureManager::class.java)
         val context = object : ContextWrapper(activity) {
@@ -88,7 +88,7 @@ class KeyboardTestPanelTest {
         }
         panel.clear()
         assertEquals(Build.VERSION.SDK_INT >= 30, manager.isContentCaptureEnabled)
-        manager.setContentCaptureEnabled(false)
+        manager.isContentCaptureEnabled = false
         val next = KeyboardTestPanel(context) {}
         next.clear()
         assertFalse("Opening or clearing a panel must not re-enable a previously disabled session",

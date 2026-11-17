@@ -83,7 +83,7 @@ internal class JsAppPanelLayout(context: Context, private val moveBy: (Float, Fl
                 (view is TextView && view !is JsAppPanelTitle))) return true
         if (view is ViewGroup) for (index in view.childCount - 1 downTo 0) {
             val child = view.getChildAt(index)
-            if (child.visibility != View.VISIBLE) continue
+            if (child.visibility != VISIBLE) continue
             val cx = x + view.scrollX - child.x
             val cy = y + view.scrollY - child.y
             if (cx >= 0 && cy >= 0 && cx < child.width && cy < child.height)

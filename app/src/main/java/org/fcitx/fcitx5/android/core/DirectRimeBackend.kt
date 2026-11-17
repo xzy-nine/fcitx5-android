@@ -353,10 +353,9 @@ class DirectRimeBackend(context: Context) : InputEngine {
     }
 
     private fun shouldCollectStatistics(source: InputStatisticsSource?, previous: Snapshot?): Boolean {
-        if (source == null || previous == null || !previous.ready || directBootMode || forwardsKeysDirectly() ||
-            source.generation != inputSession || previous.generation != inputSession ||
-            flags.flags and CapabilityFlag.PasswordOrSensitive.flag != 0UL) return false
-        return try { source.stillEnabled() } catch (_: Exception) { false }
+        return !(source == null || previous == null || !previous.ready || directBootMode || forwardsKeysDirectly() ||
+                source.generation != inputSession || previous.generation != inputSession ||
+                flags.flags and CapabilityFlag.PasswordOrSensitive.flag != 0UL) && try { source.stillEnabled() } catch (_: Exception) { false }
     }
 
     private fun statisticsFromResult(source: InputStatisticsSource, previous: Snapshot, result: Snapshot,
@@ -378,7 +377,7 @@ class DirectRimeBackend(context: Context) : InputEngine {
         val modeChanged = !newSession && previous?.ready == true && value.ready &&
             (previous.schema != value.schema || previous.ascii != value.ascii)
         if (modeChanged && !directInput) {
-            statusHints.show(value.generation, if (previous!!.schema != value.schema) value.schemaName.ifEmpty { value.schema } else
+            statusHints.show(value.generation, if (previous.schema != value.schema) value.schemaName.ifEmpty { value.schema } else
                 context.getString(if (value.ascii) R.string.direct_rime_ascii_mode else R.string.direct_rime_chinese_mode))
         } else if (newSession || !value.ready || value.preedit.isNotEmpty() || value.commit.isNotEmpty()) {
             statusHints.clear()

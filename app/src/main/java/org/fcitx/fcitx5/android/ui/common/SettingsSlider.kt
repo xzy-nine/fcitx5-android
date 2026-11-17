@@ -31,7 +31,7 @@ class SettingsSlider(context: Context) : Slider(context) {
         set(progress) { value = progress.coerceIn(0, max).toFloat() }
 
     init {
-        id = View.generateViewId()
+        id = generateViewId()
         valueTo = 100f
         stepSize = 1f
         // Editors already display the mapped value (including offsets/units) beside the slider.

@@ -228,8 +228,7 @@ class DataMigrationManager(
     ) {
         for (row in layout) {
             for (key in row) {
-                val displayText = key["displayText"]
-                when (displayText) {
+                when (val displayText = key["displayText"]) {
                     is Map<*, *> -> {
                         val specificValue = displayText[subModeLabel]?.toString()
                         val defaultValue = displayText["default"]?.toString()
@@ -263,8 +262,7 @@ class DataMigrationManager(
 
         for (row in baseLayout) {
             for (key in row) {
-                val displayText = key["displayText"]
-                when (displayText) {
+                when (val displayText = key["displayText"]) {
                     is MutableMap<*, *> -> {
                         val keysToRemove = subModeLabels.filter { it in displayText.keys }
                         keysToRemove.forEach { keyToRemove ->

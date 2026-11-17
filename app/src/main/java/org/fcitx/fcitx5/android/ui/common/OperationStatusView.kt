@@ -22,7 +22,7 @@ class OperationStatusView @JvmOverloads constructor(context: Context, attrs: Att
     }
     val heading = MaterialTextView(context).apply {
         setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium)
-        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        accessibilityLiveRegion = ACCESSIBILITY_LIVE_REGION_POLITE
     }
     val detail = MaterialTextView(context).apply {
         setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
@@ -37,8 +37,8 @@ class OperationStatusView @JvmOverloads constructor(context: Context, attrs: Att
         minHeight = dp(48)
         isAllCaps = false
         setOnClickListener {
-            detail.visibility = View.VISIBLE
-            visibility = View.GONE
+            detail.visibility = VISIBLE
+            visibility = GONE
         }
     }
     private val progress = LinearProgressIndicator(context).apply { isIndeterminate = true }
@@ -68,20 +68,20 @@ class OperationStatusView @JvmOverloads constructor(context: Context, attrs: Att
         heading.setTextColor(context.settingsColor(foreground))
         detail.setTextColor(context.settingsColor(foreground))
         detailsButton.setTextColor(context.settingsColor(foreground))
-        detail.visibility = if (message.isNotEmpty() && !error) View.VISIBLE else View.GONE
-        detailsButton.visibility = if (message.isNotEmpty() && error) View.VISIBLE else View.GONE
+        detail.visibility = if (message.isNotEmpty() && !error) VISIBLE else GONE
+        detailsButton.visibility = if (message.isNotEmpty() && error) VISIBLE else GONE
         val percent = progressPercent?.takeIf { state == State.WORKING && it in 0..100 }
         val indeterminate = percent == null
         if (progress.isIndeterminate != indeterminate) {
             // Material indicators cannot enter indeterminate mode while visible.
-            progress.visibility = View.INVISIBLE
+            progress.visibility = INVISIBLE
             progress.isIndeterminate = indeterminate
         }
         if (percent != null) {
             progress.max = 100
             progress.setProgressCompat(percent, false)
         }
-        progress.visibility = if (state == State.WORKING) View.VISIBLE else View.GONE
+        progress.visibility = if (state == State.WORKING) VISIBLE else GONE
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()

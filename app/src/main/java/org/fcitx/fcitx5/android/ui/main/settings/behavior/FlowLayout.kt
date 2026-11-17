@@ -34,7 +34,7 @@ open class FlowLayout @JvmOverloads constructor(
         val measured = ArrayList<FlowLayoutLines.Child>(childCount)
         for (i in 0 until childCount) {
             val child = getChildAt(i)
-            if (child.visibility == View.GONE) continue
+            if (child.visibility == GONE) continue
             // measureChildWithMargins accounts for the margins this layout honours; measureChild
             // ignored them, so a child with margins could be measured wider than the space it
             // was then laid out in.
@@ -75,7 +75,7 @@ open class FlowLayout @JvmOverloads constructor(
         val childCount = childCount
         for (i in 0 until childCount) {
             val child = getChildAt(i)
-            if (child.visibility == View.GONE) continue
+            if (child.visibility == GONE) continue
             val lp = child.layoutParams as MarginLayoutParams
             val childWidth = child.measuredWidth
             val childHeight = child.measuredHeight

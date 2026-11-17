@@ -88,7 +88,7 @@ object DeviceInfoCollector {
             displays.forEach { display ->
                 // Only collect primary display and foldable secondary display
                 if (display.displayId == Display.DEFAULT_DISPLAY ||
-                    display.flags and android.view.Display.FLAG_PRIVATE != 0
+                    display.flags and Display.FLAG_PRIVATE != 0
                 ) {
                     val metrics = android.util.DisplayMetrics()
                     @Suppress("DEPRECATION")

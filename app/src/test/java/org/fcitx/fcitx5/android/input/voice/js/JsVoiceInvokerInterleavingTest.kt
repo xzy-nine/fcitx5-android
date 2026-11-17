@@ -42,7 +42,7 @@ class JsVoiceInvokerInterleavingTest {
                     }});
                 """.trimIndent(),
             )
-            suspend fun evaluate(code: String): String? = lock.withLock { js.evaluate<String>(code) }
+            suspend fun evaluate(code: String): String = lock.withLock { js.evaluate<String>(code) }
             val pending = async {
                 JsVoiceInvoker.call(::evaluate, "app", "{\"appId\":\"tool\"}", 5_000)
             }
@@ -97,7 +97,7 @@ class JsVoiceInvokerInterleavingTest {
                     });
                 """.trimIndent(),
             )
-            suspend fun evaluate(code: String): String? = lock.withLock { js.evaluate<String>(code) }
+            suspend fun evaluate(code: String): String = lock.withLock { js.evaluate<String>(code) }
             val app = async {
                 JsVoiceInvoker.call(::evaluate, "app", "{\"appId\":\"tool\"}", 2_000)
             }
@@ -156,7 +156,7 @@ class JsVoiceInvokerInterleavingTest {
                     });
                 """.trimIndent(),
             )
-            suspend fun evaluate(code: String): String? = lock.withLock { js.evaluate<String>(code) }
+            suspend fun evaluate(code: String): String = lock.withLock { js.evaluate<String>(code) }
             val app = async {
                 JsVoiceInvoker.call(
                     ::evaluate,
@@ -201,7 +201,7 @@ class JsVoiceInvokerInterleavingTest {
                     }});
                 """.trimIndent(),
             )
-            suspend fun evaluate(code: String): String? = lock.withLock { js.evaluate<String>(code) }
+            suspend fun evaluate(code: String): String = lock.withLock { js.evaluate<String>(code) }
             val timedOut = runCatching {
                 JsVoiceInvoker.call(::evaluate, "app", "{\"appId\":\"tool\"}", 50)
             }.exceptionOrNull()

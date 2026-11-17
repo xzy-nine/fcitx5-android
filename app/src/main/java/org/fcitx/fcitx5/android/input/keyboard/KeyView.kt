@@ -150,7 +150,7 @@ abstract class KeyView(
         isClickable = true
         isHapticFeedbackEnabled = false
         if (def.viewId > 0) {
-            id = View.generateViewId()
+            id = generateViewId()
             tag = def.viewId
         }
         if (def.transparentBackground) {
@@ -506,7 +506,7 @@ class ToolbarTextKeyView(
                 "key_main_font", def.textSize
             )
         )
-        textDirection = View.TEXT_DIRECTION_FIRST_STRONG_LTR
+        textDirection = TEXT_DIRECTION_FIRST_STRONG_LTR
         fontKey = "key_main_font"
         setTypeface(typeface, def.textStyle)
         setTextColor(
@@ -608,7 +608,7 @@ open class TextKeyView(
         gravity = Gravity.CENTER
         text = def.displayText
         setTextSize(TypedValue.COMPLEX_UNIT_SP, resolveBaseMainTextSizeSp())
-        textDirection = View.TEXT_DIRECTION_FIRST_STRONG_LTR
+        textDirection = TEXT_DIRECTION_FIRST_STRONG_LTR
         // Set font key for batch setting in BaseKeyboard.reloadLayout()
         fontKey = "key_main_font"
         setTypeface(typeface, def.textStyle)
@@ -710,7 +710,7 @@ class AltTextKeyView(
         fontKey = "key_alt_font"
         setTypeface(typeface, Typeface.BOLD)
         text = def.altText
-        textDirection = View.TEXT_DIRECTION_FIRST_STRONG_LTR
+        textDirection = TEXT_DIRECTION_FIRST_STRONG_LTR
         setTextColor(
             resolveAltTextColor(
                 when (def.variant) {
@@ -731,7 +731,7 @@ class AltTextKeyView(
         fontKey = "key_alt_font"
         setTypeface(typeface, Typeface.BOLD)
         text = def.altText1 ?: ""
-        textDirection = View.TEXT_DIRECTION_FIRST_STRONG_LTR
+        textDirection = TEXT_DIRECTION_FIRST_STRONG_LTR
         setTextColor(
             resolveAltTextColor(
                 when (def.variant) {
@@ -753,7 +753,7 @@ class AltTextKeyView(
     }
 
     private fun resetDirectionalAltText1() {
-        altText1.visibility = View.GONE
+        altText1.visibility = GONE
         altText1.updateLayoutParams<ConstraintLayout.LayoutParams> {
             topToTop = unset
             topToBottom = unset
@@ -786,9 +786,9 @@ class AltTextKeyView(
     ) {
         if (hideSibling) {
             val hidden = if (label === altText) altText1 else altText
-            hidden.visibility = View.GONE
+            hidden.visibility = GONE
         }
-        label.visibility = View.VISIBLE
+        label.visibility = VISIBLE
         mainText.updateLayoutParams<ConstraintLayout.LayoutParams> {
             topToTop = parentId
             topToBottom = unset
@@ -816,8 +816,8 @@ class AltTextKeyView(
 
     private fun applyTopCenterAltTextPosition(label: AutoScaleTextView = altText) {
         val hidden = if (label === altText) altText1 else altText
-        hidden.visibility = View.GONE
-        label.visibility = View.VISIBLE
+        hidden.visibility = GONE
+        label.visibility = VISIBLE
         mainText.updateLayoutParams<ConstraintLayout.LayoutParams> {
             topToTop = parentId
             topToBottom = unset
@@ -845,8 +845,8 @@ class AltTextKeyView(
 
     private fun applyBottomAltTextPosition(label: AutoScaleTextView = altText) {
         val hidden = if (label === altText) altText1 else altText
-        hidden.visibility = View.GONE
-        label.visibility = View.VISIBLE
+        hidden.visibility = GONE
+        label.visibility = VISIBLE
         mainText.updateLayoutParams<ConstraintLayout.LayoutParams> {
             if (ThemeManager.prefs.moveMainTextForAltLabel.getValue()) {
                 topToTop = parentId
@@ -893,9 +893,9 @@ class AltTextKeyView(
     ) {
         if (hideSibling) {
             val hidden = if (label === altText) altText1 else altText
-            hidden.visibility = View.GONE
+            hidden.visibility = GONE
         }
-        label.visibility = View.VISIBLE
+        label.visibility = VISIBLE
         mainText.updateLayoutParams<ConstraintLayout.LayoutParams> {
             topToTop = parentId
             topToBottom = unset
@@ -926,8 +926,8 @@ class AltTextKeyView(
         val hasDownLabel = !altText1.text.isNullOrBlank()
         // Two directional labels keep the main content centered regardless of the movement
         // preference. Anchoring each label to its own edge avoids an overflowing three-row chain.
-        altText.visibility = if (hasUpLabel) View.VISIBLE else View.GONE
-        altText1.visibility = if (hasDownLabel) View.VISIBLE else View.GONE
+        altText.visibility = if (hasUpLabel) VISIBLE else GONE
+        altText1.visibility = if (hasDownLabel) VISIBLE else GONE
         altText.gravity = Gravity.CENTER
         altText1.gravity = Gravity.CENTER
         altText.setPadding(hMargin, 0, hMargin, 0)
@@ -984,8 +984,8 @@ class AltTextKeyView(
         }
         // hideSibling = false：两个标签同时显示，各自占一个角；单个标签模式才需要
         // 隐藏另一个（那由 applyLayout 的 resetDirectionalAltText1 收尾）。
-        altText.visibility = if (hasUpLabel) View.VISIBLE else View.GONE
-        altText1.visibility = if (hasDownLabel) View.VISIBLE else View.GONE
+        altText.visibility = if (hasUpLabel) VISIBLE else GONE
+        altText1.visibility = if (hasDownLabel) VISIBLE else GONE
         if (hasUpLabel) {
             applyTopRightAltTextPosition(altText, hideSibling = false)
         }
@@ -1003,8 +1003,8 @@ class AltTextKeyView(
             topToTop = parentId
             bottomToBottom = parentId
         }
-        altText.visibility = View.GONE
-        altText1.visibility = View.GONE
+        altText.visibility = GONE
+        altText1.visibility = GONE
         applyBottomAltTextPadding()
         altText.gravity = Gravity.CENTER
     }
@@ -1132,8 +1132,7 @@ class AltTextKeyView(
     }
 
     override fun shouldTriggerAltBySwipe(totalY: Int, fallback: SwipeSymbolDirection): Boolean {
-        if (totalY == 0) return false
-        return when (lastLayoutMode ?: resolveLayoutMode(appearanceView.height)) {
+        return totalY != 0 && when (lastLayoutMode ?: resolveLayoutMode(appearanceView.height)) {
             AltTextLayoutMode.Bottom -> totalY > 0
             AltTextLayoutMode.TopRight, AltTextLayoutMode.TopCenter -> totalY < 0
             // 方向性标签：上标签只认上滑、下标签只认下滑；标签放在哪个角落不影响动作方向。
@@ -1253,7 +1252,7 @@ class ImageAltTextKeyView(
         fontKey = "key_alt_font"
         setTypeface(typeface, Typeface.BOLD)
         text = def.altText
-        textDirection = View.TEXT_DIRECTION_FIRST_STRONG_LTR
+        textDirection = TEXT_DIRECTION_FIRST_STRONG_LTR
         setTextColor(
             resolveAltTextColor(
                 when (def.variant) {
@@ -1274,7 +1273,7 @@ class ImageAltTextKeyView(
         fontKey = "key_alt_font"
         setTypeface(typeface, Typeface.BOLD)
         text = def.altText1 ?: ""
-        textDirection = View.TEXT_DIRECTION_FIRST_STRONG_LTR
+        textDirection = TEXT_DIRECTION_FIRST_STRONG_LTR
         setTextColor(
             resolveAltTextColor(
                 when (def.variant) {
@@ -1296,7 +1295,7 @@ class ImageAltTextKeyView(
     }
 
     private fun resetDirectionalAltText1() {
-        altText1.visibility = View.GONE
+        altText1.visibility = GONE
         altText1.updateLayoutParams<ConstraintLayout.LayoutParams> {
             topToTop = unset
             topToBottom = unset
@@ -1363,9 +1362,9 @@ class ImageAltTextKeyView(
     ) {
         if (hideSibling) {
             val hidden = if (label === altText) altText1 else altText
-            hidden.visibility = View.GONE
+            hidden.visibility = GONE
         }
-        label.visibility = View.VISIBLE
+        label.visibility = VISIBLE
         img.updateLayoutParams<ConstraintLayout.LayoutParams> {
             topToTop = parentId
             topToBottom = unset
@@ -1395,8 +1394,8 @@ class ImageAltTextKeyView(
 
     private fun applyTopCenterAltTextPosition(label: AutoScaleTextView = altText) {
         val hidden = if (label === altText) altText1 else altText
-        hidden.visibility = View.GONE
-        label.visibility = View.VISIBLE
+        hidden.visibility = GONE
+        label.visibility = VISIBLE
         img.updateLayoutParams<ConstraintLayout.LayoutParams> {
             topToTop = parentId
             topToBottom = unset
@@ -1426,8 +1425,8 @@ class ImageAltTextKeyView(
 
     private fun applyBottomAltTextPosition(label: AutoScaleTextView = altText) {
         val hidden = if (label === altText) altText1 else altText
-        hidden.visibility = View.GONE
-        label.visibility = View.VISIBLE
+        hidden.visibility = GONE
+        label.visibility = VISIBLE
         img.updateLayoutParams<ConstraintLayout.LayoutParams> {
             if (ThemeManager.prefs.moveMainTextForAltLabel.getValue()) {
                 topToTop = parentId
@@ -1477,9 +1476,9 @@ class ImageAltTextKeyView(
     ) {
         if (hideSibling) {
             val hidden = if (label === altText) altText1 else altText
-            hidden.visibility = View.GONE
+            hidden.visibility = GONE
         }
-        label.visibility = View.VISIBLE
+        label.visibility = VISIBLE
         img.updateLayoutParams<ConstraintLayout.LayoutParams> {
             centerInParent()
             topToTop = parentId
@@ -1512,8 +1511,8 @@ class ImageAltTextKeyView(
         val hasUpLabel = !altText.text.isNullOrBlank()
         val hasDownLabel = !altText1.text.isNullOrBlank()
         // Keep the same centered two-label layout as text keys, with either movement setting.
-        altText.visibility = if (hasUpLabel) View.VISIBLE else View.GONE
-        altText1.visibility = if (hasDownLabel) View.VISIBLE else View.GONE
+        altText.visibility = if (hasUpLabel) VISIBLE else GONE
+        altText1.visibility = if (hasDownLabel) VISIBLE else GONE
         altText.gravity = Gravity.CENTER
         altText1.gravity = Gravity.CENTER
         altText.setPadding(hMargin, 0, hMargin, 0)
@@ -1569,8 +1568,8 @@ class ImageAltTextKeyView(
             bottomMargin = 0
         }
         // hideSibling = false：两个标签同时显示，各自占一个角。
-        altText.visibility = if (hasUpLabel) View.VISIBLE else View.GONE
-        altText1.visibility = if (hasDownLabel) View.VISIBLE else View.GONE
+        altText.visibility = if (hasUpLabel) VISIBLE else GONE
+        altText1.visibility = if (hasDownLabel) VISIBLE else GONE
         if (hasUpLabel) {
             applyTopRightAltTextPosition(altText, hideSibling = false)
         }
@@ -1589,8 +1588,8 @@ class ImageAltTextKeyView(
             bottomMargin = 0
             bottomToTop = unset
         }
-        altText.visibility = View.GONE
-        altText1.visibility = View.GONE
+        altText.visibility = GONE
+        altText1.visibility = GONE
         applyBottomAltTextPadding()
         altText.gravity = Gravity.CENTER
     }
@@ -1761,8 +1760,7 @@ class ImageAltTextKeyView(
     }
 
     override fun shouldTriggerAltBySwipe(totalY: Int, fallback: SwipeSymbolDirection): Boolean {
-        if (totalY == 0) return false
-        return when (lastLayoutMode ?: resolveLayoutMode(appearanceView.height)) {
+        return totalY != 0 && when (lastLayoutMode ?: resolveLayoutMode(appearanceView.height)) {
             AltTextLayoutMode.Bottom -> totalY > 0
             AltTextLayoutMode.TopRight, AltTextLayoutMode.TopCenter -> totalY < 0
             // 方向性标签：上标签只认上滑、下标签只认下滑；标签放在哪个角落不影响动作方向。

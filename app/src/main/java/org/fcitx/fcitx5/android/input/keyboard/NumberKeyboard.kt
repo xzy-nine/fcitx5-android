@@ -113,30 +113,30 @@ class NumberKeyboard(
         add(slider, lParams(0, 0) {
             startOfParent()
             topOfParent()
-            matchConstraintDefaultWidth = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+            matchConstraintDefaultWidth = LayoutParams.MATCH_CONSTRAINT_PERCENT
             matchConstraintPercentWidth = 0.15f
-            matchConstraintDefaultHeight = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+            matchConstraintDefaultHeight = LayoutParams.MATCH_CONSTRAINT_PERCENT
             matchConstraintPercentHeight = 0.75f
         })
         add(row1, lParams(0, 0) {
             startToEndOf(slider)
             endOfParent()
             topOfParent()
-            matchConstraintDefaultHeight = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+            matchConstraintDefaultHeight = LayoutParams.MATCH_CONSTRAINT_PERCENT
             matchConstraintPercentHeight = 0.25f
         })
         add(row2, lParams(0, 0) {
             startToEndOf(slider)
             endOfParent()
             below(row1)
-            matchConstraintDefaultHeight = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+            matchConstraintDefaultHeight = LayoutParams.MATCH_CONSTRAINT_PERCENT
             matchConstraintPercentHeight = 0.25f
         })
         add(row3, lParams(0, 0) {
             startToEndOf(slider)
             endOfParent()
             below(row2)
-            matchConstraintDefaultHeight = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+            matchConstraintDefaultHeight = LayoutParams.MATCH_CONSTRAINT_PERCENT
             matchConstraintPercentHeight = 0.25f
         })
         add(row4, lParams(0, 0) {
@@ -144,7 +144,7 @@ class NumberKeyboard(
             endOfParent()
             below(row3)
             bottomOfParent()
-            matchConstraintDefaultHeight = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+            matchConstraintDefaultHeight = LayoutParams.MATCH_CONSTRAINT_PERCENT
             matchConstraintPercentHeight = 0.25f
         })
     }
@@ -174,7 +174,7 @@ class NumberKeyboard(
             startOfParent()
             topOfParent()
             bottomOfParent()
-            matchConstraintDefaultWidth = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+            matchConstraintDefaultWidth = LayoutParams.MATCH_CONSTRAINT_PERCENT
             matchConstraintPercentWidth = 0.45f
         })
         // 中间 10%：空白分割
@@ -183,37 +183,37 @@ class NumberKeyboard(
             startToEndOf(recent)
             topOfParent()
             bottomOfParent()
-            matchConstraintDefaultWidth = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+            matchConstraintDefaultWidth = LayoutParams.MATCH_CONSTRAINT_PERCENT
             matchConstraintPercentWidth = 0.10f
         })
         // 右侧 45% 区域内的符号滑块（15% × 45% ≈ 6.75% 总宽）
         add(slider, lParams(0, 0) {
             startToEndOf(spacer)
             topOfParent()
-            matchConstraintDefaultWidth = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+            matchConstraintDefaultWidth = LayoutParams.MATCH_CONSTRAINT_PERCENT
             matchConstraintPercentWidth = 0.0675f
-            matchConstraintDefaultHeight = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+            matchConstraintDefaultHeight = LayoutParams.MATCH_CONSTRAINT_PERCENT
             matchConstraintPercentHeight = 0.75f
         })
         add(row1, lParams(0, 0) {
             startToEndOf(slider)
             endOfParent()
             topOfParent()
-            matchConstraintDefaultHeight = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+            matchConstraintDefaultHeight = LayoutParams.MATCH_CONSTRAINT_PERCENT
             matchConstraintPercentHeight = 0.25f
         })
         add(row2, lParams(0, 0) {
             startToEndOf(slider)
             endOfParent()
             below(row1)
-            matchConstraintDefaultHeight = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+            matchConstraintDefaultHeight = LayoutParams.MATCH_CONSTRAINT_PERCENT
             matchConstraintPercentHeight = 0.25f
         })
         add(row3, lParams(0, 0) {
             startToEndOf(slider)
             endOfParent()
             below(row2)
-            matchConstraintDefaultHeight = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+            matchConstraintDefaultHeight = LayoutParams.MATCH_CONSTRAINT_PERCENT
             matchConstraintPercentHeight = 0.25f
         })
         add(row4, lParams(0, 0) {
@@ -221,7 +221,7 @@ class NumberKeyboard(
             endOfParent()
             below(row3)
             bottomOfParent()
-            matchConstraintDefaultHeight = ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+            matchConstraintDefaultHeight = LayoutParams.MATCH_CONSTRAINT_PERCENT
             matchConstraintPercentHeight = 0.25f
         })
     }

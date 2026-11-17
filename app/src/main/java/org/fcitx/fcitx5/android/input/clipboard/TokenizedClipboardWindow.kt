@@ -71,7 +71,8 @@ class TokenizedClipboardWindow(
                 Toast.makeText(context, R.string.tokenized_clipboard_empty_selection, Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            context.clipboardManager.setPrimaryClip(ClipData.newPlainText("TokenizedClipboard", joined))
+            context.clipboardManager.primaryClip =
+                ClipData.newPlainText("TokenizedClipboard", joined)
             Toast.makeText(context, R.string.tokenized_clipboard_copied, Toast.LENGTH_SHORT).show()
         }
         selectAllButton.setOnClickListener {

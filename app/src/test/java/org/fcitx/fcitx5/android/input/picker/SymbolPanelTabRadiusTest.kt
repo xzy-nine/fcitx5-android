@@ -80,7 +80,7 @@ class SymbolPanelTabRadiusTest {
         if (this is DrawableWrapper) (drawable ?: this).unwrapped() else this
 
     /** 穿透状态层与内缩层，取真正画圆角的那个 drawable。 */
-    private fun android.graphics.drawable.Drawable.cornerRadiusOrNull(): Float? = when (this) {
+    private fun Drawable.cornerRadiusOrNull(): Float? = when (this) {
         is GradientDrawable -> cornerRadius
         is InsetDrawable -> drawable?.cornerRadiusOrNull()
         is StateListDrawable -> getStateDrawable(0)?.cornerRadiusOrNull()

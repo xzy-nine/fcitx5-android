@@ -224,7 +224,7 @@ internal class ClipboardContent(
                 }
             }
 
-            override fun onOpenLink(uri: android.net.Uri) {
+            override fun onOpenLink(uri: Uri) {
                 val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }

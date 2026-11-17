@@ -24,7 +24,7 @@ class LogAdapter : RecyclerView.Adapter<LogAdapter.Holder>() {
 
     private var filterQuery = ""
 
-    inner class Holder(val textView: TextView) : RecyclerView.ViewHolder(textView)
+    class Holder(val textView: TextView) : RecyclerView.ViewHolder(textView)
 
     private fun matches(entry: LogEntry) =
         filterQuery.isEmpty() || entry.raw.contains(filterQuery, ignoreCase = true)
@@ -79,7 +79,7 @@ class LogAdapter : RecyclerView.Adapter<LogAdapter.Holder>() {
             textSize = 12f
             typeface = Typeface.MONOSPACE
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                setTextClassifier(TextClassifier.NO_OP)
+                textClassifier = TextClassifier.NO_OP
             }
             layoutParams = MarginLayoutParams(wrapContent, wrapContent).apply {
                 marginStart = dp(4)

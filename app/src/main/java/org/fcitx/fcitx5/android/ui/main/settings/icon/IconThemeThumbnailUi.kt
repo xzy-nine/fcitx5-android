@@ -77,7 +77,7 @@ class IconThemeThumbnailUi(private val context: Context) {
         layoutParams = FrameLayout.LayoutParams(context.dp(52), context.dp(52), Gravity.CENTER)
         scaleType = ImageView.ScaleType.FIT_CENTER
         setImageResource(R.drawable.ic_baseline_check_24)
-        visibility = android.view.View.GONE
+        visibility = View.GONE
     }
 
     init {
@@ -101,17 +101,17 @@ class IconThemeThumbnailUi(private val context: Context) {
             }
         }
         content.background = background
-        checkMark.visibility = if (isActive) android.view.View.VISIBLE else android.view.View.GONE
+        checkMark.visibility = if (isActive) View.VISIBLE else View.GONE
         checkMark.imageTintList = ColorStateList.valueOf(accent)
     }
 
     fun bindNew() {
         val accent = context.settingsColor(android.R.attr.colorAccent)
         previewIcon.setImageResource(android.R.drawable.ic_input_add)
-        previewIcon.imageTintList = android.content.res.ColorStateList.valueOf(accent)
+        previewIcon.imageTintList = ColorStateList.valueOf(accent)
         nameText.text = context.getString(R.string.icon_theme_new)
         nameText.setTextColor(accent)
-        activeIndicator.visibility = android.view.View.GONE
+        activeIndicator.visibility = View.GONE
         applySelectionBackground(isActive = false)
         setEditAction(visible = false, onClick = null)
     }
@@ -132,19 +132,19 @@ class IconThemeThumbnailUi(private val context: Context) {
             val fallbackSize = context.dp(36)
             fallback?.setBounds(0, 0, fallbackSize, fallbackSize)
             previewIcon.setImageDrawable(fallback)
-            previewIcon.imageTintList = android.content.res.ColorStateList.valueOf(
+            previewIcon.imageTintList = ColorStateList.valueOf(
                 if (isActive) accent else primary
             )
         }
         nameText.text = if (isDefault) context.getString(R.string.default_) else theme.name
         nameText.setTextColor(if (isActive) accent else primary)
-        activeIndicator.visibility = android.view.View.GONE
+        activeIndicator.visibility = View.GONE
         applySelectionBackground(isActive)
         setEditAction(visible = !isDefault, onClick = null)
     }
 
     fun setEditAction(visible: Boolean, onClick: (() -> Unit)?) {
-        editButton.visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+        editButton.visibility = if (visible) View.VISIBLE else View.GONE
         if (visible && onClick != null) {
             editButton.setOnClickListener { onClick() }
         } else {

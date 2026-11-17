@@ -93,7 +93,7 @@ class StatusAreaEntryUi(override val ctx: Context, private val theme: Theme) : U
 
         init {
             add(content, lParams(matchParent, matchParent))
-            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(96))
+            layoutParams = ViewGroup.LayoutParams(LayoutParams.MATCH_PARENT, dp(96))
         }
     }
 

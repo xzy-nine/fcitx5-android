@@ -392,11 +392,7 @@ class ShareReceiveManager(
         }
         val targets = resolveRawImportTargets(baseDir, rawFileItems)
         val baseDirectory = resolveImportDirectory(baseDir)
-        val hasArchiveConflicts = if (archiveImportMode == ArchiveImportMode.EXTRACT_TO_DIRECTORY) {
-            archivesHaveConflicts(archiveItems, baseDirectory)
-        } else {
-            false
-        }
+        val hasArchiveConflicts = archiveImportMode == ArchiveImportMode.EXTRACT_TO_DIRECTORY && archivesHaveConflicts(archiveItems, baseDirectory)
         val hasConflicts = rawImportTargetsHaveConflicts(targets) || hasArchiveConflicts
         if (hasConflicts && !confirmFileOverwrite(activity.getString(R.string.share_receive_file_exists_message_multiple))) {
             return
@@ -934,11 +930,7 @@ class ShareReceiveManager(
                 } else {
                     false
                 }
-                val overwrite = if (conflicts) {
-                    confirmFileOverwrite(activity.getString(R.string.share_receive_file_exists_message_multiple))
-                } else {
-                    true
-                }
+                val overwrite = !conflicts || confirmFileOverwrite(activity.getString(R.string.share_receive_file_exists_message_multiple))
                 if (!overwrite) return@withContext 0
                 extractArchiveToDirectory(tempArchive, archiveType, targetDirectory)
             }
@@ -1040,11 +1032,7 @@ class ShareReceiveManager(
     private fun archiveHasConflicts(entries: List<ArchiveEntrySpec>, targetDirectory: File): Boolean {
         val canonicalTargetDirectory = targetDirectory.canonicalFile
         return entries.any { entry ->
-            if (entry.isDirectory) {
-                false
-            } else {
-                resolveArchiveEntryTarget(canonicalTargetDirectory, entry.relativePath).exists()
-            }
+            !entry.isDirectory && resolveArchiveEntryTarget(canonicalTargetDirectory, entry.relativePath).exists()
         }
     }
 
@@ -1652,13 +1640,9 @@ class ShareReceiveManager(
     }
 
     private fun looksLikeTextOrQrImage(displayName: String?, mimeType: String?): Boolean {
-        if (mimeType?.startsWith("image/") == true ||
-            mimeType?.startsWith("text/") == true ||
-            mimeType == "application/json"
-        ) {
-            return true
-        }
-        return displayName?.substringAfterLast('.', "")?.lowercase() in setOf(
+        return mimeType?.startsWith("image/") == true ||
+                mimeType?.startsWith("text/") == true ||
+                mimeType == "application/json" || displayName?.substringAfterLast('.', "")?.lowercase() in setOf(
             "json",
             "txt",
             "png",

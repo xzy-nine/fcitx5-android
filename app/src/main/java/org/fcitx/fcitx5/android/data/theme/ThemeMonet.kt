@@ -19,8 +19,7 @@ import org.fcitx.fcitx5.android.utils.appContext
 
 object ThemeMonet {
     fun supportsCustomMappingEditor(context: Context = appContext): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
-        return SystemColorResourceId.getAvailableForSdk(Build.VERSION.SDK_INT).any { resourceId ->
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && SystemColorResourceId.getAvailableForSdk(Build.VERSION.SDK_INT).any { resourceId ->
             context.resources.getIdentifier(resourceId.resourceId, "color", "android") != 0
         }
     }
@@ -112,7 +111,7 @@ object ThemeMonet {
         isDark: Boolean,
         mapping: MonetThemeMapping,
         waterRippleResource: SystemColorResourceId? = null,
-        context: android.content.Context = appContext
+        context: Context = appContext
     ): Theme.Monet {
         fun getColor(resourceId: SystemColorResourceId): Int {
             return try {

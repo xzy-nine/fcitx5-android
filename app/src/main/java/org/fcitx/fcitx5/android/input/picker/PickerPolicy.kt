@@ -59,7 +59,7 @@ class EmojiPickerPolicy : PickerPolicy {
     private val prefs get() = Prefs(hideUnsupportedEmojis, defaultSkinTone)
 
     override fun filter(raw: String): Boolean {
-        return if (hideUnsupportedEmojis) EmojiModifier.isValidEmoji(raw) else true
+        return !hideUnsupportedEmojis || EmojiModifier.isValidEmoji(raw)
     }
 
     override fun transform(raw: String): String {

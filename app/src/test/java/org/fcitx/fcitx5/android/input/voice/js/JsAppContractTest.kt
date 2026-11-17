@@ -98,7 +98,7 @@ class JsAppContractTest {
             assertEquals(listOf("getSelection" to ""), editor)
             invoke("send")
             assertEquals("https://my-new-relay.example/v1/chat/completions", request!!.text("url"))
-            assertEquals("customKey", request!!.text("credential"))
+            assertEquals("customKey", request.text("credential"))
             assertEquals("setComposition" to "Hello", editor.last())
             assertFalse(editor.any { it.first == "commit" })
             assertTrue(invoke("confirm")["close"]!!.jsonPrimitive.boolean)

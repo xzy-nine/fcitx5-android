@@ -161,8 +161,7 @@ object XiaomiHandwritingEngine {
     private fun applyWhitelistBypass(): Boolean {
         val wl = whitelistResultField
         val ar = authResultField
-        if (wl == null && ar == null) return false
-        return runCatching {
+        return !(wl == null && ar == null) && runCatching {
             // 两个 static 标志都置 true：getInstance()==null 时读 whitelistResult（我们的常态），
             // 万一将来有组件初始化了 XMS，getAuthResult() 会改读 authResult
             wl?.setBoolean(null, true)
@@ -181,8 +180,7 @@ object XiaomiHandwritingEngine {
      */
     fun isAvailable(context: Context): Boolean {
         ensureResolved()
-        if (!available) return false
-        return runCatching {
+        return available && runCatching {
             Settings.Secure.getInt(context.contentResolver, SETTING_NATIVE_HANDWRITING, 0) == 1
         }.getOrDefault(false)
     }

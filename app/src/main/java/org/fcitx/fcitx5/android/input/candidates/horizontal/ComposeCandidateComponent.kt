@@ -253,7 +253,7 @@ class ComposeCandidateComponent :
     private fun visibleCapacity(): Int = visibleCount
 
     /** 当前已加载的候选列表快照，供展开面板复用同一份数据。 */
-    fun candidateSnapshot(): List<org.fcitx.fcitx5.android.core.CandidateWord> =
+    fun candidateSnapshot(): List<CandidateWord> =
         (_state.value as? CandidateBarState.Active)?.candidates?.toList().orEmpty()
 
     /**

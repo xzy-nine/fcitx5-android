@@ -132,8 +132,8 @@ class WanxiangSettingsUiTest {
                 var preview: TextView? = null
                 onMain {
                     preview = texts(activity).first { it.text.toString() == "3" }
-                    assertFalse(preview!!.isTextSelectable)
-                    preview!!.requestRectangleOnScreen(Rect(0, 0, preview!!.width, preview!!.height), true)
+                    assertFalse(preview.isTextSelectable)
+                    preview.requestRectangleOnScreen(Rect(0, 0, preview.width, preview.height), true)
                 }
                 instrumentation.waitForIdleSync()
                 tap(checkNotNull(preview))

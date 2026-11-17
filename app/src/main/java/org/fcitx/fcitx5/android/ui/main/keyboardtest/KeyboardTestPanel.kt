@@ -41,8 +41,8 @@ internal class KeyboardTestPanel(context: Context, close: () -> Unit) : LinearLa
         id = R.id.keyboard_test_input
         isSaveEnabled = false
         isSaveFromParentEnabled = false
-        setFreezesText(false)
-        setSingleLine(true)
+        freezesText = false
+        isSingleLine = true
         minHeight = dp(56)
         textSize = 16f
         if (Build.VERSION.SDK_INT >= 26) importantForAutofill = IMPORTANT_FOR_AUTOFILL_NO
@@ -56,7 +56,7 @@ internal class KeyboardTestPanel(context: Context, close: () -> Unit) : LinearLa
     val tabs = KeyboardTestTypeGroup(context)
     private val choices = Kind.entries.associateWith { item ->
         EditorUi.button(context, item.label, tonal = true) {}.apply {
-            id = View.generateViewId()
+            id = generateViewId()
             tag = item
             isCheckable = true
             minWidth = 0
@@ -87,7 +87,8 @@ internal class KeyboardTestPanel(context: Context, close: () -> Unit) : LinearLa
             // Android 10 has no public per-view opt-out. Disable the host Activity's
             // capture session before attaching the editor, and keep it disabled for
             // that Activity's lifetime instead of re-enabling it when this panel closes.
-            context.getSystemService(ContentCaptureManager::class.java)?.setContentCaptureEnabled(false)
+            context.getSystemService(ContentCaptureManager::class.java)?.isContentCaptureEnabled =
+                false
         }
         if (Build.VERSION.SDK_INT >= 26) importantForAutofill = IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
         if (Build.VERSION.SDK_INT >= 30) importantForContentCapture = IMPORTANT_FOR_CONTENT_CAPTURE_NO_EXCLUDE_DESCENDANTS
@@ -148,12 +149,12 @@ internal class KeyboardTestPanel(context: Context, close: () -> Unit) : LinearLa
 /** Four equal cells, or an equal 2-by-2 grid when scaled labels cannot fit in one row. */
 internal class KeyboardTestTypeGroup(context: Context) : ViewGroup(context) {
     private val gap = (4 * resources.displayMetrics.density).toInt()
-    private var selectedId = View.NO_ID
+    private var selectedId = NO_ID
     private var columns = 4
     private var cellWidth = 0
     private var cellHeight = 0
     private var items = emptyList<MaterialButton>()
-    val checkedButtonIds: List<Int> get() = if (selectedId == View.NO_ID) emptyList() else listOf(selectedId)
+    val checkedButtonIds: List<Int> get() = if (selectedId == NO_ID) emptyList() else listOf(selectedId)
     var onSelectionChanged: (Int) -> Unit = {}
 
     override fun onViewAdded(child: View) {
@@ -195,7 +196,7 @@ internal class KeyboardTestTypeGroup(context: Context) : ViewGroup(context) {
         val spare = (width - paddingLeft - paddingRight - usedWidth).coerceAtLeast(0) / 2
         items.forEachIndexed { index, item ->
             val offset = (index % columns) * (cellWidth + gap)
-            val x = if (layoutDirection == View.LAYOUT_DIRECTION_RTL) width - paddingRight - spare - offset - cellWidth
+            val x = if (layoutDirection == LAYOUT_DIRECTION_RTL) width - paddingRight - spare - offset - cellWidth
                 else paddingLeft + spare + offset
             val y = paddingTop + (index / columns) * (cellHeight + gap)
             item.layout(x, y, x + cellWidth, y + cellHeight)

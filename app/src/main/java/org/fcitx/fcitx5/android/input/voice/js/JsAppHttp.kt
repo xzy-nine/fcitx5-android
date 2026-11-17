@@ -53,7 +53,7 @@ internal class JsAppHttp(
                 override fun onResponse(call: Call, response: Response) {
                     val result = runCatching {
                         response.use {
-                            val source = it.body?.source()
+                            val source = it.body.source()
                             if (source != null) {
                                 source.request(JsVoiceRuntime.RESPONSE_BYTES.toLong() + 1)
                                 require(source.buffer.size <= JsVoiceRuntime.RESPONSE_BYTES) { "Response is too large" }

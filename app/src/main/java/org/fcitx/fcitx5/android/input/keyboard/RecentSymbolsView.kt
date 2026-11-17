@@ -73,7 +73,7 @@ class RecentSymbolsView(
         set(value) {
             field = value
             adapter.submit(value)
-            emptyHint.visibility = if (value.isEmpty()) View.VISIBLE else View.GONE
+            emptyHint.visibility = if (value.isEmpty()) VISIBLE else GONE
         }
 
     /** 点按某符号子按钮的回调。 */
@@ -121,7 +121,7 @@ class RecentSymbolsView(
             setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f)
             gravity = Gravity.CENTER
             setTextColor((theme.altKeyTextColor and 0x00FFFFFF) or (0x80 shl 24))
-            visibility = View.GONE
+            visibility = GONE
         }
 
         gridRecycler = RecyclerView(context).apply {
@@ -138,23 +138,23 @@ class RecentSymbolsView(
                 layoutSwitchButton,
                 LinearLayout.LayoutParams(
                     0, // 宽度在 refreshCellSize() 中设置
-                    ViewGroup.LayoutParams.MATCH_PARENT
+                    LayoutParams.MATCH_PARENT
                 )
             )
             // 右侧：网格 + 空态提示重叠
             val gridContainer = FrameLayout(context).apply {
                 addView(
                     gridRecycler,
-                    FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
+                    LayoutParams(
+                        LayoutParams.MATCH_PARENT,
+                        LayoutParams.MATCH_PARENT
                     )
                 )
                 addView(
                     emptyHint,
-                    FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
+                    LayoutParams(
+                        LayoutParams.MATCH_PARENT,
+                        LayoutParams.MATCH_PARENT
                     )
                 )
             }
@@ -162,7 +162,7 @@ class RecentSymbolsView(
                 gridContainer,
                 LinearLayout.LayoutParams(
                     0,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    LayoutParams.MATCH_PARENT,
                     1f
                 )
             )
@@ -195,7 +195,7 @@ class RecentSymbolsView(
         // 设置按钮固定宽度（与网格同宽），高度占满
         layoutSwitchButton.layoutParams = LinearLayout.LayoutParams(
             cellWidth,
-            ViewGroup.LayoutParams.MATCH_PARENT
+            LayoutParams.MATCH_PARENT
         )
         // IME 布局过程中 setLayoutParams 触发的 requestLayout 可能被吞掉，
         // 等布局稳定后再强制重测一次，确保按钮高度生效
@@ -236,7 +236,7 @@ class RecentSymbolsView(
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
             holder.key.layoutParams = RecyclerView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
+                LayoutParams.MATCH_PARENT,
                 cellHeight.coerceAtLeast(1)
             )
             holder.bind(data[position])

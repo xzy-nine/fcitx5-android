@@ -619,7 +619,7 @@ class ComposeKawaiiBarComponent :
         if (changed) notifyButtonUsabilityChanged()
     }
 
-    @RequiresApi(android.os.Build.VERSION_CODES.R)
+    @RequiresApi(Build.VERSION_CODES.R)
     fun handleInlineSuggestions(response: InlineSuggestionsResponse): Boolean {
         val suggestions = response.inlineSuggestions
         if (suggestions.isEmpty()) {

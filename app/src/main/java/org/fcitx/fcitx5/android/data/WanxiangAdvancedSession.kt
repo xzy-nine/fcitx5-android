@@ -119,7 +119,7 @@ internal class WanxiangAdvancedSession(val target: WanxiangTarget, val direct: B
         val patch = if (!writeSource) {
             val existing = yaml.member(result, "patch")
             require(existing == null || existing is MappingNode) { "当前补丁使用序列，不能安全合并为字段补丁" }
-            (existing as? MappingNode ?: yaml.mapping().also { yaml.put(result, "patch", it) })
+            (existing ?: yaml.mapping().also { yaml.put(result, "patch", it) })
         } else null
         pending.filter { it.file == file }.forEach { edit ->
             val node = if (edit.reset) null else yaml.parse(edit.value!!)

@@ -41,8 +41,7 @@ internal class DownloadPublisher(private val context: Context) {
 
     private fun matches(row: Row, files: DownloadFiles, asset: ReleaseAsset, state: DownloadCheckpoint): Boolean {
         // MediaStore may add a suffix when another file already has the desired name.
-        if (row.pending || (row.size > 0 && row.size != state.total) || state.actualSha256 == null) return false
-        return resolver.openInputStream(row.uri)?.use {
+        return !(row.pending || (row.size > 0 && row.size != state.total) || state.actualSha256 == null) && resolver.openInputStream(row.uri)?.use {
             DownloadFiles.digest(it, state.total!!) == state.actualSha256
         } == true
     }

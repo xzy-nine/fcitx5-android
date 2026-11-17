@@ -22,8 +22,7 @@ class InputDeviceManager(
     private var candidatesView: CandidatesView? = null
 
     private fun usePhysicalKeyboardHorizontalCandidateBar(isVirtual: Boolean): Boolean {
-        if (isVirtual) return false
-        return AppPrefs.getInstance().candidates.physicalKeyboardHorizontalCandidateBar.getValue()
+        return !isVirtual && AppPrefs.getInstance().candidates.physicalKeyboardHorizontalCandidateBar.getValue()
     }
 
     val isPhysicalCandidateBarMode: Boolean
@@ -145,11 +144,11 @@ class InputDeviceManager(
         isVirtualKeyboard = when (candidatesViewMode) {
             FloatingCandidatesMode.SystemDefault -> service.superEvaluateInputViewShown()
             FloatingCandidatesMode.Always ->
-                if (preferHorizontalCandidateBar) service.superEvaluateInputViewShown() else true
+                !preferHorizontalCandidateBar || service.superEvaluateInputViewShown()
             FloatingCandidatesMode.InputDevice ->
                 if (preferHorizontalCandidateBar) service.superEvaluateInputViewShown() else isVirtualKeyboard
             FloatingCandidatesMode.Disabled ->
-                if (preferHorizontalCandidateBar) service.superEvaluateInputViewShown() else true
+                !preferHorizontalCandidateBar || service.superEvaluateInputViewShown()
         }
 
         // Force update paging mode and keyboard bounds for "Always" mode

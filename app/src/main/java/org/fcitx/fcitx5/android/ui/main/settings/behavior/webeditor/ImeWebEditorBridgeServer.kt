@@ -432,7 +432,7 @@ object ImeWebEditorBridgeServer {
                 request.method == "GET" && path == "/api/v1/theme/prefs" -> {
                     val prefs = ThemeManager.prefs
                     val keyboardPrefs = AppPrefs.getInstance().keyboard
-                    val resources = org.fcitx.fcitx5.android.utils.appContext.resources
+                    val resources = appContext.resources
                     val metrics = resources.displayMetrics
                     val isLandscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
                     val keyboardHeightPercent = if (isLandscape) {
@@ -589,7 +589,7 @@ object ImeWebEditorBridgeServer {
                     val author = body["author"]?.jsonPrimitive?.contentOrNull ?: ""
                     val version = body["version"]?.jsonPrimitive?.intOrNull ?: 1
                     val thumbnailSvg = body["thumbnailSvg"]?.jsonPrimitive?.contentOrNull
-                    val iconsObj = body["icons"]?.jsonObject ?: kotlinx.serialization.json.JsonObject(emptyMap())
+                    val iconsObj = body["icons"]?.jsonObject ?: JsonObject(emptyMap())
                     // Save new binary files from base64 data URIs in the payload
                     val fileUploads = body["_uploads"]?.jsonObject
                     if (fileUploads != null) {
@@ -799,7 +799,7 @@ object ImeWebEditorBridgeServer {
         val req = Request.Builder().url(UPSTREAM_EDITOR_INDEX).build()
         httpClient.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) throw IllegalStateException("Failed to fetch web-editor index: ${resp.code}")
-            return resp.body?.string() ?: throw IllegalStateException("Empty web-editor index")
+            return resp.body.string() ?: throw IllegalStateException("Empty web-editor index")
         }
     }
 
@@ -821,7 +821,7 @@ object ImeWebEditorBridgeServer {
                 )
                 return
             }
-            val body = resp.body?.bytes() ?: ByteArray(0)
+            val body = resp.body.bytes() ?: ByteArray(0)
             val contentType = resp.header("Content-Type")
                 ?.takeIf { it.isNotBlank() }
                 ?: guessContentType(pathWithQuery)

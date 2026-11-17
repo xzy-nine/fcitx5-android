@@ -45,8 +45,7 @@ internal object LibimePinyinDict {
         val header = DataInputStream(BufferedInputStream(input))
         val magic = header.readInt()
         if (magic != MAGIC) throw IOException("不是 libime 拼音词库")
-        val version = header.readInt()
-        val body: InputStream = when (version) {
+        val body: InputStream = when (val version = header.readInt()) {
             1 -> header
             2 -> ZstdInputStream(header)
             else -> throw IOException("不支持的 libime 词库版本：$version")

@@ -34,7 +34,7 @@ internal object WanxiangUpdates {
     const val WORK = "wanxiang-update"
     private val commands get() = org.fcitx.fcitx5.android.data.RimeUpdateCoordinator.commands
     fun root(context: Context) = File(context.noBackupFilesDir, "wanxiang-updates")
-    fun directory(context: Context, id: UUID) = org.fcitx.fcitx5.android.data.WanxiangPayload.child(root(context).canonicalFile, id.toString())
+    fun directory(context: Context, id: UUID) = WanxiangPayload.child(root(context).canonicalFile, id.toString())
     fun observe(context: Context) = WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(WORK)
 
     suspend fun enqueue(context: Context, selection: WanxiangSelection, target: WanxiangTarget) = commands.withLock {

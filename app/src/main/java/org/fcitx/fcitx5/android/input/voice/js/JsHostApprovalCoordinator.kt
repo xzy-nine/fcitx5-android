@@ -65,8 +65,7 @@ internal class JsHostApprovalCoordinator(private val scope: CoroutineScope) {
     ) {
         try {
             val approved = promptLock.withLock {
-                if (isApproved()) true
-                else prompt().also { accepted -> if (accepted) persist() }
+                isApproved() || prompt().also { accepted -> if (accepted) persist() }
             }
             request.result.complete(approved)
         } catch (error: CancellationException) {

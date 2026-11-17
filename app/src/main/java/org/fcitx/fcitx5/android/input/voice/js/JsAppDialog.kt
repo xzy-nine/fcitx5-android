@@ -378,7 +378,7 @@ internal class JsAppDialog(
                         val multiline = (obj["multiline"] as? JsonPrimitive)?.booleanOrNull == true
                         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
                             if (multiline) InputType.TYPE_TEXT_FLAG_MULTI_LINE else 0
-                        setSingleLine(!multiline)
+                        isSingleLine = !multiline
                         gravity = if (multiline) Gravity.TOP or Gravity.START else Gravity.CENTER_VERTICAL
                         showSoftInputOnFocus = false
                         filters = arrayOf(InputFilter.LengthFilter(inputLimit))
@@ -419,17 +419,17 @@ internal class JsAppDialog(
                         threshold = 0
                         inputType = InputType.TYPE_NULL
                         background = null
-                        setSingleLine(true)
+                        isSingleLine = true
                         ellipsize = TextUtils.TruncateAt.END
                         isCursorVisible = false
                         showSoftInputOnFocus = false
-                        setAdapter(object : ArrayAdapter<String>(uiContext, R.layout.js_app_dropdown_item, android.R.id.text1,
+                        adapter = object : ArrayAdapter<String>(uiContext, R.layout.js_app_dropdown_item, android.R.id.text1,
                             options.map { it.first }) {
                             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
                                 super.getView(position, convertView, parent).apply {
                                     findViewById<TextView>(android.R.id.text1).setTextColor(textColor)
                                 }
-                        })
+                        }
                         setText(selected?.first.orEmpty(), false)
                         setOnClickListener { if (isEnabled) showDropDown() }
                         setOnItemClickListener { _, _, position, _ ->
@@ -745,10 +745,10 @@ private class BoundedScrollView(context: Context) : ScrollView(context) {
     var maximumHeight = Int.MAX_VALUE
         set(value) { if (field != value) { field = value; requestLayout() } }
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val size = View.MeasureSpec.getSize(heightMeasureSpec)
-        val limit = if (View.MeasureSpec.getMode(heightMeasureSpec) == View.MeasureSpec.UNSPECIFIED)
+        val size = MeasureSpec.getSize(heightMeasureSpec)
+        val limit = if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED)
             maximumHeight else minOf(size, maximumHeight)
-        super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(limit, View.MeasureSpec.AT_MOST))
+        super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(limit, MeasureSpec.AT_MOST))
     }
 }
 
@@ -774,8 +774,9 @@ private class EditorPreservingSelect(context: Context, private val availableArea
         // Size the popup from those measured rows, not the system dropdown's fixed row height.
         for (position in 0 until adapter.count) {
             row = adapter.getView(position, row, rowParent)
-            row.measure(View.MeasureSpec.makeMeasureSpec(rowWidth, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            row.measure(
+                MeasureSpec.makeMeasureSpec(rowWidth, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
             desiredHeight = minOf(maxHeight, desiredHeight + row.measuredHeight)
             if (desiredHeight == maxHeight) break
         }

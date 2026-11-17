@@ -98,7 +98,7 @@ fun BroadcastScreen(onBack: () -> Unit) {
                 putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
             }
         }
-        clipboard.setPrimaryClip(clip)
+        clipboard.primaryClip = clip
         context.toast(R.string.pairing_code_copied)
     }
 

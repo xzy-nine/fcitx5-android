@@ -330,7 +330,7 @@ class DefaultFontProvider : FontProviderApi {
         val firstFamily = android.graphics.fonts.FontFamily.Builder(
             android.graphics.fonts.Font.Builder(File(validPaths[0])).build()
         ).build()
-        val builder = android.graphics.Typeface.CustomFallbackBuilder(firstFamily)
+        val builder = Typeface.CustomFallbackBuilder(firstFamily)
         for (i in 1 until validPaths.size) {
             val family = android.graphics.fonts.FontFamily.Builder(
                 android.graphics.fonts.Font.Builder(File(validPaths[i])).build()

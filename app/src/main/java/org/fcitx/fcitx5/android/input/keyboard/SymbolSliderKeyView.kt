@@ -83,8 +83,8 @@ class SymbolSliderKeyView(
             addView(
                 subList,
                 ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
+                    LayoutParams.MATCH_PARENT,
+                    LayoutParams.WRAP_CONTENT
                 )
             )
         }

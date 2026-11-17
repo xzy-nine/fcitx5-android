@@ -136,7 +136,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      * 笔画落在已有文字上 = 对文字本身的操作 = **手势**（涂改/圈选…）；
      * 笔画落在空白处 = **书写**。
      */
-    private var visibleLineBounds: List<android.graphics.RectF> = emptyList()
+    private var visibleLineBounds: List<RectF> = emptyList()
 
     /** 手势判定状态（[GESTURE_UNDECIDED] / [GESTURE_GESTURE] / [GESTURE_WRITING]）。 */
     private var gestureState = GESTURE_UNDECIDED
@@ -145,7 +145,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     private var gestureDownCount = 0
 
     /** 手势路径（屏幕坐标）。 */
-    private val gesturePath = android.graphics.Path()
+    private val gesturePath = Path()
     private val gestureRegion = android.graphics.Region()
     private val gestureClip = android.graphics.Region()
     private val gestureClipRect = android.graphics.Rect()
@@ -291,7 +291,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             ensureModelLoaded()
             return false
         }
-        val window = runCatching { service.getStylusHandwritingWindow() }.getOrNull() ?: return false
+        val window = runCatching { service.stylusHandwritingWindow }.getOrNull() ?: return false
         sessionActive = true
         // 记录本次会话实际使用的识别后端（排查「系统引擎到底有没有被调用」只看这一行）
         Timber.i(
@@ -318,9 +318,9 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
             // 短会话超时（空写 500ms 即结束会话）：写完一个字后系统释放会话，
             // 下一次落笔重新走 canStartStylusHandwriting → 本方法；书写状态跨会话保留。
             runCatching {
-                service.setStylusHandwritingSessionTimeout(java.time.Duration.ofMillis(
+                service.stylusHandwritingSessionTimeout = java.time.Duration.ofMillis(
                     SESSION_IDLE_TIMEOUT_MS
-                ))
+                )
             }
         }
         return true
@@ -436,7 +436,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     fun onConfigurationChanged() {
         toolboxWindow.onConfigurationChanged()
         // 旋转后窗口尺寸重算：墨迹窗口须仍与屏幕等大
-        runCatching { service.getStylusHandwritingWindow() }.getOrNull()?.let {
+        runCatching { service.stylusHandwritingWindow }.getOrNull()?.let {
             forceInkWindowFullscreen(it)
         }
     }
@@ -505,7 +505,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      * **必须在主线程调用**；`preContext` 走输入连接（跨进程），故只应在**会话结束**时取一次，
      * 预览路径请用 [gestureWritingArea]（纯本地几何，无 IPC）。
      */
-    private fun gestureRecognitionContext(): Pair<android.graphics.RectF?, String?> {
+    private fun gestureRecognitionContext(): Pair<RectF?, String?> {
         val pre = runCatching {
             val ic = service.currentInputConnection ?: return@runCatching null
             ic.getTextBeforeCursor(GESTURE_PRE_CONTEXT_CHARS, 0)?.toString()?.takeIf { it.isNotEmpty() }
@@ -521,16 +521,16 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      * 返回的是矩形而非宽高：引擎要把墨迹换算成该矩形的局部坐标（`WritingArea` 只有宽高、
      * 没有原点，故模型的输入必须是相对区域左上角的坐标）。
      */
-    private fun gestureWritingArea(): android.graphics.RectF? = runCatching {
+    private fun gestureWritingArea(): RectF? = runCatching {
         handwritingBounds?.takeIf { it.width() > 0f && it.height() > 0f }?.let {
-            return@runCatching android.graphics.RectF(it)
+            return@runCatching RectF(it)
         }
         val loc = IntArray(2)
         inkView.getLocationOnScreen(loc)
         val w = inkView.width
         val h = inkView.height
         if (w > 0 && h > 0) {
-            android.graphics.RectF(
+            RectF(
                 loc[0].toFloat(), loc[1].toFloat(),
                 (loc[0] + w).toFloat(), (loc[1] + h).toFloat(),
             )
@@ -633,10 +633,10 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      *
      * 手写只应发生在系统提供的文本框内；为空时（应用未声明）退回「工具箱以外全部可写」。
      */
-    private var handwritingBounds: android.graphics.RectF? = null
+    private var handwritingBounds: RectF? = null
 
     /** 由 `onUpdateCursorAnchorInfo` 下发编辑框手写区域。 */
-    fun onEditorBounds(bounds: android.graphics.RectF?) {
+    fun onEditorBounds(bounds: RectF?) {
         handwritingBounds = bounds
     }
 
@@ -649,14 +649,13 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
      * 空表表示编辑器没有提供（或 API < 34）：此时按「允许手势」处理
      * （见 [gesturePathIntersectsVisibleLines]）。
      */
-    fun onVisibleLineBounds(bounds: List<android.graphics.RectF>) {
+    fun onVisibleLineBounds(bounds: List<RectF>) {
         visibleLineBounds = bounds
     }
 
     /** 手势路径是否与任一可见文本行相交。 */
     private fun gesturePathIntersectsVisibleLines(): Boolean {
-        if (visibleLineBounds.isEmpty()) return true
-        return visibleLineBounds.any { rect ->
+        return visibleLineBounds.isEmpty() || visibleLineBounds.any { rect ->
             gestureClipRect.set(
                 rect.left.toInt(), rect.top.toInt(), rect.right.toInt(), rect.bottom.toInt(),
             )
@@ -704,11 +703,11 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun describeGesture(g: HandwritingGesture): String = runCatching {
         when (g) {
-            is android.view.inputmethod.SelectGesture -> g.selectionArea
-            is android.view.inputmethod.DeleteGesture -> g.deletionArea
-            is android.view.inputmethod.InsertGesture -> g.insertionPoint
-            is android.view.inputmethod.InsertModeGesture -> g.insertionPoint
-            is android.view.inputmethod.JoinOrSplitGesture -> g.joinOrSplitPoint
+            is SelectGesture -> g.selectionArea
+            is DeleteGesture -> g.deletionArea
+            is InsertGesture -> g.insertionPoint
+            is InsertModeGesture -> g.insertionPoint
+            is JoinOrSplitGesture -> g.joinOrSplitPoint
             else -> null
         }?.toString() ?: "?"
     }.getOrDefault("?")
@@ -1292,7 +1291,7 @@ class StylusHandwritingController(private val service: FcitxInputMethodService) 
         runCatching { ic.performHandwritingGesture(gesture, executor, consumer) }
 
         // 插入模式是「长时手势」：进入后保持进行中，3 秒无操作则以 CancellationSignal 取消。
-        if (gesture is android.view.inputmethod.InsertModeGesture) {
+        if (gesture is InsertModeGesture) {
             scheduleInsertModeCancel(gesture.cancellationSignal)
         }
     }

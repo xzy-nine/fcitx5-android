@@ -169,7 +169,7 @@ object ModelDownloader {
                 target.delete()
                 call.execute().use { response ->
                     if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code}")
-                    val body = response.body ?: throw IllegalStateException("响应为空")
+                    val body = response.body
                     val total = body.contentLength()
                     body.byteStream().use { input ->
                         FileOutputStream(target).use { output ->

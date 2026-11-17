@@ -568,7 +568,7 @@ class JsVoiceBridgeContractTest {
         val apiKey = fields.first { it.key == "apiKey" }
         assertTrue("apiKey must be a secret", apiKey.isSecret)
         assertEquals("authMode", apiKey.visibleWhen!!.getValue("key").jsonPrimitive.content)
-        assertEquals("apiKey", apiKey.visibleWhen!!.getValue("value").jsonPrimitive.content)
+        assertEquals("apiKey", apiKey.visibleWhen.getValue("value").jsonPrimitive.content)
         val token = fields.first { it.key == "accessToken" }
         assertTrue(token.isSecret)
         assertEquals("legacy", token.visibleWhen!!.getValue("value").jsonPrimitive.content)

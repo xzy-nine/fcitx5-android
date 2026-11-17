@@ -11,7 +11,7 @@ import androidx.recyclerview.widget.RecyclerView
 import org.fcitx.fcitx5.android.data.theme.Theme
 
 abstract class StatusAreaAdapter : RecyclerView.Adapter<StatusAreaAdapter.Holder>() {
-    inner class Holder(val ui: StatusAreaEntryUi) : RecyclerView.ViewHolder(ui.root)
+    class Holder(val ui: StatusAreaEntryUi) : RecyclerView.ViewHolder(ui.root)
 
     var entries: Array<StatusAreaEntry> = arrayOf()
         @SuppressLint("NotifyDataSetChanged")

@@ -235,7 +235,7 @@ abstract class BaseDynamicListUi<T>(
     ) {
         if (mode !is Mode.FreeAdd) return
         val editText = TextInputEditText(ctx).apply {
-            id = android.view.View.generateViewId()
+            id = View.generateViewId()
             hint = mode.hint
             if (entry != null) {
                 setText(showEntry(entry))

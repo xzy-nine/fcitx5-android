@@ -201,7 +201,7 @@ sealed class ConfigDescriptor<T, U> : Parcelable {
     }
 
     companion object :
-        ConfigParser<RawConfig, ConfigDescriptor<*, *>, Companion.ParseException> {
+        ConfigParser<RawConfig, ConfigDescriptor<*, *>, ParseException> {
 
         private val RawConfig.type: Either<ConfigType.Companion.UnknownConfigTypeException, ConfigType<*>>?
             get() {

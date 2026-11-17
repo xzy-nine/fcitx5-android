@@ -219,8 +219,7 @@ internal class JsVoiceInputProvider(
             val socket = (started.result as? JsonPrimitive)?.contentOrNull.orEmpty()
             if (handle(cb, started.actions)) return
             while (session.current) {
-                val cmd = session.queue.receive()
-                val finished = when (cmd) {
+                val finished = when (val cmd = session.queue.receive()) {
                     is JsVoiceCommand.Audio -> handle(cb, call(js, "audio", buildJsonObject {
                         settings.forEach { (key, value) -> put(key, value) }
                         put("pcm", Base64.encodeToString(cmd.pcm, Base64.NO_WRAP))
@@ -488,7 +487,7 @@ internal class JsVoiceNet(
                         val result = runCatching {
                             response.use {
                                 if (!it.isSuccessful) throw IOException("HTTP " + it.code)
-                                it.body?.byteStream()?.readBounded(JsVoiceRuntime.RESPONSE_BYTES)
+                                it.body.byteStream()?.readBounded(JsVoiceRuntime.RESPONSE_BYTES)
                                     ?.toString(Charsets.UTF_8).orEmpty()
                             }
                         }

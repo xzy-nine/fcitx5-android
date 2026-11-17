@@ -299,8 +299,7 @@ class VoiceInputComponent : UniqueComponent<VoiceInputComponent>(), Dependent,
 
     /** 当前引擎是否可用（本地模型已下载 / 在线平台已配置）且已获录音权限。 */
     fun canAutoStart(): Boolean {
-        if (!VoicePermissionState.has(context)) return false
-        return session().isEngineReady()
+        return VoicePermissionState.has(context) && session().isEngineReady()
     }
 
     /** 面板隐藏相关收尾（收起面板、输入框切换、IME 退出）。 */

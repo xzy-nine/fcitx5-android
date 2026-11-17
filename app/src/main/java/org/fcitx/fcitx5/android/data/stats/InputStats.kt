@@ -120,8 +120,7 @@ class InputStats internal constructor(private val context: Context, databaseName
     fun recordKey(schemaId: String, schemaName: String, keyId: String, isDeletion: Boolean = false,
         composing: Boolean = false, sensitive: Boolean = false, wallTimeMs: Long = System.currentTimeMillis(),
         monotonicTimeMs: Long = SystemClock.elapsedRealtime(), expectedEpoch: Long = recordingEpoch): Boolean {
-        if (!accepting || sensitive) return false
-        return recordKeys(listOf(StatsKeySample(schemaId, schemaName, keyId, isDeletion, composing, wallTimeMs, monotonicTimeMs)), expectedEpoch, sensitive)
+        return !(!accepting || sensitive) && recordKeys(listOf(StatsKeySample(schemaId, schemaName, keyId, isDeletion, composing, wallTimeMs, monotonicTimeMs)), expectedEpoch, sensitive)
     }
 
     fun recordKeys(entries: List<StatsKeySample>, expectedEpoch: Long = recordingEpoch, sensitive: Boolean = false): Boolean =

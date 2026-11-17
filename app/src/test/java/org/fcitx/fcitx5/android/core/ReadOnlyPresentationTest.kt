@@ -122,7 +122,7 @@ internal class PresentationNativeShadow : NativeTestDelegate {
     }
     override fun options(): Array<String> = emptyArray()
     override fun key(value: Long, sym: Int, mask: Int, release: Boolean): Snapshot = snapshot(true)
-    override fun rawInput(value: Long, previous: Long): RawInputState? {
+    override fun rawInput(value: Long, previous: Long): RawInputState {
         check(value == generation && previous == revision)
         rawReads++
         return RawInputState("nihao", rawCaret)

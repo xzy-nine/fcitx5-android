@@ -45,7 +45,7 @@ class ClipboardUrlHistoryTest {
         try {
             ClipboardManager.transformer = null
             val plain = "https://example.test/?id=$marker&value=a%26b"
-            appContext.clipboardManager.setPrimaryClip(ClipData.newPlainText("fixture", "$plain&utm_source=pc"))
+            appContext.clipboardManager.primaryClip = ClipData.newPlainText("fixture", "$plain&utm_source=pc")
             ClipboardManager.onPrimaryClipChanged()
             finishWork()
             assertEquals(plain, search(marker).single().text)
@@ -60,7 +60,7 @@ class ClipboardUrlHistoryTest {
             // Robolectric's clock is fixed; give independent copies distinct platform
             // timestamps so the production duplicate-notification guard can distinguish them.
             ShadowSystemClock.advanceBy(Duration.ofMillis(1))
-            appContext.clipboardManager.setPrimaryClip(ClipData.newPlainText("fixture", "$second&utm_source=pc"))
+            appContext.clipboardManager.primaryClip = ClipData.newPlainText("fixture", "$second&utm_source=pc")
             ClipboardManager.onPrimaryClipChanged()
             finishWork()
             assertEquals(second, observed.get())

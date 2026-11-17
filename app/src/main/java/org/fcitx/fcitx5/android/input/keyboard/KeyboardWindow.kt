@@ -155,7 +155,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(KeyboardWin
         )
         val density = LocalDensity.current
         var editingSymbols by androidx.compose.runtime.remember {
-            androidx.compose.runtime.mutableStateOf(false)
+            mutableStateOf(false)
         }
 
         BoxWithConstraints(
@@ -286,7 +286,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(KeyboardWin
         textKeyboardState.onReturnDrawableUpdate(returnKeyDrawable.resourceId)
         textKeyboardState.refreshLangSwitchKeyVisibility()
         textKeyboardState.refreshSpaceVoiceIcon()
-        fcitx.peek { inputMethodEntryCached }?.let {
+        fcitx.peek { inputMethodEntryCached }.let {
             textKeyboardState.onInputMethodUpdate(it)
         }
         // 符号滑块编辑结果回调（View: NumberKeyboard.onAttach）

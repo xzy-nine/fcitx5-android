@@ -22,7 +22,6 @@ class InputEngineApiTest {
         val api = InputEngineApi(engine { method, args ->
             check(method.name == "statusHintPresented")
             calls += (args[0] as Long) to (args[1] as Long)
-            Unit
         })
         api.statusHintPresented(17, 1234)
         assertEquals(listOf(17L to 1234L), calls)

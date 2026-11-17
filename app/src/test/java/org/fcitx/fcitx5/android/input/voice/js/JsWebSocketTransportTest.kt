@@ -117,7 +117,7 @@ class JsWebSocketTransportTest {
             assertEquals(socket, text!!.socketId)
             assertEquals("hello", text.text)
 
-            serverSocket!!.send("abc".encodeUtf8())
+            serverSocket.send("abc".encodeUtf8())
             val binary = received.poll(5, TimeUnit.SECONDS) as? WsInbound.Binary
             assertNotNull(binary)
             assertEquals(socket, binary!!.socketId)
@@ -134,7 +134,7 @@ class JsWebSocketTransportTest {
             sendAllowed = true
 
             // 服务端主动关闭：客户端应当收到 Closed，并把关闭码带给插件。
-            serverSocket!!.close(1000, null)
+            serverSocket.close(1000, null)
             val last = received.poll(5, TimeUnit.SECONDS)
             val closed = last as? WsInbound.Closed
             assertNotNull("got " + last, closed)

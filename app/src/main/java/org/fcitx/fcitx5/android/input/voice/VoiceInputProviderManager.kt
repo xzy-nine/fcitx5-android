@@ -294,15 +294,15 @@ object VoiceInputProviderManager {
     // in release, so user-reported issues remain debuggable via the file log.
     // R8 folds away the call in release builds where BuildConfig.DEBUG is false.
     private fun logI(msg: String) {
-        if (BuildConfig.DEBUG) android.util.Log.i(TAG, msg)
+        if (BuildConfig.DEBUG) Log.i(TAG, msg)
     }
 
     private fun logW(msg: String) {
-        if (BuildConfig.DEBUG) android.util.Log.w(TAG, msg)
+        if (BuildConfig.DEBUG) Log.w(TAG, msg)
     }
 
     private fun logW(msg: String, e: Throwable) {
-        if (BuildConfig.DEBUG) android.util.Log.w(TAG, msg, e)
+        if (BuildConfig.DEBUG) Log.w(TAG, msg, e)
     }
 
     // Timber.i is verbose tracing of normal flow; gate it like logI so release

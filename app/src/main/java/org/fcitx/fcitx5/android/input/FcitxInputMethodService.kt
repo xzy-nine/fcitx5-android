@@ -125,11 +125,11 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private var timedSelections = 0
     private enum class CommitRequestResult { NO_CONNECTION, REQUEST_ACCEPTED, REQUEST_REJECTED }
 
-    internal var jsAppInputConnection: android.view.inputmethod.InputConnection? = null
+    internal var jsAppInputConnection: InputConnection? = null
     internal var jsAppDismiss: (() -> Unit)? = null
     internal val applicationInputConnection get() = super.getCurrentInputConnection()
 
-    override fun getCurrentInputConnection(): android.view.inputmethod.InputConnection? =
+    override fun getCurrentInputConnection(): InputConnection? =
         jsAppInputConnection ?: super.getCurrentInputConnection()
 
     internal fun resetJsAppEditorState() {
@@ -238,8 +238,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     suspend fun commitClipboardEntry(text: String): Boolean {
         val connection = currentInputConnection ?: return false
         val token = editorSession.capture() ?: return false
-        if (!token.isCurrent() || currentInputConnection !== connection) return false
-        return dispatchCommitText(text, -1) == CommitRequestResult.REQUEST_ACCEPTED
+        return !(!token.isCurrent() || currentInputConnection !== connection) && dispatchCommitText(text, -1) == CommitRequestResult.REQUEST_ACCEPTED
     }
 
     fun startClipboardSearch(category: ClipboardCategory? = null) {
@@ -636,7 +635,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         return try {
             val editor = currentInputEditorInfo
             if (editor == null ||
-                editor.inputType and android.text.InputType.TYPE_MASK_CLASS == android.text.InputType.TYPE_NULL ||
+                editor.inputType and InputType.TYPE_MASK_CLASS == InputType.TYPE_NULL ||
                 org.fcitx.fcitx5.android.FcitxApplication.getInstance().isDirectBootMode ||
                 capabilityFlags.flags and (CapabilityFlag.PasswordOrSensitive.flag or CapabilityFlag.Disable.flag) != 0UL ||
                 jsAppInputConnection != null
@@ -1170,7 +1169,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         InputFeedbacks.syncSystemPrefs()
     }
 
-    override fun onCreateInputView(): View? {
+    override fun onCreateInputView(): View {
         ColdStartTrace.begin()
         navbarMgr.evaluate(window.window!!, inputDeviceMgr.isVirtualKeyboard)
         // `themeState` is lazily initialized, so it may still hold a theme from before the very
@@ -1807,8 +1806,7 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
 
     @RequiresApi(Build.VERSION_CODES.R)
     override fun onInlineSuggestionsResponse(response: InlineSuggestionsResponse): Boolean {
-        if (!inlineSuggestions || !inputDeviceMgr.isVirtualKeyboard) return false
-        return inputView.value?.handleInlineSuggestions(response) == true
+        return !(!inlineSuggestions || !inputDeviceMgr.isVirtualKeyboard) && inputView.value?.handleInlineSuggestions(response) == true
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {

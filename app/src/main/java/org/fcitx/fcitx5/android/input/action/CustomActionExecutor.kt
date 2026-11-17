@@ -132,7 +132,7 @@ fun executeMacroSteps(steps: List<MacroStep>, service: FcitxInputMethodService, 
                     if (route != null && context != null) {
                         AppUtil.launchMainToRoute(context, route)
                     } else if (step.id == "split_keyboard_calibration" && context != null) {
-                        org.fcitx.fcitx5.android.utils.AppUtil.launchMainToComposeRoute(context, "SplitKeyboardCalibration")
+                        AppUtil.launchMainToComposeRoute(context, "SplitKeyboardCalibration")
                     } else if (step.id == "web_editor_bridge" && context != null) {
                         try {
                             val session = ImeWebEditorBridgeServer.start()

@@ -180,7 +180,7 @@ object BroadcastSecurityManager : org.fcitx.fcitx5.android.data.clipboard.Clipbo
         return dao.findByPackageName(packageName) != null
     }
 
-    fun getSharedKeyForPackage(packageName: String): String? {
+    fun getSharedKeyForPackage(packageName: String): String {
         return getOrCreateBroadcastKeyBase64()
     }
 

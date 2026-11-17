@@ -136,13 +136,13 @@ class CandidateOverflowTest {
         return viewport to (viewport.getChildAt(0) as AutoScaleTextView)
     }
 
-    private fun dragRight(root: android.view.View, distance: Float) {
+    private fun dragRight(root: View, distance: Float) {
         dispatch(root, MotionEvent.ACTION_DOWN, 40f, 40f, 0)
         dispatch(root, MotionEvent.ACTION_MOVE, 40f + distance, 40f, 16)
         dispatch(root, MotionEvent.ACTION_UP, 40f + distance, 40f, 32)
     }
 
-    private fun dispatch(root: android.view.View, action: Int, x: Float, y: Float, time: Long) {
+    private fun dispatch(root: View, action: Int, x: Float, y: Float, time: Long) {
         val event = MotionEvent.obtain(0, time, action, x, y, 0)
         try {
             root.dispatchTouchEvent(event)

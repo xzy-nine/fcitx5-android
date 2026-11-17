@@ -784,7 +784,7 @@ object LayoutJsonUtils {
      * 将 Fcitx keysym 转换为人类可读的规范按键名（如 65458 → "KP_2"）。
      * 未知的 keysym 原样返回整数，保证 round-trip 兼容。
      */
-    fun keysymToName(sym: Int): Any? = SYM_CODE_TO_NAME[sym] ?: sym
+    fun keysymToName(sym: Int): Any = SYM_CODE_TO_NAME[sym] ?: sym
 
     private val SYM_CODE_TO_NAME: Map<Int, String> = buildMap {
         for (i in 0..9) {

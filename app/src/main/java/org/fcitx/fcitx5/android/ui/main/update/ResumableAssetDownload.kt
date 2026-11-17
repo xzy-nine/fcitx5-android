@@ -99,7 +99,7 @@ internal object ResumableAssetDownload {
                                 }
                                 if (reply.header("Content-Encoding")?.let { !it.equals("identity", true) } == true)
                                     throw InvalidAssetDownload("Unexpected content encoding")
-                                val body = reply.body ?: throw IOException("Empty download response")
+                                val body = reply.body
                                 val rawEtag = reply.header("ETag")
                                 val etag = strongEtag(rawEtag)
                                 val start: Long

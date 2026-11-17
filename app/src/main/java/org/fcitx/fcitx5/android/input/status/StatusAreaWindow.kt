@@ -62,7 +62,7 @@ class StatusAreaWindow : InputWindow.ExtendedInputWindow<StatusAreaWindow>(Statu
     private val service: FcitxInputMethodService by manager.inputMethodService()
     private val fcitx: FcitxConnection by manager.fcitx()
     private val windowManager: InputWindowManager by manager.must()
-    private val bar: org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent by manager.must()
+    private val bar: ComposeKawaiiBarComponent by manager.must()
     private val toolbarEdit: ToolbarEditComponent by manager.must()
 
     private val prefs = AppPrefs.getInstance()

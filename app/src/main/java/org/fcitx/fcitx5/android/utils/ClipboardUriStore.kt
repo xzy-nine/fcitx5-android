@@ -205,8 +205,7 @@ object ClipboardUriStore {
     fun isClipboardSourceWithinRoot(context: Context, raw: String, root: String): Boolean {
         val uri = raw.toClipboardUriOrNull() ?: return false
         val rootUri = root.toClipboardUriOrNull() ?: return false
-        if (!uri.scheme.equals(rootUri.scheme, ignoreCase = true)) return false
-        return when (uri.scheme?.lowercase(Locale.ROOT)) {
+        return uri.scheme.equals(rootUri.scheme, ignoreCase = true) && when (uri.scheme?.lowercase(Locale.ROOT)) {
             ContentResolver.SCHEME_CONTENT -> isContentUriWithinRoot(context, uri, rootUri)
             ContentResolver.SCHEME_FILE -> isFileUriWithinRoot(uri, rootUri)
             else -> false

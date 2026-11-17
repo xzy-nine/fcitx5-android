@@ -102,7 +102,7 @@ class LayoutEditorResultTest {
                 val main = fields.firstOrNull { it.text.toString() == originalText }
                 assertNotNull("Expected $originalText; fields=${fields.map { it.text.toString() }}", main)
                 main!!.setText(if (aux) "y" else "b")
-                call(child!!, "save") // Production child save echoes its original request token.
+                call(child, "save") // Production child save echoes its original request token.
             }
             await("Parent did not receive the child result") {
                 first in ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED) &&
@@ -165,7 +165,7 @@ class LayoutEditorResultTest {
                     parent !== beforeSecondRestore && field(parent!!, "stateLoaded") == true
                 }
                 onMain {
-                    val restored = parent!!
+                    val restored = parent
                     val manager = field(restored, "dataManager") as LayoutDataManager
                     assertEquals(profile, field(restored, "currentLayoutProfile"))
                     assertEquals("rime", field(restored, "currentLayout"))

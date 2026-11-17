@@ -84,8 +84,8 @@ class ClipboardUi(override val ctx: Context, private val theme: Theme, private v
         isSingleLine = false
         isSingleSelection = true
         isSelectionRequired = true
-        setChipSpacingHorizontal(dp(4))
-        setChipSpacingVertical(dp(0))
+        chipSpacingHorizontal = dp(4)
+        chipSpacingVertical = dp(0)
         setPaddingDp(4, 4, 4, 4)
         clipChildren = true
         clipToPadding = true

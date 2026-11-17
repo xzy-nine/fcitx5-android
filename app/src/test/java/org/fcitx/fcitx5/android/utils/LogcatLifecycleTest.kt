@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class LogcatLifecycleTest {
-    private class ReaderProcess : java.lang.Process() {
+    private class ReaderProcess : Process() {
         val destroyed = AtomicBoolean()
         val reading = CountDownLatch(1)
         val exited = CountDownLatch(1)

@@ -92,8 +92,7 @@ internal class NumericLayoutOverrideController {
      * @return whether a manual override was present and cleared.
      */
     fun releaseManualOnLayerSwitch(target: String?): Boolean {
-        if (manualKey == target) return false
-        return releaseManual()
+        return manualKey != target && releaseManual()
     }
 
     /**

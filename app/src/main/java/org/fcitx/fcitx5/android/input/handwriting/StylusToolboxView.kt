@@ -523,14 +523,14 @@ private class ToolboxCardView @JvmOverloads constructor(
         row.removeAllViews()
         if (lastCandidates.isEmpty() || onPick == null) {
             engineLabel?.let { label ->
-                row.visibility = View.VISIBLE
+                row.visibility = VISIBLE
                 row.addView(engineLabelView(label))
                 return
             }
-            row.visibility = View.GONE
+            row.visibility = GONE
             return
         }
-        row.visibility = View.VISIBLE
+        row.visibility = VISIBLE
         val pad = (CANDIDATE_PADDING_DP * selfDensity).toInt()
         lastCandidates.forEachIndexed { index, text ->
             row.addView(
@@ -546,9 +546,9 @@ private class ToolboxCardView @JvmOverloads constructor(
                     minHeight = 0
                     minimumHeight = 0
                     setPadding(pad, 0, pad, 0)
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.MATCH_PARENT,
+                    layoutParams = LayoutParams(
+                        LayoutParams.WRAP_CONTENT,
+                        LayoutParams.MATCH_PARENT,
                     )
                     setOnClickListener { view ->
                         InputFeedbacks.hapticFeedback(view)
@@ -573,9 +573,9 @@ private class ToolboxCardView @JvmOverloads constructor(
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding((CANDIDATE_PADDING_DP * selfDensity).toInt(), 0, 0, 0)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.MATCH_PARENT,
+            layoutParams = LayoutParams(
+                LayoutParams.WRAP_CONTENT,
+                LayoutParams.MATCH_PARENT,
             )
         }
 
@@ -592,7 +592,7 @@ private class ToolboxCardView @JvmOverloads constructor(
     fun buildContent(onAction: (StylusToolboxAction) -> Unit) {
         actionListener = onAction
         orientation = VERTICAL
-        layoutDirection = View.LAYOUT_DIRECTION_LTR
+        layoutDirection = LAYOUT_DIRECTION_LTR
         setWillNotDraw(false)
         isClickable = false
 
@@ -601,7 +601,7 @@ private class ToolboxCardView @JvmOverloads constructor(
         addView(
             LinearLayout(context).apply {
                 orientation = HORIZONTAL
-                layoutDirection = View.LAYOUT_DIRECTION_LTR
+                layoutDirection = LAYOUT_DIRECTION_LTR
                 gravity = Gravity.CENTER
                 val rowH = (ROW_HEIGHT_DP * selfDensity).toInt()
                 addView(circleCell(StylusToolboxAction.Undo, R.drawable.ic_baseline_undo_24, onAction), cellParams(ROW_HEIGHT_DP, 1f))
@@ -617,7 +617,7 @@ private class ToolboxCardView @JvmOverloads constructor(
         addView(
             LinearLayout(context).apply {
                 orientation = HORIZONTAL
-                layoutDirection = View.LAYOUT_DIRECTION_LTR
+                layoutDirection = LAYOUT_DIRECTION_LTR
                 gravity = Gravity.CENTER
                 addView(
                     iconButton(StylusToolboxAction.Space, R.drawable.ic_baseline_space_bar_24, onAction),
@@ -639,9 +639,9 @@ private class ToolboxCardView @JvmOverloads constructor(
         // 候选行（候选挂在工具箱上而不在墨迹层：墨迹层随会话结束消失，工具箱跨会话常驻）
         candidateRow = LinearLayout(context).apply {
             orientation = HORIZONTAL
-            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            layoutDirection = LAYOUT_DIRECTION_LTR
             gravity = Gravity.CENTER_VERTICAL
-            visibility = View.GONE
+            visibility = GONE
         }
         addView(
             candidateRow,

@@ -69,7 +69,7 @@ abstract class DynamicListAdapter<T>(
         mainViewModel = model
     }
 
-    inner class ViewHolder(entryUi: DynamicListEntryUi) : RecyclerView.ViewHolder(entryUi.root) {
+    class ViewHolder(entryUi: DynamicListEntryUi) : RecyclerView.ViewHolder(entryUi.root) {
         val multiselectCheckBox = entryUi.multiselectCheckBox
         val handleImage = entryUi.handleImage
         val checkBox = entryUi.checkBox
@@ -86,12 +86,10 @@ abstract class DynamicListAdapter<T>(
         val item = entries[position]
         with(holder) {
             handleImage.setOnLongClickListener {
-                if (enableOrder && !multiselect && removable(item))
-                    itemTouchHelper
-                        ?.startDrag(this)
-                        ?.run { true }
-                        ?: false
-                else false
+                (enableOrder && !multiselect && removable(item) && itemTouchHelper
+                    ?.startDrag(this)
+                    ?.run { true }
+                        ?: false)
             }
             nameText.text = showEntry(item)
             val subEntry = showSubEntry(item)

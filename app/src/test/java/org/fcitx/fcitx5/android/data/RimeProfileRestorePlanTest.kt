@@ -142,7 +142,7 @@ class RimeProfileRestorePlanTest {
         val plan = RimeProfileRestorePlan(mapOf("one" to one, "two" to two))
         try {
             UserDataRestoreTransaction { from, to ->
-                if (from.name.startsWith(".two.import-")) false else from.renameTo(to)
+                !from.name.startsWith(".two.import-") && from.renameTo(to)
             }.use {
                 it.stage(app) { staged -> plan.copyApplicationData(extracted, staged) }
                 plan.stageExternalProfiles(extracted, it)

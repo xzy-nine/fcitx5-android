@@ -89,7 +89,7 @@ class UserDataRestoreTransactionTest {
         val two = root("two")
         try {
             UserDataRestoreTransaction { from, to ->
-                if (from.name.startsWith(".two.import-")) false else from.renameTo(to)
+                !from.name.startsWith(".two.import-") && from.renameTo(to)
             }.use { restore ->
                 restore.stage(one) { File(it, "data").writeText("new-one") }
                 restore.stage(two) { File(it, "data").writeText("new-two") }

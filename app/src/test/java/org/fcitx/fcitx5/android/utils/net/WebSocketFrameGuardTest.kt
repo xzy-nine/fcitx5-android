@@ -74,7 +74,7 @@ class WebSocketFrameGuardTest {
         assertTrue(guard.read(ByteArray(30000)) <= 8192)
     }
     @Test fun isolatedSmallHeapRejectsGigabyteDeclarationBeforeReadingItsPayload() {
-        val classes = listOf(WebSocketFrameGuard::class.java, WebSocketHeapProbe::class.java, kotlin.Unit::class.java,
+        val classes = listOf(WebSocketFrameGuard::class.java, WebSocketHeapProbe::class.java, Unit::class.java,
             okhttp3.OkHttpClient::class.java, okio.Buffer::class.java, okio.ByteString::class.java)
         val classpath = classes.map { File(it.protectionDomain.codeSource.location.toURI()).path }.distinct().joinToString(File.pathSeparator)
         val process = ProcessBuilder(File(System.getProperty("java.home"), "bin/java").path,

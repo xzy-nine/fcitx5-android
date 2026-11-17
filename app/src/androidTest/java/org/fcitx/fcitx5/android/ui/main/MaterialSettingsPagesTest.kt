@@ -111,11 +111,11 @@ class MaterialSettingsPagesTest {
         val activity = instrumentation.startActivitySync(intent)
         try {
             instrumentation.waitForIdleSync()
-            val deadline = android.os.SystemClock.uptimeMillis() + 8000
+            val deadline = SystemClock.uptimeMillis() + 8000
             var pageReady = false
-            while (!pageReady && android.os.SystemClock.uptimeMillis() < deadline) {
+            while (!pageReady && SystemClock.uptimeMillis() < deadline) {
                 onMain { pageReady = ready(activity) }
-                if (!pageReady) android.os.SystemClock.sleep(30)
+                if (!pageReady) SystemClock.sleep(30)
             }
             onMain {
                 assertFalse("${type.simpleName} unexpectedly closed", activity.isFinishing)
@@ -546,10 +546,10 @@ class MaterialSettingsPagesTest {
             }
             assertTrue(ownedStagingFile.isFile)
         }
-        val deadline = android.os.SystemClock.uptimeMillis() + 5000
-        while (ownedStagingFile.exists() && android.os.SystemClock.uptimeMillis() < deadline) {
+        val deadline = SystemClock.uptimeMillis() + 5000
+        while (ownedStagingFile.exists() && SystemClock.uptimeMillis() < deadline) {
             instrumentation.waitForIdleSync()
-            android.os.SystemClock.sleep(30)
+            SystemClock.sleep(30)
         }
         assertTrue("Engine manager did not reach onDestroy", manager.isDestroyed)
         assertFalse("Destroyed engine manager left its staged payload", ownedStagingFile.exists())
@@ -632,7 +632,7 @@ class MaterialSettingsPagesTest {
             instrumentation.waitForIdleSync()
             onMain {
                 assertEquals(1, spinner.selectedItemPosition)
-                val now = android.os.SystemClock.uptimeMillis()
+                val now = SystemClock.uptimeMillis()
                 for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
                     val event = MotionEvent.obtain(now, now, action, slider.width * 0.75f, slider.height * 0.5f, 0)
                     slider.dispatchTouchEvent(event)

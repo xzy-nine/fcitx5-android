@@ -112,12 +112,12 @@ private class KeyboardPreviewState(private val context: android.content.Context)
             ),
         )
         val heightPercent = if (context.resources.configuration.orientation ==
-            android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            Configuration.ORIENTATION_LANDSCAPE
         ) {
-            org.fcitx.fcitx5.android.data.prefs.AppPrefs.getInstance()
+            AppPrefs.getInstance()
                 .keyboard.keyboardHeightPercentLandscape.getValue()
         } else {
-            org.fcitx.fcitx5.android.data.prefs.AppPrefs.getInstance()
+            AppPrefs.getInstance()
                 .keyboard.keyboardHeightPercent.getValue()
         }
         val keyboardHeight = metrics.heightPixels * heightPercent / 100
@@ -146,14 +146,14 @@ private class KeyboardPreviewState(private val context: android.content.Context)
         kb.setHorizontalGapScale(gapPercent / 100f)
         kb.refreshStyle()
         val metrics = context.resources.displayMetrics
-        val keyboardPrefs = org.fcitx.fcitx5.android.data.prefs.AppPrefs.getInstance().keyboard
-        val keyboardWidthDp = org.fcitx.fcitx5.android.utils.DeviceInfoCollector.calculateKeyboardWidthDp(
+        val keyboardPrefs = AppPrefs.getInstance().keyboard
+        val keyboardWidthDp = DeviceInfoCollector.calculateKeyboardWidthDp(
             context,
             keyboardPrefs.keyboardSidePadding.getValue(),
             keyboardPrefs.keyboardSidePaddingLandscape.getValue(),
         )
         val heightPercent = if (context.resources.configuration.orientation ==
-            android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            Configuration.ORIENTATION_LANDSCAPE
         ) {
             keyboardPrefs.keyboardHeightPercentLandscape.getValue()
         } else {

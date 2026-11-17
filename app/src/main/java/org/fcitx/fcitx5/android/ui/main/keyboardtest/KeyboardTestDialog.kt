@@ -19,9 +19,9 @@ internal class KeyboardTestDialog(context: Context) : BottomSheetDialog(context)
         setContentView(object : ScrollView(context) {
             override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
                 val limit = (resources.displayMetrics.heightPixels * 0.6f).toInt()
-                val available = if (View.MeasureSpec.getMode(heightMeasureSpec) == View.MeasureSpec.UNSPECIFIED) limit
-                    else minOf(limit, View.MeasureSpec.getSize(heightMeasureSpec))
-                super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(available, View.MeasureSpec.AT_MOST))
+                val available = if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED) limit
+                    else minOf(limit, MeasureSpec.getSize(heightMeasureSpec))
+                super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(available, MeasureSpec.AT_MOST))
             }
         }.apply {
             isSaveEnabled = false

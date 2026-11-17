@@ -744,8 +744,7 @@ abstract class BaseKeyboard(
 
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         // intercept ACTION_DOWN and all following events will go to parent's onTouchEvent
-        return if (vivoKeypressWorkaround && ev.actionMasked == MotionEvent.ACTION_DOWN) true
-        else super.onInterceptTouchEvent(ev)
+        return vivoKeypressWorkaround && ev.actionMasked == MotionEvent.ACTION_DOWN || super.onInterceptTouchEvent(ev)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

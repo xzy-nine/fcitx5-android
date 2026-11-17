@@ -97,8 +97,7 @@ object DictCollector {
         // sync/<installation_id>/<db>.userdb.txt
         val segments = relativeUnderData.split('/')
         val syncIndex = segments.indexOf(RIME_SYNC_DIR)
-        if (syncIndex < 0 || syncIndex + 2 != segments.size - 1) return false
-        return name.endsWith(RIME_SNAPSHOT_SUFFIX)
+        return !(syncIndex < 0 || syncIndex + 2 != segments.size - 1) && name.endsWith(RIME_SNAPSHOT_SUFFIX)
     }
 
     /**

@@ -65,7 +65,7 @@ object UpdateRepository {
                     if (!response.isSuccessful) {
                         throw IOException("GitHub API request failed: ${response.code}")
                     }
-                    val body = response.body?.string()
+                    val body = response.body.string()
                         ?: throw IOException("GitHub API response body is empty")
                     val obj = json.parseToJsonElement(body).jsonArray.firstOrNull()?.jsonObject
                         ?: throw IOException("No release found")
@@ -133,7 +133,7 @@ object UpdateRepository {
             if (!response.isSuccessful) {
                 throw IOException("Hosts source request failed: ${response.code}")
             }
-            val body = response.body?.string()
+            val body = response.body.string()
                 ?: throw IOException("Hosts source response body is empty")
             val mapping = parseHostsMapping(body)
             UpdatePrefs.saveHostsConfig(
@@ -183,8 +183,7 @@ object UpdateRepository {
     /** True when [url] is a syntactically valid absolute http(s) URL. */
     fun isValidHttpUrl(url: String): Boolean {
         val trimmed = url.trim()
-        if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return false
-        return runCatching { URL(trimmed).host.isNotBlank() }.getOrDefault(false)
+        return !(!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) && runCatching { URL(trimmed).host.isNotBlank() }.getOrDefault(false)
     }
 
     fun applyMirror(rawUrl: String, mirror: MirrorRule?): String {
@@ -255,10 +254,7 @@ object UpdateRepository {
         val current = extractVersionNumbers(currentVersion)
         if (latest.isEmpty() || current.isEmpty()) {
             // Version numbers not comparable, fallback to timestamp
-            if (publishedAtMs != null && buildTimeMs != null) {
-                return publishedAtMs > buildTimeMs
-            }
-            return false
+            return publishedAtMs != null && buildTimeMs != null && publishedAtMs > buildTimeMs
         }
         val maxSize = maxOf(latest.size, current.size)
         for (i in 0 until maxSize) {

@@ -229,7 +229,7 @@ internal class WanxiangYaml {
             }
             fun split(prefix: String, value: Node?, original: Node?, tokens: List<String>) {
                 require(value == null || value is MappingNode) { "父字段不是映射，请编辑整个父字段" }
-                val map = value as? MappingNode ?: mapping()
+                val map = value ?: mapping()
                 val base = original as? MappingNode
                 require((map.value + base?.value.orEmpty()).none { key(it.keyNode).startsWith("__") || '/' in key(it.keyNode) }) {
                     "父字段包含编译指令或路径补丁，请编辑整个父字段"

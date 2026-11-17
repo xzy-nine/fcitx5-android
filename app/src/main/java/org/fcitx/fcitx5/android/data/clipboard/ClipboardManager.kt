@@ -504,7 +504,7 @@ object ClipboardManager : ClipboardManager.OnPrimaryClipChangedListener,
         async(Dispatchers.Main.immediate) {
             try {
                 updateText(id, text)
-                if (copy) clipboardManager.setPrimaryClip(ClipData.newPlainText("", text))
+                if (copy) clipboardManager.primaryClip = ClipData.newPlainText("", text)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

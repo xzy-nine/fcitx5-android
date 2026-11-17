@@ -66,7 +66,7 @@ internal object WanxiangGithub {
                 403, 429 -> "GitHub API 配额已耗尽或访问受限，请配置有效 Token 或稍后重试"
                 else -> "GitHub API HTTP ${response.code}"
             } }
-            JSONObject(bounded(response.body!!.byteStream(), 1024 * 1024)) to response.header("X-RateLimit-Remaining")
+            JSONObject(bounded(response.body.byteStream(), 1024 * 1024)) to response.header("X-RateLimit-Remaining")
         }
     }
     fun check(context: Context): String {

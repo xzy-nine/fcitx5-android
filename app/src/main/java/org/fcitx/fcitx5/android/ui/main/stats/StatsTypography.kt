@@ -49,7 +49,7 @@ internal object StatsTypography {
             includeFontPadding = false
             setHorizontallyScrolling(false)
             maxLines = 1
-            textDirection = View.TEXT_DIRECTION_LTR
+            textDirection = TEXT_DIRECTION_LTR
             ellipsize = null
             setTextColor(color ?: context.settingsColor(com.google.android.material.R.attr.colorOnSurface))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, role.sp)

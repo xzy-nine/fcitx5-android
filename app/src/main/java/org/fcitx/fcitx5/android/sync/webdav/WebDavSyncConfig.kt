@@ -141,7 +141,7 @@ data class WebDavSyncConfig(
             }
             val tmp = File(dir, "${configFile.name}.tmp")
             try {
-                tmp.writeText(json.encodeToString(WebDavSyncConfig.serializer(), this))
+                tmp.writeText(json.encodeToString(serializer(), this))
                 replaceAtomically(tmp, configFile)
             } finally {
                 // 替换失败时清理临时文件；成功时它已被移走

@@ -54,7 +54,7 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
- * Compose onboarding (replaces SetupFragment/ViewPager2). Follows the Notify-Relay guide pattern:
+ * Compose 引导页。
  * an enum of steps rendered in a non-swipeable HorizontalPager; each step shows an action button
  * until its condition is done, then a checkmark. State is refreshed on every ON_RESUME, on every
  * change to the underlying secure IME settings (a ContentObserver — the real completion signal that

@@ -17,7 +17,7 @@ fun hostDatabaseContext(context: Context): Context = if (File.separatorChar != '
         val file = getDatabasePath(name)
         file.parentFile?.mkdirs()
         val flags = SQLiteDatabase.CREATE_IF_NECESSARY or
-            (if (mode and Context.MODE_ENABLE_WRITE_AHEAD_LOGGING != 0) SQLiteDatabase.ENABLE_WRITE_AHEAD_LOGGING else 0)
+            (if (mode and MODE_ENABLE_WRITE_AHEAD_LOGGING != 0) SQLiteDatabase.ENABLE_WRITE_AHEAD_LOGGING else 0)
         return SQLiteDatabase.openDatabase(file.path, factory, flags, errorHandler)
     }
 }

@@ -353,8 +353,7 @@ object IconThemeManager {
     } catch (_: Exception) { false }
 
     fun shouldTintInlineSvg(value: String): Boolean {
-        if (!isInlineSvg(value)) return false
-        return isSvgMonochrome(value)
+        return isInlineSvg(value) && isSvgMonochrome(value)
     }
 
     private fun normalizeXmlContent(raw: String): String {
@@ -659,7 +658,7 @@ object IconThemeManager {
      * PNG resources are extracted to button_icons/<themeName>/.
      * @return the imported IconTheme
      */
-    fun importThemeFromZip(src: java.io.InputStream, importedName: String? = null): Result<IconTheme> =
+    fun importThemeFromZip(src: InputStream, importedName: String? = null): Result<IconTheme> =
         runCatching {
             // Read the archive once, with a cap. src.readBytes() was unbounded: the sharing path
             // limits the *compressed* size to 16MB but nothing limited what came out of it, and
@@ -735,7 +734,7 @@ object IconThemeManager {
     }
 
     private fun importThemeFromZipWithEncoding(
-        src: java.io.InputStream,
+        src: InputStream,
         encoding: String,
         importedName: String?
     ): IconTheme {

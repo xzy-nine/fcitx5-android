@@ -73,7 +73,7 @@ internal class DirectRimePublicationState(
         // The unchanged first page can still hide a changed lazy tail. Preserve invalidation for
         // handled operations and composition changes independently of visible candidate equality.
         val invalidateCandidates = newSession || value.handled || optionsChanged ||
-            previous?.preedit != value.preedit || previous?.cursorBytes != value.cursorBytes ||
+            previous?.preedit != value.preedit || previous.cursorBytes != value.cursorBytes ||
             candidateEvent != candidateEventCached
         if (invalidateCandidates) candidateVersion++
         val candidateContext = CandidateActionContext(value.generation, candidateVersion)

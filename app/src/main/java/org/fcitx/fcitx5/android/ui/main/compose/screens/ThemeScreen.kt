@@ -259,9 +259,9 @@ fun ThemeScreen(onBack: () -> Unit) {
                 when (page) {
                     0 -> {
                         val lightName =
-                            if (followSystem) ThemeManager.prefs.lightModeTheme.getValue()?.name else null
+                            if (followSystem) ThemeManager.prefs.lightModeTheme.getValue().name else null
                         val darkName =
-                            if (followSystem) ThemeManager.prefs.darkModeTheme.getValue()?.name else null
+                            if (followSystem) ThemeManager.prefs.darkModeTheme.getValue().name else null
                         LazyVerticalGrid(
                             columns = GridCells.Adaptive(144.dp),
                             contentPadding = PaddingValues(12.dp, 0.dp, 12.dp, 88.dp),

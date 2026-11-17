@@ -1094,7 +1094,7 @@ end
                 var attached = false
                 instrumentation.runOnMainSync {
                     attached = service?.currentInputEditorInfo?.fieldId == editor.id &&
-                        service?.editorSession?.capture()?.isCurrent() == true
+                        service.editorSession?.capture()?.isCurrent() == true
                 }
                 attached
             }
@@ -1233,7 +1233,7 @@ end
             delay(800)
             assertTrue("The current candidate menu must stay open", menuVisible())
             instrumentation.runOnMainSync {
-                assertTrue("Candidate actions must keep the editor window focused", activity!!.hasWindowFocus())
+                assertTrue("Candidate actions must keep the editor window focused", activity.hasWindowFocus())
                 assertTrue(editor.hasFocus())
                 val menu = WindowInspector.getGlobalWindowViews().asSequence().flatMap(::descendants)
                     .filterIsInstance<android.widget.TextView>().first { it.isShown && it.text.toString() == "忘记此词" }
@@ -1388,7 +1388,7 @@ end
                     suspend fun openMenu() {
                         instrumentation.runOnMainSync {
                             // Exact application-action entry used by MacroStep.AppAction.
-                            service.inputView!!.executeButtonAction("rime_schema_menu")
+                            service.inputView.executeButtonAction("rime_schema_menu")
                         }
                         await("Schema menu must stay available in password inputType=$type") { menuChoice() != null }
                         delay(800) // The reported focus/hide cycle occurs about 350 ms after show.
@@ -1400,7 +1400,7 @@ end
                         instrumentation.runOnMainSync {
                             assertEquals("Menu selection must use the engine schema, including password mode",
                                 secondSelected, choice!!.isChecked)
-                            val flags = (choice!!.rootView.layoutParams as WindowManager.LayoutParams).flags
+                            val flags = (choice.rootView.layoutParams as WindowManager.LayoutParams).flags
                             assertTrue("The shown menu must not take editor focus",
                                 flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0)
                             assertEquals("AlertDialog must not restore ALT_FOCUSABLE_IM while creating its content",
@@ -1564,7 +1564,7 @@ end
             fun key(text: String, root: View? = null): Rect? {
                 var result: Rect? = null
                 instrumentation.runOnMainSync {
-                    fun find(view: android.view.View): Rect? {
+                    fun find(view: View): Rect? {
                         if (!view.isShown) return null
                         if (view is org.fcitx.fcitx5.android.input.AutoScaleTextView) {
                             val label = view.text.toString().trim()
@@ -1577,12 +1577,12 @@ end
                                 }
                             }
                         }
-                        if (view is android.view.ViewGroup) for (i in 0 until view.childCount)
+                        if (view is ViewGroup) for (i in 0 until view.childCount)
                             find(view.getChildAt(i))?.let { return it }
                         return null
                     }
                     result = if (root != null) find(root) else
-                        android.view.inspector.WindowInspector.getGlobalWindowViews().firstNotNullOfOrNull { find(it) }
+                        WindowInspector.getGlobalWindowViews().firstNotNullOfOrNull { find(it) }
                 }
                 return result
             }
@@ -1866,12 +1866,12 @@ end
             fun hintIsVisible(text: String): Boolean {
                 var visible = false
                 instrumentation.runOnMainSync {
-                    fun contains(view: android.view.View): Boolean {
+                    fun contains(view: View): Boolean {
                         if (!view.isShown) return false
                         if (view is android.widget.TextView && view.text.toString() == text) return true
-                        return view is android.view.ViewGroup && (0 until view.childCount).any { contains(view.getChildAt(it)) }
+                        return view is ViewGroup && (0 until view.childCount).any { contains(view.getChildAt(it)) }
                     }
-                    visible = android.view.inspector.WindowInspector.getGlobalWindowViews().any(::contains)
+                    visible = WindowInspector.getGlobalWindowViews().any(::contains)
                 }
                 return visible
             }
@@ -2058,11 +2058,11 @@ end
             editor = instrumentation.startActivitySync(Intent(context,
                 org.fcitx.fcitx5.android.ui.main.settings.behavior.TextKeyboardLayoutEditorActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as org.fcitx.fcitx5.android.ui.main.settings.behavior.TextKeyboardLayoutEditorActivity
-            fun rows(view: android.view.View): Boolean {
+            fun rows(view: View): Boolean {
                 if (view is androidx.recyclerview.widget.RecyclerView &&
                     view.adapter is org.fcitx.fcitx5.android.ui.main.settings.behavior.adapter.KeyboardLayoutAdapter &&
                     (view.adapter?.itemCount ?: 0) > 1) return true
-                if (view is android.view.ViewGroup) for (i in 0 until view.childCount) if (rows(view.getChildAt(i))) return true
+                if (view is ViewGroup) for (i in 0 until view.childCount) if (rows(view.getChildAt(i))) return true
                 return false
             }
             await("Layout editor did not load editable keyboard rows") {

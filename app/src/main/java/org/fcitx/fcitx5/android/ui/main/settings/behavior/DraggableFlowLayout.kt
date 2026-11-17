@@ -147,7 +147,7 @@ open class DraggableFlowLayout @JvmOverloads constructor(
             // Skip the "+" chip and anything else marked non-draggable: it must not become a
             // drag source nor shift positions.
             if (!isDraggableChild(child)) continue
-            if (child != null && child.visibility == View.VISIBLE && !(excludeDragView && child === dragView)) {
+            if (child != null && child.visibility == VISIBLE && !(excludeDragView && child === dragView)) {
                 val isDraggedView = child === dragView && isDraggingInternal
 
                 val location = IntArray(2)
@@ -293,7 +293,7 @@ open class DraggableFlowLayout @JvmOverloads constructor(
             val childCenterY = child.y + child.height / 2
 
             // 判断是否在同一行：垂直中心距离小于 chip 高度的 0.6 倍
-            if (kotlin.math.abs(dragViewCenterY - childCenterY) < child.height * 0.6f) {
+            if (abs(dragViewCenterY - childCenterY) < child.height * 0.6f) {
                 sameRowChildren.add(i to child)
             }
         }

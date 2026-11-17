@@ -196,16 +196,16 @@ class CandidatesView(
     }
 
     private fun updatePreeditPosition(reversed: Boolean) {
-        preeditUi.root.updateLayoutParams<ConstraintLayout.LayoutParams> {
-            topToTop = if (reversed) ConstraintLayout.LayoutParams.UNSET else ConstraintLayout.LayoutParams.PARENT_ID
-            topToBottom = if (reversed) candidatesUi.root.id else ConstraintLayout.LayoutParams.UNSET
-            bottomToBottom = if (reversed) ConstraintLayout.LayoutParams.PARENT_ID else ConstraintLayout.LayoutParams.UNSET
+        preeditUi.root.updateLayoutParams<LayoutParams> {
+            topToTop = if (reversed) LayoutParams.UNSET else LayoutParams.PARENT_ID
+            topToBottom = if (reversed) candidatesUi.root.id else LayoutParams.UNSET
+            bottomToBottom = if (reversed) LayoutParams.PARENT_ID else LayoutParams.UNSET
         }
-        candidatesUi.root.updateLayoutParams<ConstraintLayout.LayoutParams> {
-            topToTop = if (reversed) ConstraintLayout.LayoutParams.PARENT_ID else ConstraintLayout.LayoutParams.UNSET
-            topToBottom = if (reversed) ConstraintLayout.LayoutParams.UNSET else preeditUi.root.id
-            bottomToTop = if (reversed) preeditUi.root.id else ConstraintLayout.LayoutParams.UNSET
-            bottomToBottom = if (reversed) ConstraintLayout.LayoutParams.UNSET else ConstraintLayout.LayoutParams.PARENT_ID
+        candidatesUi.root.updateLayoutParams<LayoutParams> {
+            topToTop = if (reversed) LayoutParams.PARENT_ID else LayoutParams.UNSET
+            topToBottom = if (reversed) LayoutParams.UNSET else preeditUi.root.id
+            bottomToTop = if (reversed) preeditUi.root.id else LayoutParams.UNSET
+            bottomToBottom = if (reversed) LayoutParams.UNSET else LayoutParams.PARENT_ID
         }
     }
 
@@ -574,8 +574,8 @@ class CandidatesView(
     init {
         // invisible by default
         visibility = INVISIBLE
-        preeditUi.root.id = View.generateViewId()
-        candidatesUi.root.id = View.generateViewId()
+        preeditUi.root.id = generateViewId()
+        candidatesUi.root.id = generateViewId()
 
         minWidth = dp(windowMinWidth)
         padding = dp(windowPadding)

@@ -461,7 +461,7 @@ data object IconThemeAction : ButtonAction() {
         view: View?,
         onActionComplete: (() -> Unit)?
     ) {
-        org.fcitx.fcitx5.android.utils.AppUtil.launchMainToComposeRoute(context, "IconThemeList")
+        AppUtil.launchMainToComposeRoute(context, "IconThemeList")
     }
 }
 
@@ -811,7 +811,7 @@ data object TextKeyboardLayoutFileSelectAction : ButtonAction() {
         view: View?,
         onActionComplete: (() -> Unit)?
     ) {
-        org.fcitx.fcitx5.android.utils.AppUtil.launchMainToComposeRoute(context, "TextKeyboardLayoutProfilePicker")
+        AppUtil.launchMainToComposeRoute(context, "TextKeyboardLayoutProfilePicker")
     }
 }
 
@@ -829,7 +829,7 @@ data object EditFontsetAction : ButtonAction() {
         view: View?,
         onActionComplete: (() -> Unit)?
     ) {
-        org.fcitx.fcitx5.android.utils.AppUtil.launchMainToComposeRoute(context, "FontsetEditor")
+        AppUtil.launchMainToComposeRoute(context, "FontsetEditor")
     }
 }
 

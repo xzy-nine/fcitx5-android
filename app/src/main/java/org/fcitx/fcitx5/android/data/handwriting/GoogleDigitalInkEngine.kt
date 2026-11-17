@@ -85,7 +85,7 @@ object GoogleDigitalInkEngine {
             AppPrefs.getInstance().handwriting.handwritingDigitalInkLanguage.getValue()
         }.getOrNull().orEmpty()
         if (configured.isNotBlank()) return configured
-        val locale = context.resources.configuration.locales.takeIf { !it.isEmpty() }?.get(0)
+        val locale = context.resources.configuration.locales.takeIf { !it.isEmpty }?.get(0)
             ?: Locale.getDefault()
         return DigitalInkSystemLanguage.baseLanguageTag(locale.language)
     }
@@ -216,7 +216,7 @@ object GoogleDigitalInkEngine {
         if (!hasArea && !hasPre) return null
         return runCatching {
             RecognitionContext.builder().apply {
-                if (hasArea) setWritingArea(WritingArea(writingArea!!.width(), writingArea.height()))
+                if (hasArea) setWritingArea(WritingArea(writingArea.width(), writingArea.height()))
                 if (hasPre) setPreContext(preContext)
             }.build()
         }.getOrElse {
@@ -242,7 +242,7 @@ object GoogleDigitalInkEngine {
             Timber.w(it, "$TAG: getDownloadedModels failed")
             return
         }
-        downloadedTags = models.mapNotNull { it.modelIdentifier?.languageTag }.toSet()
+        downloadedTags = models.mapNotNull { it.modelIdentifier.languageTag }.toSet()
         Timber.d("$TAG: downloaded models = %s", downloadedTags)
     }
 

@@ -141,7 +141,7 @@ open class CustomGestureView(ctx: Context) : FrameLayout(ctx) {
         // Keep gesture-only buttons out of focus navigation so hardware/macro keys
         // won't leave any focused/selected visual state on Kawaii bar.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            focusable = View.NOT_FOCUSABLE
+            focusable = NOT_FOCUSABLE
         }
         isFocusable = false
         isFocusableInTouchMode = false

@@ -83,7 +83,7 @@ operator fun ULong.plus(other: CapabilityFlag) = or(other.flag)
 operator fun ULong.minus(other: CapabilityFlag) = and(other.flag.inv())
 
 @JvmInline
-value class CapabilityFlags constructor(val flags: ULong) {
+value class CapabilityFlags(val flags: ULong) {
     companion object {
         fun mergeFlags(arr: Array<out CapabilityFlag>): ULong =
             arr.fold(CapabilityFlag.NoFlag.flag) { acc, it -> acc or it.flag }

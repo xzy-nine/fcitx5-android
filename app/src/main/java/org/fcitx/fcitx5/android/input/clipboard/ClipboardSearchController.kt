@@ -86,7 +86,7 @@ internal object ClipboardSearchController {
             includeFontPadding = false
             setPadding(context.dp(12), context.dp(8), context.dp(12), context.dp(8))
             inputType = InputType.TYPE_CLASS_TEXT
-            setSingleLine(true)
+            isSingleLine = true
             showSoftInputOnFocus = false
             filters = arrayOf(InputFilter.LengthFilter(65536))
         }

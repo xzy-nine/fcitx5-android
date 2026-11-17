@@ -178,8 +178,8 @@ fun WanxiangUpdateScreen(
 
     val active = work?.takeIf { !it.state.isFinished }
     val running = active?.state == WorkInfo.State.RUNNING
-    val downloading = running && active?.progress?.getString(WanxiangUpdateWorker.PHASE) == "download"
-    val installing = running && active?.progress?.getString(WanxiangUpdateWorker.PHASE) == "install"
+    val downloading = running && active.progress?.getString(WanxiangUpdateWorker.PHASE) == "download"
+    val installing = running && active.progress?.getString(WanxiangUpdateWorker.PHASE) == "install"
     val busy = submitting || readingTarget || active != null
 
     PageScaffold(title = stringResource(R.string.wanxiang_update), onBack = onBack) {

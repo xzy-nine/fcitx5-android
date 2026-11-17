@@ -179,14 +179,14 @@ class LayoutDataManager(private val context: Context) {
         
         val fileHasContent = file?.exists() == true
         val parsed = if (fileHasContent) {
-            parseJsonText(file!!.readText(), file.name)
+            parseJsonText(file.readText(), file.name)
         } else {
             loadDefaultPreset()
         }
         // 文件存在却解析失败与"文件不存在"是两回事：前者内存里现在是内置预设，
         // 直接保存会永久覆盖用户的（可能只是小语法错的）布局文件。
         if (fileHasContent && lastParseFailure != null) {
-            lastLoadWarning = LoadWarning.ParseFailed(file!!.name, lastParseFailure)
+            lastLoadWarning = LoadWarning.ParseFailed(file.name, lastParseFailure)
         }
         
         // 将解析结果复制到 entries

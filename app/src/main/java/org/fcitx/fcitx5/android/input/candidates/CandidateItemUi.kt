@@ -378,7 +378,7 @@ private class CandidateOverflowViewport(context: Context) : FrameLayout(context)
         }
         // Measure the entire text, then bound only the viewport to the candidate's slot.
         super.onMeasure(
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
             heightMeasureSpec,
         )
         setMeasuredDimension(resolveSize(measuredWidth, widthMeasureSpec), measuredHeight)

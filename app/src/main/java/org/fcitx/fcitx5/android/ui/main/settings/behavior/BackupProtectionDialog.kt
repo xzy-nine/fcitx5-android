@@ -54,7 +54,7 @@ internal suspend fun Context.chooseBackupProtection(export: Boolean): BackupProt
                 val secret = CharArray(password.text.length) { password.text[it] }
                 password.text.clear(); confirmation.text.clear()
                 if (continuation.isActive) continuation.resume(BackupProtection(secret),
-                    onCancellation = { _, value, _ -> value?.password?.fill('\u0000') })
+                    onCancellation = { _, value, _ -> value.password?.fill('\u0000') })
                 else secret.fill('\u0000')
                 dialog.dismiss()
             }

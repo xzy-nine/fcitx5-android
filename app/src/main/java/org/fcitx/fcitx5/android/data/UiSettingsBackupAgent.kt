@@ -12,12 +12,12 @@ import java.io.IOException
 class UiSettingsBackupAgent : BackupAgentHelper() {
     override fun onFullBackup(data: FullBackupDataOutput) {
         UiSettingsBackup.copy(PreferenceManager.getDefaultSharedPreferences(this),
-            getSharedPreferences(UiSettingsBackup.FILE, Context.MODE_PRIVATE), clear = true)
+            getSharedPreferences(UiSettingsBackup.FILE, MODE_PRIVATE), clear = true)
         super.onFullBackup(data)
     }
 
     override fun onRestoreFinished() {
-        UiSettingsBackup.copy(getSharedPreferences(UiSettingsBackup.FILE, Context.MODE_PRIVATE),
+        UiSettingsBackup.copy(getSharedPreferences(UiSettingsBackup.FILE, MODE_PRIVATE),
             PreferenceManager.getDefaultSharedPreferences(this), clear = false)
         super.onRestoreFinished()
     }

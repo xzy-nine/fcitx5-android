@@ -178,25 +178,25 @@ class ClipboardSearchDeviceTest {
                 }
                 val ime = checkNotNull(service)
                 if (suffix == "light") {
-                    val manager = inputWindows(ime.inputView!!)
+                    val manager = inputWindows(ime.inputView)
                     onMain { manager.attachWindow(KeyboardWindow) }
                     var clipboardButton: View? = null
                     await("The real keyboard toolbar must expose clipboard") {
-                        clipboardButton = descendants(ime.inputView!!).firstOrNull {
+                        clipboardButton = descendants(ime.inputView).firstOrNull {
                             it.isShown && it.contentDescription == context.getString(R.string.clipboard)
                         }; manager.currentWindowOrNull() is KeyboardWindow && clipboardButton != null &&
-                            !clipboardButton!!.isLayoutRequested && !ime.inputView!!.isLayoutRequested
+                            !clipboardButton!!.isLayoutRequested && !ime.inputView.isLayoutRequested
                     }
                     tap(checkNotNull(clipboardButton))
                     var remote: View? = null
                     await("The ordinary clipboard page must expose its remote group") {
-                        remote = descendants(ime.inputView!!).filterIsInstance<TextView>().firstOrNull {
+                        remote = descendants(ime.inputView).filterIsInstance<TextView>().firstOrNull {
                             it.isShown && it.text.toString() == context.getString(ClipboardCategory.Remote.titleRes)
                         }; remote != null
                     }
                     onMain {
                         ClipboardCategory.values().forEach { value ->
-                            val group = descendants(ime.inputView!!).filterIsInstance<TextView>().single {
+                            val group = descendants(ime.inputView).filterIsInstance<TextView>().single {
                                 it.isShown && it.text.toString() == context.getString(value.titleRes)
                             }
                             assertEquals("Ordinary clipboard groups must retain their original height", context.dp(30), group.height)
@@ -206,7 +206,7 @@ class ClipboardSearchDeviceTest {
                     tap(checkNotNull(remote))
                     var search: View? = null
                     await("The ordinary clipboard page must expose search") {
-                        search = descendants(ime.inputView!!).firstOrNull {
+                        search = descendants(ime.inputView).firstOrNull {
                             it.isShown && it.contentDescription == context.getString(R.string.search)
                         }; search != null
                     }
@@ -503,12 +503,12 @@ class ClipboardSearchDeviceTest {
         }
         try {
             val button = onMainValue {
-                descendants(service.inputView!!).first { it.isShown &&
+                descendants(service.inputView).first { it.isShown &&
                     it.contentDescription == context.getString(R.string.clipboard) }
             }
             tap(button)
             await("The toolbar must open the ordinary clipboard beneath $suffix") {
-                inputWindows(service.inputView!!).currentWindowOrNull() is ClipboardWindow
+                inputWindows(service.inputView).currentWindowOrNull() is ClipboardWindow
             }
             instrumentation.waitForIdleSync(); SystemClock.sleep(300)
             onMain {
@@ -522,12 +522,12 @@ class ClipboardSearchDeviceTest {
             }
             capture("$suffix-clipboard-switch")
             val back = onMainValue {
-                descendants(service.inputView!!).first { it.isShown &&
+                descendants(service.inputView).first { it.isShown &&
                     it.contentDescription == context.getString(R.string.back_to_keyboard) }
             }
             tap(back)
             await("The clipboard back button must return to keys without closing $suffix") {
-                inputWindows(service.inputView!!).currentWindowOrNull() is KeyboardWindow
+                inputWindows(service.inputView).currentWindowOrNull() is KeyboardWindow
             }
             onMain {
                 assertSame(dialog, activeDialog(service))
@@ -593,7 +593,7 @@ class ClipboardSearchDeviceTest {
             val refreshed = panelEditor(service)
             assertCursorBlinks(refreshed, "ai-assistant-$suffix-after-selection")
             if (suffix == "light") {
-                val assistantButton = onMainValue { descendants(service.inputView!!).first {
+                val assistantButton = onMainValue { descendants(service.inputView).first {
                     it.isShown && it.contentDescription == context.getString(R.string.ai_assistant)
                 } }
                 tap(assistantButton)
@@ -656,7 +656,7 @@ class ClipboardSearchDeviceTest {
         tap(onMainValue { descendants(dialog.window!!.decorView).filterIsInstance<MaterialButton>().single {
             it.text == context.getString(R.string.macro_editor_confirm)
         } })
-        await("Confirm must return the macro draft to the original key form") { fragment?.dialog?.isShowing != true }
+        await("Confirm must return the macro draft to the original key form") { fragment.dialog?.isShowing != true }
         onMain {
             val form = KeyEditorActivity::class.java.getDeclaredField("form").apply { isAccessible = true }.get(activity)
             val draft = form.javaClass.getDeclaredField("keyData").apply { isAccessible = true }.get(form) as Map<*, *>
@@ -672,7 +672,7 @@ class ClipboardSearchDeviceTest {
         val dialog = field.get(service) as JsAppDialog
         val attrs = dialog.window!!.attributes
         assertEquals(WindowManager.LayoutParams.TYPE_APPLICATION_MEDIA, attrs.type)
-        val keyboard = service.inputView!!.keyboardView
+        val keyboard = service.inputView.keyboardView
         val location = IntArray(2).also(keyboard::getLocationOnScreen)
         assertTrue("Panel must remain above the keyboard", attrs.y + attrs.height <= location[1])
         assertTrue(attrs.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0)

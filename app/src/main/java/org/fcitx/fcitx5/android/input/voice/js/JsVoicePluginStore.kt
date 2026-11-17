@@ -200,8 +200,7 @@ internal object JsVoicePluginStore {
             !JsVoiceProviders.isBuiltInId(JsVoicePluginMeta.PROVIDER_ID_PREFIX + id)) return false
         val previous = prefs().getString(KEY_PREFIX + id, null) ?: return true
         val record = JsVoicePluginRecord.decode(previous) ?: return false
-        if (!record.overridesBuiltIn) return true
-        return runCatching {
+        return !record.overridesBuiltIn || runCatching {
             revokePermissions(id)
             publishMetadata(id, record.copy(overridesBuiltIn = false).encode(), previous)
         }.getOrDefault(false)

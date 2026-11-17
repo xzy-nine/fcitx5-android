@@ -81,7 +81,7 @@ class ClipboardEditorPanelTest {
         dao = GatedDao(database.clipboardDao())
         ReflectionHelpers.setStaticField(ClipboardManager::class.java, "clbDao", dao)
         runBlocking { dao.insert(ClipboardEntry(id = 1, text = "待编辑文本", timestamp = 1)) }
-        appContext.clipboardManager.setPrimaryClip(ClipData.newPlainText("", "系统剪贴板"))
+        appContext.clipboardManager.primaryClip = ClipData.newPlainText("", "系统剪贴板")
         ReflectionHelpers.setField(service, "mStartedInputConnection", originalEditor.onCreateInputConnection(EditorInfo()))
         service.editorSession.start(EditorSessionTracker.Editor("fixture.app", 1, 1, 0), false)
         service.fcitx = object : FcitxConnection {

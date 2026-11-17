@@ -84,7 +84,7 @@ abstract class SettingsUiActivity : AppCompatActivity() {
         // FragmentManager requires this switch before any transactions, including restoration.
         // The motion settings screen recreates its activity when this preference changes.
         FragmentManager.enablePredictiveBack(
-            android.os.Build.VERSION.SDK_INT >= 34 &&
+            Build.VERSION.SDK_INT >= 34 &&
                 SettingsUiMotionPreferences.read(this).predictiveBack
         )
         setTheme(SettingsUiPreferences.themeResource(this))
@@ -161,9 +161,7 @@ abstract class SettingsUiActivity : AppCompatActivity() {
         toolbar.setBackgroundColor(settingsColor(com.google.android.material.R.attr.colorSurfaceContainer))
         toolbar.setTitleTextColor(settingsColor(com.google.android.material.R.attr.colorOnSurface))
         toolbar.setSubtitleTextColor(settingsColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
-        (toolbar as? MaterialToolbar)?.setNavigationIconTint(
-            settingsColor(com.google.android.material.R.attr.colorOnSurface)
-        )
+        (toolbar as? MaterialToolbar)?.navigationIconTint = settingsColor(com.google.android.material.R.attr.colorOnSurface)
         if (toolbar.parent !is CollapsingToolbarLayout) {
             val top = toolbar.paddingTop
             ViewCompat.setOnApplyWindowInsetsListener(toolbar) { view, insets ->

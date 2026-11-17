@@ -34,7 +34,7 @@ internal object WanxiangExtraDictionaries {
         val url = "https://raw.githubusercontent.com/amzxyz/rime-wanxiang-data/wanxiang/extra-dicts.json"
         val text = WanxiangGithub.client(context).newCall(Request.Builder().url(url).build()).execute().use {
             check(it.isSuccessful) { "附加词库目录 HTTP ${it.code}" }
-            WanxiangGithub.bounded(it.body!!.byteStream(), 256 * 1024)
+            WanxiangGithub.bounded(it.body.byteStream(), 256 * 1024)
         }
         return parse(text).also { FileUtil.writeAtomically(cache(context), text) }
     }

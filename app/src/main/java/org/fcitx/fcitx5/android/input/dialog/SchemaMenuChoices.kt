@@ -29,7 +29,7 @@ internal fun buildSchemaMenuChoices(
             maxLines = Int.MAX_VALUE
             ellipsize = null
             isChecked = index == enabledIndex
-            setUseMaterialThemeColors(true)
+            isUseMaterialThemeColors = true
             minHeight = context.dp(48)
             minimumHeight = context.dp(48)
             gravity = Gravity.CENTER_VERTICAL

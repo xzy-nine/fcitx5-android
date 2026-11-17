@@ -75,8 +75,7 @@ interface FcitxAPI {
     suspend fun select(idx: Int): Boolean
     suspend fun selectGlobal(idx: Int): Boolean = select(idx)
     suspend fun selectCandidateIfCurrent(idx: Int, global: Boolean, expected: CandidateActionContext): Boolean {
-        if (idx < 0 || candidateActionContext != expected) return false
-        return if (global) selectGlobal(idx) else select(idx)
+        return !(idx < 0 || candidateActionContext != expected) && if (global) selectGlobal(idx) else select(idx)
     }
     suspend fun triggerGlobalCandidateAction(idx: Int, actionIdx: Int) = triggerCandidateAction(idx, actionIdx)
     suspend fun isEmpty(): Boolean

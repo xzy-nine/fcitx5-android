@@ -164,7 +164,7 @@ internal class WanxiangValueEditor(context: Context, private val codec: Wanxiang
             val typeLabel = label(context.getString(R.string.wanxiang_advanced_type))
             addView(typeLabel, LayoutParams(-1, -2).apply { topMargin = dp(12) })
             typeInput = MaterialSpinner(context).apply {
-                id = View.generateViewId()
+                id = generateViewId()
                 typeLabel.labelFor = id
                 contentDescription = context.getString(R.string.wanxiang_advanced_type)
                 adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, resources.getStringArray(R.array.wanxiang_value_types))
