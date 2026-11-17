@@ -79,7 +79,7 @@ class LogAdapter : RecyclerView.Adapter<LogAdapter.Holder>() {
             textSize = 12f
             typeface = Typeface.MONOSPACE
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                textClassifier = TextClassifier.NO_OP
+                setTextClassifier(TextClassifier.NO_OP)
             }
             layoutParams = MarginLayoutParams(wrapContent, wrapContent).apply {
                 marginStart = dp(4)

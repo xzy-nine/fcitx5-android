@@ -27,7 +27,7 @@ abstract class DynamicListAdapter<T>(
     var initEditButton: (ImageButton.(T) -> Unit) = { visibility = View.GONE },
     var initSettingsButton: (ImageButton.(T) -> Unit) = { visibility = View.GONE }
 ) :
-    RecyclerView.Adapter<DynamicListAdapter<T>.ViewHolder>() {
+    RecyclerView.Adapter<DynamicListAdapter.ViewHolder>() {
 
     private val _entries = initialEntries.toMutableList()
 
@@ -138,7 +138,7 @@ abstract class DynamicListAdapter<T>(
         }
     }
 
-    override fun onViewRecycled(holder: DynamicListAdapter<T>.ViewHolder) {
+    override fun onViewRecycled(holder: DynamicListAdapter.ViewHolder) {
         // reset view state and remove listeners once recycled
         holder.apply {
             multiselectCheckBox.setOnCheckedChangeListener(null)

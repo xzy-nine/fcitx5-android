@@ -423,13 +423,13 @@ internal class JsAppDialog(
                         ellipsize = TextUtils.TruncateAt.END
                         isCursorVisible = false
                         showSoftInputOnFocus = false
-                        adapter = object : ArrayAdapter<String>(uiContext, R.layout.js_app_dropdown_item, android.R.id.text1,
+                        setAdapter(object : ArrayAdapter<String>(uiContext, R.layout.js_app_dropdown_item, android.R.id.text1,
                             options.map { it.first }) {
                             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
                                 super.getView(position, convertView, parent).apply {
                                     findViewById<TextView>(android.R.id.text1).setTextColor(textColor)
                                 }
-                        }
+                        })
                         setText(selected?.first.orEmpty(), false)
                         setOnClickListener { if (isEnabled) showDropDown() }
                         setOnItemClickListener { _, _, position, _ ->

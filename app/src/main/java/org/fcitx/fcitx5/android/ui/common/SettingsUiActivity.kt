@@ -161,7 +161,10 @@ abstract class SettingsUiActivity : AppCompatActivity() {
         toolbar.setBackgroundColor(settingsColor(com.google.android.material.R.attr.colorSurfaceContainer))
         toolbar.setTitleTextColor(settingsColor(com.google.android.material.R.attr.colorOnSurface))
         toolbar.setSubtitleTextColor(settingsColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
-        (toolbar as? MaterialToolbar)?.navigationIconTint = settingsColor(com.google.android.material.R.attr.colorOnSurface)
+        (toolbar as? MaterialToolbar)?.navigationIcon?.mutate()?.let { icon ->
+            icon.setTint(settingsColor(com.google.android.material.R.attr.colorOnSurface))
+            toolbar.navigationIcon = icon
+        }
         if (toolbar.parent !is CollapsingToolbarLayout) {
             val top = toolbar.paddingTop
             ViewCompat.setOnApplyWindowInsetsListener(toolbar) { view, insets ->

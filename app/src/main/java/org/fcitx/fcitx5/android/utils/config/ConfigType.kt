@@ -44,7 +44,7 @@ sealed class ConfigType<T> : Parcelable {
     @Serializable
     data class TyList(val subtype: ConfigType<*>) : ConfigType<TyList>()
 
-    companion object : ConfigParser<String, ConfigType<*>, UnknownConfigTypeException> {
+    companion object : ConfigParser<String, ConfigType<*>, Companion.UnknownConfigTypeException> {
 
         data class UnknownConfigTypeException(val type: String) : Exception()
 

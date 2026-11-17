@@ -113,7 +113,7 @@ class ClipboardEditWindow(
      * 复制：仅写入系统剪贴板（剪贴板数据库会自行监听并新增条目），不上屏。
      */
     private fun copyOnly(text: String) {
-        runCatching { context.clipboardManager.primaryClip = ClipData.newPlainText("", text) }
+        runCatching { context.clipboardManager.setPrimaryClip(ClipData.newPlainText("", text)) }
         exitToPrevWindow()
     }
 
