@@ -36,7 +36,6 @@ import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleConfirmDialog
 import org.fcitx.fcitx5.android.ui.main.wanxiang.WanxiangExtraDictionaries
 import org.fcitx.fcitx5.android.ui.main.wanxiang.WanxiangGithub
-import org.fcitx.fcitx5.android.ui.main.wanxiang.WanxiangAdvancedActivity
 import org.fcitx.fcitx5.android.ui.main.wanxiang.WanxiangDownloadProgress
 import org.fcitx.fcitx5.android.ui.main.wanxiang.WanxiangSelection
 import org.fcitx.fcitx5.android.ui.main.wanxiang.WanxiangTarget
@@ -64,7 +63,10 @@ import java.util.UUID
  * 提交后由后台任务下载并部署，页面只订阅其进度。
  */
 @Composable
-fun WanxiangUpdateScreen(onBack: () -> Unit) {
+fun WanxiangUpdateScreen(
+    onBack: () -> Unit,
+    onOpenAdvanced: () -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val connectionName = remember { "compose-wanxiang-${UUID.randomUUID()}" }
@@ -590,11 +592,6 @@ fun WanxiangUpdateScreen(onBack: () -> Unit) {
     // 高级设置子页仍由原有的 View 页面承载
     if (openingAdvanced) {
         LaunchedEffect(Unit) {
-            runCatching {
-                context.startActivity(
-                    android.content.Intent(context, WanxiangAdvancedActivity::class.java),
-                )
-            }.onFailure { localError = it.message }
-            openingAdvanced = false
+            onOpenAdvanced()
         }
     }}

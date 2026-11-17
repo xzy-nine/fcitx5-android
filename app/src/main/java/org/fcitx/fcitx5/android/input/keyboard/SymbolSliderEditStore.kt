@@ -4,12 +4,11 @@
  */
 package org.fcitx.fcitx5.android.input.keyboard
 
-import org.fcitx.fcitx5.android.ui.main.SymbolSliderEditActivity
 
 /**
  * 滑块符号编辑弹窗的结果传递容器。
  *
- * 编辑弹窗 [SymbolSliderEditActivity] 在确认后把编辑后的符号串写入 [pendingSymbols]，
+ * 编辑弹窗在确认后把编辑后的符号串写入 [pendingSymbols]，
  * 并触发 [setOnResultListener] 注册的回调。数字键盘在编辑前注册回调以实时应用结果，
  * 同时在重新 attach 时通过 [consume] 兜底读取（防止键盘实例被重建）。每个字符代表滑块中的
  * 一个段，字符顺序即滑块竖排从上到下的顺序。

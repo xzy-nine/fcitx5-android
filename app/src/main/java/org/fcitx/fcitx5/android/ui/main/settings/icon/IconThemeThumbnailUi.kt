@@ -123,7 +123,7 @@ class IconThemeThumbnailUi(private val context: Context) {
             ?.takeIf { it.isNotBlank() }
             ?: IconThemeManager.buildThemeThumbnailSvg(theme.icons)
         val thumbnailDrawable = thumbnailSvg
-            ?.let { SlotRowUi.renderSvgPreview(context, it, 36) }
+            ?.let { IconThemePreviewRender.renderSvgPreview(context, it, 36) }
         if (thumbnailDrawable != null) {
             previewIcon.setImageDrawable(thumbnailDrawable)
             previewIcon.imageTintList = ColorStateList.valueOf(if (isActive) accent else primary)

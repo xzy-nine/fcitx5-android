@@ -16,7 +16,6 @@ import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.input.keyboard.KeyDef.Appearance.Variant
 import org.fcitx.fcitx5.android.input.picker.PickerDensity
 import org.fcitx.fcitx5.android.input.picker.PickerWindow
-import org.fcitx.fcitx5.android.ui.main.SymbolSliderEditActivity
 import splitties.views.dsl.constraintlayout.below
 import splitties.views.dsl.constraintlayout.bottomOfParent
 import splitties.views.dsl.constraintlayout.endOfParent
@@ -248,15 +247,9 @@ class NumberKeyboard(
         refreshLayoutForPrefs()
     }
 
-    /** 启动滑块符号编辑弹窗（顶部弹窗 Activity，内含输入框）。 */
+    /** 注册滑块符号编辑的结果回调。 */
     private fun launchSymbolEdit() {
         SymbolSliderEditStore.setOnResultListener { newSymbols -> applySymbols(newSymbols) }
-        val current = sliderSymbols.joinToString("")
-        val intent = Intent(context, SymbolSliderEditActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra(SymbolSliderEditActivity.EXTRA_SYMBOLS, current)
-        }
-        context.startActivity(intent)
     }
 
 }

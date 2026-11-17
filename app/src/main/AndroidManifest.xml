@@ -94,10 +94,6 @@
             android:exported="false"
             android:theme="@style/Theme.FcitxSettings.System"
             android:launchMode="singleTask" />
-        <activity
-            android:name=".ui.main.wanxiang.WanxiangAdvancedActivity"
-            android:exported="false"
-            android:label="@string/wanxiang_advanced" />
         <!--
             Registered even though no entry point navigates here yet: the class, its adapter
             and its layout all exist, so an unregistered declaration is a latent
@@ -110,17 +106,6 @@
             android:stateNotNeeded="true"
             android:theme="@style/zxing_CaptureTheme"
             android:windowSoftInputMode="stateAlwaysHidden" />
-        <activity
-            android:name=".ui.main.CropImageActivity"
-            android:exported="false" />
-        <activity
-            android:name=".ui.main.SymbolSliderEditActivity"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:launchMode="singleInstance"
-            android:taskAffinity="org.fcitx.fcitx5.android.symbols"
-            android:theme="@style/Theme.DialogTheme"
-            android:windowSoftInputMode="stateAlwaysVisible|adjustPan" />
         <!-- custom: 录音权限的透明中转 Activity（输入法服务无法自行发起运行时权限请求） -->
         <activity
             android:name=".ui.main.VoicePermissionActivity"
@@ -247,9 +232,6 @@
 
         <!-- remove unneeded components from com.canhub.cropper -->
         <!--suppress DeprecatedClassUsageInspection -->
-        <activity
-            android:name="com.canhub.cropper.CropImageActivity"
-            tools:node="remove" />
 
         <provider
             android:name="com.canhub.cropper.CropFileProvider"

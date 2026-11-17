@@ -41,7 +41,6 @@ import org.fcitx.fcitx5.android.input.wm.EssentialWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.input.wm.createComposeWindowView
-import org.fcitx.fcitx5.android.ui.main.SymbolSliderEditActivity
 import org.mechdancer.dependency.manager.must
 import android.content.res.Configuration
 
@@ -155,6 +154,9 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(KeyboardWin
             if (landscape) blankRatioLandscape else blankRatio
         )
         val density = LocalDensity.current
+        var editingSymbols by androidx.compose.runtime.remember {
+            androidx.compose.runtime.mutableStateOf(false)
+        }
 
         BoxWithConstraints(
             modifier = Modifier
@@ -205,7 +207,7 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(KeyboardWin
                     state = numberKeyboardState,
                     keyActionListener = keyActionListener,
                     popupActionListener = popupActionListener,
-                    onSymbolSliderEdit = ::launchSymbolSliderEdit,
+                    onSymbolSliderEdit = { editingSymbols = true },
                     modifier = Modifier.fillMaxSize(),
                     split = split,
                 )
@@ -219,6 +221,12 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(KeyboardWin
                     gapRatio = gapRatio,
                 )
             }
+        }
+        if (editingSymbols) {
+            ComposeSymbolSliderEdit(
+                initialSymbols = numberKeyboardState.sliderSymbols.joinToString(""),
+                onDismiss = { editingSymbols = false },
+            )
         }
     }
 
@@ -304,20 +312,6 @@ class KeyboardWindow : InputWindow.SimpleInputWindow<KeyboardWindow>(KeyboardWin
         bar.onKeyboardLayoutSwitched(currentLayout.value == KeyboardLayoutNames.Number)
     }
 
-    /** 启动滑块符号编辑弹窗（顶部 Activity，内含输入框），结果经 [SymbolSliderEditStore] 回传。 */
-    private fun launchSymbolSliderEdit() {
-        SymbolSliderEditStore.setOnResultListener { newSymbols ->
-            numberKeyboardState.applySymbols(newSymbols)
-        }
-        val intent = Intent(context, SymbolSliderEditActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra(
-                SymbolSliderEditActivity.EXTRA_SYMBOLS,
-                numberKeyboardState.sliderSymbols.joinToString("")
-            )
-        }
-        context.startActivity(intent)
-    }
 }
 
 

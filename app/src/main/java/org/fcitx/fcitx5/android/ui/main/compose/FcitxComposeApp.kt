@@ -55,6 +55,7 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.LogMode
 import org.fcitx.fcitx5.android.ui.main.compose.screens.LogScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.JsVoicePluginSettingsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.UpdateMirrorListScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.WanxiangAdvancedScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WanxiangUpdateScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingGestureDemoScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingSettingsScreen
@@ -279,7 +280,13 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                     RimeSchemeUpdateScreen(onBack = { backStack.removeLastOrNull() })
                 }
                 entry<AppRoute.WanxiangUpdate> {
-                    WanxiangUpdateScreen(onBack = { backStack.removeLastOrNull() })
+                    WanxiangUpdateScreen(
+                        onBack = { backStack.removeLastOrNull() },
+                        onOpenAdvanced = { navigateTo(AppRoute.WanxiangAdvanced) },
+                    )
+                }
+                entry<AppRoute.WanxiangAdvanced> {
+                    WanxiangAdvancedScreen(onBack = { backStack.removeLastOrNull() })
                 }
                 entry<AppRoute.UpdateMirrorList> {
                     UpdateMirrorListScreen(

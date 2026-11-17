@@ -46,6 +46,10 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object RimeSchemeUpdate : AppRoute
 
+    /** 万象高级设置。 */
+    @Serializable
+    data object WanxiangAdvanced : AppRoute
+
     /** 万象更新。 */
     @Serializable
     data object WanxiangUpdate : AppRoute
