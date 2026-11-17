@@ -5,7 +5,9 @@
 package org.fcitx.fcitx5.android.sync.webdav
 
 import github.xzynine.webdav.Authorization
+import github.xzynine.webdav.SyncOutcome
 import github.xzynine.webdav.WebDav
+import github.xzynine.webdav.WebDavSyncEngine as SubEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -113,6 +115,34 @@ object WebDavSyncEngine {
         return WebDav(url, auth(cfg))
     }
 
+    /** 单文件传输委托给子模块的同步引擎。 */
+    private val transferEngine by lazy { SubEngine(appContext) }
+
+    /** 下载单个远端文件到本地路径，失败时抛出便于上层统一回滚。 */
+    private suspend fun downloadFile(cfg: WebDavSyncConfig, remoteUrl: String, localPath: String) {
+        LocalNetworkGuard.require(remoteUrl)
+        val outcome = transferEngine.download(remoteUrl, cfg.username, cfg.password, localPath)
+        outcome.requireSuccess()
+    }
+
+    /** 上传本地文件到远端，失败时抛出便于上层统一回滚。 */
+    private suspend fun uploadRemoteFile(cfg: WebDavSyncConfig, remoteUrl: String, file: File) {
+        LocalNetworkGuard.require(remoteUrl)
+        val outcome = transferEngine.uploadBytes(
+            remotePath = remoteUrl,
+            username = cfg.username,
+            password = cfg.password,
+            bytes = file.readBytes(),
+        )
+        outcome.requireSuccess()
+    }
+
+    /** 子模块结果转异常，交由上层按现有异常路径统一处理与回滚。 */
+    private fun SyncOutcome.requireSuccess() {
+        if (isSuccess) return
+        throw IOException(errorMessage ?: "WebDAV 传输失败（${errorKind.name}）")
+    }
+
     suspend fun testConnection(cfg: WebDavSyncConfig): Result<String> =
         withContext(Dispatchers.IO) {
             try {
@@ -161,7 +191,7 @@ object WebDavSyncEngine {
         val parent = fileName.substringBeforeLast('/', "")
         val dir = if (parent.isEmpty()) remoteDirUrl else joinUrl(remoteDirUrl, parent)
         ensureDirChain(cfg, dir)
-        webDav(cfg, joinUrl(dir, fileName.substringAfterLast('/'))).upload(file)
+        uploadRemoteFile(cfg, joinUrl(dir, fileName.substringAfterLast('/')), file)
     }
 
     suspend fun remoteEntryOrNull(cfg: WebDavSyncConfig, dirUrl: String, name: String): RemoteEntry? =
@@ -469,7 +499,7 @@ object WebDavSyncEngine {
                     val stagedFile = File(stagingDir, rel)
                     stagedFile.parentFile?.mkdirs()
                     onProgress(text(R.string.webdav_downloading_dict_file, rel, pos))
-                    webDav(cfg, entry.url).downloadTo(stagedFile.absolutePath, replaceExisting = true)
+                    downloadFile(cfg, entry.url, stagedFile.absolutePath)
                     kinds += DictReload.kindOf(rel)
                     staged += Staged(rel, current, stagedFile, local)
                     downloaded++
@@ -673,7 +703,7 @@ object WebDavSyncEngine {
             dest.parentFile?.mkdirs()
             val start = System.currentTimeMillis()
             try {
-                webDav(cfg, entry.url).downloadTo(dest.absolutePath, replaceExisting = true)
+                downloadFile(cfg, entry.url, dest.absolutePath)
                 Timber.i(
                     "$TAG downloadRemoteZip done in ${System.currentTimeMillis() - start}ms: " +
                         "exists=${dest.exists()}, size=${dest.length()}"
