@@ -87,7 +87,7 @@ private fun localizedType(context: android.content.Context, type: DeviceType): S
 /**
  * 预览区的渲染状态：持有一份真实键盘实例，按阈值与间隙模拟分体。
  *
- * 分体效果通过容器内边距模拟，避免改动键盘自身的布局状态。
+ * 分体效果通过容器内边距模拟。
  */
 private class KeyboardPreviewState(private val context: android.content.Context) {
 

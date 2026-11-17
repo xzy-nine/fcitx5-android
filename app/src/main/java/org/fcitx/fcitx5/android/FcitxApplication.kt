@@ -177,7 +177,6 @@ class FcitxApplication : Application(), androidx.work.Configuration.Provider {
                     "--------- Persisted app crash\nRecorded at (Unix ms): $crashTime\n" +
                         "Crash build: ${BuildConfig.BUILD_GIT_HASH}\nCrash process: ${Process.myPid()}\n$truncated\n"
                 )
-                // 崩溃日志页已由 Compose 承载，调用栈经路由参数传入
                 startActivity<org.fcitx.fcitx5.android.ui.main.MainActivity> {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     action = Intent.ACTION_RUN

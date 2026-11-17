@@ -141,11 +141,14 @@ private fun HomeCard(
     }
 }
 
+private val RIME_CONFIG_ROUTE = AppRoute.RawConfigHost(
+    kind = RawConfigHostType.AddonConfig,
+    name = "Rime",
+    uniqueName = "rime",
+)
+
 private val homeFcitxItems = listOf(
-    HomeDestination(R.string.global_options, MiuixIcons.Tune, AppRoute.RawConfigHost(
-        RawConfigHostType.GlobalConfig)),
-    HomeDestination(R.string.input_methods, MiuixIcons.Translate, AppRoute.InputMethodList),
-    HomeDestination(R.string.addons, MiuixIcons.Merge, AppRoute.AddonList),
+    HomeDestination(R.string.input_methods, MiuixIcons.Translate, RIME_CONFIG_ROUTE),
 )
 
 private val homePhysicalKeyboardItems = listOf(
@@ -158,7 +161,6 @@ private val homeAndroidItems = listOf(
     HomeDestination(R.string.virtual_keyboard, MiuixIcons.GridView, AppRoute.Prefs(PrefCategory.Keyboard)),
     HomeDestination(R.string.clipboard, MiuixIcons.Copy, AppRoute.Prefs(PrefCategory.Clipboard)),
     HomeDestination(R.string.emoji_and_symbols, MiuixIcons.Messages, AppRoute.Prefs(PrefCategory.Symbols)),
-    HomeDestination(R.string.plugins, MiuixIcons.Layers, AppRoute.AddonList),
     HomeDestination(R.string.advanced, MiuixIcons.More, AppRoute.Prefs(PrefCategory.Advanced)),
 )
 

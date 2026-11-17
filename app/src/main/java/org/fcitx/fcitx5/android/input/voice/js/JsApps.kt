@@ -70,7 +70,6 @@ internal object JsApps {
                 context, "JsVoicePluginSettings", pluginId,
             )
         } else {
-            // 插件不存在时回到插件管理页，而不是打开一个空设置页
             context.toast(R.string.js_app_shortcut_missing)
             org.fcitx.fcitx5.android.utils.AppUtil.launchMainToComposeRoute(context, "JsVoicePlugins")
         }
