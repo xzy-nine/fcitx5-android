@@ -131,10 +131,6 @@ fun executeMacroSteps(steps: List<MacroStep>, service: FcitxInputMethodService, 
                     val route = ROUTE_MAP[step.id]
                     if (route != null && context != null) {
                         AppUtil.launchMainToRoute(context, route)
-                    } else if (step.id == "edit_buttons" && context != null) {
-                        context.startActivity(Intent(context, org.fcitx.fcitx5.android.ui.main.settings.behavior.ButtonsCustomizerActivity::class.java).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        })
                     } else if (step.id == "split_keyboard_calibration" && context != null) {
                         org.fcitx.fcitx5.android.utils.AppUtil.launchMainToComposeRoute(context, "SplitKeyboardCalibration")
                     } else if (step.id == "web_editor_bridge" && context != null) {

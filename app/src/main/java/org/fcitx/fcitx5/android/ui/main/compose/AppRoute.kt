@@ -67,8 +67,6 @@ sealed interface AppRoute : NavKey {
     data class UpdateMirrorEdit(val mirrorId: String? = null) : AppRoute
 
     /** 文本键盘布局 profile 管理。 */
-    @Serializable
-    data object TextKeyboardLayoutProfiles : AppRoute
 
     /** 图标主题列表。 */
     @Serializable

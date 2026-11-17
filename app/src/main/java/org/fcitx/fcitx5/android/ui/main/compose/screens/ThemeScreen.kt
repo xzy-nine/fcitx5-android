@@ -56,7 +56,6 @@ import org.fcitx.fcitx5.android.data.theme.Theme
 import org.fcitx.fcitx5.android.data.theme.ThemeFilesManager
 import org.fcitx.fcitx5.android.data.theme.ThemeManager
 import org.fcitx.fcitx5.android.ui.main.compose.settings.ManagedPrefsScreen
-import org.fcitx.fcitx5.android.ui.main.settings.theme.CustomThemeActivity
 import org.fcitx.fcitx5.android.ui.main.settings.theme.KeyboardPreviewUi
 import org.fcitx.fcitx5.android.ui.main.settings.theme.NewThemeEntryUi
 import org.fcitx.fcitx5.android.ui.main.settings.theme.ThemeThumbnailUi
@@ -131,26 +130,6 @@ fun ThemeScreen(onBack: () -> Unit) {
     // keep the pager and the tab row in sync when the user swipes
     LaunchedEffect(pagerState.currentPage) {
         selectedTab = pagerState.currentPage
-    }
-
-    val editLauncher = rememberLauncherForActivityResult(
-        CustomThemeActivity.Contract()
-    ) { result ->
-        if (result == null) return@rememberLauncherForActivityResult
-        when (result) {
-            is CustomThemeActivity.BackgroundResult.Created -> {
-                ThemeManager.saveTheme(result.theme)
-                reload()
-            }
-            is CustomThemeActivity.BackgroundResult.Deleted -> {
-                ThemeManager.deleteTheme(result.name)
-                reload()
-            }
-            is CustomThemeActivity.BackgroundResult.Updated -> {
-                ThemeManager.saveTheme(result.theme)
-                reload()
-            }
-        }
     }
 
     val importLauncher = rememberLauncherForActivityResult(
@@ -315,7 +294,6 @@ fun ThemeScreen(onBack: () -> Unit) {
                                             exportLauncher.launch(exportable.name + ".zip")
                                         }
                                     },
-                                    onEdit = { if (theme is Theme.Custom) editLauncher.launch(theme) },
                                 )
                             }
                         }
@@ -333,10 +311,7 @@ fun ThemeScreen(onBack: () -> Unit) {
 
     if (showNewDialog) {
         ThemeNewDialog(
-            onChooseImage = {
-                showNewDialog = false
-                editLauncher.launch(null)
-            },
+
             onImport = {
                 showNewDialog = false
                 importLauncher.launch("application/zip")
@@ -376,7 +351,6 @@ fun ThemeScreen(onBack: () -> Unit) {
 
 @Composable
 private fun ThemeNewDialog(
-    onChooseImage: () -> Unit,
     onImport: () -> Unit,
     onDuplicate: () -> Unit,
     onDismiss: () -> Unit,
@@ -384,7 +358,6 @@ private fun ThemeNewDialog(
     val context = LocalContext.current
     var show by remember { mutableStateOf(true) }
     val options = listOf(
-        stringResource(R.string.choose_image) to onChooseImage,
         stringResource(R.string.import_from_file) to onImport,
         stringResource(R.string.duplicate_builtin_theme) to onDuplicate,
     )
@@ -507,7 +480,6 @@ private fun ThemeThumbnailView(
     state: ThemeThumbnailUi.State,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    onEdit: () -> Unit,
 ) {
     val context = LocalContext.current
     val ui = remember(context) { ThemeThumbnailUi(context) }
@@ -518,7 +490,7 @@ private fun ThemeThumbnailView(
             ui.setChecked(state)
             ui.root.setOnClickListener { onClick() }
             ui.root.setOnLongClickListener { onLongClick(); true }
-            ui.editButton.setOnClickListener { onEdit() }
+            ui.editButton.visibility = android.view.View.GONE
         },
         modifier = Modifier.size(128.dp, 92.dp),
     )

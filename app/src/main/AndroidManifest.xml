@@ -98,48 +98,6 @@
             android:name=".ui.main.wanxiang.WanxiangAdvancedActivity"
             android:exported="false"
             android:label="@string/wanxiang_advanced" />
-        <activity
-            android:name=".ui.main.settings.theme.CustomThemeActivity"
-            android:configChanges="orientation|screenSize"
-            android:exported="false"
-            android:label="@string/edit_theme" />
-        <activity
-            android:name=".ui.main.settings.theme.ThemeColorEditorActivity"
-            android:configChanges="orientation|screenSize"
-            android:exported="false"
-            android:label="@string/edit_color" />
-        <activity
-            android:name=".ui.main.settings.icon.IconThemeEditorActivity"
-            android:configChanges="orientation|screenSize"
-            android:exported="false"
-            android:label="@string/edit_icon_theme" />
-        <activity
-            android:name=".ui.main.settings.behavior.PopupEditorActivity"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
-            android:exported="false"
-            android:label="@string/edit_popup_preset" />
-        <activity
-            android:name=".ui.main.settings.behavior.TextKeyboardLayoutEditorActivity"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
-            android:exported="false"
-            android:label="@string/edit_text_keyboard_layout" />
-        <activity
-            android:name=".ui.main.settings.behavior.dialog.KeyEditorActivity"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
-            android:exported="false"
-            android:label="@string/edit_text_keyboard_layout" />
-        <activity
-            android:name=".ui.main.settings.behavior.dialog.LayoutFileProfileInputActivity"
-            android:exported="false"
-            android:label="@string/edit_text_keyboard_layout" />
-        <activity
-            android:name=".ui.main.settings.behavior.dialog.LayoutNameInputActivity"
-            android:exported="false"
-            android:label="@string/edit_text_keyboard_layout" />
-        <activity
-            android:name=".ui.main.update.UpdateCheckActivity"
-            android:exported="false"
-            android:label="@string/update_page_title" />
         <!--
             Registered even though no entry point navigates here yet: the class, its adapter
             and its layout all exist, so an unregistered declaration is a latent
@@ -152,11 +110,6 @@
             android:stateNotNeeded="true"
             android:theme="@style/zxing_CaptureTheme"
             android:windowSoftInputMode="stateAlwaysHidden" />
-        <activity
-            android:name=".ui.main.settings.behavior.ButtonsCustomizerActivity"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
-            android:exported="false"
-            android:label="@string/edit_buttons" />
         <activity
             android:name=".ui.main.CropImageActivity"
             android:exported="false" />

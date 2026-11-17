@@ -60,9 +60,6 @@ sealed class SettingsRoute : Parcelable {
     data object SettingsUiMotion : SettingsRoute()
 
     @Serializable
-    data object TextKeyboardLayoutProfiles : SettingsRoute()
-
-    @Serializable
     data object IconThemeList : SettingsRoute()
 
     @Serializable

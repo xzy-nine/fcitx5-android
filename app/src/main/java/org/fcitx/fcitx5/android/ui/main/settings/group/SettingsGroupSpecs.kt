@@ -73,13 +73,6 @@ data class SettingsGroupSpec(
 
 object SettingsGroupSpecs {
 
-    /** Additional tool in the existing keyboard editors group; the quick selector stays. */
-    val keyboardLayoutManager = SettingsGroupEntry(
-        R.string.text_keyboard_layout_manage_title,
-        R.drawable.ic_baseline_keyboard_24,
-        action = SettingsGroupAction.Route(SettingsRoute.TextKeyboardLayoutProfiles),
-    )
-
     const val ID_INPUT = "input"
     const val ID_APPEARANCE = "appearance"
     const val ID_CONVENIENCE = "convenience"

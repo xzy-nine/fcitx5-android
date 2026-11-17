@@ -23,8 +23,6 @@ import org.fcitx.fcitx5.android.input.editing.TextEditingWindow
 import org.fcitx.fcitx5.android.input.status.StatusAreaWindow
 import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.ButtonsCustomizerActivity
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.TextKeyboardLayoutEditorActivity
 import org.fcitx.fcitx5.android.input.voice.js.JsAppButtonBinding
 import org.fcitx.fcitx5.android.utils.AppUtil
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
@@ -796,9 +794,7 @@ data object EditTextKeyboardLayoutAction : ButtonAction() {
         view: View?,
         onActionComplete: (() -> Unit)?
     ) {
-        context.startActivity(Intent(context, TextKeyboardLayoutEditorActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        })
+        service.toast(R.string.layout_editor_unavailable)
     }
 }
 
@@ -897,15 +893,10 @@ data object JsToolsAction : ButtonAction() {
     override fun execute(context: Context, service: FcitxInputMethodService, fcitx: FcitxConnection,
         windowManager: InputWindowManager, view: View?, onActionComplete: (() -> Unit)?) {
         service.toast(R.string.js_tools_select_hint)
-        context.startActivity(Intent(context, ButtonsCustomizerActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        })
     }
 
     override fun onLongPress(context: Context, service: FcitxInputMethodService, fcitx: FcitxConnection,
         windowManager: InputWindowManager, view: View) {
-        context.startActivity(Intent(context, ButtonsCustomizerActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        })
+        service.toast(R.string.js_tools_select_hint)
     }
 }

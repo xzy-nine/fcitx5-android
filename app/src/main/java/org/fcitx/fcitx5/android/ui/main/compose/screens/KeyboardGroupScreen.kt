@@ -15,9 +15,6 @@ import androidx.compose.ui.unit.dp
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.ui.main.compose.settings.ManagedPrefsScreen
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.ButtonsCustomizerActivity
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.PopupEditorActivity
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.TextKeyboardLayoutEditorActivity
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -109,26 +106,8 @@ fun KeyboardGroupScreen(
         keyFilter = group.keys.ifEmpty { emptySet() },
         extraContent = {
             val tools = when (group) {
-                KeyboardGroup.Editors -> listOf(
-                    R.string.text_keyboard_layout_manage_title to {
-                        context.startActivity(
-                            Intent(context, TextKeyboardLayoutEditorActivity::class.java),
-                        )
-                    },
-                    R.string.edit_text_keyboard_layout to {
-                        context.startActivity(
-                            Intent(context, TextKeyboardLayoutEditorActivity::class.java),
-                        )
-                    },
-                    R.string.edit_popup_preset to {
-                        context.startActivity(Intent(context, PopupEditorActivity::class.java))
-                    },
-                )
-                KeyboardGroup.Toolbar -> listOf(
-                    R.string.edit_buttons to {
-                        context.startActivity(Intent(context, ButtonsCustomizerActivity::class.java))
-                    },
-                )
+                KeyboardGroup.Editors -> emptyList<Pair<Int, () -> Unit>>()
+                KeyboardGroup.Toolbar -> emptyList<Pair<Int, () -> Unit>>()
                 KeyboardGroup.Voice -> listOf(
                     R.string.js_voice_plugins_title to onOpenJsVoicePlugins,
                 )

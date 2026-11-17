@@ -87,7 +87,7 @@ object ButtonIconFile {
      * 清空图标解析缓存。
      *
      * 正常情况下不需要调用：key 里的 size/mtime 已经覆盖了"文件内容变化"，图标导入路径也总是
-     * 生成新文件名（见 ButtonsCustomizerActivity）。保留它是为了给将来可能出现的"原地覆盖同名
+     * 生成新文件名。保留它是为了给将来可能出现的"原地覆盖同名
      * 图标且 mtime 未变"场景一个显式出口，不要在别处随手调用。
      */
     fun invalidateCache() {

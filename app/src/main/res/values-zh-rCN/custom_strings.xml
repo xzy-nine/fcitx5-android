@@ -397,4 +397,5 @@
     <string name="rime_engine_platform_mismatch">该引擎针对其他 CPU 架构构建。</string>
     <string name="fontset_pick_font">选择字体</string>
     <string name="theme_color_editor_argb_hint">支持 #RRGGBB 或 #AARRGGBB</string>
+    <string name="layout_editor_unavailable">布局编辑器在当前版本不可用</string>
 </resources>

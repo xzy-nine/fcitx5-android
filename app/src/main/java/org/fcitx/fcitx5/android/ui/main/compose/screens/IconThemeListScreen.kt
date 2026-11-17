@@ -33,7 +33,6 @@ import org.fcitx.fcitx5.android.data.theme.IconTheme
 import org.fcitx.fcitx5.android.data.theme.IconThemeManager
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.SimpleConfirmDialog
 import org.fcitx.fcitx5.android.ui.main.settings.icon.IconThemeActions
-import org.fcitx.fcitx5.android.ui.main.settings.icon.IconThemeEditorActivity
 import org.fcitx.fcitx5.android.ui.main.settings.icon.IconThemeThumbnailUi
 import org.fcitx.fcitx5.android.utils.toast
 import timber.log.Timber
@@ -138,12 +137,7 @@ fun IconThemeListScreen(onBack: () -> Unit) {
                                 update = { view ->
                                     val ui = view.tag as? IconThemeThumbnailUi ?: return@AndroidView
                                     ui.bind(theme, isActive, theme.name == builtinName)
-                                    ui.setEditAction(visible = theme.name != builtinName) {
-                                        context.startActivity(
-                                            Intent(context, IconThemeEditorActivity::class.java)
-                                                .putExtra("icon_theme_name", theme.name),
-                                        )
-                                    }
+                                    ui.setEditAction(visible = false) {}
                                     view.setOnClickListener {
                                         IconThemeManager.activeTheme = theme
                                         reload()
@@ -201,7 +195,6 @@ fun IconThemeListScreen(onBack: () -> Unit) {
             message = stringResource(R.string.new_icon_theme),
             onConfirm = {
                 showCreate = false
-                context.startActivity(Intent(context, IconThemeEditorActivity::class.java))
             },
             onDismiss = { showCreate = false },
         )

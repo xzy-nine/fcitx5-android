@@ -292,11 +292,7 @@ class ShareReceiveManager(
             file.writeText(json.encodeToString(jsonElement) + "\n")
         }
         ConfigProviders.ensureWatching()
-        showMessage(activity.getString(R.string.share_receive_popup_imported)) {
-            activity.startActivity(
-                Intent(activity, org.fcitx.fcitx5.android.ui.main.settings.behavior.PopupEditorActivity::class.java)
-            )
-        }
+        showMessage(activity.getString(R.string.share_receive_popup_imported), null)
     }
 
     private suspend fun importLayoutDetection(detection: DetectionResult) {
@@ -324,17 +320,7 @@ class ShareReceiveManager(
         val saved = withContext(Dispatchers.IO) { dataManager.saveToFile(targetFile) }
         check(saved) { activity.getString(R.string.text_keyboard_layout_save_failed) }
         ConfigProviders.ensureWatching()
-        val currentProfile = AppPrefs.getInstance().keyboard.textKeyboardLayoutProfile.getValue()
-        val action = if (currentProfile == normalizedProfile) {
-            {
-                activity.startActivity(
-                    Intent(activity, org.fcitx.fcitx5.android.ui.main.settings.behavior.TextKeyboardLayoutEditorActivity::class.java)
-                )
-            }
-        } else {
-            null
-        }
-        showMessage(activity.getString(R.string.share_receive_layout_imported, label), action)
+        showMessage(activity.getString(R.string.share_receive_layout_imported, label), null)
     }
 
     private fun importMultipleFiles(uris: List<Uri>) {

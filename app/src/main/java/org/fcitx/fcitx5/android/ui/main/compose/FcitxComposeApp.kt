@@ -44,7 +44,6 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.SettingsUiMotionScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.TextEditingPrefsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.UpdateHostsSettingsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.UpdateMirrorEditScreen
-import org.fcitx.fcitx5.android.ui.main.compose.screens.TextKeyboardLayoutProfileManagerScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.IconThemeListScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.InputStatsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.RimeEngineManagerScreen
@@ -297,11 +296,6 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }
-                entry<AppRoute.TextKeyboardLayoutProfiles> {
-                    TextKeyboardLayoutProfileManagerScreen(
-                        onBack = { backStack.removeLastOrNull() },
-                    )
-                }
                 entry<AppRoute.IconThemeList> {
                     IconThemeListScreen(onBack = { backStack.removeLastOrNull() })
                 }
@@ -499,7 +493,6 @@ fun appRouteOf(route: SettingsRoute): AppRoute = when (route) {
     SettingsRoute.SettingsUiMotion -> AppRoute.SettingsUiMotion
     SettingsRoute.KeyboardModes -> AppRoute.KeyboardModes
     is SettingsRoute.KeyboardGroup -> AppRoute.KeyboardGroup(route.group)
-    SettingsRoute.TextKeyboardLayoutProfiles -> AppRoute.TextKeyboardLayoutProfiles
     SettingsRoute.IconThemeList -> AppRoute.IconThemeList
     SettingsRoute.InputStats -> AppRoute.InputStats
     SettingsRoute.RimeEngineManager -> AppRoute.RimeEngineManager

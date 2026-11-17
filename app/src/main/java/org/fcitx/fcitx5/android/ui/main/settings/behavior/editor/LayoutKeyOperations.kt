@@ -3,6 +3,14 @@ package org.fcitx.fcitx5.android.ui.main.settings.behavior.editor
 
 internal data class EditorKeyPosition(val row: Int, val key: Int)
 
+/** 预览中单个按键的位置、可用区域与标签。 */
+internal data class EditorKeyBounds(
+    val position: EditorKeyPosition,
+    val rect: android.graphics.RectF,
+    val label: String,
+    val splitAfter: Boolean,
+)
+
 internal object LayoutKeyOperations {
     private const val SPLIT_ROW_DISABLED = "splitRowDisabled"
 
