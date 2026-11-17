@@ -14,7 +14,7 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import org.fcitx.fcitx5.android.R
-import org.fcitx.fcitx5.android.clipboardsync.network.SyncTransportPolicy
+import org.fcitx.fcitx5.android.utils.net.SyncTransportPolicy
 import java.io.File
 import java.io.IOException
 import java.util.UUID

@@ -15,7 +15,7 @@ import okhttp3.WebSocketListener
 import okio.ByteString
 import okio.ByteString.Companion.decodeBase64
 import okio.utf8Size
-import org.fcitx.fcitx5.android.clipboardsync.network.BoundedWebSocketTransport
+import org.fcitx.fcitx5.android.utils.net.BoundedWebSocketTransport
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger

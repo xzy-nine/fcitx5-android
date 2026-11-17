@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
-package org.fcitx.fcitx5.android.clipboardsync.network
+package org.fcitx.fcitx5.android.utils.net
 
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
-package org.fcitx.fcitx5.android.clipboardsync.network
+package org.fcitx.fcitx5.android.utils.net
 
 import okhttp3.*
 import okhttp3.tls.HandshakeCertificates
@@ -96,12 +96,12 @@ class BoundedWebSocketTransportTest {
 
     @Test fun realPlainSocketRejectsOversizedDeclaredMessageWithoutSendingPayload() {
         val result = exercise { it.write(wsHeader(1, 1L shl 30)) }
-        assertTrue(result.failure.toString(), result.failure is ClipCascadeMessageTooLargeException)
+        assertTrue(result.failure.toString(), result.failure is WebSocketMessageTooLargeException)
         assertNull(result.message)
     }
     @Test fun realTlsSocketRejectsOversizedDeclaredMessageBeforeOnMessage() {
         val result = exercise(secure = true) { it.write(wsHeader(1, 1L shl 30)) }
-        assertTrue(result.failure.toString(), result.failure is ClipCascadeMessageTooLargeException)
+        assertTrue(result.failure.toString(), result.failure is WebSocketMessageTooLargeException)
         assertNull(result.message)
     }
     @Test fun realFragmentationWithPingCannotResetTheCumulativeLimit() {
@@ -109,7 +109,7 @@ class BoundedWebSocketTransportTest {
             out.write(wsHeader(1, 70, false)); out.write(ByteArray(70) { 65 })
             out.write(wsHeader(9, 0)); out.write(wsHeader(0, 40))
         }
-        assertTrue(result.failure.toString(), result.failure is ClipCascadeMessageTooLargeException)
+        assertTrue(result.failure.toString(), result.failure is WebSocketMessageTooLargeException)
         assertNull(result.message)
     }
     @Test fun normalFragmentedUtf8MessagesStillArrive() {
@@ -153,7 +153,7 @@ class BoundedWebSocketTransportTest {
         val result = exercise(configure = { builder, port ->
             builder.proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress(InetAddress.getLoopbackAddress(), port)))
         }) { it.write(wsHeader(1, 1L shl 30)) }
-        assertTrue(result.failure.toString(), result.failure is ClipCascadeMessageTooLargeException)
+        assertTrue(result.failure.toString(), result.failure is WebSocketMessageTooLargeException)
     }
     @Test fun explicitPlainSocksFailsBeforeAnUnguardedUpgradeRequest() {
         val result = exercise(configure = { builder, port ->

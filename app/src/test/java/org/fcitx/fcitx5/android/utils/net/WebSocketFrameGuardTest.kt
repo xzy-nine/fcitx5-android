@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
-package org.fcitx.fcitx5.android.clipboardsync.network
+package org.fcitx.fcitx5.android.utils.net
 
 import org.junit.Assert.*
 import org.junit.Test
@@ -69,14 +69,9 @@ class WebSocketFrameGuardTest {
     @Test fun skipCannotBypassFrameValidationAndReadAheadIsBounded() {
         val bytes = upgradeBytes + wsHeader(1, 1000) + ByteArray(1000)
         try { WebSocketFrameGuard(bytes.inputStream(), 100).skip(10000); fail("Must reject") }
-        catch (_: ClipCascadeMessageTooLargeException) { }
+        catch (_: WebSocketMessageTooLargeException) { }
         val guard = WebSocketFrameGuard((upgradeBytes + wsHeader(1, 20000) + ByteArray(20000)).inputStream(), 20000)
         assertTrue(guard.read(ByteArray(30000)) <= 8192)
-    }
-    @Test fun defaultPayloadBudgetScalesWithHeapAndNeverExceedsTheProtocolCeiling() {
-        assertEquals(2L * 1024 * 1024, ClipCascadePayloadBudget.forHeap(64L * 1024 * 1024).maxPayloadBytes)
-        assertEquals(8L * 1024 * 1024, ClipCascadePayloadBudget.forHeap(256L * 1024 * 1024).maxPayloadBytes)
-        assertEquals(32L * 1024 * 1024, ClipCascadePayloadBudget.forHeap(Long.MAX_VALUE).maxPayloadBytes)
     }
     @Test fun isolatedSmallHeapRejectsGigabyteDeclarationBeforeReadingItsPayload() {
         val classes = listOf(WebSocketFrameGuard::class.java, WebSocketHeapProbe::class.java, kotlin.Unit::class.java,
@@ -109,7 +104,7 @@ object WebSocketHeapProbe {
         val source = SequenceInputStream((upgradeBytes + wsHeader(1, 1L shl 30)).inputStream(), huge)
         var rejected = false
         try { WebSocketFrameGuard(source, 2L * 1024 * 1024).copyTo(OutputStream.nullOutputStream()) }
-        catch (_: ClipCascadeMessageTooLargeException) { rejected = true }
+        catch (_: WebSocketMessageTooLargeException) { rejected = true }
         val peak = pools.sumOf { it.peakUsage.used }
         check(rejected && generated <= 8192 && peak - before < 8 * 1024 * 1024)
         println("{\"max_heap_bytes\":${Runtime.getRuntime().maxMemory()},\"peak_heap_bytes\":$peak,\"peak_delta_bytes\":${peak-before},\"payload_bytes_read\":$generated,\"declared_message_bytes\":1073741824,\"rejected\":$rejected}")

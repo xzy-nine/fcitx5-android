@@ -43,7 +43,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.FcitxApplication
 import org.fcitx.fcitx5.android.R
-import org.fcitx.fcitx5.android.clipboardsync.MainService
 import org.fcitx.fcitx5.android.data.clipboard.ClipboardCategory
 import org.fcitx.fcitx5.android.data.clipboard.ClipboardManager
 import org.fcitx.fcitx5.android.data.clipboard.db.ClipboardEntry
@@ -199,15 +198,6 @@ internal class ClipboardContent(
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 service.startActivity(chooser)
-            }
-
-            override fun shouldShowUpload(entry: ClipboardEntry): Boolean {
-                return entry.text.isNotBlank() &&
-                    currentCategory in setOf(ClipboardCategory.Favorites, ClipboardCategory.Local)
-            }
-
-            override fun onUpload(entry: ClipboardEntry) {
-                MainService.submitCapturedClipboard(context, entry.text, "manual-upload")
             }
 
             override fun onSplitText(text: String) {
@@ -397,7 +387,6 @@ internal class ClipboardContent(
 
     private fun notifyClipboardPluginSuppressedRemoteContents(contents: Collection<String>) {
         if (contents.isEmpty()) return
-        MainService.suppressRemoteClipboardContents(context, contents)
     }
 
     @SuppressLint("RestrictedApi")

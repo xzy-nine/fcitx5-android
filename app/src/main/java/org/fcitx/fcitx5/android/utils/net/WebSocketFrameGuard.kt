@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
-package org.fcitx.fcitx5.android.clipboardsync.network
+package org.fcitx.fcitx5.android.utils.net
 
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -102,7 +102,7 @@ internal class WebSocketFrameGuard(private val source: InputStream, private val 
 
     private fun checkBudget(length: Long) {
         if (length > maxMessage - messageBytes)
-            throw ClipCascadeMessageTooLargeException("ClipCascade WebSocket message exceeds $maxMessage bytes")
+            throw WebSocketMessageTooLargeException("ClipCascade WebSocket message exceeds $maxMessage bytes")
         messageBytes += length
     }
     private fun endFrame() { if (finalData) messageBytes = 0; finalData = false }

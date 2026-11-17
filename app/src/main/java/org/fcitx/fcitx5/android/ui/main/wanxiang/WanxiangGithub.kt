@@ -4,7 +4,7 @@ package org.fcitx.fcitx5.android.ui.main.wanxiang
 import android.content.Context
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.fcitx.fcitx5.android.clipboardsync.network.SyncTransportPolicy
+import org.fcitx.fcitx5.android.utils.net.SyncTransportPolicy
 import org.fcitx.fcitx5.android.input.voice.js.JsVoiceSecretCrypto
 import org.fcitx.fcitx5.android.ui.main.update.UpdateRepository
 import org.json.JSONObject
