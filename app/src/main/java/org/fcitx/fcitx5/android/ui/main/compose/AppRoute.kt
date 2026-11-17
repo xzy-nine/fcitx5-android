@@ -106,6 +106,10 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data class CrashLog(val stackTrace: String? = null) : AppRoute
 
+    /** 单个 JS 语音插件设置。 */
+    @Serializable
+    data class JsVoicePluginSettings(val pluginId: String) : AppRoute
+
     /** 设置界面外观。 */
     @Serializable
     data object SettingsUiAppearance : AppRoute

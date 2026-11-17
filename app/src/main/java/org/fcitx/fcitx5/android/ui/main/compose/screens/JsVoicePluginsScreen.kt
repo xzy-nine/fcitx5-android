@@ -20,7 +20,6 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.voice.js.JsAppSelection
 import org.fcitx.fcitx5.android.input.voice.js.JsVoiceProviders
-import org.fcitx.fcitx5.android.ui.main.settings.voice.JsVoicePluginSettingsActivity
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -35,7 +34,10 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * 源码替换、移除等操作在各自的插件设置页内。
  */
 @Composable
-fun JsVoicePluginsScreen(onBack: () -> Unit) {
+fun JsVoicePluginsScreen(
+    onBack: () -> Unit,
+    onOpenPlugin: (String) -> Unit = {},
+) {
     val context = LocalContext.current
     var providers by remember { mutableStateOf(JsVoiceProviders.all()) }
     var preferred by remember { mutableStateOf(AppPrefs.getInstance().keyboard.preferredVoiceInput.getValue()) }
@@ -110,11 +112,7 @@ fun JsVoicePluginsScreen(onBack: () -> Unit) {
                         } else {
                             detail
                         },
-                        onClick = {
-                            context.startActivity(
-                                JsVoicePluginSettingsActivity.intent(context, spec.id),
-                            )
-                        },
+                        onClick = { onOpenPlugin(spec.id) },
                     )
                 }
             }

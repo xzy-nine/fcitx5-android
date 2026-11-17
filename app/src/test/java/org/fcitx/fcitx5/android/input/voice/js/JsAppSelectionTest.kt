@@ -4,7 +4,7 @@ package org.fcitx.fcitx5.android.input.voice.js
 import org.fcitx.fcitx5.android.FcitxApplication
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.editor.EditorApplicationShadow
-import org.fcitx.fcitx5.android.ui.main.settings.voice.JsVoicePluginSettingsActivity
+import org.fcitx.fcitx5.android.ui.main.MainActivity
 import org.fcitx.fcitx5.android.utils.appContext
 import org.junit.After
 import org.junit.Assert.*
@@ -163,13 +163,13 @@ class JsAppSelectionTest {
         assertTrue(JsAppSelection.select("js:$firstId", "formatter"))
         JsApps.configure(appContext)
         val selected = shadowOf(appContext as FcitxApplication).nextStartedActivity
-        assertEquals("js:$firstId", selected.getStringExtra(JsVoicePluginSettingsActivity.EXTRA_PLUGIN_ID))
+        assertEquals("js:$firstId", selected.getStringExtra(MainActivity.EXTRA_COMPOSE_ROUTE_ARG))
 
         assertTrue(JsVoicePluginStore.delete(firstId))
         JsVoiceProviders.reload()
         JsApps.configure(appContext)
         val fallback = shadowOf(appContext as FcitxApplication).nextStartedActivity
-        assertEquals("js:llm-assistant", fallback.getStringExtra(JsVoicePluginSettingsActivity.EXTRA_PLUGIN_ID))
+        assertEquals("js:llm-assistant", fallback.getStringExtra(MainActivity.EXTRA_COMPOSE_ROUTE_ARG))
     }
 
     @Test fun exactShortcutSettingsRouteUsesItsOwnPluginInsteadOfTheAiPreference() {
@@ -177,7 +177,7 @@ class JsAppSelectionTest {
         val intent = shadowOf(appContext as FcitxApplication).nextStartedActivity
         assertEquals(
             "js:youdao-free-translate",
-            intent.getStringExtra(JsVoicePluginSettingsActivity.EXTRA_PLUGIN_ID),
+            intent.getStringExtra(MainActivity.EXTRA_COMPOSE_ROUTE_ARG),
         )
     }
 

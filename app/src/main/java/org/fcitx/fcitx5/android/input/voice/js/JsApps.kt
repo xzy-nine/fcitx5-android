@@ -19,7 +19,6 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.input.FcitxInputMethodService
 import org.fcitx.fcitx5.android.input.clipboard.ClipboardSearchController
 import org.fcitx.fcitx5.android.input.voice.VoiceInputProviderManager
-import org.fcitx.fcitx5.android.ui.main.settings.voice.JsVoicePluginSettingsActivity
 import org.fcitx.fcitx5.android.utils.appContext
 import org.fcitx.fcitx5.android.utils.toast
 import java.util.Locale
@@ -67,9 +66,8 @@ internal object JsApps {
 
     fun configure(context: Context, pluginId: String) {
         if (JsVoiceProviders.specOf(pluginId) != null) {
-            context.startActivity(
-                JsVoicePluginSettingsActivity.intent(context, pluginId)
-                    .apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) },
+            org.fcitx.fcitx5.android.utils.AppUtil.launchMainToComposeRoute(
+                context, "JsVoicePluginSettings", pluginId,
             )
         } else {
             // 插件不存在时回到插件管理页，而不是打开一个空设置页

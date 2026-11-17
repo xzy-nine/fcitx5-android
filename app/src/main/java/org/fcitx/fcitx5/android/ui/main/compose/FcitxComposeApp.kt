@@ -54,6 +54,7 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.JsVoicePluginsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.TextKeyboardLayoutProfilePickerScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.LogMode
 import org.fcitx.fcitx5.android.ui.main.compose.screens.LogScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.JsVoicePluginSettingsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.UpdateMirrorListScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WanxiangUpdateScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingGestureDemoScreen
@@ -317,7 +318,10 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                     SplitKeyboardCalibrationScreen(onBack = { backStack.removeLastOrNull() })
                 }
                 entry<AppRoute.JsVoicePlugins> {
-                    JsVoicePluginsScreen(onBack = { backStack.removeLastOrNull() })
+                    JsVoicePluginsScreen(
+                        onBack = { backStack.removeLastOrNull() },
+                        onOpenPlugin = { id -> navigateTo(AppRoute.JsVoicePluginSettings(id)) },
+                    )
                 }
                 entry<AppRoute.TextKeyboardLayoutProfilePicker> {
                     TextKeyboardLayoutProfilePickerScreen(
@@ -335,6 +339,12 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                     LogScreen(
                         mode = LogMode.Crash,
                         crashStackTrace = route.stackTrace,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<AppRoute.JsVoicePluginSettings> { route ->
+                    JsVoicePluginSettingsScreen(
+                        pluginId = route.pluginId,
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }
@@ -466,6 +476,7 @@ fun composeRouteByName(name: String, arg: String? = null): AppRoute? = when (nam
     "TextKeyboardLayoutProfilePicker" -> AppRoute.TextKeyboardLayoutProfilePicker
     "LiveLog" -> AppRoute.LiveLog
     "CrashLog" -> AppRoute.CrashLog(arg)
+    "JsVoicePluginSettings" -> arg?.let { AppRoute.JsVoicePluginSettings(it) }
     else -> null
 }
 
