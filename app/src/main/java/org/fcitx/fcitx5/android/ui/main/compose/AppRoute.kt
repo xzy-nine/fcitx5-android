@@ -70,6 +70,10 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object TextKeyboardLayoutProfiles : AppRoute
 
+    /** 图标主题列表。 */
+    @Serializable
+    data object IconThemeList : AppRoute
+
     /** 设置界面外观。 */
     @Serializable
     data object SettingsUiAppearance : AppRoute

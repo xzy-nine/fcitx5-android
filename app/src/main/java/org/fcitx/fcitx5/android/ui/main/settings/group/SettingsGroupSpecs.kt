@@ -13,7 +13,6 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.FontsetEditorActivity
 import org.fcitx.fcitx5.android.ui.main.compose.screens.KeyboardGroup
-import org.fcitx.fcitx5.android.ui.main.settings.icon.IconThemeListActivity
 import org.fcitx.fcitx5.android.ui.main.settings.im.RimeEngineManagerActivity
 import org.fcitx.fcitx5.android.ui.main.settings.voice.JsVoicePluginsActivity
 
@@ -144,10 +143,10 @@ object SettingsGroupSpecs {
                         SettingsRoute.Theme,
                         sectionTitle = R.string.settings_section_keyboard_appearance
                     ),
-                    SettingsGroupEntry.activity(
+                    SettingsGroupEntry.route(
                         R.string.icon_theme,
                         R.drawable.ic_icon_theme_24,
-                        IconThemeListActivity::class.java,
+                        SettingsRoute.IconThemeList,
                         sectionTitle = R.string.settings_section_keyboard_appearance
                     ),
                     // 原先藏在「增强选项」这个空容器里，现在放到外观下。

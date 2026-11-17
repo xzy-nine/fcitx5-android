@@ -45,6 +45,7 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.TextEditingPrefsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.UpdateHostsSettingsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.UpdateMirrorEditScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.TextKeyboardLayoutProfileManagerScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.IconThemeListScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.UpdateMirrorListScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WanxiangUpdateScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingGestureDemoScreen
@@ -289,6 +290,9 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }
+                entry<AppRoute.IconThemeList> {
+                    IconThemeListScreen(onBack = { backStack.removeLastOrNull() })
+                }
                 entry<AppRoute.SettingsGroup> { route ->
                     SettingsGroupScreen(
                         groupId = route.id,
@@ -406,6 +410,7 @@ fun composeRouteByName(name: String, arg: String? = null): AppRoute? = when (nam
     "UpdateMirrorList" -> AppRoute.UpdateMirrorList
     "UpdateMirrorEdit" -> AppRoute.UpdateMirrorEdit(arg)
     "UpdateHostsSettings" -> AppRoute.UpdateHostsSettings
+    "IconThemeList" -> AppRoute.IconThemeList
     else -> null
 }
 
@@ -429,6 +434,7 @@ fun appRouteOf(route: SettingsRoute): AppRoute = when (route) {
     SettingsRoute.KeyboardModes -> AppRoute.KeyboardModes
     is SettingsRoute.KeyboardGroup -> AppRoute.KeyboardGroup(route.group)
     SettingsRoute.TextKeyboardLayoutProfiles -> AppRoute.TextKeyboardLayoutProfiles
+    SettingsRoute.IconThemeList -> AppRoute.IconThemeList
     SettingsRoute.Advanced -> AppRoute.Prefs(PrefCategory.Advanced)
     SettingsRoute.Developer -> AppRoute.Developer
     SettingsRoute.License -> AppRoute.Licenses

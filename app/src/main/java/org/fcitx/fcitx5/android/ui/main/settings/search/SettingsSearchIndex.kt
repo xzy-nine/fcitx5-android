@@ -16,7 +16,6 @@ import org.fcitx.fcitx5.android.ui.main.settings.behavior.FontsetEditorActivity
 import org.fcitx.fcitx5.android.ui.main.compose.screens.KeyboardGroup
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.PopupEditorActivity
 import org.fcitx.fcitx5.android.ui.main.settings.group.SettingsGroupSpecs
-import org.fcitx.fcitx5.android.ui.main.settings.icon.IconThemeListActivity
 import org.fcitx.fcitx5.android.ui.main.settings.voice.JsVoicePluginsActivity
 
 /**
@@ -461,7 +460,7 @@ object SettingsSearchIndex {
         SettingsSearchEntry(
             R.string.icon_theme, P_ANDROID,
             listOf("icon", "tubiao", "图标", "图标包"),
-            activityClass = IconThemeListActivity::class.java
+            route = SettingsRoute.IconThemeList
         ),
         SettingsSearchEntry(
             R.string.key_radius, P_THEME,

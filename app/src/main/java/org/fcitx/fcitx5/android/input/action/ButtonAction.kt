@@ -27,7 +27,6 @@ import org.fcitx.fcitx5.android.ui.main.settings.behavior.ButtonsCustomizerActiv
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.FontsetEditorActivity
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.TextKeyboardLayoutEditorActivity
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.dialog.TextKeyboardLayoutProfilePickerActivity
-import org.fcitx.fcitx5.android.ui.main.settings.icon.IconThemeListActivity
 import org.fcitx.fcitx5.android.input.voice.js.JsAppButtonBinding
 import org.fcitx.fcitx5.android.utils.AppUtil
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
@@ -466,9 +465,7 @@ data object IconThemeAction : ButtonAction() {
         view: View?,
         onActionComplete: (() -> Unit)?
     ) {
-        context.startActivity(Intent(context, IconThemeListActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
-        })
+        org.fcitx.fcitx5.android.utils.AppUtil.launchMainToComposeRoute(context, "IconThemeList")
     }
 }
 
