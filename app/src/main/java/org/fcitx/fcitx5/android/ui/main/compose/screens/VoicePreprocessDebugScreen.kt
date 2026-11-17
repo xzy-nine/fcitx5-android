@@ -255,7 +255,7 @@ fun VoicePreprocessDebugScreen(onBack: () -> Unit) {
 
             is VoiceRecognitionTarget.Online -> {
                 val provider = OnlineAsrRegistry.byId(target.providerId)
-                val name = provider?.let { stringResource(it.nameRes) }.orEmpty()
+                val name = provider?.labelOverride ?: provider?.let { stringResource(it.nameRes) }.orEmpty()
                 if (provider?.isConfigured(context) == true) name
                 else stringResource(R.string.voice_preprocess_engine_online_unconfigured, name)
             }

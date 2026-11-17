@@ -7,6 +7,7 @@ import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.voice.VoiceInputProviderRegistry
 import org.fcitx.fcitx5.android.utils.appContext
 import java.io.File
+import timber.log.Timber
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -27,6 +28,8 @@ internal object JsVoiceProviders {
     const val DOUBAO_ASR_ID = "js:doubao-asr"
     const val TENCENT_ASR_ID = "js:tencent-asr"
     const val TENCENT_TRANSLATE_ID = "js:tencent-translate"
+
+    const val MIMO_ASR_ID = "js:mimo-asr"
 
     /** 脚本正文的来源。内置读 asset，用户导入的读私有目录文件。 */
     internal sealed interface Source {
@@ -135,6 +138,16 @@ internal object JsVoiceProviders {
             builtIn = true,
             originName = "tencent-translate.js",
         ),
+        Spec(
+            id = MIMO_ASR_ID,
+            label = appContext.getString(R.string.js_voice_provider_mimo_asr),
+            version = "1.0.0",
+            hosts = setOf("api.xiaomimimo.com"),
+            sampleRate = 16000,
+            source = Source.Asset("bundled/js-voice/mimo-asr.js"),
+            builtIn = true,
+            originName = "mimo-asr.js",
+        ),
     )
 
     private fun importedSpecs(): List<Spec> = JsVoicePluginStore.list().map { record ->
@@ -217,6 +230,21 @@ internal object JsVoiceProviders {
     }
 
     /**
+     * 已缓存字段的同步读取，供不能挂起的调用方（如平台注册表）使用。
+     *
+     * 未缓存时返回空列表：字段只在设置页按需解析，注册表不需要等它。
+     */
+    fun cachedFieldsOf(pluginId: String): List<JsVoiceField> =
+        synchronized(fieldCache) { fieldCache[pluginId] ?: emptyList() }
+
+    /** 把解析结果写入缓存，供 [cachedFieldsOf] 读取。 */
+    fun rememberFields(pluginId: String, fields: List<JsVoiceField>) {
+        synchronized(fieldCache) { fieldCache[pluginId] = fields }
+    }
+
+    private val fieldCache = java.util.concurrent.ConcurrentHashMap<String, List<JsVoiceField>>()
+
+    /**
      * 把当前清单同步进注册表：缺的注册、多的回收。
      *
      * 幂等且便宜（[all] 走缓存），所以 [VoiceInputProviderManager] 可以在热路径上直接调。
@@ -249,6 +277,20 @@ internal object JsVoiceProviders {
             registeredIds += spec.id
         }
         installedRevision = VoiceInputProviderRegistry.revision
+    }
+
+    /**
+     * 同步解析并缓存各语音插件的设置字段。
+     *
+     * 字段由插件脚本的 `configure(ui)` 声明，只有跑一遍才知道有哪些。平台注册表不能挂起，
+     * 因此在插件安装/重载后集中预取一次，之后 [cachedFieldsOf] 就能同步命中。
+     */
+    suspend fun primeFieldCache() {
+        all().filter { it.hasVoice }.forEach { spec ->
+            runCatching { describe(spec.id) }
+                .onSuccess { fields -> rememberFields(spec.id, fields) }
+                .onFailure { Timber.w(it, "JS voice fields unavailable: %s", spec.id) }
+        }
     }
 
     /**

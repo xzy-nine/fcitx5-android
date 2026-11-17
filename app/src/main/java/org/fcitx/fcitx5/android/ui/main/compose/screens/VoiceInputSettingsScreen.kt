@@ -151,7 +151,7 @@ fun VoiceInputSettingsScreen(
                     } else {
                         providers.forEach { provider ->
                             val configured = provider.isConfigured(context)
-                            val name = stringResource(provider.nameRes)
+                            val name = provider.labelOverride ?: stringResource(provider.nameRes)
                             RadioButtonPreference(
                                 title = name,
                                 summary = if (configured) null

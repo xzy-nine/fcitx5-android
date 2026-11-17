@@ -38,6 +38,9 @@ internal object JsVoiceSettingsStore {
         return result
     }
 
+    /** 该插件已保存的密钥字段名（不解密，只列名字）。 */
+    fun secretKeys(pluginId: String): Set<String> = keysOf(pluginId, SECRET_PREFIX).keys
+
     /** 普通设置项（不含密钥）。 */
     fun values(pluginId: String): Map<String, String> = keysOf(pluginId, VALUE_PREFIX)
 

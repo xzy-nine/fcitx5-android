@@ -19,6 +19,8 @@ package org.fcitx.fcitx5.android.data.voice.online
 import android.content.Context
 import androidx.annotation.StringRes
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
+import org.fcitx.fcitx5.android.input.voice.VoiceInputProviderRegistry
+import org.fcitx.fcitx5.android.input.voice.js.JsVoiceProviders
 
 interface OnlineAsrProvider {
 
@@ -34,6 +36,9 @@ interface OnlineAsrProvider {
     /** 是否能在最终结果前返回增量文本。 */
     val streamsText: Boolean
 
+    /** 运行时名称；非空时优先于 [nameRes]，供运行时注册的平台使用。 */
+    val labelOverride: String? get() = null
+
     /** 凭据是否齐备（设置页据此标「未配置」）。 */
     fun isConfigured(context: Context): Boolean
 
@@ -46,13 +51,27 @@ interface OnlineAsrProvider {
 /** 一个平台配置项。 */
 data class OnlineSetting(
     val key: String,
-    @StringRes val label: Int,
+    @StringRes val label: Int = 0,
+    /** 运行时文案；非空时优先于 [label]，供 JS 插件使用自己声明的字段名。 */
+    val labelText: String? = null,
+    /** 控件形态：text / secret / select / switch / number。 */
+    val kind: String = KIND_TEXT,
+    /** 说明文字；为空表示没有。 */
+    val description: String? = null,
     val secret: Boolean = true,
     /** 非空则渲染成单选（值即选项之一）。 */
     val options: List<String> = emptyList(),
     val read: () -> String,
     val write: (String) -> Unit,
-)
+) {
+    companion object {
+        const val KIND_TEXT = "text"
+        const val KIND_SECRET = "secret"
+        const val KIND_SELECT = "select"
+        const val KIND_SWITCH = "switch"
+        const val KIND_NUMBER = "number"
+    }
+}
 
 interface OnlineAsrSession {
     fun start()
@@ -80,11 +99,34 @@ interface OnlineAsrCallback {
 
 object OnlineAsrRegistry {
 
-    /** 内置平台（新增平台只需在这里加一项）。 */
-    val providers: List<OnlineAsrProvider> = listOf(
-        VolcengineAsrProvider,
-        MiMoAsrProvider,
-    )
+    /** 全部平台：只来自 JS 语音插件。 */
+    val providers: List<OnlineAsrProvider> get() = jsPluginProviders()
+
+    /** 把已注册的 JS 语音插件包装成在线平台；插件清单变化时自动跟随。 */
+    private fun jsPluginProviders(): List<OnlineAsrProvider> {
+        JsVoiceProviders.install()
+        return VoiceInputProviderRegistry.all().mapNotNull { entry ->
+            val spec = JsVoiceProviders.specOf(entry.id) ?: return@mapNotNull null
+            if (!spec.hasVoice) return@mapNotNull null
+            JsPluginOnlineProvider(
+                id = entry.id,
+                label = entry.label.toString(),
+                provider = entry.provider,
+                pluginSettingsId = spec.id,
+                fields = JsVoiceProviders.cachedFieldsOf(spec.id).map { field ->
+                    JsPluginOnlineProvider.JsFieldSpec(
+                        key = field.key,
+                        labelText = field.label,
+                        kind = field.kind,
+                        description = field.description.ifBlank { null },
+                        secret = field.isSecret,
+                        required = field.isSecret,
+                        options = field.options.map { it.value },
+                    )
+                },
+            )
+        }
+    }
 
     fun byId(id: String): OnlineAsrProvider? = providers.firstOrNull { it.id == id }
 
