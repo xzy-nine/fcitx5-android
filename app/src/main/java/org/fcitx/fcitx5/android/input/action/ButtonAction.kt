@@ -25,7 +25,6 @@ import org.fcitx.fcitx5.android.input.wm.InputWindowManager
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.ButtonsCustomizerActivity
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.TextKeyboardLayoutEditorActivity
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.dialog.TextKeyboardLayoutProfilePickerActivity
 import org.fcitx.fcitx5.android.input.voice.js.JsAppButtonBinding
 import org.fcitx.fcitx5.android.utils.AppUtil
 import org.fcitx.fcitx5.android.utils.InputMethodUtil
@@ -816,9 +815,7 @@ data object TextKeyboardLayoutFileSelectAction : ButtonAction() {
         view: View?,
         onActionComplete: (() -> Unit)?
     ) {
-        context.startActivity(Intent(context, TextKeyboardLayoutProfilePickerActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        })
+        org.fcitx.fcitx5.android.utils.AppUtil.launchMainToComposeRoute(context, "TextKeyboardLayoutProfilePicker")
     }
 }
 

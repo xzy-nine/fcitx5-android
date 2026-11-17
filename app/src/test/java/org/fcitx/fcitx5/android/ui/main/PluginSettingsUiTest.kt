@@ -21,7 +21,6 @@ import org.fcitx.fcitx5.android.input.voice.js.JsVoiceProviders
 import org.fcitx.fcitx5.android.ui.common.SettingsUiActivity
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.editor.EditorApplicationShadow
 import org.fcitx.fcitx5.android.ui.main.settings.voice.JsVoicePluginSettingsFragment
-import org.fcitx.fcitx5.android.ui.main.settings.voice.JsVoicePluginsFragment
 import org.fcitx.fcitx5.android.utils.settingsColor
 import org.junit.After
 import org.junit.Assert.*
@@ -77,17 +76,6 @@ class PluginSettingsUiTest {
         }
     }
 
-    @Test fun pluginRefreshReusesUnchangedRowsAndShowsCapabilities() {
-        val fragment = JsVoicePluginsFragment()
-        show(fragment)
-        val screen = fragment.preferenceScreen
-        val first = screen.getPreference(1)
-        ReflectionHelpers.callInstanceMethod<Unit>(fragment, "rebuild")
-        assertSame(first, screen.getPreference(1))
-        assertTrue((0 until screen.preferenceCount).map { screen.getPreference(it).summary.toString() }
-            .any { it.contains(activity.getString(R.string.ui_plugin_voice)) })
-        capture("plugins")
-    }
 
     @Test fun groupedSettingsKeepConditionalCredentialsAndImmediateChanges() {
         val fragment = JsVoicePluginSettingsFragment.newInstance(JsVoiceProviders.QWEN_ASR_ID)

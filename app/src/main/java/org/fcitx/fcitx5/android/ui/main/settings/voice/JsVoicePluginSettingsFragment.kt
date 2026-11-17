@@ -225,7 +225,7 @@ class JsVoicePluginSettingsFragment : PaddingPreferenceFragment() {
             exportLauncher.launch(pluginId.removePrefix(JsVoicePluginMeta.PROVIDER_ID_PREFIX) + ".js")
         }
         action("js_plugin_replace", R.string.js_plugin_replace, getString(R.string.js_plugin_replace_summary)) {
-            replaceLauncher.launch(JsVoicePluginsActivity.intent(requireContext(), pluginId))
+            org.fcitx.fcitx5.android.utils.AppUtil.launchMainToComposeRoute(requireContext(), "JsVoicePlugins")
         }
         if (spec.overridesBuiltIn) {
             action("js_plugin_restore", R.string.js_plugin_restore, getString(R.string.js_plugin_restore_summary)) {

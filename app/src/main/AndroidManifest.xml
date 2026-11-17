@@ -120,11 +120,6 @@
             android:exported="false"
             android:label="@string/js_voice_settings_title" />
         <activity
-            android:name=".ui.main.settings.voice.JsVoicePluginsActivity"
-            android:configChanges="orientation|screenSize"
-            android:exported="false"
-            android:label="@string/js_voice_plugins_title" />
-        <activity
             android:name=".ui.main.settings.icon.IconThemeEditorActivity"
             android:configChanges="orientation|screenSize"
             android:exported="false"
@@ -161,14 +156,6 @@
             and its layout all exist, so an unregistered declaration is a latent
             ActivityNotFoundException the moment an entry point is added.
         -->
-        <activity
-            android:name=".ui.main.settings.behavior.dialog.TextKeyboardLayoutProfilePickerActivity"
-            android:autoRemoveFromRecents="true"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:launchMode="singleInstance"
-            android:taskAffinity=".ui.main.settings.behavior.dialog.TextKeyboardLayoutProfilePickerActivity"
-            android:theme="@style/Theme.TransparentOverlayActivity" />
         <activity
             android:name=".ui.main.settings.behavior.share.QrScanCaptureActivity"
             android:exported="false"

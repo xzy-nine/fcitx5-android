@@ -90,6 +90,14 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object SplitKeyboardCalibration : AppRoute
 
+    /** JS 语音插件管理。 */
+    @Serializable
+    data object JsVoicePlugins : AppRoute
+
+    /** 文本键盘布局 profile 选择器。 */
+    @Serializable
+    data object TextKeyboardLayoutProfilePicker : AppRoute
+
     /** 设置界面外观。 */
     @Serializable
     data object SettingsUiAppearance : AppRoute

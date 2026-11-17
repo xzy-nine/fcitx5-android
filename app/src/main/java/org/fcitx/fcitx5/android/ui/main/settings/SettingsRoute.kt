@@ -78,6 +78,9 @@ sealed class SettingsRoute : Parcelable {
     data object SplitKeyboardCalibration : SettingsRoute()
 
     @Serializable
+    data object JsVoicePlugins : SettingsRoute()
+
+    @Serializable
     data object IconTheme : SettingsRoute()
 
     @Serializable

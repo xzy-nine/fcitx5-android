@@ -19,7 +19,6 @@ import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.SettingsUiPreferences
 import org.fcitx.fcitx5.android.input.voice.VoiceInputChoices
-import org.fcitx.fcitx5.android.ui.main.settings.voice.JsVoicePluginsActivity
 
 internal object VoiceInputPickerDialog {
     fun build(context: Context, onSelected: (String) -> Unit): AlertDialog {
@@ -57,9 +56,7 @@ internal object VoiceInputPickerDialog {
             }
             .setNeutralButton(R.string.js_voice_plugins_settings) { dialog, _ ->
                 dialog.dismiss()
-                context.startActivity(JsVoicePluginsActivity.intent(context).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
+                org.fcitx.fcitx5.android.utils.AppUtil.launchMainToComposeRoute(context, "JsVoicePlugins")
             }
             .setNegativeButton(android.R.string.cancel, null)
             .create()

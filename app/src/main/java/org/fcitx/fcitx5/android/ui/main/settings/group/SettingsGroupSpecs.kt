@@ -12,7 +12,6 @@ import androidx.annotation.StringRes
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.ui.main.compose.screens.KeyboardGroup
-import org.fcitx.fcitx5.android.ui.main.settings.voice.JsVoicePluginsActivity
 
 /** 分组内一条目的跳转目标。 */
 sealed interface SettingsGroupAction {
@@ -191,10 +190,10 @@ object SettingsGroupSpecs {
                         R.drawable.ic_baseline_emoji_symbols_24,
                         SettingsRoute.Symbol
                     ),
-                    SettingsGroupEntry.activity(
+                    SettingsGroupEntry.route(
                         R.string.js_voice_plugins_title,
                         R.drawable.ic_baseline_extension_24,
-                        JsVoicePluginsActivity::class.java,
+                        SettingsRoute.JsVoicePlugins,
                         R.string.js_voice_plugins_summary
                     ),
                     SettingsGroupEntry.route(

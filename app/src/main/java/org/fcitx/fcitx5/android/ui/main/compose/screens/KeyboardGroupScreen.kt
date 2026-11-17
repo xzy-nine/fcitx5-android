@@ -15,7 +15,6 @@ import androidx.compose.ui.unit.dp
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.ui.main.compose.settings.ManagedPrefsScreen
-import org.fcitx.fcitx5.android.ui.main.settings.voice.JsVoicePluginsActivity
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.ButtonsCustomizerActivity
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.PopupEditorActivity
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.TextKeyboardLayoutEditorActivity
@@ -95,6 +94,7 @@ enum class KeyboardGroup(val index: Int) {
 fun KeyboardGroupScreen(
     groupIndex: Int,
     onBack: () -> Unit,
+    onOpenJsVoicePlugins: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val group = KeyboardGroup.fromIndex(groupIndex)
@@ -130,9 +130,7 @@ fun KeyboardGroupScreen(
                     },
                 )
                 KeyboardGroup.Voice -> listOf(
-                    R.string.js_voice_plugins_title to {
-                        context.startActivity(JsVoicePluginsActivity.intent(context))
-                    },
+                    R.string.js_voice_plugins_title to onOpenJsVoicePlugins,
                 )
                 else -> emptyList()
             }

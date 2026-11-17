@@ -4,31 +4,22 @@
  */
 package org.fcitx.fcitx5.android.ui.main.settings.behavior.dialog
 
-import org.fcitx.fcitx5.android.ui.common.MaterialSpinner
 import android.content.Intent
 import android.os.Bundle
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.data.LayoutEditorResultStore
-import android.view.Menu
-import android.view.MenuItem
-import android.widget.ArrayAdapter
-import android.widget.LinearLayout
-import android.widget.Spinner
-import android.widget.TextView
-import android.widget.Toast
-import org.fcitx.fcitx5.android.ui.common.SettingsUiActivity
-import androidx.appcompat.widget.AppCompatEditText
-import com.google.android.material.appbar.MaterialToolbar as Toolbar
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updatePadding
+import androidx.activity.compose.setContent
 import org.fcitx.fcitx5.android.R
-import splitties.dimensions.dp
-import org.fcitx.fcitx5.android.utils.settingsColor
-import splitties.views.backgroundColor
-import splitties.views.dsl.core.matchParent
-import splitties.views.dsl.core.wrapContent
+import org.fcitx.fcitx5.android.ui.common.SettingsUiActivity
+import org.fcitx.fcitx5.android.ui.main.compose.screens.LayoutNameInputScreen
+import org.fcitx.fcitx5.android.ui.main.settings.behavior.data.LayoutEditorResultStore
+import org.fcitx.fcitx5.android.utils.toast
 
+/**
+ * 布局名称输入的调用入口。
+ *
+ * 界面由 Compose 渲染；本类负责读取调用方参数并回送结果。
+ */
 class LayoutNameInputActivity : SettingsUiActivity() {
+
     companion object {
         const val EXTRA_TITLE = "title"
         const val EXTRA_LABEL = "label"
@@ -39,120 +30,36 @@ class LayoutNameInputActivity : SettingsUiActivity() {
         const val EXTRA_COPY_SOURCE_DEFAULT = "copy_source_default"
         const val EXTRA_RESULT_LAYOUT_NAME = "result_layout_name"
         const val EXTRA_RESULT_COPY_SOURCE = "result_copy_source"
-
-        private const val MENU_SAVE_ID = 9101
-    }
-
-    private val toolbar by lazy {
-        Toolbar(this).apply {
-            backgroundColor = settingsColor(com.google.android.material.R.attr.colorSurfaceContainer)
-            elevation = 0f
-        }
-    }
-
-    private lateinit var input: AppCompatEditText
-    private var copySourceSpinner: Spinner? = null
-    private var copySources: List<String> = emptyList()
-    private var copySourceLabels: List<String> = emptyList()
-
-    private val content by lazy {
-        LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val pad = dp(16)
-            setPadding(pad, pad, pad, pad)
-
-            addView(TextView(this@LayoutNameInputActivity).apply {
-                text = intent.getStringExtra(EXTRA_LABEL).orEmpty().ifBlank {
-                    getString(R.string.text_keyboard_layout_layout_name)
-                }
-                textSize = 13f
-                setTextColor(settingsColor(android.R.attr.textColorSecondary))
-            })
-
-            input = AppCompatEditText(this@LayoutNameInputActivity).apply {
-                hint = intent.getStringExtra(EXTRA_HINT).orEmpty().ifBlank {
-                    getString(R.string.text_keyboard_layout_layout_name_hint)
-                }
-                setText(intent.getStringExtra(EXTRA_INITIAL_VALUE).orEmpty())
-                setSelection(text?.length ?: 0)
-            }
-            addView(input, LinearLayout.LayoutParams(matchParent, wrapContent))
-
-            copySources = intent.getStringArrayListExtra(EXTRA_COPY_SOURCE_OPTIONS)?.toList().orEmpty()
-            copySourceLabels = intent.getStringArrayListExtra(EXTRA_COPY_SOURCE_LABELS)?.toList()
-                ?.takeIf { it.size == copySources.size }
-                ?: copySources
-            if (copySources.isNotEmpty()) {
-                addView(TextView(this@LayoutNameInputActivity).apply {
-                    text = getString(R.string.text_keyboard_layout_copy_from)
-                    textSize = 13f
-                    setTextColor(settingsColor(android.R.attr.textColorSecondary))
-                    setPadding(0, dp(12), 0, 0)
-                })
-                val adapter = ArrayAdapter(
-                    this@LayoutNameInputActivity,
-                    android.R.layout.simple_spinner_item,
-                    copySourceLabels
-                )
-                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                copySourceSpinner = MaterialSpinner(this@LayoutNameInputActivity).apply {
-                    this.adapter = adapter
-                    val defaultValue = intent.getStringExtra(EXTRA_COPY_SOURCE_DEFAULT).orEmpty()
-                    val defaultIndex = copySources.indexOf(defaultValue).takeIf { it >= 0 } ?: 0
-                    setSelection(defaultIndex)
-                }
-                addView(copySourceSpinner, LinearLayout.LayoutParams(matchParent, wrapContent))
-            }
-        }
-    }
-
-    private val root by lazy {
-        LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(toolbar, LinearLayout.LayoutParams(matchParent, wrapContent))
-            addView(content, LinearLayout.LayoutParams(matchParent, wrapContent))
-        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(root)
-        setSupportActionBar(toolbar)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        supportActionBar?.title = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank {
-            getString(R.string.text_keyboard_layout_add_layout)
-        }
-
-    }
-
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menu.add(Menu.NONE, MENU_SAVE_ID, Menu.NONE, getString(R.string.save))
-            .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS or MenuItem.SHOW_AS_ACTION_WITH_TEXT)
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            android.R.id.home -> {
-                finish()
-                true
-            }
-            MENU_SAVE_ID -> {
-                val name = input.text?.toString().orEmpty().trim()
-                if (name.isEmpty()) {
-                    Toast.makeText(this, getString(R.string.text_keyboard_layout_name_empty), Toast.LENGTH_SHORT).show()
-                    return true
-                }
-                setResult(RESULT_OK, LayoutEditorResultStore.attachRequestToken(intent, Intent().apply {
-                    putExtra(EXTRA_RESULT_LAYOUT_NAME, name)
-                    copySourceSpinner?.selectedItemPosition
-                        ?.let { copySources.getOrNull(it) }
-                        ?.let { putExtra(EXTRA_RESULT_COPY_SOURCE, it) }
-                }))
-                finish()
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
+        val copySources = intent.getStringArrayListExtra(EXTRA_COPY_SOURCE_OPTIONS)?.toList().orEmpty()
+        val copyLabels = intent.getStringArrayListExtra(EXTRA_COPY_SOURCE_LABELS)?.toList()
+            ?.takeIf { it.size == copySources.size }
+            ?: copySources
+        setContent {
+            LayoutNameInputScreen(
+                title = intent.getStringExtra(EXTRA_TITLE).orEmpty(),
+                label = intent.getStringExtra(EXTRA_LABEL).orEmpty(),
+                hint = intent.getStringExtra(EXTRA_HINT).orEmpty(),
+                initialValue = intent.getStringExtra(EXTRA_INITIAL_VALUE).orEmpty(),
+                copySources = copySources,
+                copySourceLabels = copyLabels,
+                copySourceDefault = intent.getStringExtra(EXTRA_COPY_SOURCE_DEFAULT).orEmpty(),
+                onConfirm = { name, copySource ->
+                    setResult(
+                        RESULT_OK,
+                        LayoutEditorResultStore.attachRequestToken(intent, Intent().apply {
+                            putExtra(EXTRA_RESULT_LAYOUT_NAME, name)
+                            copySource?.let { putExtra(EXTRA_RESULT_COPY_SOURCE, it) }
+                        }),
+                    )
+                    finish()
+                },
+                onBack = { finish() },
+                onEmptyName = { toast(R.string.text_keyboard_layout_name_empty) },
+            )
         }
     }
 }

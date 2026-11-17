@@ -15,7 +15,6 @@ import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.ui.main.compose.screens.KeyboardGroup
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.PopupEditorActivity
 import org.fcitx.fcitx5.android.ui.main.settings.group.SettingsGroupSpecs
-import org.fcitx.fcitx5.android.ui.main.settings.voice.JsVoicePluginsActivity
 
 /**
  * 一条可被搜索到的设置项。
@@ -800,7 +799,7 @@ object SettingsSearchIndex {
                 "语音插件", "语音密钥", "导入插件", "自定义插件", "语音",
                 "yuyin chajian", "daoru chajian", "qwen", "doubao", "通义", "千问", "豆包", "asr"
             ),
-            activityClass = JsVoicePluginsActivity::class.java
+            route = SettingsRoute.JsVoicePlugins
         ),
         SettingsSearchEntry(
             R.string.edit_buttons, P_KEYBOARD,

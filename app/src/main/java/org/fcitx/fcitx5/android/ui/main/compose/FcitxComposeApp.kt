@@ -50,6 +50,8 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.InputStatsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.RimeEngineManagerScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.FontsetEditorScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.SplitKeyboardCalibrationScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.JsVoicePluginsScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.TextKeyboardLayoutProfilePickerScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.UpdateMirrorListScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WanxiangUpdateScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingGestureDemoScreen
@@ -309,6 +311,14 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 entry<AppRoute.SplitKeyboardCalibration> {
                     SplitKeyboardCalibrationScreen(onBack = { backStack.removeLastOrNull() })
                 }
+                entry<AppRoute.JsVoicePlugins> {
+                    JsVoicePluginsScreen(onBack = { backStack.removeLastOrNull() })
+                }
+                entry<AppRoute.TextKeyboardLayoutProfilePicker> {
+                    TextKeyboardLayoutProfilePickerScreen(
+                        onDismiss = { backStack.removeLastOrNull() },
+                    )
+                }
                 entry<AppRoute.SettingsGroup> { route ->
                     SettingsGroupScreen(
                         groupId = route.id,
@@ -335,6 +345,7 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                     KeyboardGroupScreen(
                         groupIndex = route.group,
                         onBack = { backStack.removeLastOrNull() },
+                        onOpenJsVoicePlugins = { navigateTo(AppRoute.JsVoicePlugins) },
                     )
                 }
                 entry<AppRoute.WebDavSync> {
@@ -432,6 +443,8 @@ fun composeRouteByName(name: String, arg: String? = null): AppRoute? = when (nam
     "IconThemeList" -> AppRoute.IconThemeList
     "FontsetEditor" -> AppRoute.FontsetEditor
     "SplitKeyboardCalibration" -> AppRoute.SplitKeyboardCalibration
+    "JsVoicePlugins" -> AppRoute.JsVoicePlugins
+    "TextKeyboardLayoutProfilePicker" -> AppRoute.TextKeyboardLayoutProfilePicker
     else -> null
 }
 
@@ -460,6 +473,7 @@ fun appRouteOf(route: SettingsRoute): AppRoute = when (route) {
     SettingsRoute.RimeEngineManager -> AppRoute.RimeEngineManager
     SettingsRoute.FontsetEditor -> AppRoute.FontsetEditor
     SettingsRoute.SplitKeyboardCalibration -> AppRoute.SplitKeyboardCalibration
+    SettingsRoute.JsVoicePlugins -> AppRoute.JsVoicePlugins
     SettingsRoute.Advanced -> AppRoute.Prefs(PrefCategory.Advanced)
     SettingsRoute.Developer -> AppRoute.Developer
     SettingsRoute.License -> AppRoute.Licenses

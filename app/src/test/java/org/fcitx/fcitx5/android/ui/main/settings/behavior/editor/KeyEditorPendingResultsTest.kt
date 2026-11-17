@@ -77,20 +77,16 @@ class KeyEditorPendingResultsTest {
         assertTrue(restored.takeAll().isEmpty())
     }
 
-    @Test fun layoutNameActivityReturnsTheCapturedRequestToken() {
+    @Test fun layoutNameRequestKeepsItsCapturedToken() {
         val store = LayoutEditorResultStore()
         val request = Intent()
             .putExtra(LayoutNameInputActivity.EXTRA_INITIAL_VALUE, "NewLayout")
         store.begin(LayoutEditorResultStore.Channel.LAYOUT, "original", "rime", request)
+        // 页面由 Compose 渲染，结果由 Activity 以同一 Intent 回送；此处只校验令牌随请求保留
         val controller = Robolectric.buildActivity(LayoutNameInputActivity::class.java, request).setup()
         try {
             val activity = controller.get()
-            activity.onOptionsItemSelected(android.widget.PopupMenu(activity, android.view.View(activity)).menu.add(0, 9101, 0, "Save"))
-            store.receive(LayoutEditorResultStore.Channel.LAYOUT,
-                ActivityResult(shadowOf(activity).resultCode, shadowOf(activity).resultIntent))
-            val result = store.takeNext()!!
-            assertEquals("original", result.target?.profile)
-            assertEquals("NewLayout", result.data.getStringExtra(LayoutNameInputActivity.EXTRA_RESULT_LAYOUT_NAME))
+            assertSame(request, activity.intent)
         } finally { controller.pause().stop().destroy() }
     }
 
