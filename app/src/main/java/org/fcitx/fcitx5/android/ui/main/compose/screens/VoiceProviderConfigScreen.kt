@@ -47,8 +47,8 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Hide
 import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.icon.extended.Show
-import top.yukonga.miuix.kmp.preference.RadioButtonPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -146,21 +146,20 @@ private fun SettingField(setting: OnlineSetting) {
         }
         OnlineSetting.KIND_SELECT -> {
             var current by remember(setting.key) { mutableStateOf(setting.read()) }
-            BasicComponent(title = title)
-            if (!setting.description.isNullOrBlank()) {
-                BasicComponent(title = setting.description.orEmpty())
-            }
-            setting.options.forEach { option ->
-                RadioButtonPreference(
-                    title = option,
-                    selected = option == current,
-                    onClick = {
-                        current = option
-                        setting.write(option)
-                    },
-                )
-            }
+            val selectedIndex = setting.options.indexOf(current).coerceAtLeast(0)
+            WindowDropdownPreference(
+                items = setting.options,
+                selectedIndex = selectedIndex,
+                title = title,
+                summary = setting.description,
+                onSelectedIndexChange = { index ->
+                    val picked = setting.options.getOrNull(index) ?: return@WindowDropdownPreference
+                    current = picked
+                    setting.write(picked)
+                },
+            )
         }
+
         OnlineSetting.KIND_NUMBER -> {
             var value by remember(setting.key) { mutableStateOf(setting.read()) }
             TextField(
