@@ -125,3 +125,5 @@ __pycache__/
 /app/src/main/res/font
 /.prebuilt-*
 /prebuilt
+# 文档门禁依赖
+node_modules/
