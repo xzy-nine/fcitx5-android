@@ -396,4 +396,5 @@
     <string name="rime_engine_import_failed">引擎文件无法接受：%1$s</string>
     <string name="rime_engine_platform_mismatch">该引擎针对其他 CPU 架构构建。</string>
     <string name="fontset_pick_font">选择字体</string>
+    <string name="theme_color_editor_argb_hint">支持 #RRGGBB 或 #AARRGGBB</string>
 </resources>
