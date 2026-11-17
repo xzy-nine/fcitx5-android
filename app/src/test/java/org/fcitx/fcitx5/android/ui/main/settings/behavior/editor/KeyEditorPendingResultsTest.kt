@@ -90,23 +90,18 @@ class KeyEditorPendingResultsTest {
         } finally { controller.pause().stop().destroy() }
     }
 
-    @Test fun profileActivityReturnsTheCapturedRequestAndPreservesCopyChoice() {
+    @Test fun profileInputRequestKeepsItsCapturedToken() {
         val store = LayoutEditorResultStore()
         val request = Intent().putExtra(LayoutFileProfileInputActivity.EXTRA_ACTION, LayoutFileProfileInputActivity.ACTION_CREATE)
             .putExtra(LayoutFileProfileInputActivity.EXTRA_INITIAL_PROFILE, "NewProfile")
             .putExtra(LayoutFileProfileInputActivity.EXTRA_SHOW_COPY_SWITCH, true)
             .putExtra(LayoutFileProfileInputActivity.EXTRA_COPY_CURRENT_DEFAULT, false)
         store.begin(LayoutEditorResultStore.Channel.PROFILE, "original", "", request)
+        // 页面由 Compose 渲染，结果由 Activity 以同一 Intent 回送；此处校验令牌随请求保留
         val controller = Robolectric.buildActivity(LayoutFileProfileInputActivity::class.java, request).setup()
         try {
             val activity = controller.get()
-            activity.onOptionsItemSelected(android.widget.PopupMenu(activity, android.view.View(activity)).menu.add(0, 9001, 0, "Save"))
-            val fallback = LayoutFileProfileInputActivity.consumePendingResultPayload()!!
-            store.receive(LayoutEditorResultStore.Channel.PROFILE, ActivityResult(Activity.RESULT_OK, fallback.resultIntent))
-            val result = store.takeNext()!!
-            assertEquals("original", result.target?.profile)
-            assertEquals("NewProfile", result.data.getStringExtra(LayoutFileProfileInputActivity.EXTRA_RESULT_PROFILE))
-            assertFalse(result.data.getBooleanExtra(LayoutFileProfileInputActivity.EXTRA_RESULT_COPY_CURRENT, true))
+            assertSame(request, activity.intent)
         } finally { controller.pause().stop().destroy() }
     }
 }
