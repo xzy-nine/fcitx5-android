@@ -74,6 +74,14 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object IconThemeList : AppRoute
 
+    /** 输入统计。 */
+    @Serializable
+    data object InputStats : AppRoute
+
+    /** Rime 引擎变体管理。 */
+    @Serializable
+    data object RimeEngineManager : AppRoute
+
     /** 设置界面外观。 */
     @Serializable
     data object SettingsUiAppearance : AppRoute

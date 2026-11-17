@@ -95,14 +95,6 @@
             android:theme="@style/Theme.FcitxSettings.System"
             android:launchMode="singleTask" />
         <activity
-            android:name=".ui.main.settings.im.RimeEngineManagerActivity"
-            android:exported="false"
-            android:label="@string/rime_engine_variants_title" />
-        <activity
-            android:name=".ui.main.stats.InputStatsActivity"
-            android:exported="false"
-            android:label="@string/stats_title" />
-        <activity
             android:name=".ui.main.wanxiang.WanxiangAdvancedActivity"
             android:exported="false"
             android:label="@string/wanxiang_advanced" />

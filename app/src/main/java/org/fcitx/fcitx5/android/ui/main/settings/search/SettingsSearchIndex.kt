@@ -299,7 +299,7 @@ object SettingsSearchIndex {
         SettingsSearchEntry(
             R.string.stats_title, P_CONVENIENCE,
             listOf("统计", "字词云", "词云", "字云", "热力", "速度", "statistics", "word cloud"),
-            activityClass = org.fcitx.fcitx5.android.ui.main.stats.InputStatsActivity::class.java
+            route = SettingsRoute.InputStats
         ),
 
         // The single Rime engine settings entry.
@@ -311,7 +311,7 @@ object SettingsSearchIndex {
         SettingsSearchEntry(
             R.string.rime_engine_variants_title, P_INPUT,
             listOf("rime engine", "引擎变体", "引擎切换", "librime", "so", "插件引擎"),
-            activityClass = org.fcitx.fcitx5.android.ui.main.settings.im.RimeEngineManagerActivity::class.java
+            route = SettingsRoute.RimeEngineManager
         ),
 
 

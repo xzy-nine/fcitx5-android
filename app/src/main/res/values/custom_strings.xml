@@ -402,4 +402,6 @@
     <string name="manage_table_im">Manage Table-based Input Methods</string>
     <string name="expand_toolbar">Expand toolbar</string>
     <string name="browse_primary_storage">Browse device storage</string>
+    <string name="rime_engine_import_failed">Engine file could not be accepted: %1$s</string>
+    <string name="rime_engine_platform_mismatch">This engine is built for a different CPU architecture.</string>
 </resources>

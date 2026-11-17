@@ -66,6 +66,12 @@ sealed class SettingsRoute : Parcelable {
     data object IconThemeList : SettingsRoute()
 
     @Serializable
+    data object InputStats : SettingsRoute()
+
+    @Serializable
+    data object RimeEngineManager : SettingsRoute()
+
+    @Serializable
     data object IconTheme : SettingsRoute()
 
     @Serializable
