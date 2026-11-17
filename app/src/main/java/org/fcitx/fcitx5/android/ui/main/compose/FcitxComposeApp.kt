@@ -76,6 +76,7 @@ import top.yukonga.miuix.kmp.theme.ThemeController
 fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
     val themeController = remember { ThemeController(ColorSchemeMode.System) }
     MiuixTheme(controller = themeController) {
+        SystemBars()
         val backStack = rememberNavBackStack<AppRoute>(AppRoute.Index)
         var importDictUri by remember { mutableStateOf<String?>(null) }
 

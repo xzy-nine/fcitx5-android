@@ -13,8 +13,6 @@ import android.os.Build
 import android.os.UserManager
 import android.view.View
 import android.view.Menu
-import androidx.activity.SystemBarStyle
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.Toolbar
@@ -114,12 +112,6 @@ abstract class SettingsUiActivity : AppCompatActivity() {
             return
         }
         window.setBackgroundDrawable(ColorDrawable(settingsColor(com.google.android.material.R.attr.colorSurfaceContainer)))
-        val bars = if (SettingsUiPreferences.isDark(this)) {
-            SystemBarStyle.dark(Color.TRANSPARENT)
-        } else {
-            SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
-        }
-        enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
     }
 
     /** Main settings can restore navigation/drafts. Standalone editors keep their unsaved work. */
