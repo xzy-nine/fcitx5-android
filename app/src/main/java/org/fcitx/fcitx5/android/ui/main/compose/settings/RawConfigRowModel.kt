@@ -76,6 +76,28 @@ sealed interface RawConfigExternalAction {
     /** Another addon's config page, e.g. `fcitx://config/addon/chttrans`. */
     data class AddonConfig(val addon: String) : RawConfigExternalAction
 
+    /** 多选列表页（如「启用的输入方案」）。 */
+    data class MultiSelect(
+        val title: String,
+        val addon: String,
+        val path: String,
+        val option: String,
+        val min: Int,
+    ) : RawConfigExternalAction
+
+    /** 数据目录管理页（profile 的增删改与切换）。 */
+    data class AddonDirProfile(
+        val title: String,
+        val addon: String,
+        val path: String,
+    ) : RawConfigExternalAction
+
+    /** 立即执行的 addon 动作，如「重新部署」「同步用户词典」。 */
+    data class AddonAction(val addon: String, val path: String) : RawConfigExternalAction
+
+    /** 导入 Rime 方案 ZIP。 */
+    data object RimeImport : RawConfigExternalAction
+
     /** No route is known for this uri; the row is shown as a disabled placeholder. */
     data class Unresolved(val uri: String?) : RawConfigExternalAction
 }
@@ -151,6 +173,35 @@ object RawConfigRows {
      * fcitx uses for other purposes (command lines such as rime's `xdg-open ...`) or when the addon
      * part is missing.
      */
+    /**
+     * `fcitx://<kind>/addon/<addon>/<path>?query` → 各段。
+     *
+     * 与 View 侧解析同一套 URI，只是用字符串切分以免引入 Android 类型，保持纯逻辑可测。
+     * 返回 null 表示不是目标形态的 uri。
+     */
+    private class ExternalUriParts(
+        val addon: String,
+        val path: String,
+        val query: Map<String, String>,
+    )
+
+    private fun parseExternalUri(uri: String?, kind: String): ExternalUriParts? {
+        val prefix = "fcitx://$kind/addon/"
+        if (uri == null || !uri.startsWith(prefix)) return null
+        val rest = uri.removePrefix(prefix)
+        val queryText = rest.substringAfter('?', "")
+        val pathText = rest.substringBefore('?')
+        val segments = pathText.split('/').filter { it.isNotEmpty() }
+        val addon = segments.firstOrNull() ?: return null
+        val path = segments.drop(1).joinToString("/")
+        if (addon.isBlank() || path.isBlank()) return null
+        val query = queryText.split('&').mapNotNull { pair ->
+            val key = pair.substringBefore('=', "")
+            if (key.isBlank()) null else key to pair.substringAfter('=', "")
+        }.toMap()
+        return ExternalUriParts(addon, path, query)
+    }
+
     fun parseAddonUri(uri: String?): ExternalAddonUri? {
         if (uri == null || !uri.startsWith(ADDON_URI_PREFIX)) return null
         val rest = uri.removePrefix(ADDON_URI_PREFIX).trim('/')
@@ -181,6 +232,40 @@ object RawConfigRows {
         ConfigExternal.ETy.RimeUserDataDir -> RawConfigExternalAction.RimeUserDataDir
         ConfigExternal.ETy.Chttrans -> RawConfigExternalAction.AddonConfig("chttrans")
         ConfigExternal.ETy.TableGlobal -> RawConfigExternalAction.AddonConfig("table")
+        ConfigExternal.ETy.RimeImport -> RawConfigExternalAction.RimeImport
+        ConfigExternal.ETy.MultiSelect -> {
+            val title = descriptor.description ?: descriptor.name
+            val parts = parseExternalUri(descriptor.uri, "multiselect")
+            val option = parts?.query?.get("option")
+            if (parts == null || option.isNullOrBlank()) {
+                RawConfigExternalAction.Unresolved(descriptor.uri)
+            } else {
+                RawConfigExternalAction.MultiSelect(
+                    title = title,
+                    addon = parts.addon,
+                    path = parts.path,
+                    option = option,
+                    min = parts.query["min"]?.toIntOrNull() ?: 0,
+                )
+            }
+        }
+        ConfigExternal.ETy.AddonDirProfileManager -> {
+            val title = descriptor.description ?: descriptor.name
+            val parts = parseExternalUri(descriptor.uri, "addon-dir-profile")
+            if (parts == null) {
+                RawConfigExternalAction.Unresolved(descriptor.uri)
+            } else {
+                RawConfigExternalAction.AddonDirProfile(title, parts.addon, parts.path)
+            }
+        }
+        ConfigExternal.ETy.AddonAction -> {
+            val parts = parseExternalUri(descriptor.uri, "addon-action")
+            if (parts == null) {
+                RawConfigExternalAction.Unresolved(descriptor.uri)
+            } else {
+                RawConfigExternalAction.AddonAction(parts.addon, parts.path)
+            }
+        }
         null -> {
             val parsed = parseAddonUri(descriptor.uri)
             if (parsed != null && parsed.subPath == null && parsed.addon != currentAddon) {

@@ -39,6 +39,16 @@ object AppUtil {
     fun launchMainToRoute(context: Context, route: SettingsRoute) =
         launchMainToDest(context, route)
 
+    /** 打开只存在于 Compose 导航里的页面，按路由名与可选参数指定。 */
+    fun launchMainToComposeRoute(context: Context, routeName: String, routeArg: String? = null) {
+        context.startActivity<MainActivity> {
+            action = Intent.ACTION_RUN
+            putExtra(MainActivity.EXTRA_COMPOSE_ROUTE, routeName)
+            routeArg?.let { putExtra(MainActivity.EXTRA_COMPOSE_ROUTE_ARG, it) }
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+        }
+    }
+
     fun launchMainToKeyboard(context: Context) =
         launchMainToDest(context, SettingsRoute.VirtualKeyboard)
 

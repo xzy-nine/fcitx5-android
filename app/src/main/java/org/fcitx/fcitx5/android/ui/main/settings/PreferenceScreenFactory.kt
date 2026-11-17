@@ -197,9 +197,10 @@ object PreferenceScreenFactory {
                     }
                 }
                 ConfigExternal.ETy.RimeImport -> Preference(context).apply {
+                    // 导入页已迁到 Compose 导航，旧入口把用户带回主界面。
                     setOnPreferenceClickListener {
                         context.startActivity(android.content.Intent(context,
-                            org.fcitx.fcitx5.android.ui.main.settings.im.RimeImportActivity::class.java))
+                            org.fcitx.fcitx5.android.ui.main.MainActivity::class.java))
                         true
                     }
                 }
@@ -231,7 +232,10 @@ object PreferenceScreenFactory {
                 summaryProvider = FcitxKeyPreference.SimpleSummaryProvider
                 descriptor.defaultValue?.let { setDefaultValue(it) }
             }
-            is ConfigList -> if (descriptor.ty.subtype in ListFragment.supportedSubtypes)
+            is ConfigList -> if (descriptor.ty.subtype in setOf(
+                    ConfigType.TyEnum, ConfigType.TyString, ConfigType.TyInt,
+                    ConfigType.TyBool, ConfigType.TyKey,
+                ))
                 listPreference(descriptor.ty.subtype)
             else
                 unsupported()

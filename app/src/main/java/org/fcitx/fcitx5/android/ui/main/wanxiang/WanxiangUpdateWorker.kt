@@ -218,7 +218,7 @@ class WanxiangUpdateWorker internal constructor(context: Context, parameters: Wo
         if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(CHANNEL,
             applicationContext.getString(R.string.wanxiang_update), NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(applicationContext, notificationId,
-            Intent(applicationContext, WanxiangUpdateActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            Intent(applicationContext, org.fcitx.fcitx5.android.ui.main.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val percent = WanxiangDownloadProgress.percent(bytes, total)
         return NotificationCompat.Builder(applicationContext, CHANNEL)

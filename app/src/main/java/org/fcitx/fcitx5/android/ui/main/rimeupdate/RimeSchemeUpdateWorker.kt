@@ -205,7 +205,7 @@ class RimeSchemeUpdateWorker internal constructor(context: Context, parameters: 
         if (Build.VERSION.SDK_INT >= 26) notifications.createNotificationChannel(NotificationChannel(WORK_CHANNEL,
             applicationContext.getString(R.string.scheme_update_title), NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(applicationContext, notificationId,
-            Intent(applicationContext, RimeSchemeUpdateActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            Intent(applicationContext, org.fcitx.fcitx5.android.ui.main.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(applicationContext, WORK_CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle(applicationContext.getString(R.string.scheme_update_title))

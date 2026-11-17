@@ -95,10 +95,6 @@
             android:theme="@style/Theme.FcitxSettings.System"
             android:launchMode="singleTask" />
         <activity
-            android:name=".ui.main.settings.im.RimeImportActivity"
-            android:exported="false"
-            android:label="@string/direct_rime_import" />
-        <activity
             android:name=".ui.main.settings.im.RimeEngineManagerActivity"
             android:exported="false"
             android:label="@string/rime_engine_variants_title" />
@@ -106,14 +102,6 @@
             android:name=".ui.main.stats.InputStatsActivity"
             android:exported="false"
             android:label="@string/stats_title" />
-        <activity
-            android:name=".ui.main.wanxiang.WanxiangUpdateActivity"
-            android:exported="false"
-            android:label="@string/wanxiang_update" />
-        <activity
-            android:name=".ui.main.rimeupdate.RimeSchemeUpdateActivity"
-            android:exported="false"
-            android:label="@string/scheme_update_title" />
         <activity
             android:name=".ui.main.wanxiang.WanxiangAdvancedActivity"
             android:exported="false"
@@ -155,11 +143,6 @@
             android:exported="false"
             android:label="@string/edit_icon_theme" />
         <activity
-            android:name=".ui.main.settings.theme.MonetThemeEditorActivity"
-            android:configChanges="orientation|screenSize"
-            android:exported="false"
-            android:label="@string/edit_monet_theme" />
-        <activity
             android:name=".ui.main.settings.behavior.FontsetEditorActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
             android:exported="false"
@@ -191,23 +174,11 @@
             android:name=".ui.main.update.UpdateCheckActivity"
             android:exported="false"
             android:label="@string/update_page_title" />
-        <activity
-            android:name=".ui.main.update.UpdateHostsSettingsActivity"
-            android:exported="false"
-            android:label="@string/update_hosts_settings_title" />
-        <activity
-            android:name=".ui.main.update.UpdateMirrorEditActivity"
-            android:exported="false"
-            android:label="@string/update_mirror_edit_title" />
         <!--
             Registered even though no entry point navigates here yet: the class, its adapter
             and its layout all exist, so an unregistered declaration is a latent
             ActivityNotFoundException the moment an entry point is added.
         -->
-        <activity
-            android:name=".ui.main.update.UpdateMirrorListActivity"
-            android:exported="false"
-            android:label="@string/update_mirror_settings_title" />
         <activity
             android:name=".ui.main.settings.behavior.dialog.TextKeyboardLayoutProfilePickerActivity"
             android:autoRemoveFromRecents="true"
@@ -223,10 +194,6 @@
             android:stateNotNeeded="true"
             android:theme="@style/zxing_CaptureTheme"
             android:windowSoftInputMode="stateAlwaysHidden" />
-        <activity
-            android:name=".ui.main.settings.behavior.TextKeyboardLayoutProfileManagerActivity"
-            android:exported="false"
-            android:label="@string/text_keyboard_layout_manage_title" />
         <activity
             android:name=".ui.main.settings.behavior.ButtonsCustomizerActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"

@@ -25,6 +25,7 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.AppRecording
+import top.yukonga.miuix.kmp.icon.extended.Backup
 import top.yukonga.miuix.kmp.icon.extended.Copy
 import top.yukonga.miuix.kmp.icon.extended.Edit
 import top.yukonga.miuix.kmp.icon.extended.GridView
@@ -171,6 +172,7 @@ private val homeCustomItems = listOf(
         MiuixIcons.Store,
         AppRoute.ModelMarketHome,
     ),
+    HomeDestination(R.string.settings_group_data, MiuixIcons.Backup, AppRoute.DataBackup),
     HomeDestination(R.string.webdav_settings_title, MiuixIcons.UploadCloud, AppRoute.WebDavSync),
     HomeDestination(R.string.broadcast_settings, MiuixIcons.Promotions, AppRoute.Prefs(PrefCategory.Broadcast)),
 )

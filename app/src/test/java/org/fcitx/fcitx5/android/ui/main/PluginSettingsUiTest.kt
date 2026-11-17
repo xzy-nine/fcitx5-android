@@ -19,7 +19,6 @@ import org.fcitx.fcitx5.android.input.voice.js.JsVoiceField
 import org.fcitx.fcitx5.android.input.voice.js.JsVoiceFieldOption
 import org.fcitx.fcitx5.android.input.voice.js.JsVoiceProviders
 import org.fcitx.fcitx5.android.ui.common.SettingsUiActivity
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.DataBackupFragment
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.editor.EditorApplicationShadow
 import org.fcitx.fcitx5.android.ui.main.settings.voice.JsVoicePluginSettingsFragment
 import org.fcitx.fcitx5.android.ui.main.settings.voice.JsVoicePluginsFragment
@@ -126,28 +125,4 @@ class PluginSettingsUiTest {
         assertFalse(category.isVisible)
     }
 
-    @Test fun backupResultStaysVisibleAndDetailsRemainExplicit() {
-        val fragment = DataBackupFragment()
-        show(fragment)
-        val groups = (0 until fragment.preferenceScreen.preferenceCount).map { fragment.preferenceScreen.getPreference(it) }
-        val wanxiang = groups.filterIsInstance<PreferenceCategory>().single { it.title == activity.getString(R.string.wanxiang_group) }
-        assertEquals(2, wanxiang.preferenceCount)
-        assertEquals(activity.getString(R.string.wanxiang_update), wanxiang.getPreference(0).title)
-        assertEquals(activity.getString(R.string.scheme_update_title), wanxiang.getPreference(1).title)
-        assertSame(wanxiang, wanxiang.getPreference(0).parent)
-        ReflectionHelpers.callInstanceMethod<Unit>(fragment, "showOperation",
-            ReflectionHelpers.ClassParameter.from(Int::class.javaPrimitiveType, R.string.user_data_exported),
-            ReflectionHelpers.ClassParameter.from(String::class.java, null),
-            ReflectionHelpers.ClassParameter.from(Boolean::class.javaPrimitiveType, false))
-        val result = fragment.preferenceScreen.getPreference(1)
-        assertEquals(activity.getString(R.string.user_data_exported), result.title)
-        assertFalse(result.isSelectable)
-        capture("backup")
-        ReflectionHelpers.callInstanceMethod<Unit>(fragment, "showOperation",
-            ReflectionHelpers.ClassParameter.from(Int::class.javaPrimitiveType, R.string.ui_operation_failed),
-            ReflectionHelpers.ClassParameter.from(String::class.java, "The selected destination could not be written."),
-            ReflectionHelpers.ClassParameter.from(Boolean::class.javaPrimitiveType, false))
-        assertTrue(result.isSelectable)
-        assertEquals(activity.getString(R.string.ui_operation_details), result.summary)
-    }
 }

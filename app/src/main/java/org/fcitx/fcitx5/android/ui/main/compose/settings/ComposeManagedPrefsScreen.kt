@@ -40,8 +40,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.daemon.FcitxDaemon
-import org.fcitx.fcitx5.android.data.UserDataImportCompat
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.suspendCancellableCoroutine
+import org.fcitx.fcitx5.android.data.ProtectedBackup
+import org.fcitx.fcitx5.android.data.RimeProfileRestorePlan
+import org.fcitx.fcitx5.android.data.UserDataBackupArchive
+import org.fcitx.fcitx5.android.data.UserDataBackupManager
 import org.fcitx.fcitx5.android.data.UserDataManager
+import org.fcitx.fcitx5.android.data.UserDataRestoreRuntime
+import org.fcitx.fcitx5.android.ui.main.settings.behavior.chooseBackupProtection
+import kotlin.coroutines.resume
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreference
 import org.fcitx.fcitx5.android.data.prefs.ManagedPreferenceCategory
@@ -106,6 +114,12 @@ fun ManagedPrefsScreen(
     highlightKey: String? = null,
     showTopBar: Boolean = true,
     onWebDavSync: (() -> Unit)? = null,
+    /** 附加条目：渲染在偏好列表末尾，供不属于偏好字段的入口使用。 */
+    extraContent: (LazyListScope.(fireChange: (String) -> Unit) -> Unit)? = null,
+    /** 只渲染这些键；为 null 时渲染全部分组。 */
+    keyFilter: Set<String>? = null,
+    /** 分组过滤时使用的标题；为 null 时不显示分组标题。 */
+    flatTitle: Int? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -114,6 +128,11 @@ fun ManagedPrefsScreen(
     var version by remember { mutableIntStateOf(0) }
     var exportTime by remember { mutableLongStateOf(0L) }
     var confirmImport by remember { mutableStateOf(false) }
+    // 恢复确认：导入流程需要展示目标目录明细后再继续
+    var pendingRestoreConfirm by remember {
+        mutableStateOf<((Boolean) -> Unit)?>(null)
+    }
+    var pendingRestoreMessage by remember { mutableStateOf("") }
 
     DisposableEffect(category, fcitx) {
         val listener = object : ManagedPreferenceProvider.OnChangeListener {
@@ -128,20 +147,42 @@ fun ManagedPrefsScreen(
         }
     }
 
+    // 导出：先准备归档（可选加密），再交给系统创建文档写入。
+    var pendingArchive by remember { mutableStateOf<java.io.File?>(null) }
+    var busy by remember { mutableStateOf(false) }
+
     val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/zip")
+        ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+        val archive = pendingArchive
+        pendingArchive = null
+        if (uri == null) {
+            archive?.delete()
+            return@rememberLauncherForActivityResult
+        }
+        if (archive == null || !archive.isFile) return@rememberLauncherForActivityResult
         scope.launch {
+            busy = true
             try {
-                withContext(Dispatchers.IO) {
-                    context.contentResolver.openOutputStream(uri)!!.use { out ->
-                        UserDataManager.export(out, exportTime).getOrThrow()
+                withContext(NonCancellable) {
+                    withContext(Dispatchers.IO) {
+                        context.contentResolver.openOutputStream(uri)?.use { out ->
+                            archive.inputStream().use { it.copyTo(out) }
+                        } ?: error("output stream unavailable")
                     }
                 }
-                context.toast(R.string.done)
+                context.toast(R.string.user_data_exported)
             } catch (e: Exception) {
+                // 新建的文档只删除这一次失败的产物
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri)
+                    }.getOrDefault(false)
+                }
                 context.toast(e)
+            } finally {
+                withContext(NonCancellable + Dispatchers.IO) { archive.delete() }
+                busy = false
             }
         }
     }
@@ -151,25 +192,92 @@ fun ManagedPrefsScreen(
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            val name = context.contentResolver.queryFileName(uri) ?: return@launch
-            if (!name.endsWith(".zip")) {
-                context.importErrorDialog(R.string.exception_user_data_filename, name)
+            val name = context.contentResolver.queryFileName(uri)
+            val accepted = name == null || name.endsWith(".zip") || name.endsWith(".fcbak")
+            if (!accepted) {
+                context.importErrorDialog(R.string.exception_user_data_filename, name.orEmpty())
                 return@launch
             }
+            busy = true
+            var prepared: UserDataManager.PreparedImport? = null
+            var decrypted: java.io.File? = null
+            var password: CharArray? = null
             try {
-                // stop fcitx before overwriting files
-                FcitxDaemon.stopFcitx()
-                val metadata = withContext(Dispatchers.IO) {
-                    UserDataImportCompat.import(context.contentResolver.openInputStream(uri)!!).getOrThrow()
+                // 加密归档需先取得口令再解密，未加密的归档按普通 zip 处理
+                val protected = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use(ProtectedBackup::isProtected) == true
                 }
-                AppUtil.showRestartNotification(context)
-                context.toast(context.getString(R.string.user_data_imported, formatDateTime(metadata.exportTime)))
-                // delay exit to ensure Notification and Toast has been created
-                delay(400.milliseconds)
-                AppUtil.exit()
+                if (protected) {
+                    password = (context.chooseBackupProtection(export = false) ?: run {
+                        context.toast(R.string.ui_operation_cancelled)
+                        return@launch
+                    }).password
+                }
+                val backup = withContext(Dispatchers.IO) {
+                    if (protected) {
+                        context.contentResolver.openInputStream(uri)?.use {
+                            decrypted = ProtectedBackup.decrypt(it, context.cacheDir, password!!) {}
+                        }
+                    }
+                    val source = decrypted?.inputStream()
+                        ?: context.contentResolver.openInputStream(uri)!!
+                    source.use { UserDataManager.prepareImport(it).also { r -> prepared = r } }
+                }
+                // 外部 Rime 目录沿用备份中的原位置；缺失时由引擎回落到应用内目录
+                val plan = RimeProfileRestorePlan(
+                    backup.rimeProfiles.externalProfiles.associateWith { original ->
+                        backup.rimeProfiles.originalPaths[original]?.let { java.io.File(it) }
+                    }
+                )
+                withContext(Dispatchers.IO) { UserDataManager.validateRestore(backup, plan) }
+                val targets = plan.destinations.map { (profile, target) ->
+                    val path = target ?: java.io.File(context.getExternalFilesDir(null), "data/$profile")
+                    "$profile: ${path.absolutePath}"
+                }.joinToString("\n\n")
+                val message = context.getString(R.string.confirm_import_user_data) +
+                    if (targets.isEmpty()) "" else
+                        "\n\n" + context.getString(R.string.rime_restore_replace_warning, targets)
+                val confirmed = suspendCancellableCoroutine<Boolean> { cont ->
+                    pendingRestoreConfirm = { cont.resume(it) }
+                    pendingRestoreMessage = message
+                }
+                if (!confirmed) {
+                    context.toast(R.string.ui_operation_cancelled)
+                    return@launch
+                }
+                // 替换在独立进程完成，本进程被结束前不得留下中断的引擎状态
+                withContext(NonCancellable) {
+                    var stopped = false
+                    val connectionName = "UserDataRestore-${java.util.UUID.randomUUID()}"
+                    val connection = FcitxDaemon.connect(connectionName)
+                    try {
+                        connection.runOnReady { save() }
+                        val token = withContext(Dispatchers.IO) {
+                            UserDataManager.validateRestore(backup, plan)
+                            FcitxDaemon.beginUserDataRestore()
+                            stopped = true
+                            UserDataRestoreRuntime.prepare(context, backup, plan)
+                        }
+                        context.startActivity(UserDataRestoreRuntime.intent(context, token))
+                        prepared = null
+                    } catch (e: Exception) {
+                        if (stopped) FcitxDaemon.finishFailedUserDataRestore()
+                        throw e
+                    } finally {
+                        FcitxDaemon.disconnect(connectionName)
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                FcitxDaemon.startFcitx()
                 context.importErrorDialog(e)
+            } finally {
+                password?.fill('\u0000')
+                withContext(NonCancellable + Dispatchers.IO) {
+                    prepared?.close()
+                    decrypted?.delete()
+                }
+                busy = false
             }
         }
     }
@@ -213,15 +321,65 @@ fun ManagedPrefsScreen(
                 }
             },
             onExportData = {
+                if (busy || pendingArchive != null) return@renderSettingsContent
                 scope.launch {
-                    fcitx?.runOnReady { save() }
-                    exportTime = System.currentTimeMillis()
-                    exportLauncher.launch("fcitx5-android_${iso8601UTCDateTime(exportTime)}.zip")
+                    var archive: java.io.File? = null
+                    var password: CharArray? = null
+                    busy = true
+                    try {
+                        val protection = context.chooseBackupProtection(export = true) ?: run {
+                            context.toast(R.string.ui_operation_cancelled)
+                            return@launch
+                        }
+                        password = protection.password
+                        exportTime = System.currentTimeMillis()
+                        // 归档由 backup 管理器停写后生成，其中已带上引擎当前的 Rime 目录状态
+                        withContext(NonCancellable) {
+                            archive = UserDataBackupManager.prepare(exportTime)
+                        }
+                        password?.let { secret ->
+                            withContext(Dispatchers.IO) {
+                                val encrypted = java.io.File.createTempFile(
+                                    UserDataBackupArchive.PREFIX, ".zip", context.cacheDir
+                                )
+                                try {
+                                    archive!!.inputStream().use { input ->
+                                        encrypted.outputStream().use { output ->
+                                            ProtectedBackup.encrypt(input, output, secret) {}
+                                        }
+                                    }
+                                    archive!!.delete()
+                                    archive = encrypted
+                                } catch (e: Throwable) {
+                                    encrypted.delete()
+                                    throw e
+                                }
+                            }
+                        }
+                        pendingArchive = archive
+                        val extension = if (password != null) "fcbak" else "zip"
+                        exportLauncher.launch(
+                            "fcitx5-android_${iso8601UTCDateTime(exportTime)}.$extension"
+                        )
+                        archive = null
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        pendingArchive = null
+                        context.toast(e)
+                    } finally {
+                        password?.fill('\u0000')
+                        withContext(NonCancellable + Dispatchers.IO) { archive?.delete() }
+                        busy = false
+                    }
                 }
             },
             onImportClick = { confirmImport = true },
             onWebDav = onWebDavSync,
+            keyFilter = keyFilter,
+            flatTitle = flatTitle,
         )
+        extraContent?.invoke(this, category::fireChange)
     }
 
     if (showTopBar) {
@@ -255,9 +413,25 @@ fun ManagedPrefsScreen(
             message = stringResource(R.string.confirm_import_user_data),
             onConfirm = {
                 confirmImport = false
-                importLauncher.launch("application/zip")
+                importLauncher.launch("*/*")
             },
             onDismiss = { confirmImport = false },
+        )
+    }
+
+    // 解密归档在确认替换目标后才会写入，故这里单列一个确认框
+    pendingRestoreConfirm?.let { resume ->
+        SimpleConfirmDialog(
+            title = stringResource(R.string.import_user_data),
+            message = pendingRestoreMessage,
+            onConfirm = {
+                pendingRestoreConfirm = null
+                resume(true)
+            },
+            onDismiss = {
+                pendingRestoreConfirm = null
+                resume(false)
+            },
         )
     }
 }
@@ -332,7 +506,26 @@ private fun LazyListScope.renderSettingsContent(
     onExportData: () -> Unit,
     onImportClick: () -> Unit,
     onWebDav: (() -> Unit)?,
+    keyFilter: Set<String>? = null,
+    flatTitle: Int? = null,
 ) {
+    if (keyFilter != null) {
+        // 键集合由调用方给定：跨分组的自定义挑选无法沿用原有分组。
+        val picked = keyFilter.filter { uiMap.containsKey(it) }.map { uiMap.getValue(it) }
+        if (picked.isEmpty()) return
+        flatTitle?.let { item { SmallTitle(text = stringResource(it)) } }
+        item {
+            ManagedGroupCard(
+                items = picked,
+                prefs = prefs,
+                version = version,
+                fireChange = fireChange,
+                currentHighlight = currentHighlight,
+                highlightColor = highlightColor,
+            )
+        }
+        return
+    }
     if (category.groups.isEmpty()) {
         item {
             ManagedGroupCard(

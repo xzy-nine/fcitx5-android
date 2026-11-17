@@ -34,17 +34,79 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object WebDavSync : AppRoute
 
+    /** 数据与备份（用户数据目录、导出导入、方案与词典更新入口）。 */
+    @Serializable
+    data object DataBackup : AppRoute
+
+    /** 导入 Rime 方案 ZIP。 */
+    @Serializable
+    data object RimeImport : AppRoute
+
+    /** Rime 方案更新任务列表。 */
+    @Serializable
+    data object RimeSchemeUpdate : AppRoute
+
+    /** 万象更新。 */
+    @Serializable
+    data object WanxiangUpdate : AppRoute
+
+    /** 设置分组页，内容由规格表按 id 决定。 */
+    @Serializable
+    data class SettingsGroup(val id: String) : AppRoute
+
+    /** 更新镜像规则列表。 */
+    @Serializable
+    data object UpdateMirrorList : AppRoute
+
+    /** 更新加速 Hosts 设置。 */
+    @Serializable
+    data object UpdateHostsSettings : AppRoute
+
+    /** 编辑单条镜像规则；为空表示新建。 */
+    @Serializable
+    data class UpdateMirrorEdit(val mirrorId: String? = null) : AppRoute
+
+    /** 文本键盘布局 profile 管理。 */
+    @Serializable
+    data object TextKeyboardLayoutProfiles : AppRoute
+
+    /** 设置界面外观。 */
+    @Serializable
+    data object SettingsUiAppearance : AppRoute
+
+    /** 设置界面动效。 */
+    @Serializable
+    data object SettingsUiMotion : AppRoute
+
+    /** 键盘形态：分体、浮动与单手。 */
+    @Serializable
+    data object KeyboardModes : AppRoute
+
+    /** 键盘设置分组页。 */
+    @Serializable
+    data class KeyboardGroup(val group: Int) : AppRoute
+
     @Serializable
     data class Legacy(val target: LegacyTarget) : AppRoute
 
-    @Serializable
-    data class LegacyInputMethodConfig(val name: String, val uniqueName: String) : AppRoute
 
+    /** 多选列表页（如「启用的输入方案」），由参数决定打开的 addon 与选项。 */
     @Serializable
-    data class LegacyPinyinDict(val uri: String) : AppRoute
+    data class MultiSelect(
+        val title: String,
+        val addon: String,
+        val path: String,
+        val option: String,
+        val min: Int,
+    ) : AppRoute
 
+    /** 数据目录管理页。 */
     @Serializable
-    data class LegacyPunctuation(val title: String, val lang: String?) : AppRoute
+    data class AddonDirProfile(
+        val title: String,
+        val addon: String,
+        val path: String,
+    ) : AppRoute
 
     @Serializable
     data class Prefs(val category: PrefCategory, val highlightKey: String? = null) : AppRoute
@@ -114,7 +176,8 @@ enum class PrefCategory {
     Candidates,
     Clipboard,
     Broadcast,
-    Symbols;
+    Symbols,
+    TextEditing;
 
     fun provider() = org.fcitx.fcitx5.android.data.prefs.AppPrefs.getInstance().let {
         when (this) {
@@ -124,44 +187,13 @@ enum class PrefCategory {
             Clipboard -> it.clipboard
             Broadcast -> it.broadcast
             Symbols -> it.symbols
+            TextEditing -> it.textEditing
         }
     }
 }
 
 @Serializable
 enum class LegacyTarget {
-    Index,
-    GlobalConfig,
-    InputMethodList,
-    AddonList,
-    Theme,
-    VirtualKeyboard,
-    CandidatesWindow,
-    Clipboard,
-    Broadcast,
-    Symbol,
-    Advanced,
-    Developer,
-    License,
-    About;
-}
-
-object LegacyTargets {
-
-    fun routeOf(target: LegacyTarget): SettingsRoute = when (target) {
-        LegacyTarget.Index -> SettingsRoute.Index
-        LegacyTarget.GlobalConfig -> SettingsRoute.GlobalConfig
-        LegacyTarget.InputMethodList -> SettingsRoute.InputMethodList
-        LegacyTarget.AddonList -> SettingsRoute.AddonList
-        LegacyTarget.Theme -> SettingsRoute.Theme
-        LegacyTarget.VirtualKeyboard -> SettingsRoute.VirtualKeyboard
-        LegacyTarget.CandidatesWindow -> SettingsRoute.CandidatesWindow
-        LegacyTarget.Clipboard -> SettingsRoute.Clipboard
-        LegacyTarget.Broadcast -> SettingsRoute.Broadcast
-        LegacyTarget.Symbol -> SettingsRoute.Symbol
-        LegacyTarget.Advanced -> SettingsRoute.Advanced
-        LegacyTarget.Developer -> SettingsRoute.Developer
-        LegacyTarget.License -> SettingsRoute.License
-        LegacyTarget.About -> SettingsRoute.About
-    }
+    /** 首页锚点：设置首页本身由 Compose 渲染，该目标只用于旧路由落地。 */
+    Index;
 }

@@ -8,7 +8,6 @@ package org.fcitx.fcitx5.android.ui.main.compose
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,9 +17,6 @@ import org.fcitx.fcitx5.android.BuildConfig
 import org.fcitx.fcitx5.android.ui.main.MainActivity
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.DictImportDialog
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.NotificationPermissionFlow
-import org.fcitx.fcitx5.android.ui.main.compose.legacy.LegacyNavRuntime
-import org.fcitx.fcitx5.android.ui.main.compose.legacy.LegacyScreen
-import org.fcitx.fcitx5.android.ui.main.compose.legacy.LocalLegacyNavRuntime
 import org.fcitx.fcitx5.android.ui.main.compose.screens.AboutScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.AddonListScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.BroadcastScreen
@@ -34,7 +30,23 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.ThemeScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WebDavSyncScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.VoiceInputSettingsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.ModelMarketHomeScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.AddonDirProfileScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.DataBackupScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.ModelMarketScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.MultiSelectScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.RimeImportScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.RimeSchemeUpdateScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.KeyboardGroupScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.KeyboardModesScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.SettingsGroupScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.SettingsUiAppearanceScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.SettingsUiMotionScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.TextEditingPrefsScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.UpdateHostsSettingsScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.UpdateMirrorEditScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.TextKeyboardLayoutProfileManagerScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.UpdateMirrorListScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.WanxiangUpdateScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingGestureDemoScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingSettingsScreen
 import org.fcitx.fcitx5.android.data.market.MarketCategories
@@ -55,12 +67,9 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
     val themeController = remember { ThemeController(ColorSchemeMode.System) }
     MiuixTheme(controller = themeController) {
         val backStack = rememberNavBackStack<AppRoute>(AppRoute.Index)
-        val runtime = remember { LegacyNavRuntime() }
-        shell.legacyNavController = { runtime.navController }
         var importDictUri by remember { mutableStateOf<String?>(null) }
 
-        fun interceptTargets(route: AppRoute): Boolean = route is AppRoute.Legacy ||
-            route is AppRoute.LegacyInputMethodConfig || route is AppRoute.LegacyPinyinDict
+        fun interceptTargets(route: AppRoute): Boolean = route is AppRoute.Legacy
 
         fun navigateTo(appRoute: AppRoute) {
             if (backStack.lastOrNull() == appRoute) return
@@ -70,17 +79,7 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 backStack.add(AppRoute.Index)
                 return
             }
-            // Entering a non-legacy destination while a stale legacy controller lingers (its
-            // onDispose detach is async) would let popLegacyBackStack consume a back press on
-            // the new page. Detach it synchronously so no ghost controller survives.
-            if (appRoute !is AppRoute.Legacy &&
-                appRoute !is AppRoute.LegacyInputMethodConfig &&
-                appRoute !is AppRoute.LegacyPinyinDict &&
-                appRoute !is AppRoute.LegacyPunctuation &&
-                runtime.navController != null
-            ) {
-                runtime.detach()
-            }
+
             // Push on top of the current stack so deeper levels (e.g. IM list -> IM config)
             // keep a proper back chain instead of collapsing to the home screen.
             backStack.add(appRoute)
@@ -117,6 +116,14 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                                 return@collect
                             }
                         }
+                        // 只存在于新导航里的页面按路由名传过来
+                        intent.getStringExtra(MainActivity.EXTRA_COMPOSE_ROUTE)?.let { name ->
+                            val arg = intent.getStringExtra(MainActivity.EXTRA_COMPOSE_ROUTE_ARG)
+                            composeRouteByName(name, arg)?.let {
+                                navigateTo(it)
+                                return@collect
+                            }
+                        }
                         val route = intent.parcelable<SettingsRoute>(MainActivity.EXTRA_SETTINGS_ROUTE)
                             ?: return@collect
                         navigateTo(appRouteOf(route))
@@ -125,13 +132,13 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
             }
         }
 
-        CompositionLocalProvider(LocalLegacyNavRuntime provides runtime) {
             NotificationPermissionFlow()
             DictImportDialog(
                 uri = importDictUri,
                 onConfirm = { uri ->
                     importDictUri = null
-                    navigateTo(AppRoute.LegacyPinyinDict(uri))
+                    // 词库导入已由对话框完成，随后进入 Rime 输入法配置继续设置
+                    navigateTo(AppRoute.InputMethodConfig("Rime", "rime"))
                 },
                 onDismiss = { importDictUri = null },
             )
@@ -139,7 +146,6 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 backStack = backStack,
                 onBack = {
                     when {
-                        runtime.popLegacyBackStack() -> Unit
                         backStack.size > 1 -> backStack.removeLastOrNull()
                         else -> activity.moveTaskToBack(false)
                     }
@@ -222,18 +228,21 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 entry<AppRoute.Theme> {
                     ThemeScreen(onBack = { backStack.removeLastOrNull() })
                 }
-                entry<AppRoute.Legacy> { route ->
-                    LegacyScreen(LegacyTargets.routeOf(route.target))
-                }
-                entry<AppRoute.LegacyInputMethodConfig> { route ->
-                    LegacyScreen(SettingsRoute.InputMethodConfig(route.name, route.uniqueName))
-                }
-                entry<AppRoute.LegacyPinyinDict> {
-                    LegacyScreen(SettingsRoute.InputMethodConfig("Rime", "rime"))
+                entry<AppRoute.Legacy> {
+                    // 旧路由的唯一目标就是设置首页，首页本身由 Compose 渲染
+                    HomeScreen(
+                        onNavigate = ::navigateTo,
+                        onOpenUrl = { url ->
+                            activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        },
+                        onSearch = {},
+                    )
                 }
                 entry<AppRoute.Prefs> { route ->
                     if (route.category == PrefCategory.Broadcast) {
                         BroadcastScreen(onBack = { backStack.removeLastOrNull() })
+                    } else if (route.category == PrefCategory.TextEditing) {
+                        TextEditingPrefsScreen(onBack = { backStack.removeLastOrNull() })
                     } else {
                         ManagedPrefsScreen(
                             category = route.category.provider(),
@@ -244,6 +253,66 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                             } else null,
                         )
                     }
+                }
+                entry<AppRoute.DataBackup> {
+                    DataBackupScreen(
+                        onBack = { backStack.removeLastOrNull() },
+                        onNavigate = ::navigateTo,
+                    )
+                }
+                entry<AppRoute.RimeImport> {
+                    RimeImportScreen(onBack = { backStack.removeLastOrNull() })
+                }
+                entry<AppRoute.RimeSchemeUpdate> {
+                    RimeSchemeUpdateScreen(onBack = { backStack.removeLastOrNull() })
+                }
+                entry<AppRoute.WanxiangUpdate> {
+                    WanxiangUpdateScreen(onBack = { backStack.removeLastOrNull() })
+                }
+                entry<AppRoute.UpdateMirrorList> {
+                    UpdateMirrorListScreen(
+                        onBack = { backStack.removeLastOrNull() },
+                        onEdit = { id -> navigateTo(AppRoute.UpdateMirrorEdit(id)) },
+                    )
+                }
+                entry<AppRoute.UpdateHostsSettings> {
+                    UpdateHostsSettingsScreen(onBack = { backStack.removeLastOrNull() })
+                }
+                entry<AppRoute.UpdateMirrorEdit> { route ->
+                    UpdateMirrorEditScreen(
+                        mirrorId = route.mirrorId,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<AppRoute.TextKeyboardLayoutProfiles> {
+                    TextKeyboardLayoutProfileManagerScreen(
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<AppRoute.SettingsGroup> { route ->
+                    SettingsGroupScreen(
+                        groupId = route.id,
+                        onBack = { backStack.removeLastOrNull() },
+                        onNavigate = ::navigateTo,
+                    )
+                }
+                entry<AppRoute.SettingsUiAppearance> {
+                    SettingsUiAppearanceScreen(
+                        onBack = { backStack.removeLastOrNull() },
+                        onNavigate = ::navigateTo,
+                    )
+                }
+                entry<AppRoute.SettingsUiMotion> {
+                    SettingsUiMotionScreen(onBack = { backStack.removeLastOrNull() })
+                }
+                entry<AppRoute.KeyboardModes> {
+                    KeyboardModesScreen(onBack = { backStack.removeLastOrNull() })
+                }
+                entry<AppRoute.KeyboardGroup> { route ->
+                    KeyboardGroupScreen(
+                        groupIndex = route.group,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
                 }
                 entry<AppRoute.WebDavSync> {
                     WebDavSyncScreen(onBack = { backStack.removeLastOrNull() })
@@ -310,16 +379,38 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }
-                entry<AppRoute.LegacyPunctuation> {
-                    LegacyScreen(SettingsRoute.InputMethodConfig("Rime", "rime"))
+                entry<AppRoute.MultiSelect> { route ->
+                    MultiSelectScreen(
+                        title = route.title,
+                        addon = route.addon,
+                        path = route.path,
+                        option = route.option,
+                        min = route.min,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<AppRoute.AddonDirProfile> { route ->
+                    AddonDirProfileScreen(
+                        title = route.title,
+                        addon = route.addon,
+                        path = route.path,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
                 }
             }
         }
     }
+
+/// 按路由名解析 Compose 页面；名字来自其它页面启动本界面时的 extra。
+fun composeRouteByName(name: String, arg: String? = null): AppRoute? = when (name) {
+    "UpdateMirrorList" -> AppRoute.UpdateMirrorList
+    "UpdateMirrorEdit" -> AppRoute.UpdateMirrorEdit(arg)
+    "UpdateHostsSettings" -> AppRoute.UpdateHostsSettings
+    else -> null
 }
 
 fun appRouteOf(route: SettingsRoute): AppRoute = when (route) {
-    SettingsRoute.Index -> AppRoute.Legacy(LegacyTarget.Index)
+    SettingsRoute.Index -> AppRoute.Index
     SettingsRoute.GlobalConfig -> AppRoute.RawConfigHost(RawConfigHostType.GlobalConfig)
     SettingsRoute.InputMethodList -> AppRoute.InputMethodList
     is SettingsRoute.InputMethodConfig -> AppRoute.InputMethodConfig(route.name, route.uniqueName)
@@ -330,6 +421,14 @@ fun appRouteOf(route: SettingsRoute): AppRoute = when (route) {
     SettingsRoute.Clipboard -> AppRoute.Prefs(PrefCategory.Clipboard)
     SettingsRoute.Broadcast -> AppRoute.Prefs(PrefCategory.Broadcast)
     SettingsRoute.Symbol -> AppRoute.Prefs(PrefCategory.Symbols)
+    SettingsRoute.TextEditing -> AppRoute.Prefs(PrefCategory.TextEditing)
+    is SettingsRoute.SettingsGroup -> AppRoute.SettingsGroup(route.id)
+    SettingsRoute.DataBackup -> AppRoute.DataBackup
+    SettingsRoute.SettingsUiAppearance -> AppRoute.SettingsUiAppearance
+    SettingsRoute.SettingsUiMotion -> AppRoute.SettingsUiMotion
+    SettingsRoute.KeyboardModes -> AppRoute.KeyboardModes
+    is SettingsRoute.KeyboardGroup -> AppRoute.KeyboardGroup(route.group)
+    SettingsRoute.TextKeyboardLayoutProfiles -> AppRoute.TextKeyboardLayoutProfiles
     SettingsRoute.Advanced -> AppRoute.Prefs(PrefCategory.Advanced)
     SettingsRoute.Developer -> AppRoute.Developer
     SettingsRoute.License -> AppRoute.Licenses
@@ -337,6 +436,7 @@ fun appRouteOf(route: SettingsRoute): AppRoute = when (route) {
     // parameterized legacy routes that are not reachable through a fixed entry:
     // they are only produced by intent extras, so map to a fresh legacy entry hardcoding the
     // resolver-side handling on next intent-driven visit.
-    is SettingsRoute.ListConfig -> AppRoute.Legacy(LegacyTarget.Index)
-    else -> AppRoute.Legacy(LegacyTarget.Index)
+    // 列表配置已由 RawConfig 行内的编辑对话框承载，旧路由回到首页
+    is SettingsRoute.ListConfig -> AppRoute.Index
+    else -> AppRoute.Index
 }

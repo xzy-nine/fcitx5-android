@@ -5,6 +5,7 @@
 
 package org.fcitx.fcitx5.android.ui.main.compose.settings
 
+import android.content.Intent
 import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,16 +15,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import arrow.core.getOrElse
+import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.Key
 import org.fcitx.fcitx5.android.core.RawConfig
+import org.fcitx.fcitx5.android.daemon.FcitxDaemon
 import org.fcitx.fcitx5.android.ui.main.compose.AppRoute
+import org.fcitx.fcitx5.android.utils.toast
 import org.fcitx.fcitx5.android.ui.main.compose.RawConfigHostType
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.EditValueDialog
 import org.fcitx.fcitx5.android.ui.main.compose.dialog.KeyCaptureDialog
@@ -354,6 +359,7 @@ private fun RawConfigRow(
             }
             val route = remember(action) { action.routeOrNull() }
             var showRimeDialog by remember { mutableStateOf(false) }
+            val scope = rememberCoroutineScope()
             val resolved = action !is RawConfigExternalAction.Unresolved
             ArrowPreference(
                 title = title,
@@ -367,6 +373,10 @@ private fun RawConfigRow(
                 onClick = when {
                     route != null -> { { onNavigate(route) } }
                     action is RawConfigExternalAction.RimeUserDataDir -> ({ showRimeDialog = true })
+                    action is RawConfigExternalAction.AddonAction -> ({
+                        scope.launch { runAddonAction(context, action.addon, action.path) }
+                    })
+                    action is RawConfigExternalAction.RimeImport -> ({ onNavigate(AppRoute.RimeImport) })
                     else -> null
                 },
             )
@@ -423,6 +433,25 @@ private fun unsupportedSummary(tooltip: String?, typeName: String): String =
     listOfNotNull(tooltip, "${stringResource(R.string.unimplemented_type)} '$typeName'")
         .joinToString("\n")
 
+/**
+ * 执行 addon 动作：向引擎写一次子配置，由 addon 自己完成后续处理。
+ *
+ * 用独立连接以免干扰输入法自身的连接，完成后断开。
+ */
+private suspend fun runAddonAction(context: android.content.Context, addon: String, path: String) {
+    val connectionName = "raw-config-addon-action-${System.nanoTime()}"
+    val conn = FcitxDaemon.connect(connectionName)
+    try {
+        conn.runOnReady { setAddonSubConfig(addon, path, RawConfig()) }
+        context.toast(context.getString(R.string.done))
+    } catch (e: Exception) {
+        Log.w("RawConfigScreen", "addon action failed: $addon/$path", e)
+        context.toast(e)
+    } finally {
+        FcitxDaemon.disconnect(connectionName)
+    }
+}
+
 /** Destination of a resolved external row; `null` when it needs a local dialog instead. */
 private fun RawConfigExternalAction.routeOrNull(): AppRoute? = when (this) {
     // 单引擎构建：libime 系数据管理入口已随多引擎移除，统一落到唯一 Rime 设置页
@@ -434,6 +463,15 @@ private fun RawConfigExternalAction.routeOrNull(): AppRoute? = when (this) {
     // the addon name must go into `uniqueName`: RawConfigHostScreen reads it as the addon id
     is RawConfigExternalAction.AddonConfig ->
         AppRoute.RawConfigHost(RawConfigHostType.AddonConfig, name = addon, uniqueName = addon)
+    is RawConfigExternalAction.MultiSelect -> AppRoute.MultiSelect(
+        title = title, addon = addon, path = path, option = option, min = min,
+    )
+    is RawConfigExternalAction.AddonDirProfile -> AppRoute.AddonDirProfile(
+        title = title, addon = addon, path = path,
+    )
+    // 这两项就地执行，不跳转
+    is RawConfigExternalAction.AddonAction,
+    RawConfigExternalAction.RimeImport -> null
     RawConfigExternalAction.RimeUserDataDir -> null
     is RawConfigExternalAction.Unresolved -> null
 }

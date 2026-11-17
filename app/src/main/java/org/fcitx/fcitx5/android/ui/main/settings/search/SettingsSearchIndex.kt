@@ -13,7 +13,7 @@ import java.util.Locale
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.FontsetEditorActivity
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.KeyboardGroupFragment
+import org.fcitx.fcitx5.android.ui.main.compose.screens.KeyboardGroup
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.PopupEditorActivity
 import org.fcitx.fcitx5.android.ui.main.settings.group.SettingsGroupSpecs
 import org.fcitx.fcitx5.android.ui.main.settings.icon.IconThemeListActivity
@@ -90,13 +90,13 @@ data class SettingsSearchEntry(
  */
 object SettingsSearchIndex {
 
-    private const val LAYOUT = KeyboardGroupFragment.GROUP_LAYOUT
-    private const val BEHAVIOR = KeyboardGroupFragment.GROUP_BEHAVIOR
-    private const val FEEDBACK = KeyboardGroupFragment.GROUP_FEEDBACK
-    private const val TOOLBAR = KeyboardGroupFragment.GROUP_TOOLBAR
-    private const val EDITORS = KeyboardGroupFragment.GROUP_EDITORS
-    private const val CANDIDATE = KeyboardGroupFragment.GROUP_CANDIDATE
-    private const val VOICE = KeyboardGroupFragment.GROUP_VOICE
+    private const val LAYOUT = KeyboardGroup.GROUP_LAYOUT
+    private const val BEHAVIOR = KeyboardGroup.GROUP_BEHAVIOR
+    private const val FEEDBACK = KeyboardGroup.GROUP_FEEDBACK
+    private const val TOOLBAR = KeyboardGroup.GROUP_TOOLBAR
+    private const val EDITORS = KeyboardGroup.GROUP_EDITORS
+    private const val CANDIDATE = KeyboardGroup.GROUP_CANDIDATE
+    private const val VOICE = KeyboardGroup.GROUP_VOICE
 
     /** 复用同一份面包屑列表，避免每行都建一个新 List。 */
     private val P_ANDROID = listOf(R.string.settings_search_group_android)
@@ -1031,7 +1031,7 @@ object SettingsSearchIndex {
         SettingsSearchEntry(
             R.string.scheme_update_title, P_DATA,
             listOf("rime", "Rime方案更新", "自定义更新", "本地方案", "批量更新", "zip", "custom update"),
-            activityClass = org.fcitx.fcitx5.android.ui.main.rimeupdate.RimeSchemeUpdateActivity::class.java
+            route = SettingsRoute.DataBackup
         ),
         SettingsSearchEntry(
             R.string.wanxiang_update, P_DATA,

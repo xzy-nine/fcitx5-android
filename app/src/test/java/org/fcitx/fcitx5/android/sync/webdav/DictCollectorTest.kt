@@ -37,7 +37,7 @@ class DictCollectorTest {
             val entries = DictCollector.listSyncable(dataRoot)
 
             val rel = entries.map { it.relativePath }.toSet()
-            assertTrue("pinyin user dict should be collected", "data/pinyin/dictionaries/a.dict" in rel)
+            assertFalse("legacy libime dictionaries must be excluded", rel.any { it.startsWith("data/pinyin/dictionaries/") })
             assertTrue("customphrase should be collected", "data/pinyin/customphrase/x.txt" in rel)
             assertTrue("table dict should be collected", "data/table/y.dict" in rel)
             assertFalse("libime read-only models must be excluded", rel.any { it.contains("libime") })
@@ -55,7 +55,7 @@ class DictCollectorTest {
             mkdirs()
         }
         try {
-            val f = dataRoot.writeTextWith("pinyin/dictionaries/a.dict", "alpha")
+            val f = dataRoot.writeTextWith("pinyin/customphrase/a.txt", "alpha")
             dataRoot.writeTextWith("table/y.dict", "beta")
             f.setLastModified(1_700_000_000_000)
 

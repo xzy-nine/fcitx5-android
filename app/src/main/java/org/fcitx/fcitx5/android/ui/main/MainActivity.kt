@@ -63,6 +63,12 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_SETTINGS_ROUTE = "${BuildConfig.APPLICATION_ID}.EXTRA_SETTINGS_ROUTE"
+
+        /** 直接指定 Compose 路由名，供只存在于新导航里的页面使用。 */
+        const val EXTRA_COMPOSE_ROUTE = "${BuildConfig.APPLICATION_ID}.EXTRA_COMPOSE_ROUTE"
+
+        /** Compose 路由的可选参数，按目标页自行解释。 */
+        const val EXTRA_COMPOSE_ROUTE_ARG = "${BuildConfig.APPLICATION_ID}.EXTRA_COMPOSE_ROUTE_ARG"
     }
 
 }

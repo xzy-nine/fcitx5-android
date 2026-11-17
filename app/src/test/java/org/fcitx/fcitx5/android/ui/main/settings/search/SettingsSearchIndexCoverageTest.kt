@@ -167,7 +167,7 @@ class SettingsSearchIndexCoverageTest {
             "app/src/main/java/org/fcitx/fcitx5/android/data/theme/ThemePrefs.kt",
             "app/src/main/java/org/fcitx/fcitx5/android/data/prefs/SettingsUiPreferences.kt",
             "app/src/main/java/org/fcitx/fcitx5/android/data/prefs/SettingsUiMotionPreferences.kt",
-            "app/src/main/java/org/fcitx/fcitx5/android/ui/main/settings/theme/SettingsUiAppearanceFragment.kt"
+            "app/src/main/java/org/fcitx/fcitx5/android/ui/main/compose/screens/SettingsUiAppearanceScreen.kt"
         ).mapNotNull { findSourceFile(it) }
 
         val index = findSourceFile(

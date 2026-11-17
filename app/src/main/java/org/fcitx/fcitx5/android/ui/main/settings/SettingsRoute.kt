@@ -7,37 +7,13 @@ package org.fcitx.fcitx5.android.ui.main.settings
 
 import android.net.Uri
 import android.os.Parcelable
-import androidx.navigation.NavController
 import androidx.navigation.NavType
-import androidx.navigation.createGraph
-import androidx.navigation.fragment.fragment
 import androidx.savedstate.SavedState
 import kotlinx.parcelize.Parcelize
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.RawConfig
-import org.fcitx.fcitx5.android.ui.main.AboutFragment
-import org.fcitx.fcitx5.android.ui.main.DeveloperFragment
-import org.fcitx.fcitx5.android.ui.main.LicensesFragment
-import org.fcitx.fcitx5.android.ui.main.MainFragment
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.AdvancedSettingsFragment
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.CandidatesSettingsFragment
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.ClipboardSettingsFragment
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.DataBackupFragment
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.KeyboardGroupFragment
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.KeyboardModesFragment
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.KeyboardSettingsFragment
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.BroadcastSettingsFragment
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.SymbolSettingsFragment
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.TextEditingSettingsFragment
-import org.fcitx.fcitx5.android.ui.main.settings.group.SettingsGroupFragment
 import org.fcitx.fcitx5.android.ui.main.settings.group.SettingsGroupSpecs
-import org.fcitx.fcitx5.android.ui.main.settings.im.InputMethodConfigFragment
-import org.fcitx.fcitx5.android.ui.main.settings.theme.ThemeFragment
-import org.fcitx.fcitx5.android.ui.main.settings.theme.SettingsUiAppearanceFragment
-import org.fcitx.fcitx5.android.ui.main.settings.theme.SettingsUiMotionFragment
-import org.fcitx.fcitx5.android.utils.AppUtil
 import org.fcitx.fcitx5.android.utils.config.ConfigDescriptor
 import org.fcitx.fcitx5.android.utils.parcelable
 import kotlin.reflect.KType
@@ -82,6 +58,9 @@ sealed class SettingsRoute : Parcelable {
 
     @Serializable
     data object SettingsUiMotion : SettingsRoute()
+
+    @Serializable
+    data object TextKeyboardLayoutProfiles : SettingsRoute()
 
     @Serializable
     data object IconTheme : SettingsRoute()
@@ -185,83 +164,4 @@ sealed class SettingsRoute : Parcelable {
         val path: String
     ) : SettingsRoute()
 
-    companion object {
-        fun createGraph(controller: NavController) = controller.createGraph(Index) {
-            val ctx = controller.context
-            val appLabel = AppUtil.appLabel(ctx)
-
-            /* ========== Index ========== */
-
-            fragment<MainFragment, Index> {
-                label = appLabel
-            }
-
-            /* ========== Fcitx ========== */
-
-            fragment<LegacyEngineSettingsFragment, GlobalConfig>()
-            fragment<LegacyEngineSettingsFragment, InputMethodList>()
-            fragment<InputMethodConfigFragment, InputMethodConfig>()
-            fragment<LegacyEngineSettingsFragment, AddonList>()
-
-            /* ========== Android ========== */
-
-            fragment<ThemeFragment, Theme> {
-                label = ctx.getString(R.string.theme)
-            }
-            fragment<SettingsUiAppearanceFragment, SettingsUiAppearance> {
-                label = ctx.getString(R.string.settings_ui_appearance)
-            }
-            fragment<SettingsUiMotionFragment, SettingsUiMotion> {
-                label = ctx.getString(R.string.settings_ui_motion_title)
-            }
-            fragment<KeyboardSettingsFragment, VirtualKeyboard> {
-                label = ctx.getString(R.string.virtual_keyboard)
-            }
-            fragment<KeyboardGroupFragment, KeyboardGroup>()
-            fragment<KeyboardModesFragment, KeyboardModes> {
-                label = ctx.getString(R.string.keyboard_modes_title)
-            }
-            // 分组页的标题在创建页面外壳时从规格表解析，无需等待入场动画结束。
-            fragment<SettingsGroupFragment, SettingsGroup>()
-            fragment<CandidatesSettingsFragment, CandidatesWindow> {
-                label = ctx.getString(R.string.candidates_window)
-            }
-            fragment<ClipboardSettingsFragment, Clipboard> {
-                label = ctx.getString(R.string.clipboard)
-            }
-            fragment<BroadcastSettingsFragment, Broadcast> {
-                label = ctx.getString(R.string.broadcast_settings)
-            }
-            fragment<SymbolSettingsFragment, Symbol> {
-                label = ctx.getString(R.string.emoji_and_symbols)
-            }
-            fragment<TextEditingSettingsFragment, TextEditing> {
-                label = ctx.getString(R.string.text_editing)
-            }
-            fragment<AdvancedSettingsFragment, Advanced> {
-                label = ctx.getString(R.string.advanced)
-            }
-            // 数据与备份从「高级」拆出，见 DataBackupFragment 的说明。
-            fragment<DataBackupFragment, DataBackup> {
-                label = ctx.getString(R.string.settings_group_data)
-            }
-            fragment<DeveloperFragment, Developer> {
-                label = ctx.getString(R.string.developer)
-            }
-            fragment<LicensesFragment, License> {
-                label = ctx.getString(R.string.license)
-            }
-            fragment<AboutFragment, About> {
-                label = ctx.getString(R.string.about)
-            }
-
-            /* ========== External ========== */
-
-            fragment<ListFragment, ListConfig>(
-                typeMap = ListConfig.Params.TypeMap
-            )
-            fragment<GenericMultiSelectFragment, MultiSelect>()
-            fragment<AddonDirProfileManagerFragment, AddonDirProfileManager>()
-        }
-    }
 }

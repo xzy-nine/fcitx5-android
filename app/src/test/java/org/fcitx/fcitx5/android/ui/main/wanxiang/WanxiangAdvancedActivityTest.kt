@@ -108,20 +108,6 @@ class WanxiangAdvancedActivityTest {
         return (0 until bar.childCount).map(bar::getChildAt).filterIsInstance<ImageButton>().first()
     }
 
-    @Test fun updaterToolbarArrowReturnsAfterTheActionBarHasInstalledItsCallbacks() {
-        val context = RuntimeEnvironment.getApplication()
-        WorkManagerTestInitHelper.initializeTestWorkManager(context, Configuration.Builder().setExecutor(SynchronousExecutor()).build())
-        val controller = Robolectric.buildActivity(WanxiangUpdateActivity::class.java).setup()
-        try {
-            controller.get().invalidateOptionsMenu()
-            shadowOf(Looper.getMainLooper()).idle()
-            assertTrue(navigationButton(controller.get()).performClick())
-            assertTrue(controller.get().isFinishing)
-        } finally {
-            controller.get().finish(); controller.pause().stop().destroy()
-            WorkManagerTestInitHelper.closeWorkDatabase()
-        }
-    }
 
     @Test fun readingTheAdvancedPagePreservesAlreadyDeployedFilesAndCanReturnNormally() {
         val root = WanxiangSettingsFixture.root

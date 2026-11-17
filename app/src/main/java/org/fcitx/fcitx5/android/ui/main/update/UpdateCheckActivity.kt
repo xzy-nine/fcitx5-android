@@ -217,11 +217,11 @@ class UpdateCheckActivity : SettingsUiActivity() {
                 true
             }
             R.id.action_update_hosts -> {
-                startActivity(Intent(this, UpdateHostsSettingsActivity::class.java))
+                org.fcitx.fcitx5.android.utils.AppUtil.launchMainToComposeRoute(this, "UpdateHostsSettings")
                 true
             }
             R.id.action_update_mirrors -> {
-                mirrorEditorLauncher.launch(Intent(this, UpdateMirrorListActivity::class.java))
+                org.fcitx.fcitx5.android.utils.AppUtil.launchMainToComposeRoute(this, "UpdateMirrorList")
                 true
             }
             else -> super.onOptionsItemSelected(item)
@@ -343,11 +343,8 @@ class UpdateCheckActivity : SettingsUiActivity() {
     }
 
     private fun openMirrorEditor(mirrorId: String?) {
-        mirrorEditorLauncher.launch(
-            Intent(this, UpdateMirrorEditActivity::class.java).apply {
-                mirrorId?.let { putExtra(UpdateMirrorEditActivity.EXTRA_MIRROR_ID, it) }
-            }
-        )
+        // 镜像编辑页已迁到 Compose 导航，经主界面路由进入
+        org.fcitx.fcitx5.android.utils.AppUtil.launchMainToComposeRoute(this, "UpdateMirrorEdit", mirrorId)
     }
 
     private fun selectedMirror(): MirrorRule? {

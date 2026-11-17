@@ -12,8 +12,7 @@ import androidx.annotation.StringRes
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.FontsetEditorActivity
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.KeyboardGroupFragment
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.TextKeyboardLayoutProfileManagerActivity
+import org.fcitx.fcitx5.android.ui.main.compose.screens.KeyboardGroup
 import org.fcitx.fcitx5.android.ui.main.settings.icon.IconThemeListActivity
 import org.fcitx.fcitx5.android.ui.main.settings.im.RimeEngineManagerActivity
 import org.fcitx.fcitx5.android.ui.main.settings.voice.JsVoicePluginsActivity
@@ -79,10 +78,10 @@ data class SettingsGroupSpec(
 object SettingsGroupSpecs {
 
     /** Additional tool in the existing keyboard editors group; the quick selector stays. */
-    val keyboardLayoutManager = SettingsGroupEntry.activity(
+    val keyboardLayoutManager = SettingsGroupEntry(
         R.string.text_keyboard_layout_manage_title,
         R.drawable.ic_baseline_keyboard_24,
-        TextKeyboardLayoutProfileManagerActivity::class.java
+        action = SettingsGroupAction.Route(SettingsRoute.TextKeyboardLayoutProfiles),
     )
 
     const val ID_INPUT = "input"
@@ -116,7 +115,7 @@ object SettingsGroupSpecs {
                     SettingsGroupEntry.route(
                         R.string.keyboard_category_candidate,
                         R.drawable.ic_baseline_list_alt_24,
-                        SettingsRoute.KeyboardGroup(KeyboardGroupFragment.GROUP_CANDIDATE)
+                        SettingsRoute.KeyboardGroup(KeyboardGroup.GROUP_CANDIDATE)
                     ),
                     SettingsGroupEntry.route(
                         R.string.candidates_window,
@@ -126,7 +125,7 @@ object SettingsGroupSpecs {
                     SettingsGroupEntry.route(
                         R.string.keyboard_category_voice,
                         R.drawable.ic_baseline_keyboard_voice_24,
-                        SettingsRoute.KeyboardGroup(KeyboardGroupFragment.GROUP_VOICE)
+                        SettingsRoute.KeyboardGroup(KeyboardGroup.GROUP_VOICE)
                     )
                 )
             }
@@ -166,7 +165,7 @@ object SettingsGroupSpecs {
                         R.string.settings_section_settings_ui
                     )
                     // 2026-09-29：「弹出字符设定」改挂「键盘 → 键盘布局自定义」组
-                    // （`KeyboardGroupFragment.GROUP_EDITORS`）——它改的是长按按键弹出的
+                    // （`KeyboardGroup.GROUP_EDITORS`）——它改的是长按按键弹出的
                     // 字符映射，属于键盘的内容/定义，与外观无关；放在这里会让「外观」
                     // 的小字（主题、图标和字体）对不上内容。
                 )
