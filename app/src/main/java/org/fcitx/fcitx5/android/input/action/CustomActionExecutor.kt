@@ -15,7 +15,6 @@ import org.fcitx.fcitx5.android.input.action.ButtonAction
 import org.fcitx.fcitx5.android.input.keyboard.KeyRef
 import org.fcitx.fcitx5.android.input.keyboard.MacroStep
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.SplitKeyboardCalibrationActivity
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.webeditor.ImeWebEditorBridgeServer
 import org.fcitx.fcitx5.android.utils.AppUtil
 
@@ -137,9 +136,7 @@ fun executeMacroSteps(steps: List<MacroStep>, service: FcitxInputMethodService, 
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         })
                     } else if (step.id == "split_keyboard_calibration" && context != null) {
-                        context.startActivity(Intent(context, SplitKeyboardCalibrationActivity::class.java).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        })
+                        org.fcitx.fcitx5.android.utils.AppUtil.launchMainToComposeRoute(context, "SplitKeyboardCalibration")
                     } else if (step.id == "web_editor_bridge" && context != null) {
                         try {
                             val session = ImeWebEditorBridgeServer.start()

@@ -49,6 +49,7 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.IconThemeListScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.InputStatsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.RimeEngineManagerScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.FontsetEditorScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.SplitKeyboardCalibrationScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.UpdateMirrorListScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WanxiangUpdateScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingGestureDemoScreen
@@ -305,6 +306,9 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 entry<AppRoute.FontsetEditor> {
                     FontsetEditorScreen(onBack = { backStack.removeLastOrNull() })
                 }
+                entry<AppRoute.SplitKeyboardCalibration> {
+                    SplitKeyboardCalibrationScreen(onBack = { backStack.removeLastOrNull() })
+                }
                 entry<AppRoute.SettingsGroup> { route ->
                     SettingsGroupScreen(
                         groupId = route.id,
@@ -322,7 +326,10 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                     SettingsUiMotionScreen(onBack = { backStack.removeLastOrNull() })
                 }
                 entry<AppRoute.KeyboardModes> {
-                    KeyboardModesScreen(onBack = { backStack.removeLastOrNull() })
+                    KeyboardModesScreen(
+                        onBack = { backStack.removeLastOrNull() },
+                        onCalibrate = { navigateTo(AppRoute.SplitKeyboardCalibration) },
+                    )
                 }
                 entry<AppRoute.KeyboardGroup> { route ->
                     KeyboardGroupScreen(
@@ -424,6 +431,7 @@ fun composeRouteByName(name: String, arg: String? = null): AppRoute? = when (nam
     "UpdateHostsSettings" -> AppRoute.UpdateHostsSettings
     "IconThemeList" -> AppRoute.IconThemeList
     "FontsetEditor" -> AppRoute.FontsetEditor
+    "SplitKeyboardCalibration" -> AppRoute.SplitKeyboardCalibration
     else -> null
 }
 
@@ -451,6 +459,7 @@ fun appRouteOf(route: SettingsRoute): AppRoute = when (route) {
     SettingsRoute.InputStats -> AppRoute.InputStats
     SettingsRoute.RimeEngineManager -> AppRoute.RimeEngineManager
     SettingsRoute.FontsetEditor -> AppRoute.FontsetEditor
+    SettingsRoute.SplitKeyboardCalibration -> AppRoute.SplitKeyboardCalibration
     SettingsRoute.Advanced -> AppRoute.Prefs(PrefCategory.Advanced)
     SettingsRoute.Developer -> AppRoute.Developer
     SettingsRoute.License -> AppRoute.Licenses

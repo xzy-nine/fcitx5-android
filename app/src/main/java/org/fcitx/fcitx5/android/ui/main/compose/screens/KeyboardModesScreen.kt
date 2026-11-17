@@ -18,7 +18,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.SplitKeyboardCalibrationActivity
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -33,7 +32,10 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * 只在对应主开关开启时可用。
  */
 @Composable
-fun KeyboardModesScreen(onBack: () -> Unit) {
+fun KeyboardModesScreen(
+    onBack: () -> Unit,
+    onCalibrate: () -> Unit = {},
+) {
     val context = LocalContext.current
     val internal = remember { AppPrefs.getInstance().internal }
     val keyboard = remember { AppPrefs.getInstance().keyboard }
@@ -81,11 +83,7 @@ fun KeyboardModesScreen(onBack: () -> Unit) {
                 ArrowPreference(
                     title = stringResource(R.string.split_keyboard_calibration_title),
                     enabled = splitEnabled,
-                    onClick = {
-                        context.startActivity(
-                            Intent(context, SplitKeyboardCalibrationActivity::class.java),
-                        )
-                    },
+                    onClick = onCalibrate,
                 )
             }
         }

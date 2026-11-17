@@ -182,11 +182,6 @@
             android:exported="false"
             android:label="@string/edit_buttons" />
         <activity
-            android:name=".ui.main.settings.behavior.SplitKeyboardCalibrationActivity"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
-            android:exported="false"
-            android:label="@string/split_keyboard_calibration_title" />
-        <activity
             android:name=".ui.main.CropImageActivity"
             android:exported="false" />
         <activity

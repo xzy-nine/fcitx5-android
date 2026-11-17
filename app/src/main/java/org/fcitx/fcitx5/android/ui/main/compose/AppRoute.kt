@@ -86,6 +86,10 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object FontsetEditor : AppRoute
 
+    /** 分体键盘校准。 */
+    @Serializable
+    data object SplitKeyboardCalibration : AppRoute
+
     /** 设置界面外观。 */
     @Serializable
     data object SettingsUiAppearance : AppRoute
