@@ -8,7 +8,6 @@ import android.os.Parcel
 import androidx.appcompat.view.menu.MenuBuilder
 import org.fcitx.fcitx5.android.FcitxApplication
 import org.fcitx.fcitx5.android.input.keyboard.MacroStep
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.FontsetEditorActivity
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.PopupEditorActivity
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.dialog.MacroEditorDialogFragment
 import kotlinx.serialization.json.Json
@@ -111,21 +110,6 @@ class StandaloneEditorDraftTest {
         } finally { finish(second) }
     }
 
-    @Test fun fontSelectionsSizesAndDirtySaveButtonSurviveAParcelRoundTrip() {
-        val first = Robolectric.buildActivity(FontsetEditorActivity::class.java).setup()
-        val fonts: MutableMap<String, MutableList<String>> = ReflectionHelpers.getField(first.get(), "selectedFonts")
-        val sizes: MutableMap<String, Float> = ReflectionHelpers.getField(first.get(), "selectedFontSizes")
-        fonts["key_main_font"] = mutableListOf("first.ttf", "second.ttf"); sizes["key_main_font"] = 33f
-        val second = Robolectric.buildActivity(FontsetEditorActivity::class.java).setup(state(first))
-        try {
-            val restored: Map<String, List<String>> = ReflectionHelpers.getField(second.get(), "selectedFonts")
-            val restoredSizes: Map<String, Float> = ReflectionHelpers.getField(second.get(), "selectedFontSizes")
-            assertEquals(listOf("first.ttf", "second.ttf"), restored["key_main_font"])
-            assertEquals(33f, restoredSizes["key_main_font"])
-            val menu = MenuBuilder(second.get()); second.get().onCreateOptionsMenu(menu)
-            assertTrue(menu.getItem(0).isEnabled)
-        } finally { finish(second) }
-    }
 
     @Test fun malformedDraftsFallBackToOriginalDataWithoutBecomingDirty() {
         val saved = Bundle().apply { putString("editor_draft_inline", "{broken") }

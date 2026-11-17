@@ -12,7 +12,6 @@ import androidx.core.os.ConfigurationCompat
 import java.util.Locale
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.FontsetEditorActivity
 import org.fcitx.fcitx5.android.ui.main.compose.screens.KeyboardGroup
 import org.fcitx.fcitx5.android.ui.main.settings.behavior.PopupEditorActivity
 import org.fcitx.fcitx5.android.ui.main.settings.group.SettingsGroupSpecs
@@ -821,7 +820,7 @@ object SettingsSearchIndex {
         SettingsSearchEntry(
             R.string.edit_fontset, P_APPEARANCE,
             listOf("font", "字体", "ziti", "字型"),
-            activityClass = FontsetEditorActivity::class.java
+            route = SettingsRoute.FontsetEditor
         ),
         SettingsSearchEntry(
             R.string.edit_popup_preset, P_KEYBOARD,

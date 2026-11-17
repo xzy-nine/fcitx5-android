@@ -82,6 +82,10 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object RimeEngineManager : AppRoute
 
+    /** 字体集编辑。 */
+    @Serializable
+    data object FontsetEditor : AppRoute
+
     /** 设置界面外观。 */
     @Serializable
     data object SettingsUiAppearance : AppRoute

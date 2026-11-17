@@ -11,7 +11,6 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.ui.main.settings.SettingsRoute
-import org.fcitx.fcitx5.android.ui.main.settings.behavior.FontsetEditorActivity
 import org.fcitx.fcitx5.android.ui.main.compose.screens.KeyboardGroup
 import org.fcitx.fcitx5.android.ui.main.settings.voice.JsVoicePluginsActivity
 
@@ -149,10 +148,10 @@ object SettingsGroupSpecs {
                         sectionTitle = R.string.settings_section_keyboard_appearance
                     ),
                     // 原先藏在「增强选项」这个空容器里，现在放到外观下。
-                    SettingsGroupEntry.activity(
+                    SettingsGroupEntry.route(
                         R.string.edit_fontset,
                         R.drawable.ic_baseline_text_format_24,
-                        FontsetEditorActivity::class.java,
+                        SettingsRoute.FontsetEditor,
                         sectionTitle = R.string.settings_section_keyboard_appearance
                     ),
                     SettingsGroupEntry.route(

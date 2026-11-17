@@ -48,6 +48,7 @@ import org.fcitx.fcitx5.android.ui.main.compose.screens.TextKeyboardLayoutProfil
 import org.fcitx.fcitx5.android.ui.main.compose.screens.IconThemeListScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.InputStatsScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.RimeEngineManagerScreen
+import org.fcitx.fcitx5.android.ui.main.compose.screens.FontsetEditorScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.UpdateMirrorListScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.WanxiangUpdateScreen
 import org.fcitx.fcitx5.android.ui.main.compose.screens.HandwritingGestureDemoScreen
@@ -301,6 +302,9 @@ fun FcitxComposeApp(activity: MainActivity, shell: ComposeMainShell) {
                 entry<AppRoute.RimeEngineManager> {
                     RimeEngineManagerScreen(onBack = { backStack.removeLastOrNull() })
                 }
+                entry<AppRoute.FontsetEditor> {
+                    FontsetEditorScreen(onBack = { backStack.removeLastOrNull() })
+                }
                 entry<AppRoute.SettingsGroup> { route ->
                     SettingsGroupScreen(
                         groupId = route.id,
@@ -419,6 +423,7 @@ fun composeRouteByName(name: String, arg: String? = null): AppRoute? = when (nam
     "UpdateMirrorEdit" -> AppRoute.UpdateMirrorEdit(arg)
     "UpdateHostsSettings" -> AppRoute.UpdateHostsSettings
     "IconThemeList" -> AppRoute.IconThemeList
+    "FontsetEditor" -> AppRoute.FontsetEditor
     else -> null
 }
 
@@ -445,6 +450,7 @@ fun appRouteOf(route: SettingsRoute): AppRoute = when (route) {
     SettingsRoute.IconThemeList -> AppRoute.IconThemeList
     SettingsRoute.InputStats -> AppRoute.InputStats
     SettingsRoute.RimeEngineManager -> AppRoute.RimeEngineManager
+    SettingsRoute.FontsetEditor -> AppRoute.FontsetEditor
     SettingsRoute.Advanced -> AppRoute.Prefs(PrefCategory.Advanced)
     SettingsRoute.Developer -> AppRoute.Developer
     SettingsRoute.License -> AppRoute.Licenses

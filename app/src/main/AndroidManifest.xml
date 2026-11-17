@@ -130,11 +130,6 @@
             android:exported="false"
             android:label="@string/edit_icon_theme" />
         <activity
-            android:name=".ui.main.settings.behavior.FontsetEditorActivity"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
-            android:exported="false"
-            android:label="@string/edit_fontset" />
-        <activity
             android:name=".ui.main.settings.behavior.PopupEditorActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
             android:exported="false"
