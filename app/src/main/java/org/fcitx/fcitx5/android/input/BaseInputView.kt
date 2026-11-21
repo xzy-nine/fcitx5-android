@@ -15,6 +15,7 @@ import androidx.core.text.buildSpannedString
 import androidx.core.text.color
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.fcitx.fcitx5.android.R
@@ -29,6 +30,7 @@ import org.fcitx.fcitx5.android.utils.item
 import org.fcitx.fcitx5.android.utils.navbarFrameHeight
 import org.fcitx.fcitx5.android.utils.styledColorOrDefault
 import splitties.views.dsl.core.withTheme
+import timber.log.Timber
 import kotlin.math.max
 
 abstract class BaseInputView(
@@ -49,7 +51,15 @@ abstract class BaseInputView(
     private fun setupFcitxEventHandler() {
         eventHandlerJob = service.lifecycleScope.launch {
             fcitx.peek { eventFlow }.collect {
-                handleFcitxEvent(it)
+                // 单个事件的异常不能结束收集：收集协程退出后不会自动重建，
+                // 而发射方的 [kotlinx.coroutines.flow.SharedFlow.emit] 会一直挂起。
+                try {
+                    handleFcitxEvent(it)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Timber.e(e, "Fcitx event handling failed: " + it.eventType)
+                }
             }
         }
     }

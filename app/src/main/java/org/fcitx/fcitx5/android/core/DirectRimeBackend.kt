@@ -73,6 +73,18 @@ class DirectRimeBackend(context: Context) : InputEngine {
     private val events = InputEventQueue()
     private val flow = MutableSharedFlow<FcitxEvent<*>>(extraBufferCapacity = 64)
     override val eventFlow = flow.asSharedFlow()
+
+    /**
+     * 投递一帧，订阅者长时间不取时放弃。
+     *
+     * [MutableSharedFlow.emit] 在没有订阅者时立即返回，但只要有订阅者且其缓冲已满，就会挂起
+     * 直到对方消费。收集方被取消后不会再消费，这次挂起就成了永久等待，
+     * 排空循环随之停摆并将引擎线程拖入同样的等待。
+     */
+    private suspend fun emitWithTimeout(event: FcitxEvent<*>) {
+        withTimeoutOrNull(EVENT_DELIVERY_TIMEOUT_MS) { flow.emit(event) }
+    }
+
     private val config = DirectRimeConfig(this.context)
     private val engineRepository by lazy { RimeEngineStore.repository(this.context) }
     private val profileOperations by lazy {
@@ -187,9 +199,11 @@ class DirectRimeBackend(context: Context) : InputEngine {
         // Emission is independent of the native owner. A slow UI never drops commits
         // and cannot deadlock the owner by requesting a candidate page while collecting.
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
-            while (true) for (event in events.receive()) {
+            EventFlowEmitter.drain(events) { event ->
                 InputDiagnostics.emitting(event)
-                flow.emit(event)
+                // 有订阅者时 emit 受其背压；订阅者被取消后 emit 会永久挂起，
+                // 排空随之停摆并拖住引擎线程。超时即放弃这一帧，让排空继续。
+                emitWithTimeout(event)
             }
         }
     }
@@ -791,5 +805,10 @@ class DirectRimeBackend(context: Context) : InputEngine {
                 profileOperations.installImported(transaction)
             }
         }
+    }
+
+    private companion object {
+        /** 单帧投递的等待上限；超出即放弃这一帧，避免排空循环被慢订阅者永久拖住。 */
+        const val EVENT_DELIVERY_TIMEOUT_MS = 1_000L
     }
 }

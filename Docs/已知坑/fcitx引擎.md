@@ -10,6 +10,10 @@ fcitx 引擎生命周期相关的问题与约束。
 
 词库与表格导入统一走 `restartFcitx()`，它在锁内原子完成 stop 与 start。只有整体用户数据导入才用 `stopFcitx()`，且随后必须重启进程。
 
+## 事件排空循环不可退出
+
+`EventFlowEmitter.drain` 是 `InputEventQueue` 唯一的消费方，退出即让引擎 owner 永久等待。它只能在协程被取消时结束；收集侧同样逐事件兜住异常。细则见 [Agent Note](../../.agents/notes/implemented/bug-fix/2026-11-21-event-loop-liveness.md)。
+
 ## 词库恢复后必须重启进程
 
 WebDAV 恢复词库后必须重启进程。

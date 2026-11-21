@@ -50,6 +50,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -728,7 +729,15 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
         }
         lifecycleScope.launch {
             fcitx.peek { eventFlow }.collect {
-                handleFcitxEvent(it)
+                // 单个事件的处理异常不能结束收集：一旦收集协程退出，
+                // SharedFlow 的发射方会永久挂起，此后引擎事件再也到不了这一侧。
+                try {
+                    handleFcitxEvent(it)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Timber.e(e, "Fcitx event handling failed: " + it.eventType)
+                }
             }
         }
         lifecycleScope.launch {
