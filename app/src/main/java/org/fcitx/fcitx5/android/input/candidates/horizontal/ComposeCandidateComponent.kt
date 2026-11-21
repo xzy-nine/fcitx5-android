@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import org.fcitx.fcitx5.android.core.CandidateWord
 import org.fcitx.fcitx5.android.core.FcitxEvent
+import org.fcitx.fcitx5.android.core.sameSelectionTargets
 import org.fcitx.fcitx5.android.daemon.launchOnReady
 import org.fcitx.fcitx5.android.data.prefs.AppPrefs
 import org.fcitx.fcitx5.android.input.bar.ComposeKawaiiBarComponent
@@ -318,7 +319,13 @@ class ComposeCandidateComponent :
             val merged = if (current is CandidateBarState.Active &&
                 current.candidates.startsWith(candidates)
             ) {
-                current.copy(total = total)
+                // 候选集未变，只重推了一遍：既沿用已懒加载的更长列表，又用本次发布的首批覆盖头部。
+                // 选择上下文随每次发布前进，只换 total 会让候选栏停在旧上下文上，
+                // 引擎于是把之后的点击判为过期，直到文本发生变化才重新绑定。
+                current.copy(
+                    candidates = current.candidates.replaceHead(candidates),
+                    total = total,
+                )
             } else {
                 CandidateBarState.from(candidates, total)
             }
@@ -349,7 +356,12 @@ class ComposeCandidateComponent :
     }
 
     override fun onCandidateUpdate(data: FcitxEvent.CandidateListEvent.Data) {
-        if (data == lastCandidateData) {
+        // 比较必须包含选择上下文：引擎在候选文本不变时也会失效一次候选（如键盘释放、
+        // 分页模式切换），此时旧上下文已过期。只比展示内容会把这一发丢掉，
+        // 候选栏继续持有过期目标，点击不再上屏，直到文本变化才恢复。
+        if (data == lastCandidateData &&
+            data.candidates.sameSelectionTargets(lastCandidateData.candidates)
+        ) {
             return
         }
         val prevData = lastCandidateData
@@ -368,7 +380,9 @@ class ComposeCandidateComponent :
         // 使消费方（展开面板等）据此判定非空并继续取数；末页时给出真实数量。
         val total = if (data.hasNext) data.candidates.size + 1 else data.candidates.size
         val list = FcitxEvent.CandidateListEvent.Data(total = total, candidates = data.candidates)
-        if (list == lastCandidateData) {
+        if (list == lastCandidateData &&
+            list.candidates.sameSelectionTargets(lastCandidateData.candidates)
+        ) {
             return
         }
         val prevData = lastCandidateData

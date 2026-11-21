@@ -22,6 +22,8 @@ sealed interface CandidateBarState {
      *
      * 只承载「内容」：滚动偏移不在此列（它是通知展开窗口的纯事件，
      * 若放进状态里，滑动时每个跨项都会连带重组所有订阅者）。见 ComposeCandidateComponent。
+     *
+     * 相等性经由 [CandidateList]，因而包含发布版本：同文本重推也算变化。
      */
     data class Active(
         val candidates: CandidateList,

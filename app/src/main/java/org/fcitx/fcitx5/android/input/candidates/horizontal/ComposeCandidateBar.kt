@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.distinctUntilChanged
 import org.fcitx.fcitx5.android.R
 import org.fcitx.fcitx5.android.core.CandidateWord
+import org.fcitx.fcitx5.android.core.sameSelectionTargets
 import org.fcitx.fcitx5.android.input.bar.inputFeedback
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -102,13 +103,31 @@ class CandidateList(private val items: Array<CandidateWord>) {
         return true
     }
 
+    /**
+     * 用 [prefix] 覆盖本列表的前 [prefix] 项，保留其后已懒加载的候选。
+     *
+     * [prefix] 携带最新一次发布的选择上下文；保留的尾部维持各自发布时的上下文，
+     * 引擎判定过期时点击不生效。
+     */
+    fun replaceHead(prefix: Array<CandidateWord>): CandidateList =
+        if (prefix.size >= items.size) CandidateList(prefix)
+        else CandidateList(prefix + items.copyOfRange(prefix.size, items.size))
+
     fun isEmpty(): Boolean = items.isEmpty()
 
     /** 导出为列表，供展开面板等复用同一份候选。 */
     fun toList(): List<CandidateWord> = items.toList()
 
+    /**
+     * 相等性包含选择上下文。
+     *
+     * [CandidateWord] 的相等性只比展示内容，而候选栏的点击要凭上下文通过引擎的时效判定。
+     * 若这里也忽略上下文，内容相同的重推会被 [kotlinx.coroutines.flow.MutableStateFlow]
+     * 判为未变化而不落库，候选栏继续持有引擎已判过期的目标，点击不再上屏。
+     */
     override fun equals(other: Any?): Boolean =
-        this === other || (other is CandidateList && items.contentEquals(other.items))
+        this === other || (other is CandidateList && items.contentEquals(other.items) &&
+            items.sameSelectionTargets(other.items))
 
     override fun hashCode(): Int = items.contentHashCode()
 
